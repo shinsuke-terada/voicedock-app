@@ -311,7 +311,7 @@ public enum RequestID {
 ```
 
 - `make` の `gmtime_r` が失敗（戻り値 nil）したら年月日時分秒をすべて 0 として書く（`00000000T000000Z-…`。形式としては有効だが、現実の時刻では起きない。例外にしない）
-- `randomHex6()` は 00-api-map に無い。§8「API 地図への変更提案」を見よ
+- `randomHex6()` は §8「API 地図への変更提案」の 1 で 00-api-map に反映済み
 
 ### 4.13 `DeleteRequest.swift` / `DeleteResult.swift`
 
@@ -897,6 +897,9 @@ public final class FileLock: Sendable {
 7. `FileLock.release()` の意味を「`flock(LOCK_UN)`。何度呼んでもよい。fd を閉じるのは deinit」と明記する（`final class` に可変の状態を持たせずに冪等にするため） → 00-api-map に反映済み（2026-09-18）
 8. （整合修正で追記）`RecordingName.matchesFilePattern(_:)`（T-13〜T-15 の提案で地図 §1 に載った。形だけの判定）を 4.5 に足した → 00-api-map に反映済み（2026-09-18）
 9. （整合修正で追記）00-api-map §15 は `TempDirectory`・`PackageRoot`・`TestEnvironment` の作り手を T-06 と書くが、T-01 が作る（4.20）。地図を T-01 に直すことを提案する
+10. （実装時に発見・未決）00-api-map §0 は「`URL` からパス文字列を取るときは `url.path(percentEncoded: false)` だけを使う」とするが、このチケットの 4.15・4.16・4.18 と 5.12 の `productionPath` は `.path` を使う。
+    ディレクトリの URL では `path(percentEncoded: false)` が末尾に `/` を付ける（`/tmp/a b/`。`.path` は付けない）ので、`relativePath(of:)` の `r + "/"` の比較と、ディレクトリを宛先にした `rename`・`open` の挙動が変わる。
+    実装はチケットのとおり `.path` のまま。地図の §0 に「ディレクトリの URL は末尾の `/` を除いてから比べる」などの但し書きを足すか、VDContract の syscall 用の例外とするかを利用者に決めてもらう
 
 ## 9. SPEC の変更
 

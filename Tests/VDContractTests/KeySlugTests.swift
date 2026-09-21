@@ -17,6 +17,8 @@ struct KeySlugTests {
 
     @Test("16 文字の小文字 16 進", arguments: ["DJIMIC3:20260829#2", "NO NAME/a.wav", ""])
     func slugIsSixteenLowerHex(_ key: String) {
-        #expect(PatternMatch.wholeMatch("^[0-9a-f]{16}$", KeySlug.of(key)) != nil)
+        let slug = KeySlug.of(key)
+        #expect(slug.unicodeScalars.count == 16)
+        #expect(slug.unicodeScalars.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) })
     }
 }

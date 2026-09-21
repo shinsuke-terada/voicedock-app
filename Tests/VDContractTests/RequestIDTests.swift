@@ -31,7 +31,8 @@ struct RequestIDTests {
         var seen = Set<String>()
         for _ in 0..<100 {
             let hex = RequestID.randomHex6()
-            #expect(PatternMatch.wholeMatch("^[0-9a-f]{6}$", hex) != nil)
+            #expect(hex.unicodeScalars.count == 6)
+            #expect(hex.unicodeScalars.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) })
             seen.insert(hex)
         }
         #expect(seen.count >= 2)

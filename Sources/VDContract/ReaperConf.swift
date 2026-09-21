@@ -64,7 +64,7 @@ public struct ReaperConf: Equatable, Sendable {
         return Data(text.utf8)
     }
 
-    /// symlink を辿らずに開き、通常ファイルで 64 KiB 以下のときだけ parse する。どの経路でも fd を閉じる。
+    /// symlink を辿らずに開き、通常ファイルで 64 KiB 以下のときだけ、fd を閉じてから parse する。どの経路でも fd を閉じる。
     public static func observe(at url: URL) -> ReaperConfObservation {
         let fd = open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         if fd < 0 {
@@ -73,19 +73,28 @@ public struct ReaperConf: Equatable, Sendable {
             if code == ELOOP { return .invalid(.notRegularFile) }
             return .invalid(.unreadable)
         }
-        defer { close(fd) }
-        var info = stat()
-        guard fstat(fd, &info) == 0 else { return .invalid(.unreadable) }
-        guard (info.st_mode & S_IFMT) == S_IFREG else { return .invalid(.notRegularFile) }
-        guard info.st_size <= Contract.maxRequestBytes else { return .invalid(.tooLarge) }
-        switch PosixIO.readAll(fd: fd, limit: Contract.maxRequestBytes + 1) {
-        case .failure:
-            return .invalid(.unreadable)
+        let read = readRegularFile(fd: fd)
+        close(fd)
+        switch read {
+        case .failure(let error):
+            return .invalid(error)
         case .success(let data):
             switch parse(data) {
             case .success(let conf): return .valid(conf)
             case .failure(let error): return .invalid(error)
             }
+        }
+    }
+
+    /// fstat で通常ファイルかつ 64 KiB 以下を確かめてから全部読む（fd は閉じない。閉じるのは呼び手）。
+    private static func readRegularFile(fd: Int32) -> Result<Data, ReaperConfError> {
+        var info = stat()
+        guard fstat(fd, &info) == 0 else { return .failure(.unreadable) }
+        guard (info.st_mode & S_IFMT) == S_IFREG else { return .failure(.notRegularFile) }
+        guard info.st_size <= Contract.maxRequestBytes else { return .failure(.tooLarge) }
+        switch PosixIO.readAll(fd: fd, limit: Contract.maxRequestBytes + 1) {
+        case .failure: return .failure(.unreadable)
+        case .success(let data): return .success(data)
         }
     }
 }
