@@ -2440,6 +2440,9 @@ struct SourceScannerTests {
 | `PolicyCatalog` の PT-01 の `.call("unlink")` を消す | ✓ `pt01DetectsViolation` |
 | `LiteralMatcher.words` の空の一覧の扱いを `{ _ in false }` にする | ✓ `pt06EmptyVocabularyAlwaysFails` |
 | `PinningPolicy.checkWorkflows` の `runs-on` の検査を消す | ✓ `pt13DetectsViolation`（ci.yml が 1 件になる） |
+| `PinningPolicy.runsOnValues` のブロック形式のリストの収集をやめる（`guard value.isEmpty else` の条件を常に偽にする） | ✓ `pt13DetectsViolation`（nightly.yml の違反が無くなる） |
+| `PinningPolicy.checkWorkflows` の `${{ matrix.` の簡易版の検査を常に偽にする | ✓ `pt13DetectsViolation`（matrix.yml の違反が無くなる） |
+| `PolicyEngine.check` で文字列の照合をコード（`scanned.codeText`）にも当てる | ✓ `pt04IgnoresDecoy`・`pt05IgnoresDecoy`・`pt06IgnoresDecoy` |
 | `OrderingPolicy.check` の `commit < register` を `>` にする | ✓ `pt16DetectsViolation`・`pt16IgnoresDecoy` |
 | `ImportPolicy.allowed` の VDCore に `VDStore` を足す | ✓ `pt07DetectsViolation` |
 | `ImportPolicy.allowedEverywhere` を空にする | ✓ `pt07IgnoresDecoy`（decoy の `import Synchronization`） |
@@ -2449,7 +2452,7 @@ struct SourceScannerTests {
 
 - [ ] 上の全ファイルが全文のとおりに在り、`make lint` と `make test` が通る
 - [ ] `swift test --filter PolicyTests` の出力の件数を PR に貼る（パラメータ化を含めて 100 件前後。T-01〜T-03 のテストを含む）
-- [ ] 破壊による証明の表の 9 項目を行い、落ちたテスト名を PR に貼った
+- [ ] 破壊による証明の表の 12 項目を行い、落ちたテスト名を PR に貼った
 - [ ] PLAN §9.4 の表の各行（語と許可場所）と `PolicyCatalog.swift` を 1 行ずつ突き合わせたことを PR に書いた（食い違いがあれば PLAN を正として直す）
 
 ## SPEC の変更
