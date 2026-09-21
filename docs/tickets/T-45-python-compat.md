@@ -1263,6 +1263,15 @@ extension GoldenCase {
 | `sourceHashIsRecorded` | 生成元の sha256 が記録どおりで、表の見出しにも同じ値がある | 入手物の sha256 が `.sha256` の記録と、生成物の `// source-sha256:` の行と一致 |
 | `entryCountAndStatuses` | C と F の写像の数（1530）と、S と T を含めないこと | 1530 件。`ẞ`（F）が `ss`、`I` が `i`（T の `ı` ではない） |
 
+### `Tests/VDCoreTests/GoldenCasePyJSONTests.swift`（`@Suite("GoldenCase.orderedObject")`）
+
+| 関数名 | 表示名 | 確かめること |
+|---|---|---|
+| `keepsKeyOrder` | 入力の payload をキーの順のまま読む | `llm_validate/multi_order` の payload のキーが `mood`・`summary`・`tags`・`zzz` の順 |
+| `sameContentAsFields` | 辞書の GoldenJSON と同じ中身（順だけが違う） | `llm_validate/ok_full` でキーの集合と件数が `object("payload")` と同じ |
+| `allValidateCasesDecode` | 全 23 ケースで投げない | `llm_validate` の全ケースで `orderedObject("payload")` が投げない |
+| `reportsErrors` | 無いキーは missingKey、オブジェクトでなければ typeMismatch | `nope` で `missingKey`、`name`（文字列）で `typeMismatch(expected: "オブジェクト")` |
+
 #### `Tests/VDCoreTests/PyTextTests.swift`（全文。157 行）
 
 ```swift
@@ -1425,7 +1434,7 @@ struct PyTextTests {
 }
 ```
 
-#### `Tests/VDCoreTests/PyJSONTests.swift`（全文。155 行）
+#### `Tests/VDCoreTests/PyJSONTests.swift`（全文。157 行）
 
 ```swift
 // PyJSON が Python の json.dumps / json.loads と同じに振る舞うこと（PLAN §5.7、T-45）。
@@ -1664,7 +1673,7 @@ struct PyCaseFoldTableTests {
 ```
 
 
-### `Tests/VDCoreTests/GoldenCasePyJSONTests.swift`（`@Suite("GoldenCase.orderedObject")`。全文）
+#### `Tests/VDCoreTests/GoldenCasePyJSONTests.swift`（全文。43 行）
 
 ```swift
 // GoldenCase.orderedObject がキーの順を保つことを golden の入力で確かめる（T-45 4.11）。
