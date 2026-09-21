@@ -153,6 +153,7 @@ public actor ConfigStore {
 4. `AtomicFile.write(ConfigLoader.encode(c), to: layout.configFile, permissions: 0o644)`。失敗 → `.failure([violation("書けません: " + ErrorText.describe(e))])`
 5. `config = c`、`.success(c)`
 
+- `Result<AppConfig, [ConfigViolation]>` をコンパイルするため、同じファイルに `extension Array: @retroactive Error where Element == ConfigViolation {}` を置く（`// swift-format-ignore: AvoidRetroactiveConformances`。§11 の提案 12。利用者の判断待ち）
 - actor の再入: `load()` が `reconciler()` を待つ間に DeletionEnabler が `update` を呼んでも、設定エラー中は手順 1 で失敗するだけで壊れない（T-40 の reconcile は reaper.conf だけを書き、config.json はここで直す）
 
 ### 4.3 `IngestPort.swift` / `LicenseGate.swift`
@@ -238,13 +239,20 @@ public struct WorkerStatus: Equatable, Sendable {
 ```swift
 // ガード（遷移せずに待つ。失敗ではない。PLAN §5.4）の理由。rawValue はログの reason 語（付録 A.4）。
 public enum PauseReason: String, Sendable, CaseIterable, Equatable {
-    case diskSpaceLow = "disk_space_low", whisperMissing = "whisper_missing", modelMissing = "model_missing",
-         vadModelMissing = "vad_model_missing", vaultNotConfigured = "vault_not_configured",
-         vaultUnavailable = "vault_unavailable", llmNotSelected = "llm_not_selected",
-         llmModelMissing = "llm_model_missing", llmInsufficientMemory = "llm_insufficient_memory",
-         llamaServerMissing = "llama_server_missing", license
+    case diskSpaceLow = "disk_space_low"
+    case whisperMissing = "whisper_missing"
+    case modelMissing = "model_missing"
+    case vadModelMissing = "vad_model_missing"
+    case vaultNotConfigured = "vault_not_configured"
+    case vaultUnavailable = "vault_unavailable"
+    case llmNotSelected = "llm_not_selected"
+    case llmModelMissing = "llm_model_missing"
+    case llmInsufficientMemory = "llm_insufficient_memory"
+    case llamaServerMissing = "llama_server_missing"
+    case license
 }
 ```
+（実装の注記: `swift format` の `OneCasePerLine` に合わせて 1 行 1 ケースにした）
 
 ```swift
 // ガードに入った・出たときだけログを出す（毎 tick 出さない。PLAN §5.4）。
@@ -387,7 +395,7 @@ var stoppingLogged = false
 
 **`start()`**（PLAN §5.4 / §5.3。アプリの起動手順は「DB を開く → Worker.start() → IngestService.start()」）:
 1. `started` なら何もしない。`started = true`
-2. `blocked = await deps.config.current() == nil || await deps.ingest.state() == .coexistenceBlocked`。真なら `pendingStart = true` で終わり（解除された最初の tick の先頭で行う）
+2. `noConfig = await deps.config.current() == nil`、`blocked = await deps.ingest.state() == .coexistenceBlocked`（`||` の右辺に `await` は書けないので 2 つに分ける）。どちらかが真なら `pendingStart = true` で終わり（解除された最初の tick の先頭で行う）
 3. `await performStart(delayed: false)`
 
 **`performStart(delayed:)`**（internal）:
@@ -724,8 +732,7 @@ for key in keys:
 enum SessionStepResult: Equatable, Sendable { case stopped, empty, analyzed, saved }
 
 struct SessionSteps {
-    let ctx: TickContext
-    init(ctx: TickContext)
+    let ctx: TickContext              // init は合成されたもの（swift format の UseSynthesizedInitializer）
     func groupNewParts() throws {}                                           // T-22
     func closeIdleSessions() throws {}                                       // T-22
     /// 再オープン。行えたら true。TransitionConflict は false（PLAN §5.6）。
@@ -810,7 +817,7 @@ final class RecordingSleepAssertion: SleepAssertion {
     var begins: Int { get }; var ends: Int { get }; var active: Bool { get }
 }
 ```
-- `make`: `TempDirectory()` → `layout = HomeLayout(root: tmp.path("home"))`・`createDirectories()` → `paths = AppPaths(resources: PackageRoot.url.appendingPathComponent("Resources"), helpers: tmp.path("helpers"))` →
+- `make`: `TempDirectory()` → `layout = HomeLayout(root: tmp.url.appendingPathComponent("home", isDirectory: true))`・`createDirectories()` → `paths = AppPaths(resources: PackageRoot.url.appendingPathComponent("Resources"), helpers: tmp.url.appendingPathComponent("helpers", isDirectory: true))`（`TempDirectory` に `path(_:)` は無い）→
   `store = Builders.openStore(in: tmp.url, clock: clock)` → `configStore = ConfigStore(layout:, catalog: TestCatalogs.minimal, log:, observeReaperConf: { .missing }, defaultTimeZone: { "Asia/Tokyo" })` →
   `AtomicFile.write(ConfigLoader.encode(設定), to: layout.configFile)` → `await configStore.load()` が `.valid` であること
 - `registerPart`: `inbox = layout.inboxFile(deviceID: "DJIMIC3", relpath:)`、`BWFWriter.write(to: inbox, seconds:, format: .pcm24, content: .speech)`、
@@ -831,7 +838,7 @@ final class RecordingSleepAssertion: SleepAssertion {
 | `updateUsesGivenObservation` / 「update は渡された reaper.conf の観測で検証する」 | 観測 `.valid(ReaperConf(deleteSourceAudio: true))` を渡し deleteSourceAudio は false のまま | `.failure`（CV-30） |
 | `updateWhileInvalidFails` / 「設定エラー中の update は書かない」 | 不正なファイルで load の後 | `.failure`、ファイルは変わらない |
 | `cv30WithoutReconcilerIsInvalid` / 「CV-30 は修復口が無ければ設定エラー」 | 観測 `.valid(true)`、config は削除無効 | `.invalid`、CV-30 を含む |
-| `cv30IsReconciled` / 「CV-30 は両方を無効側に揃えて読み直す」 | `deleteSourceAudio = true`・`mountMode = "rw"` の config、観測は最初 `.valid(true)`・修復口が呼ばれた後 `.valid(false)` を返す | 修復口が 1 回呼ばれ、`.valid`、ファイルの `deleteSourceAudio == false`・`deleteSkippedSource == false`・`mountMode == "ro"`、ログ `config_warning rule=CV-30` |
+| `cv30IsReconciled` / 「CV-30 は両方を無効側に揃えて読み直す」 | `deleteSourceAudio = true`・`mountMode = "rw"` の config、観測は修復の前も後も `.valid(false)`（無効化の途中で落ちた片方だけの状態。観測が `.valid(true)` だと config の true と一致して CV-30 が出ない） | 修復口が 1 回呼ばれ、`.valid`、ファイルの `deleteSourceAudio == false`・`deleteSkippedSource == false`・`mountMode == "ro"`、ログ `config_warning rule=CV-30` |
 | `cv30ReconcileFailureStaysInvalid` / 「修復口が偽なら設定エラー」 | 修復口が false | `.invalid`、ファイルは変わらない |
 | `cv30IsReconciledOnlyOnce` / 「修復は 1 回だけ」 | 修復口は true を返すが観測は `.valid(true)` のまま | 修復口 1 回、`.invalid`（CV-30） |
 
@@ -975,7 +982,9 @@ final class RecordingSleepAssertion: SleepAssertion {
 
 | 関数名 / 表示名 | 期待 |
 |---|---|
-| `tickOrderMatchesSpec` / 「tick の順が SPEC と一致」 | `SpecDocument` の「Worker の tick の順」の `text` ブロックを空白で分けた列 == `TickStage.allCases.map(\.rawValue)` |
+| `tickOrderIsVerbatim` / 「tick の順がチケット §9 のブロックと一致」 | §9 の `text` ブロック（テストに固定値で持つ）を空白で分けた列 == `TickStage.allCases.map(\.rawValue)` |
+
+**実装の注記（T-18 の実装時）**: 当初は `tickOrderMatchesSpec`（`SpecDocument` の「Worker の tick の順」の節と照合）だったが、`docs/SPEC.md` は `tools/spec/make-spec.py` が PLAN の決まった節（S1〜S9）から作る生成物で（「手で直さない」）、PLAN に tick の順の `text` ブロックが無いため節を足せない（T-17 §9 と同じ事情。GitHub issue #18）。当面は §9 のブロックを固定値で照合する。PLAN §5.4 にブロックを足して `make-spec.py` に S10 を足すなら、このテストを SPEC との照合に替える
 
 ### 6.13 `ConfigEffectPending.swift`（PolicyTests）
 
@@ -985,7 +994,8 @@ final class RecordingSleepAssertion: SleepAssertion {
 
 | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|
-| tick で groupNewParts と processPendingParts を入れ替える | `tickFollowsThePlanOrder`、`tickOrderMatchesSpec` |
+| tick で groupNewParts と processPendingParts を入れ替える | `tickFollowsThePlanOrder` |
+| TickStage の宣言で groupNewParts と processPendingParts を入れ替える | `tickOrderIsVerbatim` |
 | 新鮮さの比較を `<` にする（900 秒ちょうどを古いとする） | `freshnessBoundaryIsInclusive` |
 | requeueFailed で needs_recopy の除外を消す | `requeueSkipsNeedsRecopy` |
 | requeueRecopied で `needsRecopy == false` の条件を消す | `requeueRecopiedOnlyAfterRecopy` |
@@ -1015,7 +1025,9 @@ final class RecordingSleepAssertion: SleepAssertion {
 
 ## 9. SPEC の変更
 
-`docs/SPEC.md` に次の節を足す（`tickOrderMatchesSpec` が突き合わせる）:
+**実装の注記（T-18 の実装時）**: 次の節は足していない。`docs/SPEC.md` は `tools/spec/make-spec.py` の生成物で、PLAN に写す元のブロックが無い（§6.12 の注記。GitHub issue #18）。下のブロックは `tickOrderIsVerbatim` が固定値として持つ。
+
+当初の案: `docs/SPEC.md` に次の節を足す:
 
 ````markdown
 ## Worker の tick の順
@@ -1043,3 +1055,8 @@ manualRequeue groupNewParts requeueRecopied closeIdleSessions processPendingPart
 9. §15 の `Builders` は T-11 の本文では `StoreFixtures` という名前で書かれている。どちらかに揃える（本チケットは地図の `Builders` で書いた）
 10. `SessionSteps.swift` の骨組み（§4.17）は T-18 が置き、T-22 が本体を書く。`Worker+SessionStages.swift`・`Worker+NoteStages.swift`・`Worker+DeletionStages.swift`・`Worker+Jobs.swift`・`Recovery+VaultTmp.swift`・`PartSteps+RawNote.swift` も同じ（空の本体を後続が書き換える）
 11. 付録 A.4 に「DB の予期しない例外」を出すイベントが無い。本チケットは `config_warning rule=store message=…` で代用した。専用のイベント（例 `worker_error stage=… message=…`）を足すなら A.4・`LogEvent`・SPEC を同じ PR で直す
+12. **（実装時に判明。利用者の判断待ち）** `ConfigStore.update` の戻り値 `Result<AppConfig, [ConfigViolation]>`（00-api-map §11・T-31 §4 の `updateConfig`）は、`Result` の失敗側が `Error` を要るのに配列が `Error` でないため、そのままではコンパイルできない。
+    T-18 は地図の形を保つために `ConfigStore.swift` に `extension Array: @retroactive Error where Element == ConfigViolation {}` を置き、`swift format` の `AvoidRetroactiveConformances` を `// swift-format-ignore: AvoidRetroactiveConformances` で 1 か所だけ外した。
+    代案: 失敗側を `public struct ConfigViolations: Error { public let violations: [ConfigViolation] }` のような型にする（地図と T-30・T-31・T-40 の `.failure(let v)` の使い方を直す）
+13. **（実装時に判明）** 00-api-map §11 の `ConfigStore.init` は `defaultTimeZone: String = TimeZone.current.identifier` だが、本チケット §4.2 と T-40 §6 のテスト（`defaultTimeZone: { "Asia/Tokyo" }`）はクロージャ。T-18 はチケットの `@escaping @Sendable () -> String = { TimeZone.current.identifier }` で書いた（読み込みの時点で評価する）。地図をクロージャに揃える
+14. **（実装時に判明）** 00-api-map §11 の `WorkerDependencies` の並びは `…, runner, llama, chatTransportFactory, clock, sleeper, log, license, catalog, verificationCache, physicalMemoryBytes, locks, volumeOpener` で、本チケット §4.4 の並び（`…, runner, catalog, license, clock, sleeper, log`）と、T-22 の「末尾に足す」と食い違う。T-18 は本チケット §4.4 の並びで書いた（init の引数の順が契約。T-30 の Bootstrap は §4.4 の順で呼ぶ）。地図の並びを「T-18 の並び → T-22 の `llama`・`chatTransportFactory`・`physicalMemoryBytes`（と T-32 の `verificationCache`）→ T-33 → T-36」に直す
