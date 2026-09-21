@@ -37,11 +37,12 @@ private struct World {
     }
 }
 
-/// 待ち合わせ（URLProtocol の読み込みのスレッドを止めておく）。
+/// 待ち合わせ（URLProtocol の読み込みのスレッドを止めておく）。open() で待っている者を全部放す。
 private final class Gate: Sendable {
-    private let semaphore = DispatchSemaphore(value: 0)
-    func wait() { semaphore.wait() }
-    func open() { semaphore.signal() }
+    private let group = DispatchGroup()
+    init() { group.enter() }
+    func wait() { group.wait() }
+    func open() { group.leave() }
 }
 
 @Suite("ModelDownloader")
@@ -214,6 +215,14 @@ struct ModelDownloaderTests {
         #expect(r == .failure(.badFileName))
         #expect(ModelHostStub.requests(url: e.url) == 0)
         #expect(w.lines(containing: " model_download_failed id=test-whisper reason=bad_file_name").count == 1)
+        // "." で始まらない `..` も受けない。
+        let inner = w.with(
+            url: "https://huggingface.co/a/unsafe-file-name/resolve/\(Self.commit)/ggml..t.bin", file: "ggml..t.bin")
+        ModelHostStub.register(url: inner.url) { .body(Self.payload) }
+        defer { ModelHostStub.unregister(url: inner.url) }
+        let r2 = await w.downloader().download(inner, kind: .whisper, progress: { _, _ in })
+        #expect(r2 == .failure(.badFileName))
+        #expect(ModelHostStub.requests(url: inner.url) == 0)
     }
 
     @Test("在って size が一致すれば落とさない")
@@ -232,10 +241,17 @@ struct ModelDownloaderTests {
     func staleResumeIsRemovedWhenUnused() async throws {
         let w = try world("stale-resume")
         try Data(repeating: 7, count: 15).write(to: w.resume)
-        ModelHostStub.register(url: w.entry.url) { .body(Self.payload) }
+        // 要求が届いた時点（読んだ直後）で既に消えていること。
+        let resume = w.resume
+        let seen = Mutex<Bool?>(nil)
+        ModelHostStub.register(url: w.entry.url) {
+            seen.withLock { $0 = FileManager.default.fileExists(atPath: resume.path(percentEncoded: false)) }
+            return .body(Self.payload)
+        }
         defer { ModelHostStub.unregister(url: w.entry.url) }
         let r = await w.downloader().download(w.entry, kind: .whisper, progress: { _, _ in })
         #expect(r == .success(w.final))
+        #expect(seen.withLock { $0 } == false)
         #expect(!exists(w.resume))
     }
 
@@ -243,10 +259,17 @@ struct ModelDownloaderTests {
     func stalePartIsRemovedBeforeStart() async throws {
         let w = try world("stale-part")
         try Data(repeating: 9, count: 10).write(to: w.part)
-        ModelHostStub.register(url: w.entry.url) { .body(Self.payload) }
+        // 要求が届いた時点（始める前）で既に消えていること。
+        let part = w.part
+        let seen = Mutex<Bool?>(nil)
+        ModelHostStub.register(url: w.entry.url) {
+            seen.withLock { $0 = FileManager.default.fileExists(atPath: part.path(percentEncoded: false)) }
+            return .body(Self.payload)
+        }
         defer { ModelHostStub.unregister(url: w.entry.url) }
         let r = await w.downloader().download(w.entry, kind: .whisper, progress: { _, _ in })
         #expect(r == .success(w.final))
+        #expect(seen.withLock { $0 } == false)
         #expect(try Data(contentsOf: w.final) == Self.payload)
     }
 
@@ -284,9 +307,16 @@ struct ModelDownloaderTests {
         let downloader = w.downloader()
         let first = Task { await downloader.download(w.entry, kind: .whisper, progress: { _, _ in }) }
         try await waitUntil { ModelHostStub.requests(url: w.entry.url) == 1 }
-        let second = await downloader.download(w.entry, kind: .whisper, progress: { _, _ in })
+        // 2 本目が要求を出してしまっても止まらないよう、2 本目も Task で走らせてから門を開ける。
+        let finished = Mutex(false)
+        let second = Task {
+            let r = await downloader.download(w.entry, kind: .whisper, progress: { _, _ in })
+            finished.withLock { $0 = true }
+            return r
+        }
+        try await waitUntil { finished.withLock { $0 } || ModelHostStub.requests(url: w.entry.url) >= 2 }
         gate.open()
-        #expect(second == .failure(.io("already_downloading")))
+        #expect(await second.value == .failure(.io("already_downloading")))
         #expect(await first.value == .success(w.final))
     }
 

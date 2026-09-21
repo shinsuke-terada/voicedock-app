@@ -459,10 +459,10 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 | `badHostIsRejectedBeforeAnyRequest` / 「ホストが違えば要求を出さない」 | `entry.url = "https://example.com/x/y/resolve/<40hex>/ggml-t.bin"` | `.failure(.badHost)`、`ModelHostStub.requests(url:) == 0`、`reason=bad_url` |
 | `mainInsteadOfCommitIsRejected` / 「resolve/main は受けない（PT-13 と同じ条件）」 | url の `<40hex>` を `main` に | `.failure(.badHost)`、要求 0 件 |
 | `fileNameMismatchIsRejected` / 「url の末尾がファイル名と違えば受けない」 | url の末尾を `other.bin` に | `.failure(.badHost)`、要求 0 件 |
-| `unsafeFileNameIsRejected` / 「`..` を含むファイル名は受けない（OPS-19）」 | `file = "../x.bin"`（url も合わせる） | `.failure(.badFileName)`、要求 0 件 |
+| `unsafeFileNameIsRejected` / 「`..` を含むファイル名は受けない（OPS-19）」 | `file = "../x.bin"`（url も合わせる）。続けて `file = "ggml..t.bin"`（`.` で始まらない `..`。`..` の検査だけが止める） | どちらも `.failure(.badFileName)`、要求 0 件 |
 | `presentFileSkipsTheNetwork` / 「在って size が一致すれば落とさない」 | `models/whisper/ggml-t.bin` に `payload` を置く | `.success`、要求 0 件、`model_downloaded` を出さない |
-| `staleResumeIsRemovedWhenUnused` / 「使わない `.resume` は消える」 | 15 バイトの `.resume` を置く（短いので使わない） | 落とした後に `.resume` が無い |
-| `stalePartIsRemovedBeforeStart` / 「再開しないときは古い `.part` を捨てる」 | `.part` に 10 バイト置く | 落とした後の中身が `payload`（連結されていない） |
+| `staleResumeIsRemovedWhenUnused` / 「使わない `.resume` は消える」 | 15 バイトの `.resume` を置く（短いので使わない）。応答の作り手の中で `.resume` の在否を記録する | 要求が届いた時点で `.resume` が無い（14 の discard では見分けられないため）、落とした後にも無い |
+| `stalePartIsRemovedBeforeStart` / 「再開しないときは古い `.part` を捨てる」 | `.part` に 10 バイト置く。応答の作り手の中で `.part` の在否を記録する | 要求が届いた時点で `.part` が無い（代理も移す前に消すため）、落とした後の中身が `payload`（連結されていない） |
 | `cancelStopsAndDoesNotLog` / 「キャンセルは cancelled でログを出さない」 | `.body(大きな payload)` を返す応答の作り手の中でセマフォを待たせ（要求が届いたまま止まる）、`requests(url:) == 1` を待ってから `cancel(id:)` → セマフォを開ける（確定的に「実行中」を作る） | `.failure(.cancelled)`、`model_download_failed` が 0 行 |
 | `twoDownloadsOfTheSameIDAreRefused` / 「同じ ID の二重実行は断る」 | 1 本目を同じ方法（応答の作り手の中でセマフォ）で止めたまま 2 本目 | 2 本目が `.failure(.io("already_downloading"))`、セマフォを開けた後 1 本目は成功 |
 | `emptyBodyIsASizeMismatch` / 「空の応答はサイズ違い（TEST-28）」 | `.body(Data())` | `.failure(.sizeMismatch)` |
