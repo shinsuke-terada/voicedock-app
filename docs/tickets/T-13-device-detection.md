@@ -390,7 +390,7 @@ public actor ScriptedProcessRunner: ProcessRunning {
 |---|---|
 | `DeviceDetector` の規則 1 の `fnmatch` を `==` の比較に変える | `includeGlobMatches` |
 | 規則 5 を「`errno == EPERM` のときだけ not_listable、それ以外は列挙結果を空として続ける」に変える | `unlistableVolumeIsNotListableEvenWithEACCES` |
-| 規則 6 の `.` 始まりの除外を消す | `dotEntriesDoNotCount` |
+| 規則 6 の `.` 始まりの除外を消す | 落ちるテストは無い（等価な変異。`.` で始まる名前はフォルダ規則・ファイル規則の先頭の `TX` に一致しないので、除外が無くても数えられない。除外は規則の正規表現が変わったときの多重の防御として残す。`dotEntriesDoNotCount` は `.` 始まりのノイズだけなら no_recordings になることを確かめる陰性対照） |
 | 規則 6 で `entryKind` の代わりに `stat`（symlink を辿る）を使う | `symlinkToFolderDoesNotCount` |
 | 規則 3 と規則 2 の順序を入れ替える | `ruleOrderIsFixed` |
 | 規則 8（`nameMatchesVolume`）で `volumeName` が nil のとき一致とみなす | `missingVolumeNameIsMismatch` |
