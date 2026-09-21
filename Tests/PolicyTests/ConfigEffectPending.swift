@@ -88,10 +88,6 @@ enum ConfigEffectPending {
         "obsidian.wiki.linkOnlyExisting": "T-27",
         "obsidian.wiki.maxLinks": "T-27",
         "obsidian.wiki.vaultIndexCacheSeconds": "T-29",
-        "obsidian.maxTitleBytes": "T-26",
-        "obsidian.raw.filenameTemplate": "T-26",
-        "obsidian.raw.timestampIntervalSeconds": "T-26",
-        "obsidian.raw.partBoundaryHeading": "T-26",
         "obsidian.raw.folderTemplate": "T-33",
         "cleanup.deleteSkippedSource": "T-39",
     ]
