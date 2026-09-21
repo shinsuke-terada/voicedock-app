@@ -151,6 +151,18 @@ voicedock-local online self-hosted,macOS,ARM64
 - ランナーは `~/actions-runner` に v2.337.0 を展開し、`./svc.sh install` で LaunchAgent として常駐（利用者が登録）
 - `make check-toolchain` のステップが通った（開発機の Xcode 27.0 と `.xcode-version` が一致）
 
+### ブランチ保護（T-02 §5）
+
+✗ 使えない（GitHub Free の非公開リポジトリ）。**保護は設定されていない。**
+
+```text
+$ gh api -X PUT repos/shinsuke-terada/voicedock-app/branches/main/protection --input - <<'JSON' …（T-02 §5 の JSON）
+{"message":"Upgrade to GitHub Pro or make this repository public to enable this feature.","documentation_url":"https://docs.github.com/rest/branches/branch-protection#update-branch-protection","status":"403"}
+gh: Upgrade to GitHub Pro or make this repository public to enable this feature. (HTTP 403)
+```
+
+代わりの運用（README に書く。T-43）: `main` へ直接 push しない。`develop` からの PR は CI の `check` が緑のときだけマージする。
+
 ## 12. P0-11 DADiskMountApprovalCallback（任意）
 
 ⬜ 未実施
