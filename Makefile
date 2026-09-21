@@ -12,7 +12,7 @@ define require_script
 endef
 
 .PHONY: check-toolchain lint fmt build test test-nd test-policy test-other test-disk \
-        vendor app golden llm-acceptance release clean
+        vendor app golden llm-acceptance release clean spec
 
 # .xcode-version と使っている Xcode が一致することを確かめる（CI と手元で同じコンパイラを使う。PLAN §3.3）
 check-toolchain:
@@ -73,6 +73,10 @@ llm-acceptance: build
 release:
 	$(call require_script,scripts/release.sh,T-34)
 	scripts/release.sh
+
+# PLAN の規範の表を docs/SPEC.md に写す（PLAN を直したら同じ PR で実行する。T-05）
+spec:
+	python3 tools/spec/make-spec.py
 
 clean:
 	rm -rf .build dist
