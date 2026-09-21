@@ -3,7 +3,7 @@
 | 項目 | 値 |
 |---|---|
 | ID | T-02 |
-| 題 | CI（PLAN §10.8）と P0-10（GitHub ランナーでのディスクイメージ）の反映 |
+| 題 | CI（PLAN §10.8。開発機のセルフホストランナー）と P0-10 の扱い |
 | Phase | 1 |
 | 前提 | T-01 |
 | 見積もり | 約 150 行（ci.yml 約 35、テスト約 80、POC.md の章 11） |
@@ -11,7 +11,8 @@
 ## 目的
 
 PR ごとに lint → build → ND → policy → 残りのテストを 1 つの job で回し、`main` に入るものを必ず検証する。
-あわせて、ランナーのラベル `xcode-27` が非公開リポジトリで使えるかと、ディスクイメージのテスト（`.diskImage`）が CI で動くか（P0-10）を確かめ、CI の形を確定する。
+ランナーは**開発機（実機 DJI Mic 3 がつながることがある Mac）のセルフホストランナー**にする（2026-09-21 利用者の決定。GitHub の macOS ランナーは非公開リポジトリで分数が 10 倍になるため）。
+開発機では実機を抜いてある保証が無いので、ディスクイメージのテスト（`.diskImage`）と P0-10 の probe は CI で走らせない。
 
 ## 参照
 
@@ -24,13 +25,14 @@ PR ごとに lint → build → ND → policy → 残りのテストを 1 つの
 |---|---|
 | `.github/workflows/ci.yml` | 下記の全文（P0-10 の結果で `env` の 1 行を足すか決める） |
 | `Tests/PolicyTests/CIWorkflowTests.swift` | ci.yml と Makefile が同じコマンドを使うことの検査 |
-| `docs/POC.md` 章 11 | P0-10 の記録（手順と生の出力） |
-| （一時）`.github/workflows/p0-10-probe.yml` | P0-10 の測定用。**`probe/p0-10` ブランチにだけ置き、PR には含めない** |
+| `docs/POC.md` 章 11 | P0-10 を行わない理由と、セルフホストランナーの確認結果 |
 
 ## 安全の規則
 
 - **テストと測定は `/Volumes` 配下の実機（利用者が挿している DJI Mic 3 など）に一切触れない。**`diskutil`・`hdiutil detach`・書き込み・削除・再マウントをしない
-- §2 の `p0-10-probe.yml` は **GitHub のランナーの上でだけ**動かす。手元の Mac で同じコマンドを実行しない（`-mountPoint` を付けない `diskutil mount` が `/Volumes` に出るため）
+- P0-10 の probe（GitHub のランナーで `hdiutil` と `diskutil` を試す台本）は**作らない・走らせない**。セルフホストランナーは開発機そのもので、`-mountPoint` を付けない `diskutil mount` の逃げ道が `/Volumes` に出るため
+- ci.yml に `VOICEDOCK_DISK_TESTS` を付けない（CI が走るたびに実機が抜いてあることを保証できない。safety.md の 4）
+- ci.yml に `sudo` を書かない（セルフホストランナーは利用者の権限で動く。safety.md の 9）。Xcode の版は `make check-toolchain` で確かめるだけにし、切り替えは利用者が行う
 - 手元の `.diskImage` のテスト（`make test-disk`）は、`DiskImageVolume`（TestSupport）が一時ディレクトリの下（`<tmp>/Volumes/DJIMIC3`）に `-mountpoint` 付きで attach し、再マウントも `-mountPoint` 付きで行う。テストが `/Volumes` に何かを出すことはない（出すテストを書かない）
 
 ## 仕様
@@ -46,11 +48,11 @@ concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
 permissions: { contents: read }
 jobs:
   check:
-    runs-on: xcode-27            # 手元と同じ Xcode 27.0（27A266a）。T-02 で確定（PLAN §10.8）
+    runs-on: [self-hosted, macOS, ARM64]   # 開発機のセルフホストランナー（Xcode 27.0）。利用者の決定（T-02）
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
-      - run: sudo xcode-select -s "/Applications/Xcode_$(cat .xcode-version).app"
+      - run: make check-toolchain
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9      # v6.1.0。.build を Package.resolved と .xcode-version のハッシュで
         with:
           path: .build
@@ -67,85 +69,23 @@ jobs:
         run: swift test --skip-build --skip "NoDeleteTests|ReaperTests|PolicyTests|LLMAcceptance"
 ```
 
-- **P0-10 が ✅（ディスクイメージの attach・ro 再マウント・statfs・unlink がすべて CI で動いた）なら**、`timeout-minutes: 30` の次の行に次の 2 行を足す（job 全体に掛かる。`.diskImage` のテストは ND 以外のターゲットにもあるため）:
-  ```yaml
-      env:
-        VOICEDOCK_DISK_TESTS: "1"
-  ```
-- **✗ なら足さない**。その場合、README（T-43）に「CI の ND は層 R1・R2 だけ。R3 は手元の `make test-disk`」と書き、**削除に触れる PR は手元の `make test-disk` の結果を PR 本文に貼る**（PLAN §10.8）
-- ランナーが `xcode-27` を使えなかった場合（下記 §3）、`runs-on:` を `macos-26` にし、コメントを `# Xcode 26.6。xcode-27 は非公開リポジトリで使えなかった（T-02）` に変える。同じ PR で `.xcode-version` を `26.6` にし、手元の Xcode も 26.6 にそろえる
+- `env: VOICEDOCK_DISK_TESTS: "1"` は**足さない**（上の安全の規則）。README（T-43）に「CI の ND は層 R1・R2 だけ。R3 は手元の `make test-disk`」と書き、**削除に触れる PR は、実機を抜いたことを利用者が確かめたうえで手元の `make test-disk` を回し、その結果を PR 本文に貼る**（PLAN §10.8）
+- `runs-on:` はセルフホストランナーの既定のラベル 3 つ（`self-hosted`・`macOS`・`ARM64`）で固定する（`latest` を使わない。PT-13）
+- `make check-toolchain` は `.xcode-version` と開発機の Xcode が食い違ったら落ちる。`xcode-select` の切り替えは CI でしない
 
-### 2. P0-10 の手順（`probe/p0-10` ブランチ。結果を `docs/POC.md` 章 11 に貼る）
+### 2. P0-10（行わない）
 
-1. `git switch -c probe/p0-10 develop`
-2. 次の `.github/workflows/p0-10-probe.yml` を作って push する（**この PR は作らない**。測り終えたらブランチを消す）:
+セルフホストランナーは開発機そのものなので、P0-10（GitHub のランナーでのディスクイメージ）は行わない。`docs/POC.md` の目次の章 11 の判定を `— 対象外` にし、章 11 に次を書く:
 
-```yaml
-name: p0-10-probe
-on:
-  push: { branches: ["probe/p0-10"] }
-permissions: { contents: read }
-jobs:
-  probe:
-    runs-on: xcode-27
-    timeout-minutes: 15
-    steps:
-      - name: environment
-        run: |
-          sw_vers
-          uname -m
-          xcodebuild -version
-          ls -d /Applications/Xcode*.app
-      - name: fat32 image
-        run: |
-          set -x
-          tmp="$(cd "$RUNNER_TEMP" && pwd -P)/p010"
-          mkdir -p "$tmp/Volumes"
-          hdiutil create -size 64m -fs "MS-DOS FAT32" -volname DJIMIC3 "$tmp/img.dmg"
-          hdiutil attach -nobrowse -mountpoint "$tmp/Volumes/DJIMIC3" "$tmp/img.dmg"
-          mount | grep -F "$tmp/Volumes/DJIMIC3"
-          node="$(mount | awk -v m="$tmp/Volumes/DJIMIC3" '$3 == m { print $1 }')"
-          echo "node=$node"
-          mkdir -p "$tmp/Volumes/DJIMIC3/TX_MIC001_20260918_120000"
-          dd if=/dev/urandom of="$tmp/Volumes/DJIMIC3/TX_MIC001_20260918_120000/TX00_MIC001_20260918_120000_orig.wav" bs=1k count=64
-          python3 -c "import os,sys; s=os.statvfs(sys.argv[1]); print('ST_RDONLY', bool(s.f_flag & os.ST_RDONLY))" "$tmp/Volumes/DJIMIC3"
-          diskutil unmount "$tmp/Volumes/DJIMIC3"
-          diskutil mount readOnly -mountPoint "$tmp/Volumes/DJIMIC3" "$node" || diskutil mount readOnly "$node"
-          mount | grep -F "$node"
-          python3 -c "import os,sys; s=os.statvfs(sys.argv[1]); print('ST_RDONLY', bool(s.f_flag & os.ST_RDONLY))" "$tmp/Volumes/DJIMIC3" || true
-          touch "$tmp/Volumes/DJIMIC3/write-test" && echo "WRITABLE" || echo "READONLY"
-          diskutil unmount "$node" || true
-          diskutil mount -mountPoint "$tmp/Volumes/DJIMIC3" "$node" || diskutil mount "$node"
-          mount | grep -F "$node"
-          rm "$tmp/Volumes/DJIMIC3/TX_MIC001_20260918_120000/TX00_MIC001_20260918_120000_orig.wav" && echo "UNLINKED"
-          hdiutil detach -force "$node"
-      - name: hfs image (ND-39 unexpected_fs)
-        run: |
-          set -x
-          tmp="$(cd "$RUNNER_TEMP" && pwd -P)/p010hfs"
-          mkdir -p "$tmp/Volumes"
-          hdiutil create -size 64m -fs "HFS+" -volname DJIMIC3 "$tmp/img.dmg"
-          hdiutil attach -nobrowse -mountpoint "$tmp/Volumes/DJIMIC3" "$tmp/img.dmg"
-          mount | grep -F "$tmp/Volumes/DJIMIC3"
-          hdiutil detach -force "$tmp/Volumes/DJIMIC3"
-```
+- 理由: CI のランナーを開発機のセルフホストランナーにした（2026-09-21 利用者の決定）。開発機には実機がつながることがあり、probe の `diskutil mount`（`-mountPoint` 無しの逃げ道）が `/Volumes` に出るため
+- 代わり: ディスクイメージのテストは、実機を抜いたことを利用者が確かめてから手元の `make test-disk` で回す（R3 の層）
 
-3. 実行ログ（両ステップの全出力）を `docs/POC.md` 章 11 に貼る
-4. 判定（章 11 の判定欄）:
-   - ✅: FAT32 イメージの attach、`mount` の出力が `msdos`、ro 再マウント後に `ST_RDONLY True` と `READONLY`、rw に戻した後の `UNLINKED`、HFS+ イメージの attach がすべて出た
-   - ✗: どれかが失敗した（失敗したコマンドとエラーを貼る）
-   - `-mountPoint` を付けた再マウントが失敗して付けない方で成功した場合は、その事実も書く（P0-02 の判断の材料）
-5. `git push origin --delete probe/p0-10`（一時ブランチを消す）
+### 3. セルフホストランナーの確認（T-02 の PR の最初の push で行う）
 
-### 3. ランナー `xcode-27` の確認（T-02 の PR の最初の push で行う）
-
-1. `feat/T-02-ci` を push し、PR を作る
-2. Actions の画面で `check` の job が **10 分以内に**ランナーに割り当てられ、`xcode-select` のステップが通ることを確かめる
-3. 次のどれかなら `macos-26` に切り替える（§1 の最後の項）:
-   - 「No runner matching the specified labels was found」で失敗する
-   - 10 分たっても「Waiting for a runner」のまま
-   - `/Applications/Xcode_27.0.app` が無い（`xcode-select` のステップが失敗）
-4. 結果（使えたラベル・job の URL・待ち時間・1 回の実行時間）を `docs/POC.md` 章 11 と章 14 の「CI のランナー」に書く
+1. 【利用者が行う】リポジトリの Settings → Actions → Runners から macOS / ARM64 のランナーを `~/actions-runner` に展開し、`./config.sh --url https://github.com/shinsuke-terada/voicedock-app --token <トークン> --name voicedock-local --unattended` → `./svc.sh install && ./svc.sh start`（LaunchAgent。sudo は要らない）
+2. `gh api repos/shinsuke-terada/voicedock-app/actions/runners` で `voicedock-local` が `online` であることを確かめる
+3. `feat/T-02-ci` を push し、PR を作る。`check` の job がランナーに割り当てられ、`make check-toolchain` のステップが通ることを確かめる
+4. 結果（ランナー名・ラベル・job の URL・1 回の実行時間）を `docs/POC.md` 章 11 と章 14 の「CI のランナー」に書く
 
 ### 4. lint の違反で落ちることの確認
 
@@ -189,7 +129,7 @@ struct CIWorkflowTests {
         "swift test --skip-build --skip \"NoDeleteTests|ReaperTests|PolicyTests|LLMAcceptance\"",
     ]
 
-    /// ci.yml の `run:` の値を出現順に返す（`xcode-select` の行は除く）。
+    /// ci.yml の `run:` の値を出現順に返す（`make check-toolchain` の行は除く）。
     static func ciRunCommands() throws -> [String] {
         let text = try String(contentsOf: PackageRoot.file(".github/workflows/ci.yml"), encoding: .utf8)
         var runs: [String] = []
@@ -204,7 +144,7 @@ struct CIWorkflowTests {
                 continue
             }
             let command = String(body).trimmingCharacters(in: .whitespaces)
-            if command.hasPrefix("sudo xcode-select") { continue }
+            if command == "make check-toolchain" { continue }
             runs.append(command)
         }
         return runs
@@ -271,10 +211,9 @@ struct CIWorkflowTests {
 
 - [ ] `develop` 向けの PR で CI の `check` が緑（run の URL を PR に貼る）
 - [ ] lint の違反を入れたコミットで CI が `lint` で落ちた（run の URL を PR に貼る）
-- [ ] `docs/POC.md` 章 11 に P0-10 の生の出力・判定と、ランナーの確認結果がある。章 14 の「CI のランナー」が埋まっている
-- [ ] P0-10 の判定に合わせて ci.yml の `env`（`VOICEDOCK_DISK_TESTS`）を足した／足さなかった理由が PR に書いてある
+- [ ] `docs/POC.md` 章 11 に P0-10 を行わない理由（`— 対象外`）と、セルフホストランナーの確認結果がある。章 14 の「CI のランナー」が埋まっている
+- [ ] ci.yml に `VOICEDOCK_DISK_TESTS` と `sudo` が無い
 - [ ] ブランチ保護を設定した（または使えなかった応答を貼った）
-- [ ] `probe/p0-10` ブランチを消した
 
 ## SPEC の変更
 
@@ -283,4 +222,4 @@ struct CIWorkflowTests {
 ## マージ後にやること
 
 - ブランチ保護が使えた場合、`main` への PR で `check` が必須になっていることを確かめる
-- ランナーを `macos-26` に下げた場合は、PLAN §3.3・§10.8 と RK-33 の記述を直す PR を出す
+- ランナーが止まっていると CI が「Waiting for a runner」のまま進まない。開発機を再起動したら `~/actions-runner/svc.sh status` を確かめる
