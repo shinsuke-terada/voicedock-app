@@ -564,6 +564,7 @@ public enum TestCatalogs {
 | `encodeEndsWithNewlineAndSortsKeys` | `符号化はキーの昇順で末尾改行 1 つ` | 先頭が `{\n  "audio" : {`、末尾が `}\n`、`\n\n` で終わらない |
 | `encodeDoesNotEscapeSlashes` | `符号化は / をエスケープしない` | `Daily/Voice/Raw/{yyyymmdd}` をそのまま含む |
 | `roundTrip` | `書いて読むと同じ値` | `load(encode(defaults))` が `.valid(defaults)` |
+| `headingOnlySectionWritesNull` | `F-54 summary の heading が nil でも null で書き、読み直せる` | order を `["timeline", "key_points"]`、`summary.heading = nil` にした設定で `load(encode(c)) == .valid(c)`（`HeadingOnlySection.encode(to:)` の検査） |
 | `sectionNamedLooksUpAllSeven` | `section(named:) は 7 つの節を引ける` | `SectionName.all` の各名前で nil でない、`"unknown"` で nil |
 | `modeAccessorsFallBackToSafeSide` | `不正な mountMode / inboxRetain は安全側に倒す` | `mountMode = "x"` の `mode == .ro`、`inboxRetain = "x"` の `retain == .rawSaved` |
 | `allKeyPathsMatchDefaultsEncoding` | `allKeyPaths は既定値の符号化の葉と一致する` | `encode(defaults)` を `JSONSerialization` で読み、オブジェクトは降り、配列・スカラー・null を葉とした「葉のパスの集合」== `Set(ConfigKeys.allKeyPaths)`、かつ `allKeyPaths` に重複が無い |
@@ -592,7 +593,7 @@ public enum TestCatalogs {
 | `cv39TypeMismatch` | `CV-39 型違いはキーのパス付き` | `device.stabilityChecks = "2"` → keyPath `device.stabilityChecks`、「型が違います」 |
 | `cv39TypeMismatchInArray` | `CV-39 配列の要素の型違い` | `cleanup.deleteEvaluationBackoffSeconds = [60, "x"]` → keyPath `cleanup.deleteEvaluationBackoffSeconds.1` |
 | `cv39NullForNonOptional` | `CV-39 null にできないキー` | `device.mountMode = null` → 「null にできません」 |
-| `cv39FloatForInt` | `CV-39 整数のキーに 1.5` | `session.maxParts = 1.5` → keyPath `session.maxParts` |
+| `cv39FloatForInt` | `CV-39 整数のキーに 1.5` | `session.maxParts = 1.5` → `[CV-39, "session.maxParts", "値が不正です"]`（JSONDecoder は `dataCorrupted` を投げるので message は「値が不正です」） |
 | `stopsBeforeValidationWhenKeysWrong` | `キーの段で違反があれば意味の検証をしない` | 未知キーと `session.blockGapSeconds = -1` を同時に入れる → 違反は CV-01 の 1 件だけ |
 | `validationCollectsAll` | `意味の検証は 1 つ目で止めない` | `session.blockGapSeconds = -1` と `obsidian.maxTitleBytes = 0` → CV-08 と CV-16 の 2 件（この順） |
 | `renderedFormat` | `違反の 1 行表記は空白 2 つ区切り` | `ConfigViolation(rule: "CV-08", code: .configInvalidValue, keyPath: "session.blockGapSeconds", message: "0 以上であること（-1）").rendered == "CV-08  CONFIG_INVALID_VALUE  session.blockGapSeconds: 0 以上であること（-1）"` |
@@ -698,6 +699,7 @@ public enum TestCatalogs {
 | 壊し方 | 落ちるべきテスト |
 |---|---|
 | `defaults` の `stabilityChecks` を 3 にする | `defaultsMatchSection62` |
+| `HeadingOnlySection.encode(to:)` を消して synthesized に戻す | `headingOnlySectionWritesNull` |
 | `VaultConfig.encode(to:)` を消して synthesized に戻す | `encodeWritesNullsExplicitly`、`allKeyPathsMatchDefaultsEncoding`、`roundTrip` |
 | `checkKeys` の欠けたキーの検査を消す | `cv39MissingKey`、`cv39MissingOptionalKeyStillMissing` |
 | `checkKeys` の再帰をやめる（トップだけ見る） | `cv01UnknownNestedKey` |

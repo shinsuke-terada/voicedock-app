@@ -178,8 +178,7 @@ struct ConfigLoaderTests {
     @Test("CV-39 整数のキーに 1.5")
     func cv39FloatForInt() throws {
         let violations = Self.violations(try Self.load(Self.setting(Self.valid(), "session.maxParts", 1.5)))
-        #expect(violations.map(\.keyPath) == ["session.maxParts"])
-        #expect(violations.map(\.rule) == ["CV-39"])
+        #expect(violations == [Self.cv39("session.maxParts", "値が不正です")])
     }
 
     @Test("キーの段で違反があれば意味の検証をしない")

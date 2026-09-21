@@ -3,7 +3,7 @@ import Foundation
 import VDContract
 
 public enum ConfigLoader {
-    /// PLAN §6.1 の 4 段。段ごとに違反があればそこで止め、意味の検証だけは全 CV を評価する。
+    /// PLAN §6.1 の読み込みの手順（JSON・移行・キー照合・型・意味の検証）。段ごとに違反があればそこで止め、意味の検証だけは全 CV を評価する。
     public static func load(data: Data, catalog: ModelCatalog, reaperConfObservation: ReaperConfObservation)
         -> ConfigLoadResult
     {

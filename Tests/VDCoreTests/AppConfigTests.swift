@@ -134,9 +134,20 @@ struct AppConfigTests {
         #expect(result == .valid(defaults))
     }
 
+    @Test("F-54 summary の heading が nil でも null で書き、読み直せる")
+    func headingOnlySectionWritesNull() {
+        var config = AppConfig.defaults(timeZone: "Asia/Tokyo")
+        config.llm.analysis.order = ["timeline", "key_points"]
+        config.llm.analysis.sections.summary.heading = nil
+        let result = ConfigLoader.load(
+            data: ConfigLoader.encode(config), catalog: TestCatalogs.minimal, reaperConfObservation: .missing)
+        #expect(result == .valid(config))
+    }
+
     @Test("section(named:) は 7 つの節を引ける")
     func sectionNamedLooksUpAllSeven() {
         let sections = AppConfig.defaults(timeZone: "UTC").llm.analysis.sections
+        #expect(SectionName.all == ["summary", "timeline", "key_points", "tasks", "decisions", "ideas", "tags"])
         for name in ["summary", "timeline", "key_points", "tasks", "decisions", "ideas", "tags"] {
             #expect(sections.section(named: name) != nil, "\(name)")
         }
