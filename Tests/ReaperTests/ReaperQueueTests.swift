@@ -441,6 +441,25 @@ struct ReaperQueueTests {
         #expect(lines.last?.hasSuffix(" INFO  reaper_completed requests=0") == true)
     }
 
+    /// 最初の行 `<ts> INFO  reaper_started\n` は ts が 25 桁（`yyyy-MM-dd'T'HH:mm:ss+09:00`）なので 47 バイト。
+    /// 書いた後がちょうど 5 MiB になる詰め物なら、その行では回さず、次の行の前で回す（`>` と `>=` を見分ける）
+    @Test("書いた後がちょうど 5 MiB になる行では回さない（境界）")
+    func theLogDoesNotRotateAtExactlyFiveMiB() throws {
+        let bench = try ReaperBench()
+        let firstLine = 47
+        let padding = Data(repeating: 0x2E, count: 5 * 1024 * 1024 - firstLine)
+        try padding.write(to: bench.layout.reaperLog)
+        let run = try bench.run()
+        #expect(run.exitCode == 0)
+        let rotated = try Data(contentsOf: bench.layout.logsDirectory.appendingPathComponent("reaper.log.1"))
+        #expect(rotated.count == 5 * 1024 * 1024)
+        #expect(rotated.prefix(padding.count) == padding)
+        #expect(String(decoding: rotated.suffix(firstLine), as: UTF8.self).hasSuffix(" INFO  reaper_started\n"))
+        let lines = bench.logLines()
+        #expect(lines.count == 1)
+        #expect(lines.first?.hasSuffix(" INFO  reaper_completed requests=0") == true)
+    }
+
     @Test("SIGTERM は処理中の 1 件を終えてから止まる")
     func sigtermStopsBetweenRequests() throws {
         let bench = try ReaperBench()
