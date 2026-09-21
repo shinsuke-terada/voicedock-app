@@ -1014,6 +1014,30 @@ final class RecordingSleepAssertion: SleepAssertion {
 | 遅れた start でも inbox の孤児を消す | `startWhileBlockedIsDeferred` |
 | requeueOnConnect で lastSeenConnectEpoch を更新しない | `connectRisingEdgeRequeues`（3 回目が戻る） |
 
+**結果（T-18 の実装時。コミット後の清潔な状態から 1 項目ずつ壊し、`git checkout --` で戻した。落ちたテストは表示名）**:
+
+| 壊し方 | 実際に落ちたテスト |
+|---|---|
+| tick で groupNewParts と processPendingParts を入れ替える | 「tick の段の順（PLAN §5.4）」「snapshot が古ければ削除の 3 段を飛ばす」 |
+| TickStage の宣言で groupNewParts と processPendingParts を入れ替える | 「tick の順がチケット §9 のブロックと一致」「tick の段の順（PLAN §5.4）」「snapshot が古ければ削除の 3 段を飛ばす」 |
+| 新鮮さの比較を `<` にする（`DeviceSnapshot.isFresh`。T-15 のファイルを一時的に壊した） | 「ちょうど 900 秒は新鮮」 |
+| requeueFailed で needs_recopy の除外を消す | 「needs_recopy の Part は requeue しない」 |
+| requeueRecopied で `needsRecopy == false` の条件を消す | 「契機 4: needs_recopy が 0 に戻った SOURCE_HASH_MISMATCH / NORMALIZED_MISSING だけ」 |
+| InProcessRetry で sleep の前の停止の確認を消す | 「停止要求の後は待たない」 |
+| InProcessRetry の resumeFailed で resetRetry を true にする | 「失敗 → 3 秒 → 失敗 → 10 秒 → 失敗 → 終了」（最初はテストが終わらなかった。retry_count が戻り続けて無限に回るため。偽の工程が 10 回で停止を立てる形に直し、落ちるようにした。`sessionRetriesToo`・`ceRetry*`・`failedWhisperIsRetriedInProcess` はこの壊し方では終わらない） |
+| ensureNormalized の needs_recopy の分岐を消す | 「needs_recopy なら SKIPPED にせず待つ」 |
+| 空き容量のガードで DISCOVERED→NORMALIZING を先に記録する | 「空き容量が足りなければ遷移しない」 |
+| NORMALIZING からの入口で遷移を記録する | 「NORMALIZING から入っても遷移を記録しない」 |
+| inbox の削除を DB 更新の前に動かし、updateRecording を失敗させる注入（同じ列を 2 回渡す）をする | 「変換して DB を書き、その後で inbox を消す」ほか、変換を通る 8 本 |
+| ensureTranscribed のガードで `NORMALIZED→TRANSCRIBING` を先に記録する | 「whisper-cli が無ければ遷移せずに待つ」「モデルと VAD モデルの欠けも待つ」「16 kHz が無く inbox が在れば NORMALIZING へ戻す」「0 バイトの 16 kHz は無いのと同じ」 |
+| renormalizeOrFail の needs_recopy の書き込みを消す | 「どちらも無ければ NORMALIZED_MISSING」（2 通りとも） |
+| PauseBook で毎回ログを出す | 「続く間は 1 回だけ出す」 |
+| Recovery の NORMALIZING の削除を `normalized_path` 列から取る | 「NORMALIZING の部分出力は partkey から消す（列が NULL でも）」「消せなくても続ける」 |
+| ConfigStore.load で不正なファイルを既定で上書きする | 「在るが不正なら上書きしない」ほか 7 本 |
+| ConfigStore.update で検証の前に書く | 「update は書く前に検証する」 |
+| 遅れた start でも inbox の孤児を消す | 「設定エラー中の start は保留し、解除後の最初の tick で行う」 |
+| requeueOnConnect で lastSeenConnectEpoch を更新しない | 「connectEpoch が増えたら requeue(.connect)」 |
+
 ## 8. 受け入れ条件
 
 - [ ] §3 のファイルがすべて在り、公開宣言が 00-api-map §11（と §11 の提案）に一致する
