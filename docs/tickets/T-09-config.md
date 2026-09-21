@@ -304,7 +304,7 @@ public enum ConfigLoader {
    違反の並びは「そのオブジェクトの未知キー・型（昇順、子の再帰を含む）→ そのオブジェクトの欠けたキー（昇順）」。1 件以上あれば `.invalid`
 4. **型に写す**: `JSONDecoder().decode(AppConfig.self, from: data)`（v1 では移行で値を変えないので**元の `data` を渡す**）。`DecodingError` を 1 件の違反（CV-39、configInvalidValue）に写す:
    - keyPath: `codingPath` の各キーを、`intValue` があれば `String(intValue)`、無ければ `stringValue` にして `.` でつなぐ（`keyNotFound(key, ctx)` は `ctx.codingPath + [key]`）。空なら `"<file>"`
-   - message: `typeMismatch` →「型が違います」、`valueNotFound` →「null にできません」、`keyNotFound` →「キーがありません」、`dataCorrupted` →「値が不正です」、それ以外 →「読めません」
+   - message: `typeMismatch` →「型が違います」、`valueNotFound` →「null にできません」、`keyNotFound` →「キーがありません」、`dataCorrupted` →「値が不正です」（ただし整数の位置の小数でキーのパスを補ったときは「型が違います」）、それ以外 →「読めません」
    - **整数の位置の `1.5`**: JSONDecoder（macOS 15 以降の Foundation）は `typeMismatch` ではなく **codingPath が空の `dataCorrupted`**（「Number 1.5 is not representable in Swift.」）を投げる。PLAN §6.1「型違い → CV-39、キーのパスを添える」を満たすため、`dataCorrupted` で codingPath が空のときだけ `unrepresentableNumberPath(in: 2 段目の辞書)` でパスを補う: `ConfigKeys.allKeyPaths` の順に葉（配列なら各要素、パスは末尾に添字）を見て、bool でない浮動小数の `NSNumber` で `Int(exactly:)` が nil のものについて、既定値の JSON の同じ位置に `1.5`（配列なら `[1.5]`）を置いて `AppConfig` に復号できなければ（= 整数の位置）そのパス。見つからなければ `"<file>"`（型の情報を 2 か所に書かないため、既定値を型の見本にする）
 5. **意味の検証**: `ConfigValidator.validate(config, catalog:, reaperConfObservation:)`。空なら `.valid(config)`、そうでなければ `.invalid(violations)`
 
@@ -593,7 +593,7 @@ public enum TestCatalogs {
 | `cv39TypeMismatch` | `CV-39 型違いはキーのパス付き` | `device.stabilityChecks = "2"` → keyPath `device.stabilityChecks`、「型が違います」 |
 | `cv39TypeMismatchInArray` | `CV-39 配列の要素の型違い` | `cleanup.deleteEvaluationBackoffSeconds = [60, "x"]` → keyPath `cleanup.deleteEvaluationBackoffSeconds.1` |
 | `cv39NullForNonOptional` | `CV-39 null にできないキー` | `device.mountMode = null` → 「null にできません」 |
-| `cv39FloatForInt` | `CV-39 整数のキーに 1.5` | `session.maxParts = 1.5` → `[CV-39, "session.maxParts", "値が不正です"]`（JSONDecoder は `dataCorrupted` を投げるので message は「値が不正です」） |
+| `cv39FloatForInt` | `CV-39 整数のキーに 1.5` | `session.maxParts = 1.5` → `[CV-39, "session.maxParts", "型が違います"]`（JSONDecoder は codingPath の空の `dataCorrupted` を投げる。キーのパスを補ったときは型違いと同じ「型が違います」にする。利用者の判断 2026-09-21） |
 | `stopsBeforeValidationWhenKeysWrong` | `キーの段で違反があれば意味の検証をしない` | 未知キーと `session.blockGapSeconds = -1` を同時に入れる → 違反は CV-01 の 1 件だけ |
 | `validationCollectsAll` | `意味の検証は 1 つ目で止めない` | `session.blockGapSeconds = -1` と `obsidian.maxTitleBytes = 0` → CV-08 と CV-16 の 2 件（この順） |
 | `renderedFormat` | `違反の 1 行表記は空白 2 つ区切り` | `ConfigViolation(rule: "CV-08", code: .configInvalidValue, keyPath: "session.blockGapSeconds", message: "0 以上であること（-1）").rendered == "CV-08  CONFIG_INVALID_VALUE  session.blockGapSeconds: 0 以上であること（-1）"` |

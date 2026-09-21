@@ -165,7 +165,7 @@ VoiceDock.app（常駐・非サンドボックス・Hardened Runtime）
 - **llama-server は解析が要るときに初めて起動し、`processReadySessions` の終わりで必ず止める**（18 GB を常駐させない。次の tick の Part 工程とは重ならない）
 - デバイス上のファイルを削除できるのは reaper だけ（PR-16）。アプリ本体はデバイス上のファイルを unlink するコードを持たない（`SafeUnlink` は `<HOME>` と Vault の tmp だけ。CR-10）
 - reaper は実行中ずっと `<HOME>/state/reaper.lock` に排他の `flock` を掛ける（`LOCK_EX | LOCK_NB`。取れなければ何もせず終了コード 4）。IngestService は走査の前に同じロックを取る（`LOCK_NB` を 1 秒ごとに最大 130 回試す）。アプリが落ちて reaper だけが生き残った場合も「reaper の後の観測」を保証する（§8.9.6）。ロックは `FileLock`（VDContract）だけが扱い、ファイルが無ければ作る（0644）
-- **actor の中で長い同期処理をしない**: コピー・ハッシュ・16 kHz 変換・ディレクトリ走査のような数秒以上かかる同期 I/O は `BlockingIO.run { … }`（VDCore。専用の並行 DispatchQueue で実行し continuation で待つ）で行い、actor は状態だけを持つ。子プロセスの終了は `DispatchSource.makeProcessSource(identifier:eventMask: .exit)` と continuation で待ち、`waitpid` で actor を止めない（whisper の実行中に diskutil や launchctl が待たされないようにする）
+- **actor の中で長い同期処理をしない**: コピー・ハッシュ・16 kHz 変換・ディレクトリ走査のような数秒以上かかる同期 I/O は `BlockingIO.run { … }`（VDCore。専用の並行 DispatchQueue で実行し continuation で待つ）で行い、actor は状態だけを持つ。子プロセスの終了は `DispatchSource.makeProcessSource(identifier:eventMask: .exit)` と continuation で待ち（kqueue の登録より前に終わった子を取りこぼさないよう、`waitpid(WNOHANG)` の予備のタイマー（DispatchSourceTimer）も併用する。T-12）、`waitpid` で actor を止めない（whisper の実行中に diskutil や launchctl が待たされないようにする）
 
 ### 2.2 voicedock の構成要素との対応
 
@@ -738,7 +738,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 - `AppConfig`（`Codable, Equatable, Sendable` の入れ子の struct）。JSON で `<HOME>/config.json`。**アプリが書く**（利用者が手で書く前提ではない）
 - 先頭に `"schemaVersion": 1`。版が上がるときは `ConfigMigrator` が旧版から移行する（キーを足す PR で再起動ループに落ちた教訓 CFG-01 の置き換え）。v1 の移行器は「1 ならそのまま」だけを持つ
 - **既定値は `AppConfig.defaults(timeZone:)` の 1 か所だけ**に書く。デコード時の欠落を既定値で埋めない（欠落は CV-39 違反）。例外は移行処理が明示的に足す場合だけ
-- 読み込みの手順（`ConfigLoader.load(data:catalog:reaperConf:) -> ConfigLoadResult`）:
+- 読み込みの手順（`ConfigLoader.load(data:catalog:reaperConfObservation:) -> ConfigLoadResult`）:
   1. `JSONSerialization` で辞書にする（失敗 → CV-39）
   2. 全階層のキー集合を `AppConfig` の定義と照合: 未知のキー → CV-01（`CONFIG_UNKNOWN_KEY`）、欠けたキー → CV-39
   3. `JSONDecoder` で型に写す（型違い → CV-39、キーのパスを添える）
@@ -750,7 +750,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 - **「無制限」を意味する既定値を置かない**。欠落・不正は規定の制限へ倒す（DEV-13: `0` は「即断しない」ではなく「全件即断」だった）。
   例外は明示された 2 つだけ: `transcription.threads = 0`（自動）と `sections.*.maxItems = null`（件数上限なし。voicedock と同じ）
 - 書き込みは `AtomicFile`（`.config.json.tmp` → fsync → rename）。符号化は `JSONEncoder`（`[.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]`）＋ 末尾 `\n`
-- GUI からの変更（Vault・Whisper モデル・LLM モデル）と有効化フローの変更は `ConfigStore`（actor）の `update(_:reaperConf:)` だけが書く。**書く前に**、変更後の値と「これから（または今）の reaper.conf の値」で検証し、違反なら書かずに違反を返す
+- GUI からの変更（Vault・Whisper モデル・LLM モデル）と有効化フローの変更は `ConfigStore`（actor）の `update(_:reaperConfObservation:)` だけが書く。**書く前に**、変更後の値と「これから（または今）の reaper.conf の値」で検証し、違反なら書かずに違反を返す
 - **ロック 1 の食い違いの自動修復**: 読み込みで CV-30（config と reaper.conf の削除有効が食い違う）が出たら、設定エラーにする前に `DeletionEnabler.reconcileLock1()` で**両方を無効側に揃える**（reaper.conf を false → config を `deleteSourceAudio = false`・`deleteSkippedSource = false`・`mountMode = ro`）→ `config_warning rule=CV-30` を出して読み直す。揃えられなかったときだけ設定エラー（有効化・無効化の途中で落ちた場合の片方だけの状態を、安全側で終わらせる）
 
 ### 6.2 JSON の形と既定値（voicedock の値を継承。Docker のパスは廃止）
@@ -1850,13 +1850,13 @@ expireDeleteRequests:   // 毎 tick
 **根拠 B（無音・重複も消す）**は別の操作（`enableSkippedDeletion(confirmation:)`）。削除が有効なときだけ出し、同じく `ENABLE` の入力で `cleanup.deleteSkippedSource = true` にする。
 
 **無効化**（`DeletionEnabler.disable()`）: **確認を求めない**（止めたいときに止められること）。この順で（**消す能力に近いものから先に止める**）、途中で失敗しても残りを続ける:
-reaper.conf を false（reaper 側のロック 1 を先に掛ける）→ `bin/voicedock-reaper` を削除 → config を `ConfigStore.update(_, reaperConf: false)` で `deleteSourceAudio = false`・`deleteSkippedSource = false`・`mountMode = ro` に →
+reaper.conf を false（reaper 側のロック 1 を先に掛ける）→ `bin/voicedock-reaper` を削除 → config を `ConfigStore.update(_, reaperConfObservation: false)` で `deleteSourceAudio = false`・`deleteSkippedSource = false`・`mountMode = ro` に →
 `queue/delete` の要求を全部取り下げる → 接続中のデバイスを直ちに読み取り専用へ再マウント（`ingest.scanNow()`。再マウントできたかは §8.9.2 と同じ `statfs` の `MNT_RDONLY` の観測で確かめる。実機の試験では `/sbin/mount` の出力を貼る）。`deletion_disabled`。失敗した段の名前を返し、パネルに出す
 
 **ロック 1 の修復**（`DeletionEnabler.reconcileLock1()`。§6.1）: **reaper.conf を false にするだけ**（reaper の削除・要求の取り下げ・config の書き換えはしない）。`config_warning rule=CV-30`。
 config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `ConfigStore.load()` が自分で無効側に直す（設定エラー中は `ConfigStore.update` が通らないので、DeletionEnabler から config を書けない）
 
-**有効化の書き込み順**（§8.9.8 の 3）は「reaper を複製 → reaper.conf を true → config を `update(_, reaperConf: true)` で有効」。途中で落ちて片方だけ有効になった場合は、次の読み込みで reconcileLock1 が無効側へ揃える
+**有効化の書き込み順**（§8.9.8 の 3）は「reaper を複製 → reaper.conf を true → config を `update(_, reaperConfObservation: true)` で有効」。途中で落ちて片方だけ有効になった場合は、次の読み込みで reconcileLock1 が無効側へ揃える
 
 **常時表示**: 削除が有効な間（`config.cleanup.deleteSourceAudio` が真 **または** reaper.conf が有効。片方だけ有効な中途の状態でも出す）は、メニューバーのアイコンの横に `trash` シンボルを常に出す。パネルの「元音声の削除」には 3 つのロックを**個別に**、設定値と観測値を並べて出す（voicedock の起動時警告と voicedock doctor の D-17 に相当。DR-14 と同じ `LockEvaluator` を使い、式を書き直さない）:
 
@@ -3101,3 +3101,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-55 | 誤・欠 | 00-api-map・目次・付録 A.4 | （最終の整合確認で発見）T-25 と T-45 の循環（`GoldenCase.orderedObject` は T-45 の extension に）、Phase 7 の UI・診断が Phase 8 の型を使っていた（`LockObserving` と既定の無効実装を T-32 に置き、T-36 が差し替える）、`reaperConf` の引数ラベル（PT-11）、`RecordingRow.errorCodeRaw`、`ChatTransportFactory` の引数、`BacklogAction` の戻り、`ConfigStore.init`、`ModelManager` / `ModelDownloader` の init、`WorkerDependencies` の末尾に足す順、TestSupport の置き場所、目次の前提の抜け、`normalize_failed reason=input` ほかの reason 語 |
 | F-56 | 事 | §2 D-6・§10.8・§12.2・§14 | （T-02 の着手時に利用者が決定）CI のランナーを開発機のセルフホストランナーにした。`sudo xcode-select` の代わりに `make check-toolchain`、`.diskImage` のテストは CI で走らせない、P0-10 は行わない、RK-06・RK-33 を書き換えた |
 | F-57 | 事 | §9.4 | （T-04 のレビューで発見、利用者が承認）PT-08・PT-19 は `Swift.` 修飾の呼び出しも検出、PT-20 に `Regex` の語と `firstMatch(of:` などを追加（Swift 6 のスラッシュ正規表現リテラル対策）、PT-12 は `FileHandle(forWriting…` の接頭辞、PT-06 は補間の入れ子と raw 文字列。PT-03 の関数参照と PT-09・PT-17・PT-22 の暗黙メンバーは既知の限界として残した |
+| F-58 | 事 | §2.1・§6.1・00-api-map §2.2・§3 | （T-09・T-11・T-12 の実装で発見、利用者が承認）子の終了の待ちに `waitpid(WNOHANG)` の予備のタイマーを併用（kqueue の登録前に終わった子の取りこぼし）、`ConfigLoader.load`・`ConfigStore.update` のラベルは `reaperConfObservation:`（PT-11）、地図に `ConfigViolation: Error`・`NewSession: Equatable`・`EntityType: CaseIterable` を明記。整数の位置の小数の CV-39 の表示を「型が違います」に揃えた |

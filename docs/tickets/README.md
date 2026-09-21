@@ -90,7 +90,7 @@ VoiceDock for Mac の実装タスクごとの詳細仕様。**誰が実装して
 | [T-20](T-20-llm-mapreduce.md) | VDLLM: チャンク分割・Map-Reduce | 5 | T-19 |
 | [T-21](T-21-llama-server.md) | VDLLM: llama-server・ループバック HTTP | 5 | T-03, T-12, T-19 |
 | [T-22](T-22-session-steps.md) | VDPipeline: Session の工程 | 5 | T-18, T-20, T-21 |
-| [T-23](T-23-models.md) | VDModels | 5 | T-09, T-10 |
+| [T-23](T-23-models.md) | VDModels | 5 | T-09, T-10, T-21（TestSupport の `BlockingURLProtocol`・`BlockingSessionFactory`） |
 | [T-24](T-24-catalog-acceptance.md) | カタログの確定と LLM 受け入れ試験 | 5 | T-22, T-23 |
 | [T-26](T-26-notes-raw.md) | VDNotes: sanitize・frontmatter・Raw | 6 | T-09, T-25, T-45 |
 | [T-27](T-27-notes-daily.md) | VDNotes: Daily・Timeline・WikiLink | 6 | T-26 |
