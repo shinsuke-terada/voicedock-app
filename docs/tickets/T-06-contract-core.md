@@ -497,7 +497,7 @@ public enum ReaperConfError: Error, Equatable, Sendable {
 2. `fstat`。失敗 → `.invalid(.unreadable)`。`(st_mode & S_IFMT) != S_IFREG` → `.invalid(.notRegularFile)`。`st_size > Contract.maxRequestBytes` → `.invalid(.tooLarge)`
 3. `PosixIO.readAll(fd:, limit: Contract.maxRequestBytes + 1)`。失敗 → `.invalid(.unreadable)`
 4. `close` → `parse` の結果を `.valid` / `.invalid` に写す
-（どの経路でも fd を閉じる。`defer` で）
+（どの経路でも fd を閉じる。2〜3 は private の `readRegularFile(fd:)` に分け、その直後に `close` してから `parse` する。fd を開いたまま parse しない）
 
 ### 4.16 `HomeLayout.swift`（「// <HOME> 配下の全パス（PLAN §2.3）。パスはここからだけ得る。」）
 
