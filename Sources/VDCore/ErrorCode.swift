@@ -40,11 +40,11 @@ public enum ErrorCode: String, CaseIterable, Sendable, Hashable {
 
 /// 再試行の区分（PLAN 付録 A.3・§5.4）。振る舞いを変えるのは `attempts`（工程内リトライの対象）だけ。
 /// requeue（4 つの契機）は RetryPolicy を見ずに FAILED をすべて戻す。`none` / `nextPoll` / `nextConnect` は表示と voicedock との対応のために残す。
-public enum RetryPolicy: String, Sendable, Hashable {
-    case none = "none"
-    case nextPoll = "next_poll"
-    case nextConnect = "next_connect"
-    case attempts = "attempts"
+public enum RetryPolicy: Sendable, Hashable {
+    case none
+    case nextPoll
+    case nextConnect
+    case attempts
 }
 
 extension ErrorCode {

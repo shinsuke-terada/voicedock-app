@@ -268,11 +268,11 @@ public enum ErrorCode: String, CaseIterable, Sendable, Hashable {
 
 /// 再試行の区分（PLAN 付録 A.3・§5.4）。振る舞いを変えるのは `attempts`（工程内リトライの対象）だけ。
 /// requeue（4 つの契機）は RetryPolicy を見ずに FAILED をすべて戻す。`none` / `nextPoll` / `nextConnect` は表示と voicedock との対応のために残す。
-public enum RetryPolicy: String, Sendable, Hashable {
-    case none = "none"
-    case nextPoll = "next_poll"
-    case nextConnect = "next_connect"
-    case attempts = "attempts"
+public enum RetryPolicy: Sendable, Hashable {
+    case none
+    case nextPoll
+    case nextConnect
+    case attempts
 }
 
 extension ErrorCode {
@@ -408,7 +408,7 @@ PLAN §5.1 の不変条件（TEST-08）。**集合の中身を直書きせず、
 |---|---|---|
 | `declarationOrderMatchesAppendixA3` | `宣言順は付録 A.3 の順（voicedock errors.py から 3 つを除いた順）` | `allCases.map(\.rawValue)` を 32 個の逐語の配列と比較 |
 | `abolishedCodesAreAbsent` | `廃止した 3 コードは無い` | `ErrorCode(rawValue:)` が `HELPER_UNAVAILABLE`・`LOCAL_DELETE_FAILED`・`DB_ERROR` で nil |
-| `retryPolicyTable` | `再試行の区分は付録 A.3 の表どおり` | 32 行の `(rawValue, "none"\|"next_poll"\|"next_connect"\|"attempts")` の表と `retryPolicy.rawValue` を全件比較（パラメータ化テスト `arguments:` に表を渡す） |
+| `retryPolicyTable` | `再試行の区分は付録 A.3 の表どおり` | 32 行の `(rawValue, "none"\|"nextPoll"\|"nextConnect"\|"attempts")` の表と `String(describing: retryPolicy)` を全件比較（パラメータ化テスト `arguments:` に表を渡す。SPEC 同期の `errorCodesMatchSpec` と同じ表記） |
 | `everyCodeHasRetryPolicy` | `全コードに RetryPolicy がある（TEST-08）` | `allCases` の各要素で `retryPolicy` を評価して落ちない（switch の網羅はコンパイラが保証するので、件数 32 の確認） |
 | `countsAgainstMaxAttemptsOnlyAttempts` | `工程内リトライの対象は attempts だけ` | `allCases.filter(\.countsAgainstMaxAttempts)` が `.attempts` の 14 個と一致 |
 | `skipReasonWords` | `part_skipped の reason 語` | 3 コードの語が逐語で一致し、他の 29 コードは nil |
@@ -516,4 +516,4 @@ Session vd=24 swift=30 swift-only=[('ANALYZED', 'ANALYZING'), ('CLEANUP', 'MERGI
 - なし（00-api-map §2.1 のとおり）。ただし `PartStates` / `SessionStates` の名前は PLAN §5.1 の「集合（Swift 名）」列（`partTerminal` など）と表記が違う。PLAN §5.1 の列を「Swift 名（`PartStates.terminal` など）」に直すことを提案する（本チケットの対応表を正とする） → PLAN §5.1 に反映済み（2026-09-18。列名を「v1.1 の説明用の名前。Swift では `PartStates.terminal` のように型の中に置く。対応は T-08」とした）
 - `ErrorCode.countsAgainstMaxAttempts` を公開 API に足した（工程内リトライの判定。T-18 が使う） → 00-api-map に反映済み（2026-09-18）
 - （整合修正で追記）SPEC 同期のテストは T-05 §5 の置き場所と名前（`Tests/VDCoreTests/SpecSyncStatesTests.swift`・7 本）に合わせた
-- （実装で追記）00-api-map §2.1 `ErrorCode.swift` の `RetryPolicy: Sendable` を `RetryPolicy: String, Sendable`（rawValue は `none` / `next_poll` / `next_connect` / `attempts`）に直すことを提案する。本チケットのコードと `retryPolicyTable` は rawValue を使う。逆に rawValue が要らないと判断するなら、本チケットから `: String` を外し `retryPolicyTable` を `String(describing:)` の比較に揃える（利用者の判断）
+- （実装で追記・決定）`RetryPolicy` の rawValue（`next_poll` など）はどこからも使われず、SPEC 同期の `String(describing:)`（`nextPoll`）と表記が 2 通りになるので、利用者の判断で `: String` を外した（2026-09-21）。00-api-map §2.1 の `RetryPolicy: Sendable` と一致する。地図の変更は不要

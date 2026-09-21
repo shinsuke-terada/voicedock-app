@@ -10,19 +10,19 @@ struct ErrorCodeTests {
         ("CONFIG_UNKNOWN_KEY", "none"),
         ("CONFIG_INVALID_VALUE", "none"),
         ("CONFIG_LOCK_MISMATCH", "none"),
-        ("DEVICE_NOT_READABLE", "next_poll"),
+        ("DEVICE_NOT_READABLE", "nextPoll"),
         ("DEVICE_UNSUPPORTED", "none"),
-        ("FILE_NOT_STABLE", "next_poll"),
+        ("FILE_NOT_STABLE", "nextPoll"),
         ("DUPLICATE_CONTENT", "none"),
         ("SOURCE_MISSING", "none"),
         ("SOURCE_HASH_MISMATCH", "attempts"),
-        ("DELETE_QUEUE_FAILED", "next_connect"),
-        ("DELETE_TIMEOUT", "next_connect"),
-        ("DISK_SPACE_LOW", "next_poll"),
+        ("DELETE_QUEUE_FAILED", "nextConnect"),
+        ("DELETE_TIMEOUT", "nextConnect"),
+        ("DISK_SPACE_LOW", "nextPoll"),
         ("AUDIO_PROBE_FAILED", "attempts"),
         ("IMPORT_FAILED", "attempts"),
         ("NORMALIZE_VERIFY_FAILED", "attempts"),
-        ("NORMALIZED_MISSING", "next_connect"),
+        ("NORMALIZED_MISSING", "nextConnect"),
         ("WHISPER_EXEC_MISSING", "none"),
         ("WHISPER_MODEL_MISSING", "none"),
         ("WHISPER_FAILED", "attempts"),
@@ -37,8 +37,8 @@ struct ErrorCodeTests {
         ("OBSIDIAN_NOT_FOUND", "attempts"),
         ("OBSIDIAN_WRITE_FAILED", "attempts"),
         ("OBSIDIAN_VERIFY_FAILED", "attempts"),
-        ("SOURCE_IDENTITY_MISMATCH", "next_connect"),
-        ("SOURCE_DELETE_FAILED", "next_connect"),
+        ("SOURCE_IDENTITY_MISMATCH", "nextConnect"),
+        ("SOURCE_DELETE_FAILED", "nextConnect"),
     ]
 
     @Test("宣言順は付録 A.3 の順（voicedock errors.py から 3 つを除いた順）")
@@ -66,7 +66,7 @@ struct ErrorCodeTests {
     @Test("再試行の区分は付録 A.3 の表どおり", arguments: ErrorCodeTests.appendixA3)
     func retryPolicyTable(row: (code: String, retry: String)) throws {
         let code = try #require(ErrorCode(rawValue: row.code))
-        #expect(code.retryPolicy.rawValue == row.retry)
+        #expect(String(describing: code.retryPolicy) == row.retry)
     }
 
     @Test("全コードに RetryPolicy がある（TEST-08）")
