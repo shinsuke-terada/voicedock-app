@@ -88,7 +88,7 @@ PLAN §9.4 の禁止事項を、**書いたら落ちる**静的検査にする�
 - PT-17: 診断は `Store` を初期化子（`Store(`・`Store.init`）で開かない。読み取りは `ReadOnlyStore.open(url:)`（00-api-map §3）。PLAN の表の `Store.open(` は API 地図では `Store(url:…)` に当たる
 - PT-07: 表に無いモジュールのディレクトリが `Sources/` にあれば違反。`Synchronization` はどのモジュールでも許す（PLAN §3.4 の表の上の文）。`import` の直後が `struct` などの種類の語なら、その次の識別子をモジュール名とする
 - PT-13: `Package.swift` の各 `.package(…)` に `exact` があり、`from`・`branch`・`revision`・`upToNextMajor`・`upToNextMinor`・`path`・`..<`・`...` が無い。`Package.resolved` の各 pin が `x.y.z` の version と 40 桁の revision を持ち `branch` を持たない。
-  `Vendor/versions.env` の 6 キーの形。`Resources/ModelCatalog.json`（在れば）の url が `https://huggingface.co/<org>/<repo>/resolve/<40hex>/<file>`。`.github/workflows/*.yml` の `uses:` が `<owner>/<repo>@<40hex>`（`#` 以降は無視）、`runs-on:` に `latest` を含まない。`.xcode-version` が 1 行。
+  `Vendor/versions.env` の 6 キーの形。`Resources/ModelCatalog.json`（在れば）の url が `https://huggingface.co/<org>/<repo>/resolve/<40hex>/<file>`。`.github/workflows/*.yml` の `uses:` が `<owner>/<repo>@<40hex>`（`#` 以降は無視）、`runs-on:` に `latest` を含まない（値が空ならブロック形式のリスト、つまり `runs-on:` より深く字下げした後続の `- …` 行を値とする。`${{ matrix.` を参照するファイルは、`latest` を含む `- …` 行と `[…]` のリストをすべて違反にする簡易版）。`.xcode-version` が 1 行。
   `PolicyAnchors.requiredFiles` のファイルが無ければ違反
 - PT-16: `VDDevice/IngestService.swift` の `func copyOne(` の本体（最初の `{` から釣り合う `}`）で、最初の `commitPartial(` が最初の `registerCopied(` より前。どちらかが無ければ違反。ファイルや関数が無いのは `PolicyAnchors.requiredFunctions` に載っているときだけ違反（T-15 が載せる）
 
@@ -1331,6 +1331,8 @@ enum PinningPolicy {
     }
 
     /// .github/workflows/*.yml の uses: が 40 桁の SHA、runs-on: に latest が無い。
+    /// runs-on: の値が空ならブロック形式のリスト（より深く字下げした後続の `- …` 行）を値とする。
+    /// `${{ matrix.` を参照するファイルは、`latest` を含む `- …` 行と `[…]` のリストをすべて違反にする（簡易版）。
     static func checkWorkflows(root: URL) -> [Violation] {
         let directory = root.appendingPathComponent(".github/workflows")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))) ?? []
@@ -1338,8 +1340,12 @@ enum PinningPolicy {
         for name in names.sorted() where name.hasSuffix(".yml") || name.hasSuffix(".yaml") {
             let path = ".github/workflows/\(name)"
             guard let text = read(root, path) else { continue }
-            for (offset, rawLine) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-                let line = String(rawLine.prefix { $0 != "#" }).trimmingCharacters(in: .whitespaces)
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map {
+                String($0.prefix { $0 != "#" })
+            }
+            var latestLines: Set<Int> = []
+            for (offset, rawLine) in lines.enumerated() {
+                let line = rawLine.trimmingCharacters(in: .whitespaces)
                 let body = line.hasPrefix("- ") ? String(line.dropFirst(2)) : line
                 if body.hasPrefix("uses:") {
                     let value = body.dropFirst("uses:".count).trimmingCharacters(in: .whitespaces)
@@ -1348,12 +1354,39 @@ enum PinningPolicy {
                             Violation(rule: id, path: path, line: offset + 1, what: "uses: が SHA で固定されていない"))
                     }
                 }
-                if body.hasPrefix("runs-on:") && body.lowercased().contains("latest") {
-                    violations.append(Violation(rule: id, path: path, line: offset + 1, what: "runs-on: に latest"))
+                if body.hasPrefix("runs-on:")
+                    && runsOnValues(lines, at: offset, body: body).contains(where: {
+                        $0.lowercased().contains("latest")
+                    })
+                {
+                    latestLines.insert(offset)
                 }
+                if text.contains("${{ matrix.") && line.lowercased().contains("latest")
+                    && (line.hasPrefix("- ") || line.contains("["))
+                {
+                    latestLines.insert(offset)
+                }
+            }
+            for offset in latestLines.sorted() {
+                violations.append(Violation(rule: id, path: path, line: offset + 1, what: "runs-on: に latest"))
             }
         }
         return violations
+    }
+
+    /// `runs-on:` の値。行の中に値が無ければ、それより深く字下げした後続の `- …` 行を集める（空行は飛ばす）。
+    static func runsOnValues(_ lines: [String], at offset: Int, body: String) -> [String] {
+        let value = body.dropFirst("runs-on:".count).trimmingCharacters(in: .whitespaces)
+        guard value.isEmpty else { return [value] }
+        let indent = lines[offset].prefix(while: { $0 == " " }).count
+        var values: [String] = []
+        for next in lines[(offset + 1)...] {
+            let trimmed = next.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            guard next.prefix(while: { $0 == " " }).count > indent, trimmed.hasPrefix("- ") else { break }
+            values.append(String(trimmed.dropFirst(2)))
+        }
+        return values
     }
 
     /// .xcode-version がちょうど 1 行。
@@ -1724,7 +1757,11 @@ struct PolicySelfTests {
                 SourceFile(relativePath: "VDProcess/Bad.swift", text: "let a = [\"/bin/sh\", \"-c\", \"ls\"]\n")
             ],
             decoy: [
-                SourceFile(relativePath: "VDProcess/Bad.swift", text: "// /bin/sh を使わない\nlet flag = \"-c\"\n")
+                SourceFile(
+                    relativePath: "VDProcess/Bad.swift",
+                    text:
+                        "// /bin/sh を使わない\nlet flag = \"-c\"\nlet shells = [root/bin/sh, root/bin/bash, root/bin/zsh, root/usr/bin/env]\n"
+                )
             ]
         ),
         "PT-05": (
@@ -1737,7 +1774,7 @@ struct PolicySelfTests {
                 SourceFile(
                     relativePath: "VDStore/Queries.swift",
                     text:
-                        "// UPDATE recordings SET status = ?\nlet sql = \"SELECT partkey FROM recordings WHERE status = ?\"\n"
+                        "// UPDATE recordings SET status = ?\nlet sql = \"SELECT partkey FROM recordings WHERE status = ?\"\nfunc f() throws { try db.update(set: status) }\n"
                 )
             ]
         ),
@@ -1749,7 +1786,9 @@ struct PolicySelfTests {
             decoy: [
                 SourceFile(
                     relativePath: "VDPipeline/Bad.swift",
-                    text: "// RAW_SAVED にする\nlet t = PartStatus.rawSaved\nlet u = \"WHISPER_FAILED_X\"\n")
+                    text:
+                        "// RAW_SAVED にする\nlet t = PartStatus.rawSaved\nlet u = \"WHISPER_FAILED_X\"\nlet RAW_SAVED = 1\nenum E { case WHISPER_FAILED }\n"
+                )
             ]
         ),
         "PT-07": (
@@ -2178,7 +2217,9 @@ struct PolicySelfTests {
             "{\"pins\": [{\"identity\": \"b\", \"state\": {\"revision\": \"0123456789abcdef0123456789abcdef01234567\", \"version\": \"1.0.0\"}}], \"version\": 3}\n",
         ".xcode-version": "27.0\n",
         ".github/workflows/ci.yml":
-            "jobs:\n  check:\n    runs-on: xcode-27  # latest ではない\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
+            "jobs:\n  check:\n    runs-on: [self-hosted, macOS, ARM64]  # latest ではない\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
+        ".github/workflows/nightly.yml":
+            "jobs:\n  check:\n    runs-on:\n      - self-hosted  # latest ではない\n      - ARM64\n    steps:\n      - run: make test\n",
         "Vendor/versions.env":
             "WHISPER_CPP_REPO=https://github.com/ggml-org/whisper.cpp.git\nWHISPER_CPP_REF=v1.9.4\nWHISPER_CPP_SHA=927cfce34f31707e17f2bff35c349632fb9e2c3a\nLLAMA_CPP_REPO=https://github.com/ggml-org/llama.cpp.git\nLLAMA_CPP_REF=b11033\nLLAMA_CPP_SHA=8ed1a55efcd7424d2c592f6cbc9f97756db1d74d\n",
         "Resources/ModelCatalog.json":
@@ -2197,6 +2238,10 @@ struct PolicySelfTests {
             "{\"whisper\": [{\"url\": \"https://huggingface.co/a/b/resolve/main/m.bin\"}]}\n"
         files[".github/workflows/ci.yml"] =
             "jobs:\n  check:\n    runs-on: macos-latest\n    steps:\n      - uses: actions/checkout@v7.0.1\n"
+        files[".github/workflows/nightly.yml"] =
+            "jobs:\n  check:\n    runs-on:\n\n      - self-hosted\n      - macos-latest\n    steps:\n      - run: make test\n"
+        files[".github/workflows/matrix.yml"] =
+            "jobs:\n  check:\n    strategy:\n      matrix:\n        os: [macos-15, macos-latest]\n    runs-on: ${{ matrix.os }}\n"
         files[".xcode-version"] = "27.0\n\n"
         let root = try Self.makeRoot(files)
         defer { root.remove() }
@@ -2205,9 +2250,12 @@ struct PolicySelfTests {
         #expect(
             paths == [
                 "Package.swift", "Package.resolved", "Vendor/versions.env", "Resources/ModelCatalog.json",
-                ".github/workflows/ci.yml", ".xcode-version",
+                ".github/workflows/ci.yml", ".github/workflows/nightly.yml", ".github/workflows/matrix.yml",
+                ".xcode-version",
             ])
         #expect(found.filter { $0.path == ".github/workflows/ci.yml" }.count == 2)
+        #expect(found.filter { $0.path == ".github/workflows/nightly.yml" }.map(\.line) == [3])
+        #expect(found.filter { $0.path == ".github/workflows/matrix.yml" }.map(\.line) == [5])
     }
 
     @Test("PT-13 自己テスト: コメントの中の語と固定された値では検出しない")
@@ -2371,9 +2419,9 @@ struct SourceScannerTests {
 | 同上 | `vocabularyIsNotEmpty()` | PT-06 の語の一覧が空でない（空で緑にしない） | `docs/PLAN.md` の付録 A | 状態名とエラーコード名がどちらも空でない |
 | 同上 | `pt01Holds()` 〜 `pt22Holds()`（22 本） | `PT-nn <規則の題>` | リポジトリの `Sources/` | 違反 0 件（あれば違反の一覧をメッセージに出す） |
 | `PolicySelfTests.swift` | `ptNNDetectsViolation()`（PT-13 を除く 21 本） | `PT-nn 自己テスト: 違反を仕込むと検出する` | `fixtures[id].violating` の各ファイル | ファイルごとに 1 件以上の違反（どのファイルも空振りしない） |
-| 同上 | `ptNNIgnoresDecoy()`（PT-13 を除く 21 本） | `PT-nn 自己テスト: コメント・文字列の中の語では検出しない` | `fixtures[id].decoy` | 違反 0 件 |
-| 同上 | `pt13DetectsViolation()` | PT-13 自己テスト: 固定されていない版・URL・action・ランナーを検出する | 一時ディレクトリに固定されていない 6 ファイル | 6 つのファイルすべてで違反、ci.yml は 2 件（uses と runs-on） |
-| 同上 | `pt13IgnoresDecoy()` | PT-13 自己テスト: コメントの中の語と固定された値では検出しない | 固定された 6 ファイル（コメントに `from:` と `latest`） | 違反 0 件 |
+| 同上 | `ptNNIgnoresDecoy()`（PT-13 を除く 21 本） | `PT-nn 自己テスト: コメント・文字列の中の語では検出しない` | `fixtures[id].decoy`（文字列を検査する PT-04・05・06 は、禁止語をコードに置いた行も含む。PLAN §9.4） | 違反 0 件 |
+| 同上 | `pt13DetectsViolation()` | PT-13 自己テスト: 固定されていない版・URL・action・ランナーを検出する | 一時ディレクトリに固定されていない 8 ファイル（workflow はスカラーの `runs-on: macos-latest` の ci.yml、ブロック形式のリストの nightly.yml、`${{ matrix.os }}` の matrix.yml） | 8 つのファイルすべてで違反、ci.yml は 2 件（uses と runs-on）、nightly.yml は 3 行目、matrix.yml は 5 行目の 1 件ずつ |
+| 同上 | `pt13IgnoresDecoy()` | PT-13 自己テスト: コメントの中の語と固定された値では検出しない | 固定された 7 ファイル（コメントに `from:` と `latest`。ci.yml は実物と同じ `runs-on: [self-hosted, macOS, ARM64]`、nightly.yml はブロック形式のリスト） | 違反 0 件 |
 | 同上 | `pt13DetectsMissingRequiredFile()` | PT-13 自己テスト: 在るべきファイルが無ければ検出する | versions.env だけ無い | 「ファイルがありません」 |
 | 同上 | `pt16DetectsMissingFunction()` | PT-16 自己テスト: 必須にした関数が無ければ検出する | copyOne の無いファイル | 必須なら違反、必須でなければ違反なし |
 | 同上 | `pt06EmptyVocabularyAlwaysFails()` | PT-06 自己テスト: 語の一覧が空なら必ず違反にする（空で緑にしない） | 語が空 | 違反あり |
@@ -2420,5 +2468,8 @@ struct SourceScannerTests {
 - PT-08 の許可場所は `VDCore/Log.swift` だけだが、00-api-map §2.3 は `OSLogSink`（`os.Logger` を作る）を `LogFile.swift` に置いている。**`OSLogSink` を `Log.swift` に移す**か、PLAN §9.4 の PT-08 に `VDCore/LogFile.swift` を足す（どちらかに揃える。T-04 は PLAN のとおり `Log.swift` だけを許している） → 00-api-map に反映済み（2026-09-18。`OSLogSink` は `Log.swift`）
 - PT-17 の「`Store.open(`（`openReadOnly` 以外）」は API 地図の形（`Store(url:clock:zone:)` と `ReadOnlyStore.open(url:)`）に合わせて「`Store(` と `Store.init`」を禁じた。PLAN §9.4 の PT-17 の文面を API 地図に合わせて直す → PLAN §9.4 に反映済み（2026-09-18。F-49）
 - （整合修正で追記）PLAN §3.4 が `Synchronization` をすべてのモジュールに許した（F-48）ので、`ImportPolicy.allowedEverywhere` に入れた
-- （整合修正で追記）`MarkdownDocument` の作り手は本チケット（PT-06 の語を読むのに要り、T-05 は本チケットに依存する）。00-api-map §15 は `Markdown/MarkdownDocument` の作り手を T-05 と書いているので、T-04 に直すことを提案する
-
+- （整合修正で追記）`MarkdownDocument` の作り手は本チケット（PT-06 の語を読むのに要り、T-05 は本チケットに依存する）。00-api-map §15 は `Markdown/MarkdownDocument` の作り手を T-05 と書いているので、T-04 に直すことを提案する → 00-api-map に反映済み
+- （実装時のレビューで追記。**実装はしない。利用者の判断待ち**）PLAN §9.4 の文面より厳しくする提案:
+  - PT-08・PT-19: freeCall の修飾名（`TokenPattern.callQualifiers`）に `Swift` を足す。いまは `Swift.print(`・`Swift.fatalError(` などが素通りする
+  - PT-20: `.word("Regex")` と `firstMatch ( of`・`wholeMatch ( of`・`prefixMatch ( of` を足す。いまは Swift 6 のスラッシュ正規表現リテラル `/a+/` と型注釈 `: Regex` が素通りする
+  - Minor: PT-06 の `\(…)/\(…)` は補間の入れ子（`\(f(x))/\(y)`）と raw 文字列（`\#(…)/\#(…)`）を見逃す。PT-12 は `FileManager` の `forWritingAtPath` 系を見ない。PT-03 は `execv` などの関数参照（呼び出しでない形）を見ない。PT-09・PT-17・PT-22 は暗黙メンバーの `.init(`・`.now`（`let d: Date = .now` など）を見ない

@@ -144,6 +144,8 @@ enum PinningPolicy {
     }
 
     /// .github/workflows/*.yml の uses: が 40 桁の SHA、runs-on: に latest が無い。
+    /// runs-on: の値が空ならブロック形式のリスト（より深く字下げした後続の `- …` 行）を値とする。
+    /// `${{ matrix.` を参照するファイルは、`latest` を含む `- …` 行と `[…]` のリストをすべて違反にする（簡易版）。
     static func checkWorkflows(root: URL) -> [Violation] {
         let directory = root.appendingPathComponent(".github/workflows")
         let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))) ?? []
@@ -151,8 +153,12 @@ enum PinningPolicy {
         for name in names.sorted() where name.hasSuffix(".yml") || name.hasSuffix(".yaml") {
             let path = ".github/workflows/\(name)"
             guard let text = read(root, path) else { continue }
-            for (offset, rawLine) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
-                let line = String(rawLine.prefix { $0 != "#" }).trimmingCharacters(in: .whitespaces)
+            let lines = text.split(separator: "\n", omittingEmptySubsequences: false).map {
+                String($0.prefix { $0 != "#" })
+            }
+            var latestLines: Set<Int> = []
+            for (offset, rawLine) in lines.enumerated() {
+                let line = rawLine.trimmingCharacters(in: .whitespaces)
                 let body = line.hasPrefix("- ") ? String(line.dropFirst(2)) : line
                 if body.hasPrefix("uses:") {
                     let value = body.dropFirst("uses:".count).trimmingCharacters(in: .whitespaces)
@@ -161,12 +167,39 @@ enum PinningPolicy {
                             Violation(rule: id, path: path, line: offset + 1, what: "uses: が SHA で固定されていない"))
                     }
                 }
-                if body.hasPrefix("runs-on:") && body.lowercased().contains("latest") {
-                    violations.append(Violation(rule: id, path: path, line: offset + 1, what: "runs-on: に latest"))
+                if body.hasPrefix("runs-on:")
+                    && runsOnValues(lines, at: offset, body: body).contains(where: {
+                        $0.lowercased().contains("latest")
+                    })
+                {
+                    latestLines.insert(offset)
                 }
+                if text.contains("${{ matrix.") && line.lowercased().contains("latest")
+                    && (line.hasPrefix("- ") || line.contains("["))
+                {
+                    latestLines.insert(offset)
+                }
+            }
+            for offset in latestLines.sorted() {
+                violations.append(Violation(rule: id, path: path, line: offset + 1, what: "runs-on: に latest"))
             }
         }
         return violations
+    }
+
+    /// `runs-on:` の値。行の中に値が無ければ、それより深く字下げした後続の `- …` 行を集める（空行は飛ばす）。
+    static func runsOnValues(_ lines: [String], at offset: Int, body: String) -> [String] {
+        let value = body.dropFirst("runs-on:".count).trimmingCharacters(in: .whitespaces)
+        guard value.isEmpty else { return [value] }
+        let indent = lines[offset].prefix(while: { $0 == " " }).count
+        var values: [String] = []
+        for next in lines[(offset + 1)...] {
+            let trimmed = next.trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty { continue }
+            guard next.prefix(while: { $0 == " " }).count > indent, trimmed.hasPrefix("- ") else { break }
+            values.append(String(trimmed.dropFirst(2)))
+        }
+        return values
     }
 
     /// .xcode-version がちょうど 1 行。

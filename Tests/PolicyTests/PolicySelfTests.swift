@@ -49,7 +49,11 @@ struct PolicySelfTests {
                 SourceFile(relativePath: "VDProcess/Bad.swift", text: "let a = [\"/bin/sh\", \"-c\", \"ls\"]\n")
             ],
             decoy: [
-                SourceFile(relativePath: "VDProcess/Bad.swift", text: "// /bin/sh を使わない\nlet flag = \"-c\"\n")
+                SourceFile(
+                    relativePath: "VDProcess/Bad.swift",
+                    text:
+                        "// /bin/sh を使わない\nlet flag = \"-c\"\nlet shells = [root/bin/sh, root/bin/bash, root/bin/zsh, root/usr/bin/env]\n"
+                )
             ]
         ),
         "PT-05": (
@@ -62,7 +66,7 @@ struct PolicySelfTests {
                 SourceFile(
                     relativePath: "VDStore/Queries.swift",
                     text:
-                        "// UPDATE recordings SET status = ?\nlet sql = \"SELECT partkey FROM recordings WHERE status = ?\"\n"
+                        "// UPDATE recordings SET status = ?\nlet sql = \"SELECT partkey FROM recordings WHERE status = ?\"\nfunc f() throws { try db.update(set: status) }\n"
                 )
             ]
         ),
@@ -74,7 +78,9 @@ struct PolicySelfTests {
             decoy: [
                 SourceFile(
                     relativePath: "VDPipeline/Bad.swift",
-                    text: "// RAW_SAVED にする\nlet t = PartStatus.rawSaved\nlet u = \"WHISPER_FAILED_X\"\n")
+                    text:
+                        "// RAW_SAVED にする\nlet t = PartStatus.rawSaved\nlet u = \"WHISPER_FAILED_X\"\nlet RAW_SAVED = 1\nenum E { case WHISPER_FAILED }\n"
+                )
             ]
         ),
         "PT-07": (
@@ -503,7 +509,9 @@ struct PolicySelfTests {
             "{\"pins\": [{\"identity\": \"b\", \"state\": {\"revision\": \"0123456789abcdef0123456789abcdef01234567\", \"version\": \"1.0.0\"}}], \"version\": 3}\n",
         ".xcode-version": "27.0\n",
         ".github/workflows/ci.yml":
-            "jobs:\n  check:\n    runs-on: xcode-27  # latest ではない\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
+            "jobs:\n  check:\n    runs-on: [self-hosted, macOS, ARM64]  # latest ではない\n    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n",
+        ".github/workflows/nightly.yml":
+            "jobs:\n  check:\n    runs-on:\n      - self-hosted  # latest ではない\n      - ARM64\n    steps:\n      - run: make test\n",
         "Vendor/versions.env":
             "WHISPER_CPP_REPO=https://github.com/ggml-org/whisper.cpp.git\nWHISPER_CPP_REF=v1.9.4\nWHISPER_CPP_SHA=927cfce34f31707e17f2bff35c349632fb9e2c3a\nLLAMA_CPP_REPO=https://github.com/ggml-org/llama.cpp.git\nLLAMA_CPP_REF=b11033\nLLAMA_CPP_SHA=8ed1a55efcd7424d2c592f6cbc9f97756db1d74d\n",
         "Resources/ModelCatalog.json":
@@ -522,6 +530,10 @@ struct PolicySelfTests {
             "{\"whisper\": [{\"url\": \"https://huggingface.co/a/b/resolve/main/m.bin\"}]}\n"
         files[".github/workflows/ci.yml"] =
             "jobs:\n  check:\n    runs-on: macos-latest\n    steps:\n      - uses: actions/checkout@v7.0.1\n"
+        files[".github/workflows/nightly.yml"] =
+            "jobs:\n  check:\n    runs-on:\n\n      - self-hosted\n      - macos-latest\n    steps:\n      - run: make test\n"
+        files[".github/workflows/matrix.yml"] =
+            "jobs:\n  check:\n    strategy:\n      matrix:\n        os: [macos-15, macos-latest]\n    runs-on: ${{ matrix.os }}\n"
         files[".xcode-version"] = "27.0\n\n"
         let root = try Self.makeRoot(files)
         defer { root.remove() }
@@ -530,9 +542,12 @@ struct PolicySelfTests {
         #expect(
             paths == [
                 "Package.swift", "Package.resolved", "Vendor/versions.env", "Resources/ModelCatalog.json",
-                ".github/workflows/ci.yml", ".xcode-version",
+                ".github/workflows/ci.yml", ".github/workflows/nightly.yml", ".github/workflows/matrix.yml",
+                ".xcode-version",
             ])
         #expect(found.filter { $0.path == ".github/workflows/ci.yml" }.count == 2)
+        #expect(found.filter { $0.path == ".github/workflows/nightly.yml" }.map(\.line) == [3])
+        #expect(found.filter { $0.path == ".github/workflows/matrix.yml" }.map(\.line) == [5])
     }
 
     @Test("PT-13 自己テスト: コメントの中の語と固定された値では検出しない")
