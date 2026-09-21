@@ -8,13 +8,31 @@ import VDStore
 
 public actor IngestService {
     let deps: IngestDependencies
-    // 進捗（T-15 が IngestActivity にまとめる）
+    // 進捗（activity() が IngestActivity にまとめる）
     var progressDeviceID: String? = nil
     var progressCopied: Int = 0
     var progressTotal: Int = 0
     var lastActivityAt: Instant? = nil
-    /// T-15 の stop() が立てる
+    /// stop() が立て、start() が下ろす
     var stopRequested = false
+    // 走査と公開（PLAN §8.1）
+    var snapshot: DeviceSnapshot? = nil
+    var generation: UInt64 = 0
+    var connectEpoch: UInt64 = 0
+    /// 走査のループが動いているか
+    var scanning = false
+    /// 走査中に届いた契機（1 つにまとめる）
+    var rescanRequested = false
+    /// 始めた走査の数（1 から）
+    var startedScans: UInt64 = 0
+    var waiters: [(minStart: UInt64, continuation: CheckedContinuation<UInt64?, Never>)] = []
+    var ingestState: IngestState = .idle
+    var previousUnavailable: [String: String] = [:]
+    var updateContinuations: [UUID: AsyncStream<Void>.Continuation] = [:]
+    var backgroundTasks: [Task<Void, Never>] = []
+    var started = false
+    static let lockAttempts = 130
+    static let lockRetrySeconds = 1
 
     public init(deps: IngestDependencies) { self.deps = deps }
 
@@ -137,6 +155,7 @@ public actor IngestService {
             .copyCompleted, [(.recordingKey, .string(partkey)), (.bytes, .of(stat.size)), (.recopy, .of(!isNew))])
         progressCopied += 1
         lastActivityAt = deps.clock.now()
+        notifyUpdate()
         return .copied(isNew: isNew)
     }
 
@@ -201,4 +220,305 @@ enum CopyOutcome: Equatable, Sendable {
     case copied(isNew: Bool)
     case failed(CopyError)
     case skipped
+}
+
+/// 取り込みの状態（PLAN §8.1。置き場所は 00-api-map §5）
+public enum IngestState: Equatable, Sendable {
+    case idle
+    case scanning
+    /// voicedock の Helper が登録されている（PLAN §8.1 手順 1）
+    case coexistenceBlocked
+    /// 設定エラー中（configProvider が nil）
+    case disabled
+}
+
+// 起動契機の受け付けと 1 回の走査の手順（PLAN §8.1）
+extension IngestService {
+    /// 通知の購読・周期の走査・最初の走査
+    public func start() {
+        if started { return }
+        started = true
+        stopRequested = false
+        let deps = self.deps
+        backgroundTasks.append(
+            Task {
+                for await _ in deps.mountEvents.events() { self.requestScan() }
+            })
+        backgroundTasks.append(
+            Task {
+                while !Task.isCancelled {
+                    let seconds = await deps.configProvider()?.device.scanIntervalSeconds ?? 300
+                    do { try await deps.sleeper.sleep(seconds: seconds) } catch { return }
+                    self.requestScan()
+                }
+            })
+        requestScan()
+    }
+
+    /// 新しい走査を始めない。待っている scanNow() に nil を返す
+    public func stop() {
+        stopRequested = true
+        for task in backgroundTasks { task.cancel() }
+        backgroundTasks = []
+        for waiter in waiters { waiter.continuation.resume(returning: nil) }
+        waiters = []
+        for continuation in updateContinuations.values { continuation.finish() }
+        updateContinuations = [:]
+        started = false
+    }
+
+    /// 呼び出しの後に始まり完了した走査の generation。見送りなら nil。
+    /// 走査中に呼ばれたら、今の走査ではなく次に始まる走査を待つ（§8.9.6 が reaper の後の観測を得るため）
+    public func scanNow() async -> UInt64? {
+        if stopRequested { return nil }
+        let target = startedScans + 1
+        return await withCheckedContinuation { continuation in
+            waiters.append((target, continuation))
+            requestScan()
+        }
+    }
+
+    public func latestSnapshot() -> DeviceSnapshot? { snapshot }
+
+    public func activity() -> IngestActivity {
+        IngestActivity(
+            scanning: scanning, deviceID: progressDeviceID, copied: progressCopied, total: progressTotal,
+            lastActivityAt: lastActivityAt)
+    }
+
+    public func state() -> IngestState { ingestState }
+
+    /// 公開・状態の変化・1 本のコピーのたびに 1 つ流す（最新 1 つだけ溜める）
+    public func updates() -> AsyncStream<Void> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        let id = UUID()
+        updateContinuations[id] = continuation
+        continuation.onTermination = { [weak self] _ in Task { await self?.removeContinuation(id) } }
+        return stream
+    }
+
+    /// 走査中に届いた契機は 1 つの再走査要求にまとめる（途中で 0 台の snapshot を作らない）
+    func requestScan() {
+        if stopRequested { return }
+        if scanning {
+            rescanRequested = true
+            return
+        }
+        scanning = true
+        Task { await self.runScans() }
+    }
+
+    func runScans() async {
+        repeat {
+            rescanRequested = false
+            await performScan()
+        } while rescanRequested && !stopRequested
+        scanning = false
+        notifyUpdate()
+    }
+
+    /// 1 回の走査（PLAN §8.1 の手順 1〜5）
+    func performScan() async {
+        startedScans += 1
+        let index = startedScans
+        progressDeviceID = nil
+        progressCopied = 0
+        progressTotal = 0
+        notifyUpdate()
+        if stopRequested {
+            finishWaiters(upTo: index, nil)
+            return
+        }
+        guard let config = await deps.configProvider() else {
+            setState(.disabled)
+            finishWaiters(upTo: index, nil)
+            return
+        }
+        if await deps.coexistence.isVoicedockHelperLoaded() {
+            // 入ったときだけ 1 回
+            if ingestState != .coexistenceBlocked { deps.log.warning(.coexistenceBlocked) }
+            setState(.coexistenceBlocked)
+            finishWaiters(upTo: index, nil)
+            return
+        }
+        setState(.scanning)
+        guard let lock = await acquireReaperLock() else {
+            setState(.idle)
+            finishWaiters(upTo: index, nil)
+            return
+        }
+        defer { lock.release() }
+        let t0 = deps.clock.uptime()
+        let detector = DeviceDetector(
+            config: config.device, volumesRoot: deps.volumesRoot, inspector: deps.inspector, reader: deps.reader)
+        let detection =
+            (try? await BlockingIO.run { detector.detect() })
+            ?? DetectionResult(devices: [], skipped: [], listingError: ErrnoError(EIO))
+        // volumesRoot 自体を列挙できない = 観測できない。「0 台」として公開しない（DEL-32）。前回の snapshot を残す
+        if detection.listingError != nil {
+            setState(.idle)
+            finishWaiters(upTo: index, nil)
+            return
+        }
+        var unavailable: [String: String] = [:]
+        var notListableErrno: [String: Int32] = [:]
+        for skip in detection.skipped {
+            recordSkip(
+                name: skip.name, reason: skip.reason, errno: skip.listingError?.code, into: &unavailable,
+                &notListableErrno)
+        }
+        var observations: [String: DeviceObservation] = [:]
+        var copiedTotal = 0
+        for device in detection.devices {
+            if stopRequested { break }
+            var mountPath = device.mountPath
+            var remounted = false
+            if config.device.mode == .ro {
+                switch await deps.remounter.remountReadOnly(path: mountPath, node: device.node ?? "") {
+                case .alreadyReadOnly:
+                    break
+                case .remounted(let newPath):
+                    remounted = true
+                    mountPath = newPath
+                    // 規則 8 の再判定
+                    if URL(fileURLWithPath: newPath).lastPathComponent != device.deviceID
+                        || !DeviceDetector.nameMatchesVolume(
+                            device.deviceID, volumeName: deps.inspector.volumeName(path: newPath))
+                    {
+                        recordSkip(
+                            name: device.deviceID, reason: .mountNameMismatch, errno: nil, into: &unavailable,
+                            &notListableErrno)
+                        continue
+                    }
+                case .failed(let reason):
+                    // 取り込みは続ける（記録の保護）
+                    deps.log.warning(.remountFailed, [(.name, .string(device.deviceID)), (.reason, .string(reason))])
+                }
+            }
+            // 再マウントの途中で外れた等。親の FS を観測しない（PLAN §8.1）
+            // statfs は 1 回だけ。その f_mntonname が realpath と一致したときだけ同じ値を観測に使う（間で外れたら親の FS の値になる）。
+            // statfs が取れなければ規則 4 の判定だけを行い、観測値は nil にする（DEL-32）
+            let info = deps.inspector.mountInfo(path: mountPath)
+            let isMountPoint =
+                info.map { $0.mountOnName == SystemMountInspector.realPath(mountPath) }
+                ?? deps.inspector.isMountPoint(path: mountPath)
+            if !isMountPoint {
+                deps.log.debug(
+                    .volumeSkipped,
+                    [(.name, .string(device.deviceID)), (.reason, .string(DetectionReason.notAMountPoint.rawValue))])
+                continue
+            }
+            // 観測値。試行の成否から推論しない（DEL-31）
+            let readOnly = info?.readOnly
+            if remounted && readOnly != true {
+                deps.log.warning(
+                    .remountFailed, [(.name, .string(device.deviceID)), (.reason, .string("still_writable"))])
+            }
+            let result = await ingestDevice(deviceID: device.deviceID, mountPath: mountPath, config: config)
+            copiedTotal += result.copied
+            // 一覧を信用しない（「消えた」と誤読させない）
+            if !result.listing.complete {
+                recordSkip(
+                    name: device.deviceID, reason: .notListable, errno: nil, into: &unavailable, &notListableErrno)
+                continue
+            }
+            observations[device.deviceID] = DeviceObservation(
+                deviceID: device.deviceID, mountPath: mountPath, deviceNode: device.node, readOnly: readOnly,
+                freeBytes: info?.freeBytes, relpaths: result.listing.relpaths)
+        }
+        // 途中で止めたら公開しない
+        if stopRequested {
+            setState(.idle)
+            finishWaiters(upTo: index, nil)
+            return
+        }
+        publish(
+            observations, unavailable, notListableErrno, copied: copiedTotal, elapsed: deps.clock.uptime() - t0)
+        finishWaiters(upTo: index, generation)
+    }
+
+    /// 利用者の操作が要る理由は unavailable に載せる。WARNING は前回の走査から変わったときだけ（OPS-12）
+    func recordSkip(
+        name: String, reason: DetectionReason, errno: Int32?, into unavailable: inout [String: String],
+        _ notListableErrno: inout [String: Int32]
+    ) {
+        if reason.needsUserAction {
+            unavailable[name] = reason.rawValue
+            if let errno { notListableErrno[name] = errno }
+        }
+        var fields: [(LogKey, LogValue)] = [(.name, .string(name)), (.reason, .string(reason.rawValue))]
+        // errno は detail に残す（PLAN §8.1 規則 5。付録 A.4 に errno のキーは無い）
+        if let errno { fields.append((.detail, .int(Int64(errno)))) }
+        if reason.needsUserAction && previousUnavailable[name] != reason.rawValue {
+            deps.log.warning(.volumeSkipped, fields)
+        } else {
+            deps.log.debug(.volumeSkipped, fields)
+        }
+    }
+
+    /// 最大 130 回試し、試行の間に 1 秒待つ（待ちは最大 129 回）。取れなければ nil（この回を見送る）
+    func acquireReaperLock() async -> FileLock? {
+        for attempt in 1...Self.lockAttempts {
+            if let lock = FileLock.tryAcquire(url: deps.layout.reaperLock) { return lock }
+            if attempt == Self.lockAttempts || stopRequested { break }
+            do { try await deps.sleeper.sleep(seconds: Self.lockRetrySeconds) } catch { break }
+        }
+        return nil
+    }
+
+    /// 公開は走査の最後に 1 回だけ
+    func publish(
+        _ observations: [String: DeviceObservation], _ unavailable: [String: String],
+        _ notListableErrno: [String: Int32], copied: Int, elapsed: Duration
+    ) {
+        generation += 1
+        // 前回が無いのは「0 台」と同じ扱い（voicedock の None と同じ）
+        let previousEmpty = snapshot?.devices.isEmpty ?? true
+        if previousEmpty && !observations.isEmpty { connectEpoch += 1 }
+        snapshot = DeviceSnapshot(
+            generation: generation, completedAt: deps.clock.now(), connectEpoch: connectEpoch, devices: observations,
+            unavailable: unavailable, notListableErrno: notListableErrno)
+        previousUnavailable = unavailable
+        let c = elapsed.components
+        let seconds = Double(c.seconds) + Double(c.attoseconds) / 1e18
+        let fields: [(LogKey, LogValue)] = [
+            (.devices, .of(observations.count)), (.copied, .of(copied)),
+            (.elapsedS, .double(PyRound.round(seconds, digits: 1))),
+        ]
+        if copied > 0 {
+            deps.log.info(.scanCompleted, fields)
+        } else {
+            deps.log.debug(.scanCompleted, fields)
+        }
+        setState(.idle)
+        notifyUpdate()
+    }
+
+    /// minStart <= index の待ち手に generation を返して取り除く
+    func finishWaiters(upTo index: UInt64, _ generation: UInt64?) {
+        var rest: [(minStart: UInt64, continuation: CheckedContinuation<UInt64?, Never>)] = []
+        for waiter in waiters {
+            if waiter.minStart <= index {
+                waiter.continuation.resume(returning: generation)
+            } else {
+                rest.append(waiter)
+            }
+        }
+        waiters = rest
+    }
+
+    /// 値が変わったときだけ書き換えて知らせる
+    func setState(_ newState: IngestState) {
+        guard ingestState != newState else { return }
+        ingestState = newState
+        notifyUpdate()
+    }
+
+    func notifyUpdate() {
+        for continuation in updateContinuations.values { continuation.yield(()) }
+    }
+
+    func removeContinuation(_ id: UUID) {
+        updateContinuations[id] = nil
+    }
 }

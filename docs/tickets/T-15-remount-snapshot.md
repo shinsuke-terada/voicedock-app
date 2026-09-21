@@ -151,7 +151,9 @@ public struct WorkspaceMountEventSource: MountEventSource {
                     }
                 }
             }
-            continuation.onTermination = { _ in tasks.forEach { $0.cancel() } }
+            continuation.onTermination = { _ in
+                for task in tasks { task.cancel() }   // swift format の ReplaceForEachWithForLoop
+            }
         }
     }
 }
@@ -204,8 +206,8 @@ static let lockRetrySeconds = 1
 
 `start()`:
 1. `started` なら何もしない。`started = true`、`stopRequested = false`
-2. 通知の購読: `backgroundTasks.append(Task { for await _ in deps.mountEvents.events() { await self.requestScan() } })`（`deps` は let で先に取り出す）
-3. 周期: `backgroundTasks.append(Task { while !Task.isCancelled { let seconds = await deps.configProvider()?.device.scanIntervalSeconds ?? 300; do { try await deps.sleeper.sleep(seconds: seconds) } catch { return }; await self.requestScan() } })`
+2. 通知の購読: `backgroundTasks.append(Task { for await _ in deps.mountEvents.events() { self.requestScan() } })`（`deps` は let で先に取り出す。actor の中で作った `Task` は actor の隔離を引き継ぐので `requestScan()` に `await` を付けない。付けると「await の中に async の呼び出しが無い」の警告がエラーになる）
+3. 周期: `backgroundTasks.append(Task { while !Task.isCancelled { let seconds = await deps.configProvider()?.device.scanIntervalSeconds ?? 300; do { try await deps.sleeper.sleep(seconds: seconds) } catch { return }; self.requestScan() } })`
 4. `requestScan()`（最初の走査）
 
 `stop()`: `stopRequested = true` → `backgroundTasks` を全部 cancel して空に → `waiters` の全部に `nil` を返して空に → `updateContinuations` を全部 `finish()` して空に → `started = false`
@@ -270,9 +272,11 @@ for device in detection.devices:                                   // 名前の�
                || !DeviceDetector.nameMatchesVolume(device.deviceID, volumeName: deps.inspector.volumeName(path: newPath)):
                 recordSkip(name: device.deviceID, reason: .mountNameMismatch, errno: nil, …); continue   // 規則 8 の再判定
         case .failed(let reason): log WARNING remount_failed name=<deviceID> reason=<reason>   // 取り込みは続ける（記録の保護）
-    if !deps.inspector.isMountPoint(path: mountPath):              // 再マウントの途中で外れた等。親の FS を観測しない（PLAN §8.1）
+    info = deps.inspector.mountInfo(path: mountPath)              // statfs は 1 回だけ。この値を判定にも観測にも使う
+    isMountPoint = info.map { $0.mountOnName == SystemMountInspector.realPath(mountPath) }
+                   ?? deps.inspector.isMountPoint(path: mountPath)   // statfs が取れなければ規則 4 の判定だけ（観測値は nil）
+    if !isMountPoint:                                              // 再マウントの途中で外れた等。親の FS を観測しない（PLAN §8.1）
         log DEBUG volume_skipped name=<deviceID> reason=not_a_mount_point; continue
-    info = deps.inspector.mountInfo(path: mountPath)
     readOnly = info?.readOnly                                      // 観測値。試行の成否から推論しない（DEL-31）
     if remounted && readOnly != true: log WARNING remount_failed name=<deviceID> reason=still_writable
     result = await ingestDevice(deviceID: device.deviceID, mountPath: mountPath, config: config)   // T-14
@@ -288,7 +292,7 @@ finishWaiters(index, generation)
 
 `recordSkip(name:reason:errno:into:)`:
 - `reason.needsUserAction` なら `unavailable[name] = reason.rawValue`、`errno` があれば `notListableErrno[name] = errno`
-- ログ `volume_skipped name=<name> reason=<reason>`（`errno` があれば `errno=<n>`）。レベルは `reason.needsUserAction && previousUnavailable[name] != reason.rawValue` なら WARNING、それ以外は DEBUG（**変化したときだけ WARNING**。毎回の走査で鳴らし続けない。OPS-12）
+- ログ `volume_skipped name=<name> reason=<reason>`（`errno` があれば `detail=<n>`。PLAN §8.1 規則 5 の「errno を detail に残す」に合わせる。付録 A.4 のフィールドに `errno` のキーは無いので `LogKey` に足さない）。レベルは `reason.needsUserAction && previousUnavailable[name] != reason.rawValue` なら WARNING、それ以外は DEBUG（**変化したときだけ WARNING**。毎回の走査で鳴らし続けない。OPS-12）
 
 `acquireReaperLock()`:
 ```swift
@@ -409,7 +413,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 
 ### 5.4 `IngestServiceTests.swift`（`@Suite("IngestService の走査", .serialized)`）
 
-共通の準備: `<tmp>/Volumes` に `FakeVolume`（T-14 の既定の木。mtime は古い）、`FakeMountInspector.mounted([<tmp>/Volumes/DJIMIC3], readOnly: false)`、
+共通の準備: `<tmp>/Volumes` に `FakeVolume`（T-14 の既定の木。mtime は古い）、`FakeMountInspector.mounted([<tmp>/Volumes/DJIMIC3], readOnly: false)`（`infos` の `mountOnName` は本物の statfs と同じく realpath 側（`/var` → `/private/var`）に置き換える。走査はこの値を realpath と比べる）、
 `FakeRemounter(outcomes: [.alreadyReadOnly])`、`CoexistenceGuard(runner: ScriptedProcessRunner(results: [.exited(113)]), uid: 501)`、`FakeMountEventSource()`、
 `RecordingSleeper`、`FixedClock`、`Store`（一時ディレクトリ）、`configProvider` は既定の設定（`mountMode = "ro"`）を返す。`volumesRoot` は `<tmp>/Volumes`（5.0）。
 
@@ -421,6 +425,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `readOnlyIsObservedNotInferredFromSuccess` / 「再マウントが成功しても観測が rw なら偽で still_writable」 | remounter `.remounted(同じパス)`、readOnly 偽 | `readOnly == false`、WARNING `remount_failed name=DJIMIC3 reason=still_writable` |
 | `rwModeStillObserves` / 「rw でも観測する」 | `mountMode = "rw"`、readOnly 真 | `readOnly == true` |
 | `unobservableReadOnlyIsNil` / 「statfs が取れなければ readOnly は nil（偽にしない）」 | `infos` を空にし `mountPoints` だけ登録 | `readOnly == nil`、`freeBytes == nil` |
+| `parentFileSystemIsNotObserved` / 「statfs の値がマウント点のものでなければ観測に載せない（親の FS を観測しない）」 | `mountPoints` は登録したまま、`infos[path]` の `mountOnName` を `/`（apfs・rw・空き 500 GB）にする（statfs の間に外れた状態） | generation 1、`devices == [:]`、`unavailable == [:]`、DEBUG `volume_skipped name=DJIMIC3 reason=not_a_mount_point`、inbox は空 |
 | `remountFailureStillIngests` / 「再マウントに失敗しても取り込みは続ける（記録の保護）」 | `.failed("mount_failed")` | inbox に 2 ファイル |
 | `zeroDevicesIsEmptyNotUnknown` / 「0 台なら devices が空（DEL-32）」 | `<tmp>/Volumes` を空 | generation 1、`devices == [:]`、`unavailable == [:]` |
 | `emptyDeviceIsObserved` / 「録音 0 件のデバイスも空の観測として載せる（DEV-19）」 | フォルダだけ | `devices["DJIMIC3"]?.relpaths == []` |
@@ -436,7 +441,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `nameMismatchAfterRemountIsUnavailable` / 「再マウントでパスに ` 1` が付けば取り込まず mount_name_mismatch」 | remounter `.remounted("<tmp>/Volumes/DJIMIC3 1")` | `devices` に無い、`unavailable["DJIMIC3"] == "mount_name_mismatch"`、inbox は空 |
 | `incompleteListingIsNotObserved` / 「列挙に失敗したサブディレクトリがあればそのデバイスを観測に載せない」 | 1 つのフォルダを `chmod 000` | `devices` に無い、`unavailable["DJIMIC3"] == "not_listable"` |
 | `notListableCarriesErrno` / 「not_listable の errno を snapshot に残す」 | ボリュームのルートを `chmod 000` | `notListableErrno["DJIMIC3"] == EACCES` |
-| `unavailableWarnsOnlyOnChange` / 「利用者の操作が要る理由は変わったときだけ WARNING」 | 上と同じ状態で 2 回走査 | 1 回目は WARNING `volume_skipped name=DJIMIC3 reason=not_listable errno=13`、2 回目は DEBUG だけ |
+| `unavailableWarnsOnlyOnChange` / 「利用者の操作が要る理由は変わったときだけ WARNING」 | 上と同じ状態で 2 回走査 | 1 回目は WARNING `volume_skipped name=DJIMIC3 reason=not_listable detail=13`、2 回目は DEBUG だけ |
 | `scanCompletedLevels` / 「scan_completed はコピーがあれば INFO、無ければ DEBUG」 | 2 回走査 | 1 回目 INFO `scan_completed devices=1 copied=2 elapsed_s=…`、2 回目 DEBUG `copied=0` |
 | `activityTracksCopies` / 「進捗を IngestActivity に出す」 | 走査の後 | `copied == 2`、`total == 2`、`lastActivityAt == clock.now()`、`scanning == false` |
 | `updatesYieldOnPublish` / 「公開のたびに updates に流れる」 | `updates()` を購読してから `scanNow()` | 1 つ以上受け取る |
@@ -445,6 +450,9 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `stopResolvesWaiters` / 「stop で待っている scanNow に nil を返す」 | 走査を止めておき `scanNow()` を待たせてから `stop()` | nil |
 | `unlistableVolumesRootIsNotPublished` / 「volumesRoot 自体を列挙できなければ 0 台として公開しない（DEL-32）」 | 1 回目は通常、2 回目の前に `<tmp>/Volumes` を `chmod 000`（テスト後に 755 へ戻す） | 2 回目の `scanNow() == nil`、`latestSnapshot()` は 1 回目のまま（generation 1、`devices["DJIMIC3"]` が在る） |
 
+- `noZeroDeviceSnapshotDuringRemount` の `onRemount` は**最初の 1 回だけ** `send()` を 2 回呼び、通知が走査に届くまで（300 ms）待ってから戻る。`send()` は `Task` で渡すので、待たないと走査が終わった後に届いて別の走査になる。2 回目以降の `onRemount` は何もしない（毎回送ると再走査が止まらない）。数えるのは `scan_completed` の行（2 行とも `devices=1`）
+- `scanNowWaitsForAScanStartedAfterTheCall`・`stopResolvesWaiters` の「走査を止めておく」は、`onRemount` の中で開けるまで待つ門（テスト内の小さな actor）。2 本目の `scanNow()` が待ちに入ったことは `waiters.count == 2`（`@testable`）で確かめてから門を開ける／`stop()` する
+
 ### 5.5 `IngestServiceDiskImageTests.swift`（`@Suite("IngestService × FAT32 イメージ", .serialized, .enabled(if: TestEnvironment.diskTests))`、タグ `.diskImage`）
 
 5.0 の約束を守る（T-07 の `DiskImageVolume(in: tmp, deviceID: DiskImageVolume.uniqueName())` で `<tmp>/Volumes/VDTxxxx` に attach、`useMountPoint: true`）。`volumesRoot` は `disk.volumesRoot`。`SystemMountInspector` と本物の `ProcessRunner` を使う。
@@ -452,10 +460,11 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `diskImageIsDetectedAndIngested` / 「本物の FAT をマウント点として検出し取り込む（realpath の比較）」 | イメージに BWF の `_orig` を 1 本置き（mtime を古くする）、`mountMode = "rw"` | `devices[<名前>]` が在り `readOnly == false`、inbox に 1 ファイル、`source_mtime` が FAT の 2 秒刻みの値 |
-| `realRemountMakesItReadOnly` / 「本物の diskutil で読み取り専用に再マウントし、観測が真になる」 | `mountMode = "ro"`、`DiskutilRemounter(runner: ProcessRunner(), inspector: SystemMountInspector(), useMountPoint: true)` | `readOnly == true`、`statfs` の `MNT_RDONLY` が立つ、mountpoint は `<tmp>` の下のまま |
+| `realRemountMakesItReadOnly` / 「本物の diskutil で読み取り専用に再マウントし、観測が真になる」 | `mountMode = "ro"`、`DiskutilRemounter(runner: ProcessRunner(), inspector: SystemMountInspector(), useMountPoint: true)` | `readOnly == true`、`statfs` の `MNT_RDONLY` が立つ、mountpoint は `<tmp>` の下のまま（`<tmp>` は realpath にしてから比べる。観測のパスは `/private/var/…`、`TempDirectory.url` は `/var/…` のことがある。`make test-disk` で判明） |
 | `alreadyReadOnlyImageIsNotUnmounted` / 「読み取り専用で attach したイメージは再マウントしない」 | `disk.reattach(readOnly: true)`、runner は `ScriptedProcessRunner` | `.alreadyReadOnly`、`recorded == []` |
 
 - `-mountPoint` を付けた再マウントで mountpoint のディレクトリが残るか（DiskArbitration が消すか）は P0-02・P0-10 で確かめ、結果に合わせてこのテストの準備（ディレクトリの作り直しの要否）を直す。直した内容を PR に書く
+- P0-02 でディスクイメージ（/Volumes の外）は、アンマウント後もマウント点のディレクトリが残った（20/20。`docs/POC.md` 章 3）ので準備は変更していない。使用中の拒否（dissented）が実機で 20 回中 2 回あり、`realRemountMakesItReadOnly` が不安定になりうる
 
 ### 5.6 `ConfigEffectPending.swift`（PolicyTests。T-09 §9）
 
@@ -468,6 +477,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `DiskutilRemounter` の「既に ro なら何もしない」を消す | `alreadyReadOnlyDoesNotUnmount` |
 | snapshot の `readOnly` を再マウントの成否から決める（`.remounted` なら真） | `readOnlyIsObservedNotInferredFromSuccess` |
 | `readOnly` の観測が取れないとき `false` を入れる | `unobservableReadOnlyIsNil` |
+| 走査の中のマウント点の判定を `isMountPoint` と `mountInfo` の 2 回の statfs に戻す（判定に使った値と観測に使う値が別になる） | `parentFileSystemIsNotObserved` |
 | `connectEpoch` を前回の snapshot を見ずに「今回 1 台以上なら +1」にする | `connectEpochRisesOnZeroToSome`（`[1, 2, 2, 3]` になる） |
 | 走査中の `requestScan()` で新しい走査を並べて起こす（まとめない） | `noZeroDeviceSnapshotDuringRemount` |
 | `scanNow()` の目標を `startedScans`（今の走査）にする | `scanNowWaitsForAScanStartedAfterTheCall` |
@@ -476,6 +486,13 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `detection.listingError` を見ずに公開する | `unlistableVolumesRootIsNotPublished` |
 | 共存ガードのログを毎回出す | `coexistenceBlocksAndLogsOnce` |
 | `recordSkip` で毎回 WARNING を出す | `unavailableWarnsOnlyOnChange` |
+
+実施結果（コミット後の清潔な状態で 1 項目ずつ。11 項目とも表の「落ちるべきテスト」が落ちた）:
+- 「既に ro なら何もしない」を消すと `info` が使われない警告がエラーになるので、`_ = info` を残して壊した
+- `requestScan()` をまとめない壊し方では、`noZeroDeviceSnapshotDuringRemount` に加えて `scanNowWaitsForAScanStartedAfterTheCall`・`stopResolvesWaiters`・`ceScanIntervalSeconds` も落ちた（並んだ走査が reaper.lock を取り合う）
+- `connectEpoch` を前回を見ずに上げる壊し方では、`skippedScanDoesNotChangeEpoch` も落ちた
+- レビューの後に足した「判定を 2 回の statfs に戻す」でも `parentFileSystemIsNotObserved` が落ちた
+- `.diskImage` の 3 本（§5.5）は `VOICEDOCK_DISK_TESTS` が要るので、実装者は回していない（利用者が実機を抜いて `make test-disk` で確かめる）
 
 ## 7. 受け入れ条件
 
@@ -504,4 +521,4 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 3. `MountEvent`・`MountEventSource`・`WorkspaceMountEventSource` を足し、`IngestDependencies` に `remounter` と `mountEvents` を足す（`volumesRoot` の後）→ 形を変えて 00-api-map に反映済み（2026-09-18）: `MountEventSource.events()` は `AsyncStream<Void>`（`MountEvent` は採用されず、本文から外した）、置き場所は `Remounter.swift`、`remounter`・`mountEvents` は `inspector` の後。**`WorkspaceMountEventSource`（`Bootstrap` が注入する本番の実装）は地図に無いので追記が要る**
 4. `IngestService.updates()` が流す契機を「公開・状態の変化・1 本のコピー」と定める
 5. `IngestState` の 4 値（`idle / scanning / coexistenceBlocked / disabled`）を確定する → 00-api-map に反映済み（2026-09-18。置き場所は `IngestService.swift`）
-6. `DiskImageVolume` と `FakeVolume` は T-07 が作る（00-api-map §15）→ 本チケットの `DiskImageVolume` を外し、T-07 の型への extension（`uniqueName()`・`node`）だけにした
+6. `DiskImageVolume` と `FakeVolume` は T-07 が作る（00-api-map §15）→ 本チケットの `DiskImageVolume` を外し、T-07 の型への extension（`uniqueName()`・`node`）だけにした。**00-api-map §15 か §16 に T-15 の extension（`DiskImageVolume.uniqueName()`・`node`）を追記する**（地図は本チケットでは編集しない）
