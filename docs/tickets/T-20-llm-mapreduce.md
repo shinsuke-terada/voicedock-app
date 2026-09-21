@@ -313,7 +313,8 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 | `onlyOverlap` の判定を消す | `chunkCases`（J） |
 | 実時間の比較を `>=` にする | `chunkCases`（F1） |
 | 文字数を `String.count` で数える | `chunkCases`（H） |
-| `Dedupe.key` の strip を casefold の後にする／`lowercased()` にする | `keyMeasured`（`ΣΑΣ`・`Straße`・`\u{1c}X\u{1f}`） |
+| `Dedupe.key` を `lowercased()` にする | `keyMeasured`（`Straße`）、`goldenDedupe`、`applyMatchesVoicedock`、`reduceResultIsDeduped` |
+| （参考）`Dedupe.key` の strip を casefold の後にする | 落ちるテストは無い（実装で判明: Unicode の case folding は空白を作らず消さないので、strip と casefold は可換。等価な変更） |
 | 単一パスでも重複除去する | `singleChunkIsNotDeduped` |
 | Reduce の user に transcript を入れる | `reduceNeverResendsTheTranscript` |
 | 束の Map を最終形のスキーマで検証する | `oversizedReduceInputFoldsFirst` |
