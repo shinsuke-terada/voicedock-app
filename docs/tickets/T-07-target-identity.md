@@ -259,7 +259,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 
 共通の準備（`makeBench()`）: `TempDirectory` に `FakeVolume`（deviceID `DJIMIC3`）を作り、`FOLDER = "TX_MIC001_20260912_090000"`、`FILE = "TX00_MIC001_20260912_090000_orig.wav"`、
 `REL = FOLDER + "/" + FILE`、中身 `standardContent`（4096 バイト）、`MTIME = 1787000000.0` で置く（voicedock の reaper ベンチと同じ値）。
-ボリュームは `FakeVolumeOpener().open(volumesRoot: fake.volumesRoot.path, deviceID: "DJIMIC3")` の `.opened` を使う。各テストは**弾かせたい条件以外をすべて満たす**（TEST-19）。
+ボリュームは `FakeVolumeOpener().open(volumesRoot: fake.volumesRoot.path(percentEncoded: false), deviceID: "DJIMIC3")` の `.opened` を使う。各テストは**弾かせたい条件以外をすべて満たす**（TEST-19）。
 
 `openVolume` の検査（普通のディレクトリでは本物の `openVolume` を呼ぶ）:
 
