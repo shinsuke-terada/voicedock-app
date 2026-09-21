@@ -75,6 +75,8 @@ struct RecordingNameTests {
         ])
     func rejectsMalformedNames(_ name: String) {
         #expect(RecordingName.parseFile(name) == nil)
+        // 形そのものが規則外（全角数字は `Int(_:)` でも落ちるので、形の判定も見て `\d` への置き換えを捕まえる）
+        #expect(!RecordingName.matchesFilePattern(name))
     }
 
     @Test(
