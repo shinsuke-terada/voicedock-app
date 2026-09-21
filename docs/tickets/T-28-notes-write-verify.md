@@ -349,12 +349,14 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 - [ ] 5 章のテストが全部通る
 - [ ] VDNotes のソースに PT-01（削除）・PT-12（`AtomicFile` 以外の書き込み）の違反が無い
 - [ ] `VaultCheck` は Vault のルートを作らない（テストで確かめた）
-- [ ] 保存検証の規則 ID が SPEC の RN / DN の表と一致する（SPEC 同期）
+- [ ] 保存検証の規則 ID が SPEC の RN / DN の表と一致する（SPEC 同期）→ **T-28 の PR では行わない。GitHub issue #18 に回した**（下の §8。当面は `ruleCounts` が PLAN §8.7 の固定の列と照合する）
 - [ ] 破壊による証明の結果を PR 本文に貼った
 
 ## 8. SPEC の変更
 
 - `docs/SPEC.md` に RN-1〜RN-6 と DN-1〜DN-9 の表（PLAN §8.7 の表を ID が先頭の列になるように 2 つの表に分けたもの）を足し、SPEC 同期の対象に RN / DN を加える（`NoteVerifierTests` の表示名は `RN-n` / `DN-n` で始める）
+
+**実装の注記（T-28 の実装時）**: T-28 の PR では行わない。T-05 の持ち物（`docs/SPEC.md`・`Tests/TestSupport/Spec/SpecDocument.swift` の `SpecIDKind`・`Tests/PolicyTests/SpecSync/SpecCoverage.swift` の `activated`）を直す必要があり、§3 に無い。GitHub issue #18（SPEC 同期の拡張。T-06・T-07・T-17 の分と同じ）に回した。RN / DN を有効にするときは、`TestNameIndex` が表示名の先頭の ID 1 つしか拾わないので、DN-1〜4・RN-5・DN-6 を先頭に持つテストの表示名の付け直し（または分割）も要る
 
 ## 9. マージ後にやること
 
