@@ -2387,15 +2387,15 @@ struct SourceScannerTests {
 
 | 壊し方 | 落ちるべきもの（確かめ済みのものに ✓） |
 |---|---|
-| `SourceScanner.swift` の行コメントの読み飛ばし（`while i < n && s[i] != newline { i += 1 }`）を、中身を `emit(i)` する形に変える | ✓ PT-02・03・07・08・10・11・12・14・19・21・22 などの `…IgnoresDecoy`、`lineCommentIsBlanked` |
-| `TokenPattern.matchesAt` の freeCall の判定（直前が `.` の扱い）を消す | `pt01IgnoresDecoy`（`s.remove(1)`・`SafeUnlink.remove(x)`）、`pt08IgnoresDecoy`（`p.print()`） |
-| `PolicyCatalog` の PT-01 の `.call("unlink")` を消す | `pt01DetectsViolation` |
-| `LiteralMatcher.words` の空の一覧の扱いを `{ _ in false }` にする | `pt06EmptyVocabularyAlwaysFails` |
-| `PinningPolicy.checkWorkflows` の `runs-on` の検査を消す | `pt13DetectsViolation`（ci.yml が 1 件になる） |
-| `OrderingPolicy.check` の `commit < register` を `>` にする | `pt16DetectsViolation`・`pt16IgnoresDecoy` |
-| `ImportPolicy.allowed` の VDCore に `VDStore` を足す | `pt07DetectsViolation` |
-| `ImportPolicy.allowedEverywhere` を空にする | `pt07IgnoresDecoy`（decoy の `import Synchronization`） |
-| `Sources/VDCore/PyRound.swift`（17 行）の末尾に `let x = try! f()` を足す（本番の木に違反を仕込む。T-01 の `ModuleMarker.swift` は T-45 で消えた） | `pt19Holds`（違反の一覧に `VDCore/PyRound.swift:18 try!` が出る） |
+| `SourceScanner.swift` の行コメントの読み飛ばし（`while i < n && s[i] != newline { i += 1 }`）を、中身を `emit(i)` する形に変える | ✓ PT-01・02・03・07・08・09・10・11・12・14・17・18・19・21・22 の `…IgnoresDecoy`（15 本）、`lineCommentIsBlanked` |
+| `TokenPattern.matchesAt` の freeCall の判定（直前が `.` の扱い）を消す | ✓ `pt01IgnoresDecoy`（`s.remove(1)`・`SafeUnlink.remove(x)`）、`pt08IgnoresDecoy`（`p.print()`）、`pt10IgnoresDecoy`（`h.open()`） |
+| `PolicyCatalog` の PT-01 の `.call("unlink")` を消す | ✓ `pt01DetectsViolation` |
+| `LiteralMatcher.words` の空の一覧の扱いを `{ _ in false }` にする | ✓ `pt06EmptyVocabularyAlwaysFails` |
+| `PinningPolicy.checkWorkflows` の `runs-on` の検査を消す | ✓ `pt13DetectsViolation`（ci.yml が 1 件になる） |
+| `OrderingPolicy.check` の `commit < register` を `>` にする | ✓ `pt16DetectsViolation`・`pt16IgnoresDecoy` |
+| `ImportPolicy.allowed` の VDCore に `VDStore` を足す | ✓ `pt07DetectsViolation` |
+| `ImportPolicy.allowedEverywhere` を空にする | ✓ `pt07IgnoresDecoy`（decoy の `import Synchronization`） |
+| `Sources/VDCore/PyRound.swift`（17 行）の末尾に `func policyProbe() -> Data { try! JSONSerialization.data(withJSONObject: [1]) }` を足す（本番の木に違反を仕込む。コンパイルが通る形にする。T-01 の `ModuleMarker.swift` は T-45 で消えた） | ✓ `pt19Holds`（違反の一覧に `VDCore/PyRound.swift:18 try!` が出る） |
 
 ## 受け入れ条件
 
