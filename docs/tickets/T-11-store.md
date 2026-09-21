@@ -717,7 +717,7 @@ public enum Builders {
 
 ### 5.2 `SchemaTests.swift` — `@Suite("スキーマ")`
 
-スキーマの PRAGMA（`table_info` / `index_list` / `index_info` / `foreign_key_list`）は **writer（`pool.writeWithoutTransaction`）で読む**。GRDB 7.11.1 の reader（`pool.read`）では `index_list` と `foreign_key_list` が 0 行を返す（実装時に確認）。
+スキーマの PRAGMA（`table_info` / `index_list` / `index_info` / `foreign_key_list`）は **writer（`pool.writeWithoutTransaction`）で読む**。reader の接続は `Store.init` の手順 4（移行の前）で開かれるため、スキーマの PRAGMA が移行前の古いスキーマを返すことがある（実装時に `pool.read` の `index_list` と `foreign_key_list` が 0 行を返すのを確認。reader で PRAGMA 全般が使えないという意味ではない）。
 
 | 関数名 | 表示名 | 期待 |
 |---|---|---|
@@ -805,7 +805,8 @@ public enum Builders {
 | `failedFromIsLatestFailedEvent` | 戻り先は直近の FAILED の from | NORMALIZING→FAILED、FAILED→NORMALIZING、…→TRANSCRIBING→FAILED | `failedFromPart == .transcribing` |
 | `failedFromNilWithoutFailure` | FAILED が無ければ nil | | nil |
 | `deleteEvaluationOrderedByUpdatedAt` | 削除評価の Session は全件を updated_at, session_key 順 | 状態の違う 3 Session | 全件・順 |
-| `normalizedPathLookup` / `sha256Lookup` | normalized_path・sha256 で引く | | 行が返る。無ければ nil |
+| `normalizedPathLookup` | normalized_path で引く | | 行が返る。無ければ nil |
+| `sha256Lookup` | sha256 で引く | | 行が返る。無ければ nil |
 | `awaitingDeleteResult` | delete_request_id を持つ Part だけ | 2 行のうち 1 行に ID | 1 行 |
 | `needingRecopy` | needs_recopy = 1 の Part だけ | | |
 | `partkeysByStatuses` | 状態の集合で partkey を引く（partkey 順） | DISCOVERED 2 行・NORMALIZED 1 行・FAILED 1 行 | `[.discovered, .failed]` → 3 件を partkey の昇順、`[]` → `[]` |
@@ -836,7 +837,7 @@ public enum Builders {
 | `statusCountsAreZeroFilled` | 状態別件数は全状態を 0 で埋める | 2 状態に 1 件ずつ → 辞書のキーが 12 / 13 個、該当だけ 1 |
 | `backlogCountsNullDurations` | 未処理は非終端の件数・長さの合計・長さ不明の件数 | 非終端 3 件（100、NULL、50）＋ FAILED 1 件 → (3, 150.0, 1) |
 | `failedPartsLimitAndTotal` | FAILED の一覧は started_at 順・上限・総数 | FAILED 25 件、limit 20 → 20 行・total 25・先頭が最も早い started_at |
-| `appliedMigrationsReadOnly` | 適用済みの移行を読める | `["v1_initial"]` |
+| `appliedMigrationsReadOnly` | 適用済みの移行を読める | `["v1_initial"]`。Store を閉じた後の DB（`-wal` / `-shm` が無い）を開いても同じ |
 | `awaitingDeleteResultCountAndPartkeys` | 結果待ちの数と状態別の partkey を読める | DISCOVERED の 3 行（relpath の違う 3 つ）のうち 2 行に `updateRecording(_, [.deleteRequestID("r")])` → `awaitingDeleteResultCount() == 2`、`partkeys(statuses: [.discovered])` は 3 件を partkey の昇順、`partkeys(statuses: [.failed])` は `[]` |
 
 ## 6. 破壊による証明
@@ -851,12 +852,13 @@ public enum Builders {
 | 6 | `Store.init` の `PRAGMA synchronous = FULL` の再実行を消す | `writerSynchronousIsFull` |
 | 7 | バックアップの条件から `!applied.isEmpty` を消す | `noBackupOnFirstCreation` |
 | 8 | `ungroupedRecordings` の `, partkey` を消す | `ungroupedOrderedByStartedAtThenPartkey` |
-| 9 | `ReadOnlyStore.open` の存在確認を消す | `missingDatabaseReturnsNilAndCreatesNothing` |
+| 9 | `ReadOnlyStore.open` の存在確認と `config.readonly = true` を両方消す（`readonly` の開き方は存在しないファイルを作らないので、存在確認だけを消しても落ちない。存在確認は多重の防御） | `missingDatabaseReturnsNilAndCreatesNothing` |
 | 10 | `updateRecording` の `updated_at = ?` を消す | `updateRecordingSetsColumnsAndUpdatedAt` |
 | 11 | `insertImportedKeys` の `WHERE NOT EXISTS` を消す | `importedKeysSkipKnownAndDuplicates` |
 | 12 | `assignments` の重複検査を消す | `duplicateColumnIsRejected` |
-| 13 | `partkeys(statuses:)` の空集合の早期 return を消す | `partkeysByStatuses`（`IN ()` は SQL の構文の誤り） |
+| 13 | `partkeys(statuses:)` の `ORDER BY partkey` を消す（空集合の早期 return を消しても落ちない。SQLite は `IN ()` を構文の誤りにせず 0 行を返すため、早期 return は問い合わせを省くだけ） | `partkeysByStatuses`、`awaitingDeleteResultCountAndPartkeys` |
 | 14 | `RecordingRow.init(row:)` で `errorCodeRaw` に `errorCode?.rawValue` を入れる（生の文字列を捨てる） | `unknownErrorCodeKeepsRawString` |
+| 15 | `ReadOnlyStore.open` の `config.readonly = true` を消す | `cannotWrite` |
 
 ## 7. 受け入れ条件
 
@@ -865,7 +867,7 @@ public enum Builders {
 - [ ] `UPDATE … SET … status` と `INSERT INTO recordings / sessions` の文字列が `Transitions.swift` にしか無い（PT-05）
 - [ ] SQL の文字列に状態名・エラーコード名が無い（すべて束縛。PT-06）
 - [ ] `row["…"] as T`（非 Optional の添字）を使っていない（`row.decode` だけ）
-- [ ] 破壊による証明の 14 項目で、表のテストが落ちることを確かめ、PR 本文に貼った
+- [ ] 破壊による証明の 15 項目で、表のテストが落ちることを確かめ、PR 本文に貼った
 
 ## 8. SPEC の変更
 
@@ -885,3 +887,4 @@ public enum Builders {
 6. （後続のチケット向けの提案）`Store.partkeys(statuses: Set<PartStatus>) throws -> Set<String>`（inbox の取り残しの判定に使う）と、`ReadOnlyStore.awaitingDeleteResultCount() throws -> Int`・`ReadOnlyStore.partkeys(statuses:)`（状態の詳細の「結果待ちの Part の数」と DR-15）。必要になったチケット（T-18 / T-32）が足す → 地図 §3 に**本チケットの API** として載った（`Store.partkeys(statuses:)` の戻り値は `[String]`）。地図の形で §4.8・§4.9 に足した（整合修正）
 7. （整合修正で追記）TestSupport の行の組み立ては地図 §14・§15 の名前 `Builders` にした（旧名 `StoreFixtures`）
 8. （整合修正 M-1）`RecordingRow.errorCodeRaw: String?` を足した。**列は 27 のまま**（`error_code` の 1 列から `errorCode` と `errorCodeRaw` の 2 つを作る導出プロパティ）。未知のコードを表示に残すために T-27 の `ExcludedPart.unknownCode` と T-29 が使う → 00-api-map §3 に反映済み
+9. （実装で追記）チケット §4 は `NewSession` に `Equatable`、`EntityType` に `CaseIterable` を付けている（地図 §3 はそれぞれ `Sendable` だけ・`String, Sendable` だけ）。公開する名前は増えないが、地図に適合を書き足すかは利用者の判断

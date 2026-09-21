@@ -97,6 +97,11 @@ struct ReadOnlyStoreTests {
         let ro = try #require(ReadOnlyStore.open(url: f.databaseURL))
         #expect(try ro.appliedMigrations() == ["v1_initial"])
         #expect(try ro.quickCheck() == "ok")
+        // Store を閉じた後の DB（アプリが動いていないときの診断）でも読める
+        let dir = try TempDirectory()
+        do { _ = try Builders.openStore(in: dir.url, clock: FixedClock(epochMillis: StoreFixture.nowMillis)) }
+        let closed = try #require(ReadOnlyStore.open(url: dir.url.appendingPathComponent("voicedock.sqlite")))
+        #expect(try closed.appliedMigrations() == ["v1_initial"])
     }
 
     @Test("結果待ちの数と状態別の partkey を読める")

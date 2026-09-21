@@ -110,15 +110,20 @@ extension Store {
 
     public func updateSession(_ key: String, _ fields: [SessionField]) throws {
         guard !fields.isEmpty else { return }
+        let a = try SessionField.assignments(fields)
         let now = nowISO()
         try pool.write { db in
-            try Store.applySessionUpdate(db, key: key, fields: fields, now: now)
+            try Store.executeSessionUpdate(db, key: key, a, now: now)
         }
     }
 
     /// updateSession の SQL を与えられた db で実行する（refreshSessionAggregates が同じトランザクションで使う）
     static func applySessionUpdate(_ db: Database, key: String, fields: [SessionField], now: String) throws {
-        let a = try SessionField.assignments(fields)
+        try executeSessionUpdate(db, key: key, try SessionField.assignments(fields), now: now)
+    }
+
+    /// updateSession と applySessionUpdate が共有する SQL（同じ SQL を 2 か所に書かない。CR-06）
+    private static func executeSessionUpdate(_ db: Database, key: String, _ a: Assignments, now: String) throws {
         try db.execute(
             sql: "UPDATE sessions SET \(a.sql), updated_at = ? WHERE session_key = ?",
             arguments: StatementArguments(a.values + [now, key]))
