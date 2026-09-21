@@ -47,7 +47,7 @@ import Foundation
 
 public struct ProcessSpec: Sendable, Equatable {
     public let executable: URL          // 絶対パスの file URL
-    public let arguments: [String]      // argv[1...]（argv[0] は executable.path）
+    public let arguments: [String]      // argv[1...]（argv[0] は executable のパス）
     public let environment: [String: String]
     public init(executable: URL, arguments: [String], environment: [String: String])
 }
@@ -117,9 +117,10 @@ enum Spawn {
 
 `start` の手順（この順。途中で失敗したら、それまでに作った fd をすべて閉じてから失敗を返す）:
 
-1. 指定の検査（失敗は `.spawnFailed(errno: EINVAL)`）: `spec.executable.isFileURL` かつ `spec.executable.path.hasPrefix("/")`。
-   `executable.path` と各引数に `"\u{0}"` を含まない。環境変数の名前が空でなく `=` と `"\u{0}"` を含まず、値に `"\u{0}"` を含まない
-2. `var out: [Int32] = [-1, -1]; var err: [Int32] = [-1, -1]`。`pipe(&out)`、`pipe(&err)`。失敗 → `.pipeFailed(errno: errno)`
+0. `let path = spec.executable.path(percentEncoded: false)`（00-api-map §0。URL からパス文字列を取るのはこの形だけ）
+1. 指定の検査（失敗は `.spawnFailed(errno: EINVAL)`。内部関数 `isValid(_:path:)`）: `spec.executable.isFileURL` かつ `path.hasPrefix("/")`。
+   `path` と各引数に `"\u{0}"` を含まない。環境変数の名前が空でなく `=` と `"\u{0}"` を含まず、値に `"\u{0}"` を含まない
+2. `var out: [Int32] = [-1, -1]; var err: [Int32] = [-1, -1]`。`pipe(&out)`、`pipe(&err)`。失敗 → `.pipeFailed(errno: errno)`（2 本目の失敗では 1 本目の両端を閉じてから）
 3. 親の読み口 `out[0]`・`err[0]` に `fcntl(fd, F_SETFD, FD_CLOEXEC)`
 4. ファイル操作:
    ```swift
@@ -142,9 +143,9 @@ enum Spawn {
    posix_spawnattr_setsigmask(&attr, &mask)
    ```
    （Darwin の `sigemptyset` / `sigfillset` はマクロで Swift から呼べないので、`sigset_t`（`UInt32`）に直接 `0` / `~0` を入れる）
-6. `argv = [spec.executable.path] + spec.arguments`、`envp = spec.environment.sorted { $0.key < $1.key }.map { $0.key + "=" + $0.value }`（**キーの昇順**。子が見る環境の順を決定的にする）。
-   それぞれ `strdup` した `UnsafeMutablePointer<CChar>?` の配列の末尾に `nil` を足して渡し、呼び出しの後で `free` する（内部関数 `withCStringArray(_:_:)`）
-7. `let rc = posix_spawn(&pid, spec.executable.path, &actions, &attr, argv, envp)`（**`posix_spawnp` は使わない**。PATH を探さない）
+6. `argv = [path] + spec.arguments`、`envp = spec.environment.sorted { $0.key < $1.key }.map { $0.key + "=" + $0.value }`（**キーの昇順**。子が見る環境の順を決定的にする）。
+   それぞれ `strdup` した `UnsafeMutablePointer<CChar>?` の配列の末尾に `nil` を足して渡し、呼び出しの後で `free` する（内部関数 `static func withCStringArray<R>(_ strings: [String], _ body: ([UnsafeMutablePointer<CChar>?]) -> R) -> R`。`free` は `defer { for pointer in pointers { free(pointer) } }`。`forEach` は swift-format の `ReplaceForEachWithForLoop` で落ちる）
+7. `let rc = posix_spawn(&pid, path, &actions, &attr, argv, envp)`（**`posix_spawnp` は使わない**。PATH を探さない）
 8. 親の側の書き口 `out[1]`・`err[1]` を閉じる（成功・失敗とも）
 9. `rc != 0` → 読み口を閉じて `.spawnFailed(errno: rc)`。成功 → `.success(SpawnedChild(pid: pid, stdoutFD: out[0], stderrFD: err[0]))`
 
@@ -230,22 +231,36 @@ import Foundation
 import Synchronization
 
 enum ExitWaiter {
+    /// NOTE_EXIT の取りこぼしに備えて waitpid(WNOHANG) を見直す間隔
+    static let pollInterval: DispatchTimeInterval = .milliseconds(100)
+
     /// waitpid の生の status を返す。回収できなかった（ECHILD など）ときは nil
     static func wait(pid: pid_t) async -> Int32?
 }
 
 final class ExitWatch: Sendable {
     private let state: Mutex<State>
-    struct State { var resumed = false; var source: (any DispatchSourceProcess)? = nil }
+    struct State {
+        var resumed = false
+        var source: (any DispatchSourceProcess)? = nil
+        var timer: (any DispatchSourceTimer)? = nil
+    }
     init() { state = Mutex(State()) }
-    func attach(_ s: any DispatchSourceProcess) { state.withLock { $0.source = s } }
-    /// 最初の 1 回だけ true。source を取り消して手放す
+    func attach(_ s: any DispatchSourceProcess, timer t: any DispatchSourceTimer) {
+        state.withLock { st in
+            st.source = s
+            st.timer = t
+        }
+    }
+    /// 最初の 1 回だけ true。source（NOTE_EXIT と予備のタイマー）を取り消して手放す
     func claim() -> Bool {
         state.withLock { st in
             if st.resumed { return false }
             st.resumed = true
             st.source?.cancel()
             st.source = nil
+            st.timer?.cancel()
+            st.timer = nil
             return true
         }
     }
@@ -270,12 +285,25 @@ await withCheckedContinuation { (continuation: CheckedContinuation<Int32?, Never
         // r == 0: まだ終わっていない。次のイベントを待つ
     }
     let source = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: queue)
-    watch.attach(source)
+    // 予備: kqueue への登録は resume の後に非同期で行われ、その前後に終わった子の NOTE_EXIT が届かないことがある
+    // （並行に 20 本を 20 回起動して十数本を取りこぼした）。pollInterval ごとに waitpid(WNOHANG) を見直す
+    let timer = DispatchSource.makeTimerSource(queue: queue)
+    watch.attach(source, timer: timer)  // どちらも resume より前に渡す（claim が取り消せるように）
     source.setEventHandler(handler: reap)
+    timer.setEventHandler(handler: reap)
+    timer.schedule(deadline: DispatchTime(uptimeNanoseconds: 0), repeating: pollInterval)
     source.resume()
+    timer.resume()
     queue.async(execute: reap)     // source を登録する前に既に終わっていた場合（取りこぼしを防ぐ）
 }
 ```
+
+- **予備のタイマーが要る理由**（実装で分かった）: `DispatchSource.makeProcessSource` の kqueue への登録は `resume()` の後に非同期で行われる。
+  `queue.async(execute: reap)` が子の生存中に走り、その直後・登録の前に子が終わると、NOTE_EXIT が届かず continuation が永久に戻らない。
+  `setRegistrationHandler` を足しても直らなかった（登録に失敗した source は登録の通知も終了の通知も出さない）。
+  診断の試験（`/usr/bin/true` と「起動直後に SIGKILL する `/bin/sleep 30`」を 20 本並行に 20 回）で 400 本中 13〜23 本を取りこぼし、タイマーを足して 0 本になった
+- タイマーの初回は `DispatchTime(uptimeNanoseconds: 0)`（過去の時刻 = すぐ）。`DispatchTime.now()` は PT-09 で使えない
+- `ExitWatch.attach` の引数は `any DispatchSourceProcess` と `any DispatchSourceTimer` の型のまま持つ（`[any DispatchSourceProtocol]` に入れると Swift 6 の region isolation で `withLock` の中に渡せない）
 
 - `waitpid` を呼ぶのはここだけ（`waitpid(-1, …)` は使わない。他の子を横取りしない）
 
@@ -288,6 +316,7 @@ await withCheckedContinuation { (continuation: CheckedContinuation<Int32?, Never
 // 子プロセスの実行（PLAN §8.2）。起動・出力の末尾・タイムアウト・プロセスグループごとの停止。
 import Darwin
 import Foundation
+import Synchronization
 import VDCore
 
 public protocol ProcessRunning: Sendable {
@@ -313,6 +342,22 @@ public actor ProcessRunner: ProcessRunning {
     static func race(exit: Task<Int32?, Never>, timeout: Duration) async -> Bool
     /// 出力の EOF を readerDrainGrace だけ待ち、過ぎたら読み取りに停止を要求して終わりを待つ
     static func finishReaders(_ readers: Task<Void, Never>, _ tails: [OutputTail]) async
+    /// task が timeout 以内に終われば true。時間切れと呼び手のタスクの取り消しは false（race と finishReaders の本体）
+    static func finishes<T: Sendable>(_ task: Task<T, Never>, within timeout: Duration) async -> Bool
+}
+
+/// 最初に決まった Bool を 1 回だけ返す（finishes の時間切れと終了の早い方）。同じ ProcessRunner.swift に置く internal の補助
+final class FirstOutcome: Sendable {
+    private let state: Mutex<State>          // ProcessRunner.swift は Synchronization も import する
+    struct State {
+        var settled: Bool? = nil
+        var continuation: CheckedContinuation<Bool, Never>? = nil
+    }
+    init() { state = Mutex(State()) }
+    /// 最初の 1 回だけが効く。待っている value() があれば起こす
+    func settle(_ result: Bool)
+    /// 決まるまで待つ（既に決まっていればすぐ返す）
+    func value() async -> Bool
 }
 ```
 
@@ -331,35 +376,47 @@ public actor ProcessRunner: ProcessRunning {
 10. `active.remove(child.pid)`
 11. `ProcessResult(termination: timedOut ? .timedOut : WaitStatus.termination(raw), stdoutTail: stdout.snapshot, stderrTail: stderr.snapshot)`
 
-`race(exit:timeout:)`:
+`race(exit:timeout:)` は `await finishes(exit, within: timeout)`。
+
+`finishes(_:within:)`:
 
 ```swift
-await withTaskGroup(of: Bool.self) { group in
-    group.addTask { _ = await exit.value; return true }
-    group.addTask {
-        do { try await Task.sleep(for: timeout); return false }
-        catch { return false }          // 取り消し（呼び手の取り消し）は「時間切れ」と同じに扱い、止める側へ倒す
-    }
-    let first = await group.next() ?? false
-    group.cancelAll()
-    return first
+let outcome = FirstOutcome()
+Task {  // task が終われば自然に終わる
+    _ = await task.value
+    outcome.settle(true)
 }
+let timer = Task {
+    try? await Task.sleep(for: timeout)
+    outcome.settle(false)
+}
+let first = await withTaskCancellationHandler {
+    await outcome.value()
+} onCancel: {
+    outcome.settle(false)  // 取り消し（呼び手の取り消し）は「時間切れ」と同じに扱い、止める側へ倒す
+}
+timer.cancel()
+return first
 ```
 
+`FirstOutcome.settle(_:)` は `withLock` の中で「未決なら `settled` に入れ、待っている continuation を取り出す」だけを行い、`resume` はロックの外で呼ぶ。
+`value()` は `withCheckedContinuation` の中で `withLock` し、決まっていればその値ですぐ `resume`、未決なら continuation を預ける。
+
+- **`withTaskGroup` を使わない理由**（実装で分かった）: `withTaskGroup` は本体を抜ける前に残った子タスクを待つ。`Task.value` の待ちは取り消しで中断されないので、
+  「時間切れ」の側が先に返っても `exit.value` を待つ子が残り、`race` は子が終わるまで返らなかった（`timeoutKillsChildAndGrandchild` が 30 秒、`cancellingTheCallerStopsTheChild` が 30 秒かかった）。
+  `finishReaders` も同じで、停止要求が EOF の後にしか届かなかった
+
 - `Task.sleep(for:)` を使ってよい（実プロセスの時間切れは実時間で測る。`Sleeper` の注入は Worker などの待ちのためのもので、ここには使わない）。`ContinuousClock()` は書かない（PT-09）
-- 呼び手の `Task` が取り消されると、上の 2 つ目の子タスクが即座に `false` を返すので、子は SIGTERM → 即座に SIGKILL で止まり、`.timedOut` が返る
+- 呼び手の `Task` が取り消されると、`onCancel` が即座に `false` に決めるので、子は SIGTERM → 即座に SIGKILL で止まり、`.timedOut` が返る
 
 `finishReaders(_:_:)`:
 
 ```swift
-let done = await withTaskGroup(of: Bool.self) { group in
-    group.addTask { await readers.value; return true }
-    group.addTask { try? await Task.sleep(for: readerDrainGrace); return false }
-    let first = await group.next() ?? false
-    group.cancelAll()
-    return first
+let done = await finishes(readers, within: readerDrainGrace)
+if !done {
+    for tail in tails { tail.requestStop() }
+    await readers.value
 }
-if !done { tails.forEach { $0.requestStop() } ; await readers.value }
 ```
 
 （EOF が来ないのは、グループの外へ出た子孫（`setsid` したデーモンなど）が書き口を持ち続けている場合だけ。停止要求で 100 ms 以内に読み取りが終わる）
@@ -371,7 +428,7 @@ if !done { tails.forEach { $0.requestStop() } ; await readers.value }
 3. `let record = ExitRecord()`、`let exit = Task { let raw = await ExitWaiter.wait(pid: child.pid); record.set(raw); return raw }`
 4. `active.insert(child.pid)`
 5. `let process = RunningProcess(pid: child.pid, exit: exit, record: record, readers: readers, stdout: stdout, stderr: stderr)`
-6. `Task { _ = await exit.value; await self.unregister(child.pid) }`
+6. `Task { _ = await exit.value; self.unregister(child.pid) }`（actor の中で作った `Task` は actor に隔離されるので `await` は要らない。書くと「async の操作が無い await」の警告 = エラー）
 7. `return process`
 
 `terminateAll(grace:)`（アプリの終了。PLAN §8.15）:
@@ -438,7 +495,13 @@ final class ExitRecord: Sendable {
 
 共通: スイートはすべて `@Suite(…, .serialized, .timeLimit(.minutes(1)))`（プロセスグループとシグナルを扱うため直列）。
 スクリプトは `ScriptWriter.write(_ body: String, name: String, in dir: URL) throws -> URL`（`#!/bin/sh\n` + body を書いて `chmod 0755`。テストのターゲットの中の補助。`AtomicFile` は使わなくてよい）。
-孫の消滅の確認は `waitUntilGone(pid:within:)`（`kill(pid, 0) == -1 && errno == ESRCH` になるまで 50 ms ごとに最大 2 秒。ゾンビの間は `kill` が成功するため待つ）。
+孫の消滅の確認は `waitUntilGone(pid:within:)`（`kill(pid, 0) == -1 && errno == ESRCH` になるまで 50 ms ごとに最大 2 秒。ゾンビの間は `kill` が成功するため待つ）。`ScriptWriter.swift` に置き、pid ファイルを読む `readPID(_:)` も同じ所に置く。
+経過時間はテストの中で `ContinuousClock` を使って測る（PT-09 は `Sources/` だけが対象）。
+
+**書いたばかりのスクリプトの最初の exec は macOS の検査で 0.1〜0.3 秒かかる**（実装で分かった）。その間に届いた SIGTERM は `trap` より先に効くので、
+時間切れの短いテスト（`timeoutKillsChildAndGrandchild`・`timeoutEscalatesToSIGKILL`）はスクリプトの先頭に `[ "$1" = warm ] && exit 0` を置き、
+引数 `warm` で 1 回空で起動してから本番を起動する（テスト内の補助 `warmUp(_:)`）。`terminateEscalatesToSIGKILL` はスクリプトに `echo ready >&2` を足し、
+`stderrTail()` に `ready` が出るまで待ってから `terminate` する（補助 `waitForStderr(_:containing:)`。`stderrTailWhileRunning` と共用）。
 
 ### 5.1 `ProcessRunnerTests.swift` — `@Suite("ProcessRunner.run")`
 
@@ -459,8 +522,8 @@ final class ExitRecord: Sendable {
 | `largeOutputDoesNotBlockChild` | 大量の出力でも子が止まらない | stdout と stderr にそれぞれ 1 MB | 5 秒以内に `.exited(0)` |
 | `newProcessGroup` | 子は新しいプロセスグループの先頭 | `echo $$; ps -o pgid= -p $$`（環境 `standard`） | 2 行の値（空白を除く）が等しく、`getpgrp()` と違う |
 | `childDoesNotInheritParentFDs` | 子は 0・1・2 以外の fd を受け継がない | テストで `/dev/null` を開き `dup2(fd, 200)`、`/bin/ls /dev/fd` | 出力の行に `200` が無い（後で `close(200)`） |
-| `timeoutKillsChildAndGrandchild` | タイムアウトで子と孫をグループごと止める（ASR-07） | `sleep 30 & echo $! > "$1"; sleep 30`、timeout 0.5 秒 | `.timedOut`、pid ファイルの孫が 2 秒以内に消える |
-| `timeoutEscalatesToSIGKILL` | SIGTERM を無視する子は 5 秒後に SIGKILL | `trap '' TERM; sleep 30`、timeout 0.2 秒 | `.timedOut`、経過が 5 秒以上 8 秒未満 |
+| `timeoutKillsChildAndGrandchild` | タイムアウトで子と孫をグループごと止める（ASR-07） | `[ "$1" = warm ] && exit 0` + `sleep 30 & echo $! > "$1"; sleep 30`、`warmUp` の後に timeout 0.5 秒 | `.timedOut`、pid ファイルの孫が 2 秒以内に消える |
+| `timeoutEscalatesToSIGKILL` | SIGTERM を無視する子は 5 秒後に SIGKILL | `[ "$1" = warm ] && exit 0` + `trap '' TERM; sleep 30`、`warmUp` の後に timeout 0.2 秒 | `.timedOut`、経過が 5 秒以上 8 秒未満 |
 | `lingeringGrandchildIsKilledAfterExit` | 正常終了でもグループに残った孫を消す | `sleep 30 & echo $! > "$1"; exit 0` | `.exited(0)`、2 秒以内に返り、孫が消える |
 | `runsDoNotBlockEachOther` | 2 つの run は並行に進む（actor を止めない） | `async let` で `/bin/sleep 1` を 2 つ | 両方 `.exited(0)`、合計の経過が 1.9 秒未満 |
 | `cancellingTheCallerStopsTheChild` | 呼び手のタスクを取り消すと子を止める | `Task { await runner.run(sleep 30, timeout: 60 秒) }` を 0.2 秒後に `cancel()` | `.timedOut`、1 秒以内に返る |
@@ -472,7 +535,7 @@ final class ExitRecord: Sendable {
 |---|---|---|---|
 | `spawnAndTerminate` | spawn した子を terminate で止める | `/bin/sleep 30` を spawn | `isRunning == true` → `terminate(grace: 1 秒)` が `.signaled(SIGTERM)` → `isRunning == false` |
 | `terminateTwiceReturnsSameResult` | 2 回目の terminate は最初の終わり方を返す | 上に続けて | 同じ `.signaled(SIGTERM)`、すぐ返る |
-| `terminateEscalatesToSIGKILL` | SIGTERM を無視する子は grace の後 SIGKILL | `trap '' TERM; sleep 30`、grace 0.5 秒 | `.signaled(SIGKILL)` |
+| `terminateEscalatesToSIGKILL` | SIGTERM を無視する子は grace の後 SIGKILL | `trap '' TERM; echo ready >&2; sleep 30`、`ready` を待ってから grace 0.5 秒 | `.signaled(SIGKILL)` |
 | `spawnMissingExecutableThrows` | 無い実行ファイルの spawn は SpawnError | `<tmp>/nope` | `SpawnError.spawnFailed(errno: ENOENT)` を投げる |
 | `stderrTailWhileRunning` | 動いている間も stderr の末尾を読める | `echo ready >&2; sleep 30` | 2 秒以内に `stderrTail()` が `ready\n` を含む。最後に terminate |
 | `waitForExitReportsCrash` | 勝手に終わったことを waitForExit で知れる | `sleep 0.2; exit 3` | `waitForExit()` が `.exited(3)`、`isRunning == false` |
