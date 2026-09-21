@@ -382,6 +382,15 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 | 2 回目の `ensureRunning` で生死を確かめずに起動し直す | `reusesARunningServer` |
 | `ensureRunning` の `stopCurrent()` を `starting` の Task の外で `await` し、その後の `starting` の再確認を消す（v1 の手順） | `concurrentCallsStartOnlyOne` |
 
+実施の結果（2026-09-21。コミット後の清潔な状態で 1 項目ずつ壊し、`git checkout --` で戻した）: どの項目でも表のテストが落ちた。表に無いテストも落ちたのは次のとおり。
+- `-c` にする: `startsAndWaitsForHealth`・`ceContextSize` も落ちる
+- `--api-key <key>`: Supervisor で `LlamaArgs.build(…) + ["--api-key", key]` にすると `keyIsNotInTheArguments` と `startsAndWaitsForHealth`、`LlamaArgs.build` の末尾に足すと `buildIsExact` と `startsAndWaitsForHealth` が落ちる（1 か所では両方は落ちない。表の 2 つはそれぞれの壊し方で落ちる）
+- 同じポートを使い回す: `retriesOnAnotherPort` は 3 回目が登録の無いポートで待ち続け、`FixedClock` が進まないので終わらない。`.timeLimit(.minutes(1))` で失敗と記録されるが、ループが取り消しを見ないのでテストのプロセスは残る（手で止めた）
+- `maxAttempts = 1`: `timesOutAfter300Seconds` も落ちる
+- `stop()` で鍵を消さない: `concurrentCallsStartOnlyOne` も落ちる
+- 3 回の失敗の後に鍵を消さない: `timesOutAfter300Seconds` も落ちる
+- v1 の再入の手順: 3 回のうち 2 回は落ちるまでに数分かかった（2 つの起動が同じ鍵ファイルを書き、偽物の `/health` の待ちが食い違うため）。3 回目は手で止めた
+
 ## 7. 受け入れ条件
 
 - [ ] §3 のファイルがあり、`make lint` と `make test` が通る
