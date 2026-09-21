@@ -6,13 +6,10 @@ Python + Docker の参照実装 `voicedock` を Swift で書き直すもの。�
 
 ## いまの状態
 
-**仕様だけのリポジトリ。ソースコードは 1 行も無く、git リポジトリでもない。** 計画は完了していて、次は実装。
+**実装中。** git リポジトリは `shinsuke-terada/voicedock-app`（非公開）。`main` ← `develop` ← `feat/T-nn-*` の PR で進め、**マージは利用者が行う**。
+CI は開発機のセルフホストランナー `voicedock-local`（`~/actions-runner`。PLAN §10.8）。ブランチ保護は無料プランで使えないので、CI が緑のときだけマージする運用。
 
-| 次 | 内容 |
-|---|---|
-| Phase 0 | `docs/tickets/P0-poc.md` の P0-01〜12（実機 PoC）。**実機の操作は利用者が行う**。成果物は `docs/POC.md` |
-| Phase 1 | T-01（リポジトリの骨組み。`git init` はここ）→ T-02 / T-03 → T-04 / T-05 / T-25 |
-| 以降 | `docs/tickets/README.md` の依存順（Phase 2〜9） |
+進捗（どのチケットがマージ済みか、次に何ができるか）は `docs/tickets/STATUS.md` にある。
 
 セッションを再開したら、まず `docs/tickets/STATUS.md` を読む。
 
