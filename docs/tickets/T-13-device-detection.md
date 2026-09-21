@@ -248,7 +248,9 @@ public struct CoexistenceGuard: Sendable {
     /// LaunchAgent が「登録されている」か（今動いているかではない）
     public func isVoicedockHelperLoaded() async -> Bool
     /// argv（テストでも使う）
-    public static func arguments(uid: uid_t) -> [String] { ["print", ["gui", String(uid), Self.label].joined(separator: "/")] }
+    public static func arguments(uid: uid_t) -> [String] {
+        ["print", ["gui", String(uid), Self.label].joined(separator: "/")]
+    }
 }
 ```
 - 起動: `ProcessSpec(executable: Self.launchctl, arguments: Self.arguments(uid: uid), environment: ProcessEnvironment.cLocale)`、`runner.run(spec, timeout: Self.timeout)`
@@ -368,10 +370,10 @@ public actor ScriptedProcessRunner: ProcessRunning {
 ### 5.4 `CoexistenceGuardTests.swift`（`@Suite("CoexistenceGuard")`）
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `argvIsExact` / 「launchctl の argv と環境が逐語どおり」 | `ScriptedProcessRunner(results: [.exited(1)])`、uid 501 | `recorded[0].executable.path(percentEncoded: false) == "/bin/launchctl"`、`arguments == ["print", "gui/501/com.voicedock.ingest"]`（= `CoexistenceGuard.arguments(uid: 501)`）、`environment == ProcessEnvironment.cLocale`、timeout 10 秒 |
+| `argvIsExact` / 「launchctl の argv と環境が逐語どおり」 | `ScriptedProcessRunner(results: [ScriptedProcessRunner.exited(1)])`、uid 501 | `recorded[0].executable.path(percentEncoded: false) == "/bin/launchctl"`、`arguments == ["print", "gui/501/com.voicedock.ingest"]`（= `CoexistenceGuard.arguments(uid: 501)`）、`environment == ProcessEnvironment.cLocale`、timeout 10 秒 |
 | `exitZeroMeansLoaded` / 「終了コード 0 なら登録されている」 | `.exited(0)` | 真 |
 | `nonZeroMeansNotLoaded` / 「0 以外（113）なら登録されていない」 | `.exited(113)` | 偽 |
-| `timeoutAndSpawnFailureAreNotLoaded` / 「タイムアウト・起動失敗・シグナルは偽」 | `.timedOut` / `.spawnFailed(errno: ENOENT)` / `.signaled(9)` | すべて偽 |
+| `timeoutAndSpawnFailureAreNotLoaded` / 「タイムアウト・起動失敗・シグナルは偽」 | `termination` が `.timedOut` / `.spawnFailed(errno: ENOENT)` / `.signaled(9)` の `ProcessResult`（パラメータ化） | すべて偽 |
 
 ### 5.5 `FakeVolumeNoiseTests.swift`（`@Suite("FakeVolume のノイズ")`。TEST-05。本体のテストは T-07 の `FakeVolumeTests`）
 | 関数名 / 表示名 | 期待 |
