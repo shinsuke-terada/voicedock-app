@@ -228,7 +228,7 @@ fi
 # 6. 中身の一覧だけ照合する（署名・公証の検査は verify-bundle.sh の全体実行で行う）
 "$root/scripts/verify-bundle.sh" --files-only "$app"
 
-echo "OK: $app（版 $version、ビルド $build、署名 $sign_mode）"
+echo "OK: ${app}（版 ${version}、ビルド ${build}、署名 ${sign_mode}）"
 ```
 
 - `swift build --show-bin-path` を使う（`.build/arm64-apple-macosx/<conf>` を手で組み立てない）
@@ -277,7 +277,7 @@ if [ -z "$identity" ]; then
   fi
   count="$(printf '%s\n' "$candidates" | grep -c . || true)"
   if [ "$count" != "1" ]; then
-    echo "ERROR: 「$prefix」の証明書が 1 つに決まりません（$count 件）。VOICEDOCK_SIGN_IDENTITY に完全な名前を入れてください" >&2
+    echo "ERROR: 「${prefix}」の証明書が 1 つに決まりません（$count 件）。VOICEDOCK_SIGN_IDENTITY に完全な名前を入れてください" >&2
     printf '  候補: %s\n' "$candidates" >&2
     exit 1
   fi
@@ -335,7 +335,7 @@ else
   upload="$target"
 fi
 
-echo "==> xcrun notarytool submit（キーチェーンプロファイル $profile）"
+echo "==> xcrun notarytool submit（キーチェーンプロファイル ${profile}）"
 log="$root/dist/notarytool-$(basename "$target").txt"
 set +e
 xcrun notarytool submit "$upload" --keychain-profile "$profile" --wait 2>&1 | tee "$log"
@@ -344,14 +344,14 @@ set -e
 
 submission="$(sed -n 's/^ *id: \([0-9a-fA-F-]\{36\}\).*$/\1/p' "$log" | head -n 1)"
 if [ "$rc" -ne 0 ] || ! grep -q '^ *status: Accepted$' "$log"; then
-  echo "ERROR: 公証が通りませんでした（$log）" >&2
+  echo "ERROR: 公証が通りませんでした（${log}）" >&2
   [ -n "$submission" ] && xcrun notarytool log "$submission" --keychain-profile "$profile" >&2 || true
   exit 1
 fi
 
 xcrun stapler staple "$target"
 xcrun stapler validate "$target"
-echo "OK: $target を公証・staple しました（submission $submission）"
+echo "OK: $target を公証・staple しました（submission ${submission}）"
 ```
 
 - `--wait` を必ず付ける（待たずに次へ進むと staple が「まだ通っていない」で失敗する）
@@ -463,7 +463,7 @@ plutil -lint "$plist" > /dev/null && ok "plist として読める" || ng "plist 
 check_key() {
   local key="$1" want="$2" got
   got="$(plutil -extract "$key" raw -o - "$plist" 2>/dev/null || echo "<無し>")"
-  [ "$got" = "$want" ] && ok "$key = $got" || ng "$key が $want でない（$got）"
+  [ "$got" = "$want" ] && ok "$key = $got" || ng "$key が $want でない（${got}）"
 }
 check_key CFBundleIdentifier "$BUNDLE_ID"
 check_key CFBundleName VoiceDock
@@ -483,7 +483,7 @@ machos=("$app/Contents/MacOS/VoiceDock" "$app/Contents/Helpers/voicedock-reaper"
         "$app/Contents/Helpers/whisper-cli" "$app/Contents/Helpers/llama-server")
 for bin in "${machos[@]}"; do
   arch="$(lipo -archs "$bin")"
-  [ "$arch" = "arm64" ] && ok "$(basename "$bin") = arm64" || ng "$(basename "$bin") が arm64 単体でない（$arch）"
+  [ "$arch" = "arm64" ] && ok "$(basename "$bin") = arm64" || ng "$(basename "$bin") が arm64 単体でない（${arch}）"
 done
 
 # V-4 リンク（PLAN §11.2）
@@ -535,7 +535,7 @@ if [ -n "$dmg" ]; then
 fi
 
 if [ "$status" -eq 0 ]; then
-  echo "OK: verify-bundle のすべての検査に通りました（版 $version）"
+  echo "OK: verify-bundle のすべての検査に通りました（版 ${version}）"
 else
   echo "ERROR: verify-bundle に失敗しました" >&2
 fi
