@@ -169,7 +169,8 @@ public static let part: Set<Edge<PartStatus>> = [
     Edge(.discovered, .normalizing), Edge(.discovered, .skipped),
     Edge(.normalizing, .normalized), Edge(.normalizing, .skipped), Edge(.normalizing, .failed),
     Edge(.normalized, .transcribing), Edge(.normalized, .normalizing),
-    Edge(.transcribing, .normalizing), Edge(.transcribing, .transcribed), Edge(.transcribing, .skipped), Edge(.transcribing, .failed),
+    Edge(.transcribing, .normalizing), Edge(.transcribing, .transcribed), Edge(.transcribing, .skipped),
+    Edge(.transcribing, .failed),
     Edge(.transcribed, .rawWriting),
     Edge(.rawWriting, .rawSaved), Edge(.rawWriting, .failed),
     Edge(.rawSaved, .sourceDeleting), Edge(.rawSaved, .completed),
@@ -191,9 +192,9 @@ public static let session: Set<Edge<SessionStatus>> = [
     Edge(.cleanup, .completed),
     Edge(.failed, .merging), Edge(.failed, .analyzing), Edge(.failed, .writing),
     // ★ 本計画の追加（PLAN §5.6。X-13 / X-31）
-    Edge(.merged, .analyzed),                    // analysis_reused
-    Edge(.analyzed, .analyzing), Edge(.writing, .analyzing),   // stale_analysis
-    Edge(.sourceDeleting, .merging), Edge(.sourceDeletePending, .merging), Edge(.cleanup, .merging),   // 削除段からの再オープン
+    Edge(.merged, .analyzed),  // analysis_reused
+    Edge(.analyzed, .analyzing), Edge(.writing, .analyzing),  // stale_analysis
+    Edge(.sourceDeleting, .merging), Edge(.sourceDeletePending, .merging), Edge(.cleanup, .merging),  // 削除段からの再オープン
 ]
 
 /// PLAN 付録 A.1 の復旧写像（この順に処理する）。
