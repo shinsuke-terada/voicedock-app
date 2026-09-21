@@ -6,7 +6,7 @@
 | 題 | Python 3.12 の `str`・`json`・`round` と同じに振る舞う部品を VDCore に 1 か所だけ置く（PLAN §5.7、CR-24） |
 | Phase | 2 |
 | 前提 | T-25（golden の `pytext`・`pyjson`・`pyjson_decode`・`pyround` と、TestSupport の `Golden`・`GoldenAssert`・`GoldenJSON`）。T-01 の VDCore ターゲット |
-| 見積もり | 手で書く行 約 1180（本体 658、`gen-casefold.py` 84、テスト 378、`GoldenCase+PyJSON.swift` と そのテスト 約 60）。生成物 `PyCaseFoldTable.swift`（1552 行）と入手物 `CaseFolding-15.0.0.txt`（1624 行）は数えない |
+| 見積もり | 手で書く行 約 1214（本体 666、`gen-casefold.py` 84、テスト 380、`GoldenCase+PyJSON.swift` と そのテスト 84）。生成物 `PyCaseFoldTable.swift`（1552 行）と入手物 `CaseFolding-15.0.0.txt`（1624 行）は数えない |
 
 ## 1. 目的
 
