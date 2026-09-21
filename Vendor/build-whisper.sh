@@ -25,7 +25,7 @@ mkdir -p "$here/work" "$out"
 git clone --quiet --depth 1 --branch "$WHISPER_CPP_REF" "$WHISPER_CPP_REPO" "$work"
 actual="$(git -C "$work" rev-parse HEAD)"
 if [ "$actual" != "$WHISPER_CPP_SHA" ]; then
-  echo "ERROR: whisper.cpp $WHISPER_CPP_REF のコミットが違います（期待 $WHISPER_CPP_SHA、実際 $actual）" >&2
+  echo "ERROR: whisper.cpp $WHISPER_CPP_REF のコミットが違います（期待 ${WHISPER_CPP_SHA}、実際 ${actual}）" >&2
   exit 1
 fi
 

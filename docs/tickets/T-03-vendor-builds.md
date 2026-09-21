@@ -120,7 +120,7 @@ mkdir -p "$here/work" "$out"
 git clone --quiet --depth 1 --branch "$WHISPER_CPP_REF" "$WHISPER_CPP_REPO" "$work"
 actual="$(git -C "$work" rev-parse HEAD)"
 if [ "$actual" != "$WHISPER_CPP_SHA" ]; then
-  echo "ERROR: whisper.cpp $WHISPER_CPP_REF のコミットが違います（期待 $WHISPER_CPP_SHA、実際 $actual）" >&2
+  echo "ERROR: whisper.cpp $WHISPER_CPP_REF のコミットが違います（期待 ${WHISPER_CPP_SHA}、実際 ${actual}）" >&2
   exit 1
 fi
 
@@ -177,7 +177,7 @@ mkdir -p "$here/work" "$out"
 git clone --quiet --depth 1 --branch "$LLAMA_CPP_REF" "$LLAMA_CPP_REPO" "$work"
 actual="$(git -C "$work" rev-parse HEAD)"
 if [ "$actual" != "$LLAMA_CPP_SHA" ]; then
-  echo "ERROR: llama.cpp $LLAMA_CPP_REF のコミットが違います（期待 $LLAMA_CPP_SHA、実際 $actual）" >&2
+  echo "ERROR: llama.cpp $LLAMA_CPP_REF のコミットが違います（期待 ${LLAMA_CPP_SHA}、実際 ${actual}）" >&2
   exit 1
 fi
 
@@ -204,6 +204,7 @@ echo "OK: $out/llama-server ($LLAMA_CPP_REF $actual)"
 ```
 
 - `--help` の出力には機械ごとに変わる既定値（スレッド数など）が入るので、fixture は `--update-fixtures` を付けたときだけ書く（毎回の `make vendor` で差分を出さない）。fixture を更新するのは「版を上げる PR」だけ
+- 変数の直後に全角文字が続くところは `${…}` で囲む。macOS の `/bin/bash` 3.2 は `$actual）` の全角文字の先頭バイトを変数名の一部として読み、`set -u` の下で `unbound variable` になる（「コミットが違います」が出ずに落ちる。T-03 の破壊による証明で見つけた）
 - ビルドに使った cmake の版は PR 本文に貼る（`cmake --version`）。cmake の版は固定しない（Homebrew の最新でよい）が、記録は残す
 
 ### 5. `Tests/PolicyTests/VendorFixtureTests.swift`（全文）

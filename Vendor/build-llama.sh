@@ -26,7 +26,7 @@ mkdir -p "$here/work" "$out"
 git clone --quiet --depth 1 --branch "$LLAMA_CPP_REF" "$LLAMA_CPP_REPO" "$work"
 actual="$(git -C "$work" rev-parse HEAD)"
 if [ "$actual" != "$LLAMA_CPP_SHA" ]; then
-  echo "ERROR: llama.cpp $LLAMA_CPP_REF のコミットが違います（期待 $LLAMA_CPP_SHA、実際 $actual）" >&2
+  echo "ERROR: llama.cpp $LLAMA_CPP_REF のコミットが違います（期待 ${LLAMA_CPP_SHA}、実際 ${actual}）" >&2
   exit 1
 fi
 
