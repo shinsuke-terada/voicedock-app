@@ -391,6 +391,7 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 - `maxAttempts = 1`: `timesOutAfter300Seconds` も落ちる
 - `stop()` で鍵を消さない: `concurrentCallsKeepOnlyOneAlive` も落ちる
 - 3 回の失敗の後に鍵を消さない: `timesOutAfter300Seconds` も落ちる
+- 手順 2 の「返す前の比べ直し」（`starting == nil && stopping == nil && current?.handle == c.handle`）を `true` にする: 3 回回して、落ちるテストは無かった（`isRunning` の `await` の間に別の呼び手が起動・停止を始める窓を、決まった順で作るテストが無い）。表には載せない。この 3 回で落ちたのは `failsAfterThreeAttempts` だけで、それは T-12 の stderr の取りこぼし（§8-9、T-12 側の PR #42）によるもので、比べ直しとは関係ない
 - v1 の再入の手順: 3 回のうち 2 回は落ちるまでに数分かかった（2 つの起動が同じ鍵ファイルを書き、偽物の `/health` の待ちが食い違うため）。3 回目は手で止めた（この項目は再レビューの修正より前の実装で行った。修正後の `concurrentCallsKeepOnlyOneAlive` は 1 と 3 の比べ直しと、生きているのが 1 つだけであることも見る）
 
 ## 7. 受け入れ条件
