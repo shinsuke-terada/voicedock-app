@@ -43,7 +43,9 @@ private func catalog(whisperSHA sha: String, bytes: Int) throws -> ModelCatalog 
 
 @Suite("ModelManager")
 struct ModelManagerTests {
-    private func world(catalog: ModelCatalog = TestCatalogs.minimal) throws -> World {
+    private func world(
+        catalog: ModelCatalog = TestCatalogs.minimal, factory: any DownloadSessionFactory = BlockingSessionFactory()
+    ) throws -> World {
         let tmp = try TempDirectory()
         let layout = HomeLayout(root: tmp.url)
         try layout.createDirectories()
@@ -52,7 +54,7 @@ struct ModelManagerTests {
             zone: ZonedTime(timeZone: try #require(TimeZone(identifier: "Asia/Tokyo"))),
             clock: FixedClock(epochMillis: 1_756_000_000_000))
         let downloader = ModelDownloader(
-            layout: layout, factory: BlockingSessionFactory(), log: log, hashChunkBytes: 1_048_576)
+            layout: layout, factory: factory, log: log, hashChunkBytes: 1_048_576)
         let cache = ModelVerificationCache()
         let manager = ModelManager(
             layout: layout, catalog: catalog, downloader: downloader, cache: cache, log: log,
@@ -195,6 +197,29 @@ struct ModelManagerTests {
         let r = await w.manager.download("large-v3-turbo-q5_0", kind: .whisper, progress: { _, _ in })
         #expect(r == .success(file))
         #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q5_0") == .present)
+    }
+
+    @Test("落としている最中にもう一度押しても状態を変えずに断る")
+    func secondDownloadIsRefusedWithoutTouchingState() async throws {
+        let w = try world(factory: ModelHostSessionFactory())
+        let e = try w.whisper
+        let gate = Gate()
+        defer { gate.open() }
+        ModelHostStub.register(url: e.url) {
+            gate.wait()
+            return .body(Data(count: 1))
+        }
+        defer { ModelHostStub.unregister(url: e.url) }
+        let first = Task { await w.manager.download(e.id, kind: .whisper, progress: { _, _ in }) }
+        for _ in 0..<1_000 where ModelHostStub.requests(url: e.url) == 0 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let second = await w.manager.download(e.id, kind: .whisper, progress: { _, _ in })
+        #expect(second == .failure(.io("already_downloading")))
+        #expect(await w.manager.state(kind: .whisper, id: e.id) == .downloading(0.0))
+        gate.open()
+        _ = await first.value
+        #expect(ModelHostStub.requests(url: e.url) == 1)
     }
 
     @Test(

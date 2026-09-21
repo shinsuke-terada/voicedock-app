@@ -138,6 +138,7 @@ public actor ModelManager {
     ) async -> Result<URL, ModelError> {
         guard let e = catalog.entry(kind: kind, id: id) else { return .failure(.badFileName) }
         let k = Key(kind: kind, id: id)
+        guard downloading[k] == nil else { return .failure(.io(ModelDownloader.alreadyRunningMessage)) }
         failures[k] = nil
         let box = ProgressBox()
         downloading[k] = box

@@ -60,6 +60,8 @@ public actor ModelDownloader {
         guard let remote = ModelSource.url(e.url, file: file) else { return fail(e, .badHost) }
         if ModelFiles.isPresent(e, kind: kind, layout: layout) { return .success(final) }
         guard running[e.id] == nil else { return .failure(.io(ModelDownloader.alreadyRunningMessage)) }
+        // 照合と rename が終わるまで同じ ID の 2 本目を通さない（戻る直前に 1 か所で消す）。
+        defer { running[e.id] = nil }
         let resume = ResumeStore.load(e, layout: layout)
         ResumeStore.discard(e, layout: layout)
         if resume == nil { removePart(part) }
@@ -72,7 +74,6 @@ public actor ModelDownloader {
         running[e.id] = task
         task.resume()
         let outcome = await delegate.wait()
-        running[e.id] = nil
         session.finishTasksAndInvalidate()
         switch outcome {
         case .http(let code):
@@ -165,6 +166,8 @@ enum ModelSource {
         let suffix = Array(("/" + file).unicodeScalars)
         guard scalars.count >= suffix.count, scalars.suffix(suffix.count).elementsEqual(suffix) else { return nil }
         guard let url = URL(string: text), url.scheme == "https", url.host() == host else { return nil }
+        guard url.query == nil, url.fragment == nil else { return nil }
+        guard url.path(percentEncoded: false).hasSuffix("/" + file) else { return nil }
         return url
     }
 

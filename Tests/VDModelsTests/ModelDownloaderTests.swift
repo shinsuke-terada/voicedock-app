@@ -20,8 +20,10 @@ private struct World {
     var part: URL { layout.modelPart(kind: "whisper", file: entry.file) }
     var resume: URL { layout.modelResume(file: entry.file) }
 
-    func downloader(_ factory: any DownloadSessionFactory = ModelHostSessionFactory()) -> ModelDownloader {
-        ModelDownloader(layout: layout, factory: factory, log: log, hashChunkBytes: 1_048_576)
+    func downloader(
+        _ factory: any DownloadSessionFactory = ModelHostSessionFactory(), hashChunkBytes: Int = 1_048_576
+    ) -> ModelDownloader {
+        ModelDownloader(layout: layout, factory: factory, log: log, hashChunkBytes: hashChunkBytes)
     }
 
     /// 同じ ID・同じファイル名で url・file・sha256・bytes を差し替えた項目。
@@ -38,11 +40,19 @@ private struct World {
 }
 
 /// 待ち合わせ（URLProtocol の読み込みのスレッドを止めておく）。open() で待っている者を全部放す。
-private final class Gate: Sendable {
+/// open() は何度呼んでもよい（leave は 1 回だけ）。テストは `defer { gate.open() }` を置いて止まったままにしない。
+final class Gate: Sendable {
     private let group = DispatchGroup()
+    private let opened = Mutex(false)
     init() { group.enter() }
     func wait() { group.wait() }
-    func open() { group.leave() }
+    func open() {
+        let first = opened.withLock { o in
+            defer { o = true }
+            return !o
+        }
+        if first { group.leave() }
+    }
 }
 
 @Suite("ModelDownloader")
@@ -279,6 +289,7 @@ struct ModelDownloaderTests {
         let big = Data(count: 32 * 1_048_576)
         let e = w.with(sha256: FileHasher.sha256(big), bytes: Int64(big.count))
         let gate = Gate()
+        defer { gate.open() }
         ModelHostStub.register(url: e.url) {
             gate.wait()
             return .body(big)
@@ -299,6 +310,7 @@ struct ModelDownloaderTests {
     func twoDownloadsOfTheSameIDAreRefused() async throws {
         let w = try world("two-downloads")
         let gate = Gate()
+        defer { gate.open() }
         ModelHostStub.register(url: w.entry.url) {
             gate.wait()
             return .body(Self.payload)
@@ -318,6 +330,42 @@ struct ModelDownloaderTests {
         gate.open()
         #expect(await second.value == .failure(.io("already_downloading")))
         #expect(await first.value == .success(w.final))
+    }
+
+    @Test("照合中の同じ ID は通さない（.part を消さず、要求も出さない）")
+    func secondDownloadWaitsForVerification() async throws {
+        let w = try world("second-waits-for-verification")
+        let big = Data(count: 64 * 1_048_576)
+        let e = w.with(sha256: FileHasher.sha256(big), bytes: Int64(big.count))
+        ModelHostStub.register(url: e.url) { .body(big) }
+        defer { ModelHostStub.unregister(url: e.url) }
+        // 小さな単位で読ませて照合を長くする。
+        let downloader = w.downloader(hashChunkBytes: 4096)
+        let first = Task { await downloader.download(e, kind: .whisper, progress: { _, _ in }) }
+        // .part に移された（= 照合に入る直前か照合中）ところで 2 本目。
+        let part = w.part
+        for _ in 0..<10_000 where !FileManager.default.fileExists(atPath: part.path(percentEncoded: false)) {
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        let second = await downloader.download(e, kind: .whisper, progress: { _, _ in })
+        // 1 本目がまだなら断られ、終わっていれば「既に在る」。どちらでも要求は 1 件だけ。
+        #expect(second == .failure(.io("already_downloading")) || second == .success(w.final))
+        #expect(await first.value == .success(w.final))
+        #expect(ModelHostStub.requests(url: e.url) == 1)
+    }
+
+    @Test("クエリ・フラグメント付きの URL は受けない")
+    func queryOrFragmentIsRejected() async throws {
+        let w = try world("query-or-fragment")
+        let base = "https://huggingface.co/a/query-or-fragment/resolve/\(Self.commit)"
+        for url in ["\(base)/ggml-t.bin?x=/ggml-t.bin", "\(base)/ggml-t.bin#/ggml-t.bin", "\(base)/x?a=/ggml-t.bin"] {
+            let e = w.with(url: url)
+            ModelHostStub.register(url: e.url) { .body(Self.payload) }
+            defer { ModelHostStub.unregister(url: e.url) }
+            let r = await w.downloader().download(e, kind: .whisper, progress: { _, _ in })
+            #expect(r == .failure(.badHost), "\(url)")
+            #expect(ModelHostStub.requests(url: e.url) == 0, "\(url)")
+        }
     }
 
     @Test("空の応答はサイズ違い（TEST-28）")
