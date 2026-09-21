@@ -896,7 +896,7 @@ struct SpecParserTests {
 - [ ] `python3 tools/spec/make-spec.py` で `docs/SPEC.md` を作り、コミットした（もう一度実行して `git diff --quiet docs/SPEC.md` が真。生成が再現する）
 - [ ] `make lint` と `make test` が通る
 - [ ] `PolicyVocabulary` が SPEC.md から読むようになり、T-04 の PT-06 のテストが通る
-- [ ] 破壊による証明の 7 項目の結果を PR に貼った
+- [ ] 破壊による証明の 8 項目の結果を PR に貼った
 
 ## SPEC の変更
 
