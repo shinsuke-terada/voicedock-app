@@ -165,18 +165,21 @@ public actor LlamaServerSupervisor {
 **`ensureRunning`**:
 1. `starting` が在ればその `value` を待って返す（同時に 2 つ起動しない。actor の再入対策）
 2. `current` が在り、`model`・`config.contextSize`・`modelID` が同じで `await process.isRunning` なら `.success(handle)`
-3. `current` が在る（違う・死んでいる）なら `stopCurrent()`（§ stop の 1〜4）
-4. `starting = Task { await self.startServer(model:modelID:contextSize:) }` → `result = await starting.value` → `starting = nil` → `result` を返す
+3. もう一度 `starting` を見て、在ればその `value` を待って返す（2 の `await` の間に別の呼び手が起動を始めていることがある）
+4. `starting = Task { await self.stopCurrent(); return await self.startServer(model:modelID:contextSize:) }`（`current` が違う・死んでいるなら止めてから起動。`stopCurrent()` は § stop の 2〜5 で、`current` が nil なら何もしない）
+   → `result = await starting.value` → `starting = nil` → `result` を返す。
+   **止めることと起動することを 1 つの Task に入れ、最初の `await` より前に `starting` を立てる**（`stopCurrent()` を Task の外で `await` すると、terminate の最大 10 秒の間に別の呼び手が入り、2 つ起動して片方を止められなくなる。レビューで判明。テスト `concurrentCallsStartOnlyOne`）
+- `starting` の Task は構造化されていないので、呼び手のタスクの取り消しは伝わらない（`server_start_failed: cancelled` は `Sleeper` が投げたときだけ通る）。取り消しを伝えたいなら T-22 が別に決める
 
 **`startServer`**（`maxAttempts` 回まで。1 回ごとに別のポート）:
 ```text
 lastReason = "no_port"; lastStderr = ""
 for attempt in 1...3:
-  port = portPicker()、endpoint = LoopbackEndpoint(port:)。どちらかが nil → lastReason = "no_port"; continue
+  port = portPicker()、endpoint = LoopbackEndpoint(port:)。どちらかが nil → lastReason = "no_port"; lastStderr = ""; continue
   key = SystemRandomNumberGenerator の 16 バイトを小文字 16 進 2 桁ずつつないだ 32 文字
   AtomicFile.write(Data(key.utf8), to: layout.llamaAPIKeyFile, permissions: 0o600)。失敗 → 鍵ファイルを消す（前の試行の鍵が残っていることがある。下と同じ SafeUnlink）→ return .failure(StageFailure(.llmUnavailable, "server_start_failed: api_key_file"))
   spec = ProcessSpec(executable: paths.llamaServer, arguments: LlamaArgs.build(model:, port:, apiKeyFile: layout.llamaAPIKeyFile, contextSize:), environment: ProcessEnvironment.standard)
-  process = try await runner.spawn(spec)。失敗 → lastReason = "spawn_failed"; continue
+  process = try await runner.spawn(spec)。失敗 → lastReason = "spawn_failed"; lastStderr = ""; continue
   started = clock.uptime()
   loop:
     await LoopbackHealth.check(endpoint, factory:) == 200 →
@@ -201,11 +204,12 @@ return .failure(StageFailure(.llmUnavailable, message(lastReason, lastStderr)))
 - **メモリの確認はしない**（PLAN §5.4 のガードで Worker が起動の前に行う。ここでは渡されたモデルをそのまま起動する）
 - stdout / stderr はファイルに残さない（`ProcessRunner` が末尾だけメモリに持つ。PR-08）
 
-**`stop()`**（と `stopCurrent()`）:
-1. `current` が nil なら何もしない
-2. `c = current; current = nil`
-3. `_ = await c.process.terminate(grace: .seconds(10))`（SIGTERM → 10 秒 → SIGKILL。プロセスグループごと）
-4. `log.info(.llmServerStopped, [(.port, .int(Int64(c.handle.endpoint.port)))])`、鍵ファイルを消す（SafeUnlink、`missingOK: true`、失敗は無視）
+**`stop()`**（と `stopCurrent()`。`stopCurrent()` は 2〜5）:
+1. （`stop()` だけ）`starting` が在ればその `value` を待つ（起動の途中で呼ばれても、起動したものを残さない）
+2. `current` が nil なら何もしない
+3. `c = current; current = nil`
+4. `_ = await c.process.terminate(grace: .seconds(10))`（SIGTERM → 10 秒 → SIGKILL。プロセスグループごと）
+5. `log.info(.llmServerStopped, [(.port, .int(Int64(c.handle.endpoint.port)))])`、鍵ファイルを消す（SafeUnlink、`missingOK: true`、失敗は無視）
 
 **使い方**（T-22 と T-32 が書く。参考）:
 ```swift
@@ -341,7 +345,7 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `startsAndWaitsForHealth` / 「起動して /health が 200 になるまで待つ」 | stayAlive、/health は 503・503・200 | `.success`、handle のポートが picker の 1 つ目、起動 1 回、`fake.arguments(ofInvocation: 1) == LlamaArgs.build(…)`、鍵ファイルのパーミッションが 0600・中身が小文字 16 進 32 文字で `handle.apiKey` と `fake.apiKey(ofInvocation: 1)` に等しい、`RecordingSleeper.recorded == [1, 1]`、ログに `llm_server_started port=<port>` |
+| `startsAndWaitsForHealth` / 「起動して /health が 200 になるまで待つ」 | stayAlive、/health は 503・503・200 | `.success`、handle のポートが picker の 1 つ目、起動 1 回、`fake.arguments(ofInvocation: 1)` が §4.2 の列（ポート・パスを埋めたリテラル。TEST-01 のため `LlamaArgs.build` を呼ばない）、鍵ファイルのパーミッションが 0600・中身が小文字 16 進 32 文字で `handle.apiKey` と `fake.apiKey(ofInvocation: 1)` に等しい、`RecordingSleeper.recorded == [1, 1]`、ログに `llm_server_started port=<port>` |
 | `reusesARunningServer` / 「同じ条件なら起動し直さない」 | 上の後にもう一度 `ensureRunning` | 同じ handle、起動 1 回のまま |
 | `restartsWhenTheModelChanges` / 「モデルが変わったら止めて起動し直す」 | 2 回目は別の model | 起動 2 回、1 回目の pid に `kill(pid, 0)` が `ESRCH`、ログに `llm_server_stopped` |
 | `retriesOnAnotherPort` / 「起動に失敗したら別のポートで」 | exitBeforeAttempt(3, code: 1)、picker `[p1, p2, p3]`、p3 の /health は 200 | `.success`、handle のポートが p3、起動 3 回、それぞれの `--port` が p1・p2・p3 |
@@ -351,6 +355,9 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 | `stopTerminatesAndRemovesTheKey` / 「停止でプロセスと鍵ファイルを消す」 | 起動の後に `stop()` | pid が `ESRCH`、鍵ファイルが無い、ログに `llm_server_stopped port=<port>` |
 | `stopWithoutServerDoesNothing` / 「起動していなければ停止は何もしない」 | 起動せずに `stop()` | ログが空、エラーにならない |
 | `keyIsNotInTheArguments` / 「API キーを引数に置かない」 | 成功の後 | `fake.arguments(ofInvocation: 1)` のどの要素も `handle.apiKey` を含まない |
+| `concurrentCallsStartOnlyOne` / 「同時に呼ばれても 2 つ起動しない（actor の再入）」 | stayAlive、1 つ起動した後に、別のモデル b と c で `ensureRunning` を `async let` で同時に 2 回、その後 `stop()` | 2 つとも `.success`、spawn は合わせて 2 回（最初の 1 回と、同時の 2 つのうち 1 つ）、どの pid も `ESRCH`、鍵ファイルが無い |
+
+後片付け: 各テストは TempDirectory から Rig を作って本体を渡す `withRig` で包み、本体が投げても `stop()` と spawn したすべての `terminate(grace: .zero)` と `LoopbackStub.unregister` を行う（`sleep 600` を残さない）。スイートに `.timeLimit(.minutes(1))` を付ける（壊し方によっては待ちのループが終わらない）。
 
 ### 5.4 `ConfigEffectPending.swift`（PolicyTests。T-09 §9）
 
@@ -373,6 +380,7 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 | 起動に 3 回失敗した後に鍵ファイルを消さない | `failsAfterThreeAttempts` |
 | `content(of:)` を `JSONSerialization` に戻す | `contentKeepsLeadingBOM` |
 | 2 回目の `ensureRunning` で生死を確かめずに起動し直す | `reusesARunningServer` |
+| `ensureRunning` の `stopCurrent()` を `starting` の Task の外で `await` し、その後の `starting` の再確認を消す（v1 の手順） | `concurrentCallsStartOnlyOne` |
 
 ## 7. 受け入れ条件
 
@@ -383,16 +391,17 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 
 ## 8. API 地図への変更提案
 
-1. `LoopbackEndpoint.init(port:)` を `init?(port:)` にする（PT-02 で `URL(string:)` を使えないので `URLComponents.url`（Optional）から作る。port 0 も nil）。`static let host`・`port` を公開 → `init?(port:)` は 00-api-map に反映済み（2026-09-18）。`host`・`port` は地図に無い（追記が要る）
+1. `LoopbackEndpoint.init(port:)` を `init?(port:)` にする（PT-02 で `URL(string:)` を使えないので `URLComponents.url`（Optional）から作る。port 0 も nil）。`static let host`・`port` を公開 → `init?(port:)` は 00-api-map に反映済み（2026-09-18）。`host`・`port` は地図の §16 に反映済み
 2. `LlamaServerSupervisor.init` に `portPicker: @escaping @Sendable () -> UInt16? = FreePort.pick` を足す（テストでポートを決めて `/health` の応答を差し替えるため）。`maxAttempts` などの定数を公開 → `portPicker` は 00-api-map に反映済み（2026-09-18。「API キーファイルは停止・失敗で消す」も地図の注記どおり）。定数は地図に無い
 3. `LlamaArgs.missingFlags(helpOutput:)` を足す（DR-07 と共有）→ 00-api-map に反映済み（2026-09-18）
-4. `LlamaServerHandle` に `Equatable` → 地図に無い（追記が要る）
+4. `LlamaServerHandle` に `Equatable` と `public init(endpoint:apiKey:modelID:)` → 地図の §8 の行と §16 に反映済み（本チケットの §4.3 も地図に合わせて init を足した）
 5. T-12 への前提: `RunningProcess.terminate(grace:)` は、既に終了したプロセスに対しては待たずにその終了の状態（`.exited(n)` / `.signaled(n)`）を返すこと。`stderrTail()` は終了の後も読めること → 00-api-map（「終了済みなら待たずに返す」）と T-12 に反映済み（2026-09-18）
 6. T-10 への前提: `LogKey` に `port` と `elapsed_s` が在ること → T-10 の `LogKey` に在る（2026-09-18 確認）
 7. TestSupport に `BlockingURLProtocol`・`LoopbackStub`・`StubRequest`・`StubReply`・`BlockingSessionFactory`・`FakeLlamaServer` を足す（§4.4）。T-23 も `BlockingURLProtocol` を使う → 00-api-map §15 に反映済み（2026-09-18。作り手は T-21）
 8. `LoopbackEndpoint` の `Equatable`（`LlamaServerHandle: Equatable` のために要る）→ 地図の §8 の行は `Sendable` だけ。§16 の索引に足すこと（追記が要る。実装には不可欠）
 9. T-12 への申し送り: `RunningProcess.terminate(grace:)` は既に終了したプロセスに対しては読み取りの後始末（`finishReaders`）を待たずに返すので、直後の `stderrTail()` に最後の出力がまだ入っていないことがありうる（プロセスの終了の検出と stderr の EOF の読み取りの競争）。
-   本チケットでは、`/health` の要求 1 回ぶんの遅れがあるので実測では揃っている（`failsAfterThreeAttempts` を負荷の下で数百回回して落ちず）。確実にするなら T-12 の側で「終了済みでも読み取りの EOF を `readerDrainGrace` まで待ってから返す」にする
+   終了を検出してから `stderrTail()` を読むまでの間に待ちは何も無く、揃う保証は無い（実測では `failsAfterThreeAttempts` を負荷の下で数百回回して落ちなかったが、それは偶然の余裕）。本番では `server_start_failed: exited(1)` の後ろの stderr が欠けうる。
+   T-12 の側で「終了済みでも読み取りの EOF を `readerDrainGrace` まで待ってから返す」にすることを提案する（VDProcess は本チケットのパスではないので触らない）
 
 ## 9. SPEC の変更
 

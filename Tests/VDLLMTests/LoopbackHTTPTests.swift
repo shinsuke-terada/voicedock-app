@@ -11,7 +11,7 @@ import VDProcess
 @testable import VDLLM
 
 /// configuration() が呼ばれた回数を数えるファクトリ。
-final class CountingSessionFactory: LoopbackSessionFactory {
+private final class CountingSessionFactory: LoopbackSessionFactory {
     private let calls = Mutex(0)
 
     func configuration() -> URLSessionConfiguration {
@@ -212,9 +212,12 @@ struct LoopbackHTTPTests {
 
     @Test("/health のステータスを返す")
     func healthStatus() async throws {
-        let ok = try #require(FreePort.pick())
-        let loading = try #require(FreePort.pick())
-        let missing = try #require(FreePort.pick())
+        var ports: [UInt16] = []
+        while ports.count < 3 {
+            let port = try #require(FreePort.pick())
+            if !ports.contains(port) { ports.append(port) }
+        }
+        let (ok, loading, missing) = (ports[0], ports[1], ports[2])
         LoopbackStub.register(port: ok, Self.reply(200, #"{"status":"ok"}"#))
         LoopbackStub.register(port: loading, Self.reply(503, "{}"))
         defer {

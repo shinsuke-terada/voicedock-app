@@ -63,19 +63,27 @@ public actor LlamaServerSupervisor {
         {
             return .success(c.handle)
         }
-        if current != nil {
-            await stopCurrent()
+        // 上の await の間に別の呼び手が起動を始めていれば、それを待つ（actor の再入。2 つ起動しない）
+        if let starting {
+            return await starting.value
         }
+        // 止めることと起動することを 1 つの Task にまとめ、await の前に starting を立てる
         let contextSize = config.contextSize
-        let task = Task { await self.startServer(model: model, modelID: modelID, contextSize: contextSize) }
+        let task = Task {
+            await self.stopCurrent()
+            return await self.startServer(model: model, modelID: modelID, contextSize: contextSize)
+        }
         starting = task
         let result = await task.value
         starting = nil
         return result
     }
 
-    /// 起動していなければ何もしない。
+    /// 起動していなければ何もしない。起動の途中なら、その終わりを待ってから止める。
     public func stop() async {
+        if let starting {
+            _ = await starting.value
+        }
         await stopCurrent()
     }
 
@@ -97,6 +105,7 @@ public actor LlamaServerSupervisor {
         for _ in 1...Self.maxAttempts {
             guard let port = portPicker(), let endpoint = LoopbackEndpoint(port: port) else {
                 lastReason = "no_port"
+                lastStderr = ""
                 continue
             }
             let key = Self.makeKey()
@@ -116,6 +125,7 @@ public actor LlamaServerSupervisor {
                 process = try await runner.spawn(spec)
             } catch {
                 lastReason = "spawn_failed"
+                lastStderr = ""
                 continue
             }
             let started = clock.uptime()
