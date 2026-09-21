@@ -46,7 +46,8 @@ done
 
 if [ "$update_fixtures" -eq 1 ]; then
   mkdir -p "$root/Tests/Fixtures"
-  printf '%s\n' "$help" > "$root/Tests/Fixtures/llama-server-help.txt"
+  # ビルド先の絶対パス（usage 行の $0）を落とし、どこでビルドしても同じ fixture にする
+  printf '%s\n' "$help" | sed "s|$out/||g" > "$root/Tests/Fixtures/llama-server-help.txt"
   echo "更新: Tests/Fixtures/llama-server-help.txt"
 fi
 echo "OK: $out/llama-server ($LLAMA_CPP_REF $actual)"

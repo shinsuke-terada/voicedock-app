@@ -1,5 +1,5 @@
 
-usage: /Users/terada/Projects/voicedock_app/.claude/worktrees/agent-a2d93a6598ac2a9aa/Vendor/build/bin/whisper-cli [options] file0 file1 ...
+usage: whisper-cli [options] file0 file1 ...
 supported audio formats: flac, mp3, ogg, wav
 
 options:
