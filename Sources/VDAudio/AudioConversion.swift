@@ -43,7 +43,7 @@ enum AudioConversion {
         }
         converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
         converter.downmix = inFormat.channelCount >= 2
-        // 入力の sampleRate が 1 Hz 未満だと容量が UInt32 に収まらない（トラップしない。PT-19）。
+        // 入力の sampleRate が 1 Hz 未満だと容量が UInt32 に収まらない（トラップしない。CR-16）。
         guard inFormat.sampleRate >= 1 else { throw AudioConversionError.cannotAllocateBuffer }
         let outFile = try AVAudioFile(
             forWriting: tmpOutput, settings: outputSettings,

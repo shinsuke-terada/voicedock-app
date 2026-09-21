@@ -67,13 +67,13 @@ public enum SpaceMath {
     /// duration が不明なときの仮定値（30 分）。
     static let defaultDurationSeconds: Double = 1800
 
-    /// `Int64(max(0, duration ?? 1800) × 32000)`（0 方向への切り捨て）。Int64 に収まらない積は `Int64.max`（トラップしない。PT-19）。
+    /// `Int64(max(0, duration ?? 1800) × 32000)`（0 方向への切り捨て）。Int64 に収まらない積は `Int64.max`（トラップしない。CR-16）。
     public static func expectedBytes(_ durationSeconds: Double?) -> Int64 {
         let seconds = durationSeconds ?? defaultDurationSeconds
         return saturatingInt64(max(0, seconds) * Double(bytesPerSecond))
     }
 
-    /// `Int64(Double(expected) × freeSpaceMultiplier) + freeSpaceMarginBytes`。桁あふれは `Int64.max`（トラップしない。PT-19）。
+    /// `Int64(Double(expected) × freeSpaceMultiplier) + freeSpaceMarginBytes`。桁あふれは `Int64.max`（トラップしない。CR-16）。
     public static func requiredBytes(expected: Int64, config: AudioConfig) -> Int64 {
         saturatingAdd(
             saturatingInt64(Double(expected) * config.freeSpaceMultiplier), Int64(config.freeSpaceMarginBytes))
@@ -109,7 +109,7 @@ public struct SpaceCheck: Sendable {
 1. `expected = SpaceMath.expectedBytes(durationSeconds)`、`required = SpaceMath.requiredBytes(expected: expected, config: config)`
 2. `statfs` の対象は `layout.staging` がディレクトリならそれ、でなければ `layout.root`。`statfs` が失敗したら
    `.insufficient("空き容量を取得できません: errno \(errno)")`
-3. `free = Int64(clamping: st.f_bavail) × Int64(clamping: st.f_bsize)`（`multipliedReportingOverflow` で桁あふれは `Int64.max`。PT-19）
+3. `free = Int64(clamping: st.f_bavail) × Int64(clamping: st.f_bsize)`（`multipliedReportingOverflow` で桁あふれは `Int64.max`。CR-16）
 4. `used = stagingBytes()`: `layout.staging` 配下を再帰的に列挙し（`FileManager.default.enumerator(at:includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: [])`）、
    `isRegularFile == true` のものの `fileSize` を合計する（`SpaceMath.saturatingAdd`）。読めないものは飛ばす（例外を投げない）。staging が無ければ 0
 5. `free < required` → `.insufficient("空き \(free) バイトが必要量 \(required) バイトを下回る")`
@@ -200,7 +200,7 @@ guard let floatFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRat
 }
 converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
 converter.downmix = inFormat.channelCount >= 2
-// 入力の sampleRate が 1 Hz 未満だと容量が UInt32 に収まらない（トラップしない。PT-19）。
+// 入力の sampleRate が 1 Hz 未満だと容量が UInt32 に収まらない（トラップしない。CR-16）。
 guard inFormat.sampleRate >= 1 else { throw AudioConversionError.cannotAllocateBuffer }
 let outFile = try AVAudioFile(forWriting: tmpOutput, settings: outputSettings,
                               commonFormat: .pcmFormatInt16, interleaved: true)
@@ -276,7 +276,7 @@ static func writeInt16(_ floatBuffer: AVAudioPCMBuffer, to outFile: AVAudioFile)
 
 - `lrint` は既定の丸め（最近接偶数）。`Int16(clamping:)` が −32768〜32767 に収める
 - 入力が既に 16 kHz でも同じ経路を通す（特別扱いしない）
-- `AVAudioFile.read(into:frameCount:)` はファイルの末尾で呼ぶと 0 フレームを返さず `_GenericObjCError.nilError` を投げる（macOS 27 SDK で実測）。だから入力ブロックの先頭で `framePosition >= length` を確かめて `.endOfStream` を返す（旧版はこれが無く、変換がすべて IMPORT_FAILED になった）
+- `AVAudioFile.read(into:frameCount:)` はファイルの末尾で呼ぶと 0 フレームを返さず `_GenericObjCError.nilError` を投げる（macOS 26.6・SDK 27.0 で実測）。だから入力ブロックの先頭で `framePosition >= length` を確かめて `.endOfStream` を返す（旧版はこれが無く、変換がすべて IMPORT_FAILED になった）
 - `outFile.close()` の後、`open(tmpOutput.path(percentEncoded: false), O_RDONLY)` → `fsync` → `close` で内容をディスクへ（失敗は無視）
 
 ### 4.5 `OutputVerifier.swift`
@@ -296,7 +296,7 @@ public enum OutputVerifier {
     /// AVAudioCommonFormat を ffmpeg 風の名前へ（文言用）。
     static func sampleFormatName(_ f: AVAudioCommonFormat) -> String
 
-    /// `Int(sampleRate)` の文言。Int に収まらない値（NaN・無限大・巨大）は `Double.description`（トラップしない。PT-19）。
+    /// `Int(sampleRate)` の文言。Int に収まらない値（NaN・無限大・巨大）は `Double.description`（トラップしない。CR-16）。
     static func integerText(_ value: Double) -> String {
         guard let integer = Int(exactly: value.rounded(.towardZero)) else { return value.description }
         return String(integer)
@@ -390,7 +390,7 @@ public struct Normalizer: Sendable {
 - `discard(url)` = `try? SafeUnlink.remove(url, under: .staging, layout: layout)`（後片付けの失敗は握りつぶし、元の結果を返す。CR-21）
 - `output の size` は `FileManager.default.attributesOfItem(atPath:)[.size]` を `Int64` に（取れなければ 0）
 - **入力（inbox の原本）には一切書き込まない・消さない**。inbox の解放は呼び手（T-18）が DB 更新の後に行う（CONC-08）
-- `timeoutSeconds`: `guard let d = duration else { return config.minTimeoutSeconds }`、`let seconds = max(Double(config.minTimeoutSeconds), d * config.timeoutFactor)`、`guard seconds < Double(Int.max) else { return Int.max }`、`return Int(seconds)`（`Int(Double)` は 0 方向への切り捨て。Int に収まらない値でトラップしない。PT-19）
+- `timeoutSeconds`: `guard let d = duration else { return config.minTimeoutSeconds }`、`let seconds = max(Double(config.minTimeoutSeconds), d * config.timeoutFactor)`、`guard seconds < Double(Int.max) else { return Int.max }`、`return Int(seconds)`（`Int(Double)` は 0 方向への切り捨て。Int に収まらない値でトラップしない。CR-16）
 
 ## 5. TestSupport: `BWFWriter.swift`（T-14 が作る）
 

@@ -51,7 +51,7 @@ public struct Normalizer: Sendable {
     }
 
     /// 変換の時間上限（秒）。`Int(max(Double(minTimeoutSeconds), duration × timeoutFactor))`、duration 不明なら minTimeoutSeconds。
-    /// Int に収まらない値は `Int.max`（トラップしない。PT-19）。
+    /// Int に収まらない値は `Int.max`（トラップしない。CR-16）。
     static func timeoutSeconds(duration: Double?, config: AudioConfig) -> Int {
         guard let d = duration else { return config.minTimeoutSeconds }
         let seconds = max(Double(config.minTimeoutSeconds), d * config.timeoutFactor)

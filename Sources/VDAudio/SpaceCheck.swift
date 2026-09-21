@@ -9,13 +9,13 @@ public enum SpaceMath {
     /// duration が不明なときの仮定値（30 分）。
     static let defaultDurationSeconds: Double = 1800
 
-    /// `Int64(max(0, duration ?? 1800) × 32000)`（0 方向への切り捨て）。Int64 に収まらない積は `Int64.max`（トラップしない。PT-19）。
+    /// `Int64(max(0, duration ?? 1800) × 32000)`（0 方向への切り捨て）。Int64 に収まらない積は `Int64.max`（トラップしない。CR-16）。
     public static func expectedBytes(_ durationSeconds: Double?) -> Int64 {
         let seconds = durationSeconds ?? defaultDurationSeconds
         return saturatingInt64(max(0, seconds) * Double(bytesPerSecond))
     }
 
-    /// `Int64(Double(expected) × freeSpaceMultiplier) + freeSpaceMarginBytes`。桁あふれは `Int64.max`（トラップしない。PT-19）。
+    /// `Int64(Double(expected) × freeSpaceMultiplier) + freeSpaceMarginBytes`。桁あふれは `Int64.max`（トラップしない。CR-16）。
     public static func requiredBytes(expected: Int64, config: AudioConfig) -> Int64 {
         saturatingAdd(
             saturatingInt64(Double(expected) * config.freeSpaceMultiplier), Int64(config.freeSpaceMarginBytes))

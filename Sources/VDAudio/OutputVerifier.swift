@@ -53,7 +53,7 @@ public enum OutputVerifier {
         }
     }
 
-    /// `Int(sampleRate)` の文言。Int に収まらない値（NaN・無限大・巨大）は `Double.description`（トラップしない。PT-19）。
+    /// `Int(sampleRate)` の文言。Int に収まらない値（NaN・無限大・巨大）は `Double.description`（トラップしない。CR-16）。
     static func integerText(_ value: Double) -> String {
         guard let integer = Int(exactly: value.rounded(.towardZero)) else { return value.description }
         return String(integer)
