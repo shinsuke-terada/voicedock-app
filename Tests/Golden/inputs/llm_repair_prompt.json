@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "group": "llm_repair_prompt",
+  "cases": [
+    {
+      "name": "divergent_final",
+      "partial": false,
+      "overrides": {},
+      "errors": "- summary: Field required",
+      "previousOutput": "{\"title\": \"t\"}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "divergent_partial",
+      "partial": true,
+      "overrides": {},
+      "errors": "- title: Extra inputs are not permitted",
+      "previousOutput": "{\"title\": \"t\", \"summary\": \"s\"}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "divergent_placeholders_in_output",
+      "partial": false,
+      "overrides": {},
+      "errors": "応答から JSON を抽出できませんでした",
+      "previousOutput": "{schema_block} {errors} {previous_output}",
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

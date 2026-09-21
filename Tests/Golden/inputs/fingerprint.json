@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "group": "fingerprint",
+  "cases": [
+    {
+      "name": "v4_example",
+      "base": "2026-08-29T07:12:04+09:00",
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 3200,
+          "text": "おはようございます。"
+        },
+        {
+          "atMs": 9001,
+          "endMs": 12999,
+          "text": "今日は/\"x\""
+        }
+      ],
+      "blocks": [
+        {
+          "startMs": 0,
+          "endMs": 1800000
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "empty",
+      "base": "2026-08-29T07:12:04+09:00",
+      "segments": [],
+      "blocks": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "escapes_and_blocks",
+      "base": "2026-08-29T07:12:04+09:00",
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 1000,
+          "text": "a\nb\t\u0001"
+        },
+        {
+          "atMs": 3600000,
+          "endMs": 3601000,
+          "text": "é𝄞"
+        }
+      ],
+      "blocks": [
+        {
+          "startMs": 0,
+          "endMs": 1000
+        },
+        {
+          "startMs": 3600000,
+          "endMs": 3601000
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    }
+  ]
+}

@@ -1,0 +1,85 @@
+{
+  "schema": 1,
+  "group": "llm_dedupe",
+  "cases": [
+    {
+      "name": "keys",
+      "kind": "key",
+      "inputs": [
+        " VoiceDock ",
+        "ＶｏｉｃｅＤｏｃｋ",
+        "ﾃｽﾄ",
+        "Straße",
+        "ﬁle",
+        "ΣΑΣ",
+        "\u3000全角空白\u3000",
+        "\u001cX\u001f",
+        "\u200bX",
+        "が",
+        "か\u3099"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "values_first_wins",
+      "kind": "values",
+      "inputs": [
+        "A",
+        "a",
+        " A ",
+        "Ａ",
+        "b",
+        "B",
+        "Straße",
+        "STRASSE"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "result_all_fields",
+      "kind": "result",
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "key_points": [
+          "x",
+          "X"
+        ],
+        "tasks": [
+          {
+            "text": "やる",
+            "due": null
+          },
+          {
+            "text": " やる ",
+            "due": "2026-09-01"
+          }
+        ],
+        "decisions": [
+          "d"
+        ],
+        "ideas": [
+          "i",
+          "I",
+          "j"
+        ],
+        "tags": [
+          "Tag",
+          "tag"
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "result_empty_lists",
+      "kind": "result",
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s"
+      },
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

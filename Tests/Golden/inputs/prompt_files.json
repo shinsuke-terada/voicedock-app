@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "group": "prompt_files",
+  "cases": [
+    {
+      "name": "analyze_ja",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "map_ja",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "reduce_ja",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "repair_json",
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

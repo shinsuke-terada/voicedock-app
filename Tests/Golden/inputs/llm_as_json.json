@@ -1,0 +1,52 @@
+{
+  "schema": 1,
+  "group": "llm_as_json",
+  "cases": [
+    {
+      "name": "escapes_partial",
+      "overrides": {},
+      "partials": [
+        {
+          "summary": "朝/昼\n\"引用\"\t\\\u0001",
+          "key_points": [
+            "a"
+          ],
+          "tasks": [
+            {
+              "text": "x"
+            }
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "two_partials",
+      "overrides": {},
+      "partials": [
+        {
+          "summary": "s0"
+        },
+        {
+          "summary": "s1",
+          "ideas": [
+            "i"
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "ideas_disabled",
+      "overrides": {
+        "llm.analysis.sections.ideas.enabled": false
+      },
+      "partials": [
+        {
+          "summary": "s"
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

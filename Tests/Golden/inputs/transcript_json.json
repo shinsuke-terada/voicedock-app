@@ -1,0 +1,222 @@
+{
+  "schema": 1,
+  "group": "transcript_json",
+  "cases": [
+    {
+      "name": "v4_example",
+      "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "durationSeconds": 1800.0,
+      "fallbackLanguage": "ja",
+      "whisper": {
+        "result": {
+          "language": "ja"
+        },
+        "transcription": [
+          {
+            "offsets": {
+              "from": 0,
+              "to": 3200
+            },
+            "text": " おはようございます。"
+          },
+          {
+            "offsets": {
+              "from": 5500,
+              "to": 9000
+            },
+            "text": "  "
+          },
+          {
+            "offsets": {
+              "from": 9001,
+              "to": 12345
+            },
+            "text": " 今日は。"
+          },
+          {
+            "offsets": {
+              "from": true,
+              "to": 1
+            },
+            "text": "bool"
+          },
+          {
+            "offsets": {
+              "from": 1.5,
+              "to": 2
+            },
+            "text": "float"
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "empty",
+      "partkey": "k",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "durationSeconds": null,
+      "fallbackLanguage": "ja",
+      "whisper": {
+        "transcription": []
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "language_fallback",
+      "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "durationSeconds": 12.5,
+      "fallbackLanguage": "ja",
+      "whisper": {
+        "result": {
+          "language": ""
+        },
+        "transcription": [
+          {
+            "offsets": {
+              "from": 0,
+              "to": 1000
+            },
+            "text": "a"
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "language_en",
+      "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "durationSeconds": 3.0,
+      "fallbackLanguage": "ja",
+      "whisper": {
+        "result": {
+          "language": "en"
+        },
+        "transcription": [
+          {
+            "offsets": {
+              "from": 0,
+              "to": 1000
+            },
+            "text": " hi "
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "not_object",
+      "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "durationSeconds": null,
+      "fallbackLanguage": "ja",
+      "whisper": [
+        1,
+        2
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "bad_entries",
+      "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "durationSeconds": 10.0,
+      "fallbackLanguage": "ja",
+      "whisper": {
+        "transcription": [
+          1,
+          {
+            "offsets": [
+              0,
+              1
+            ],
+            "text": "x"
+          },
+          {
+            "offsets": {
+              "from": 0
+            },
+            "text": "y"
+          },
+          {
+            "offsets": {
+              "from": 0,
+              "to": 10
+            },
+            "text": 5
+          },
+          {
+            "offsets": {
+              "from": "0",
+              "to": 10
+            },
+            "text": "z"
+          },
+          {
+            "offsets": {
+              "from": 1234,
+              "to": 5678
+            },
+            "text": "\u3000ok\u3000"
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "rounding_ms",
+      "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "durationSeconds": 7200.0,
+      "fallbackLanguage": "ja",
+      "whisper": {
+        "transcription": [
+          {
+            "offsets": {
+              "from": 1,
+              "to": 999
+            },
+            "text": "a"
+          },
+          {
+            "offsets": {
+              "from": 1234567,
+              "to": 7199999
+            },
+            "text": "b"
+          },
+          {
+            "offsets": {
+              "from": 0.4,
+              "to": 0.6
+            },
+            "text": "c"
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "escapes_text",
+      "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "durationSeconds": 1.0,
+      "fallbackLanguage": "ja",
+      "whisper": {
+        "transcription": [
+          {
+            "offsets": {
+              "from": 0,
+              "to": 500
+            },
+            "text": " \"引用\"\\/\t"
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

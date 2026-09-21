@@ -1,0 +1,56 @@
+{
+  "schema": 1,
+  "group": "analysis_json",
+  "cases": [
+    {
+      "name": "minimal",
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "task_due",
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tasks": [
+          {
+            "text": "x",
+            "due": "2026-09-20"
+          },
+          {
+            "text": "y"
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "tags_disabled",
+      "overrides": {
+        "llm.analysis.sections.tags.enabled": false
+      },
+      "payload": {
+        "title": "t",
+        "summary": "s"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "escapes",
+      "overrides": {},
+      "payload": {
+        "title": "題/\"x\"",
+        "summary": "改行\nタブ\t\u0001",
+        "ideas": [
+          "é"
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

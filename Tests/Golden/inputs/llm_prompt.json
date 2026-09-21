@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "group": "llm_prompt",
+  "cases": [
+    {
+      "name": "analyze_default",
+      "kind": "analyze",
+      "overrides": {},
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "analyze_custom",
+      "kind": "analyze",
+      "overrides": {
+        "llm.analysis.customInstructions": "健康の話題は要約しない"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "map_default",
+      "kind": "map",
+      "overrides": {},
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "map_custom_multiline",
+      "kind": "map",
+      "overrides": {
+        "llm.analysis.customInstructions": "一行目\n二行目"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "reduce_default",
+      "kind": "reduce",
+      "overrides": {},
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "analyze_custom_contains_placeholder",
+      "kind": "analyze",
+      "overrides": {
+        "llm.analysis.customInstructions": "{schema_block} は置換しない"
+      },
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

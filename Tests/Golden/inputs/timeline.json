@@ -1,0 +1,340 @@
+{
+  "schema": 1,
+  "group": "timeline",
+  "cases": [
+    {
+      "name": "single_pass_blocks",
+      "base": "2026-08-29T07:12:04+09:00",
+      "fingerprint": "fp1",
+      "transcript": {
+        "segments": [
+          {
+            "atMs": 0,
+            "endMs": 3200,
+            "text": "一"
+          },
+          {
+            "atMs": 600000,
+            "endMs": 610000,
+            "text": "二"
+          },
+          {
+            "atMs": 10800000,
+            "endMs": 10805000,
+            "text": "三"
+          }
+        ],
+        "blocks": [
+          {
+            "startMs": 0,
+            "endMs": 1800000
+          },
+          {
+            "startMs": 10800000,
+            "endMs": 10805000
+          }
+        ]
+      },
+      "summary": "A。B。 C",
+      "partials": [],
+      "chunks": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "single_pass_fallback_block",
+      "base": "2026-08-29T07:12:04+09:00",
+      "fingerprint": "fp2",
+      "transcript": {
+        "segments": [
+          {
+            "atMs": 0,
+            "endMs": 3200,
+            "text": "一"
+          },
+          {
+            "atMs": 600000,
+            "endMs": 610000,
+            "text": "二"
+          },
+          {
+            "atMs": 10800000,
+            "endMs": 10805000,
+            "text": "三"
+          }
+        ],
+        "blocks": []
+      },
+      "summary": "午前に作業した。午後に会議。",
+      "partials": [],
+      "chunks": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "single_pass_empty_summary",
+      "base": "2026-08-29T07:12:04+09:00",
+      "fingerprint": "fp3",
+      "transcript": {
+        "segments": [
+          {
+            "atMs": 0,
+            "endMs": 3200,
+            "text": "一"
+          },
+          {
+            "atMs": 600000,
+            "endMs": 610000,
+            "text": "二"
+          },
+          {
+            "atMs": 10800000,
+            "endMs": 10805000,
+            "text": "三"
+          }
+        ],
+        "blocks": [
+          {
+            "startMs": 0,
+            "endMs": 1800000
+          },
+          {
+            "startMs": 10800000,
+            "endMs": 10805000
+          }
+        ]
+      },
+      "summary": "",
+      "partials": [],
+      "chunks": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "single_pass_no_segments",
+      "base": "2026-08-29T07:12:04+09:00",
+      "fingerprint": "fp4",
+      "transcript": {
+        "segments": [],
+        "blocks": []
+      },
+      "summary": "A。",
+      "partials": [],
+      "chunks": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "map_reduce",
+      "base": "2026-08-29T07:12:04+09:00",
+      "fingerprint": "fp5",
+      "transcript": {
+        "segments": [
+          {
+            "atMs": 0,
+            "endMs": 3200,
+            "text": "一"
+          },
+          {
+            "atMs": 600000,
+            "endMs": 610000,
+            "text": "二"
+          },
+          {
+            "atMs": 10800000,
+            "endMs": 10805000,
+            "text": "三"
+          }
+        ],
+        "blocks": [
+          {
+            "startMs": 0,
+            "endMs": 1800000
+          },
+          {
+            "startMs": 10800000,
+            "endMs": 10805000
+          }
+        ]
+      },
+      "summary": "全体。",
+      "partials": [
+        {
+          "summary": "朝。",
+          "key_points": [
+            "点1",
+            "点2"
+          ]
+        },
+        {
+          "summary": "X。Y。",
+          "key_points": []
+        },
+        {
+          "summary": " ",
+          "key_points": []
+        }
+      ],
+      "chunks": [
+        {
+          "startMs": 0,
+          "endMs": 600000
+        },
+        {
+          "startMs": 600000,
+          "endMs": 1200000
+        },
+        {
+          "startMs": 1200000,
+          "endMs": 1800000
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "map_reduce_zip_short",
+      "base": "2026-08-29T07:12:04+09:00",
+      "fingerprint": "fp6",
+      "transcript": {
+        "segments": [
+          {
+            "atMs": 0,
+            "endMs": 3200,
+            "text": "一"
+          },
+          {
+            "atMs": 600000,
+            "endMs": 610000,
+            "text": "二"
+          },
+          {
+            "atMs": 10800000,
+            "endMs": 10805000,
+            "text": "三"
+          }
+        ],
+        "blocks": [
+          {
+            "startMs": 0,
+            "endMs": 1800000
+          },
+          {
+            "startMs": 10800000,
+            "endMs": 10805000
+          }
+        ]
+      },
+      "summary": "全体。",
+      "partials": [
+        {
+          "summary": "a。",
+          "key_points": []
+        },
+        {
+          "summary": "b。",
+          "key_points": []
+        },
+        {
+          "summary": "c。",
+          "key_points": []
+        }
+      ],
+      "chunks": [
+        {
+          "startMs": 0,
+          "endMs": 1000
+        },
+        {
+          "startMs": 1000,
+          "endMs": 2000
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "partials_without_chunks",
+      "base": "2026-08-29T07:12:04+09:00",
+      "fingerprint": "fp7",
+      "transcript": {
+        "segments": [
+          {
+            "atMs": 0,
+            "endMs": 3200,
+            "text": "一"
+          },
+          {
+            "atMs": 600000,
+            "endMs": 610000,
+            "text": "二"
+          },
+          {
+            "atMs": 10800000,
+            "endMs": 10805000,
+            "text": "三"
+          }
+        ],
+        "blocks": [
+          {
+            "startMs": 0,
+            "endMs": 1800000
+          },
+          {
+            "startMs": 10800000,
+            "endMs": 10805000
+          }
+        ]
+      },
+      "summary": "単一。",
+      "partials": [
+        {
+          "summary": "a。",
+          "key_points": []
+        }
+      ],
+      "chunks": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "escapes_in_lines",
+      "base": "2026-08-29T07:12:04+09:00",
+      "fingerprint": "fp8",
+      "transcript": {
+        "segments": [
+          {
+            "atMs": 0,
+            "endMs": 3200,
+            "text": "一"
+          },
+          {
+            "atMs": 600000,
+            "endMs": 610000,
+            "text": "二"
+          },
+          {
+            "atMs": 10800000,
+            "endMs": 10805000,
+            "text": "三"
+          }
+        ],
+        "blocks": [
+          {
+            "startMs": 0,
+            "endMs": 1800000
+          },
+          {
+            "startMs": 10800000,
+            "endMs": 10805000
+          }
+        ]
+      },
+      "summary": "引用\"と\\と/。改行\tタブ。",
+      "partials": [],
+      "chunks": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    }
+  ]
+}

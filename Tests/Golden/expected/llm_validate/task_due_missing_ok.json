@@ -1,0 +1,18 @@
+{
+  "ok": true,
+  "errors": null,
+  "result": {
+    "title": "t",
+    "summary": "s",
+    "key_points": [],
+    "tasks": [
+      {
+        "text": "a",
+        "due": null
+      }
+    ],
+    "decisions": [],
+    "ideas": [],
+    "tags": []
+  }
+}

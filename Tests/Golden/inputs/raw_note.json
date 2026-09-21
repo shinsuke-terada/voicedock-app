@@ -1,0 +1,331 @@
+{
+  "schema": 1,
+  "group": "raw_note",
+  "cases": [
+    {
+      "name": "two_parts_reordered",
+      "overrides": {},
+      "parts": [
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_074201/TX01_MIC002_20260829_074210_orig.wav",
+          "startedAt": "2026-08-29T07:42:10+09:00",
+          "endedAt": "2026-08-29T08:12:10+09:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 10000,
+              "text": "続きです。"
+            }
+          ]
+        },
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+          "startedAt": "2026-08-29T07:12:04+09:00",
+          "endedAt": "2026-08-29T07:42:04+09:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 10000,
+              "text": "おはようございます。"
+            },
+            {
+              "startMs": 300000,
+              "endMs": 310000,
+              "text": "削除条件を整理します。"
+            }
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29",
+      "sessionKey": "DJIMIC3:20260829"
+    },
+    {
+      "name": "no_end",
+      "overrides": {},
+      "parts": [
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+          "startedAt": "2026-08-29T07:12:04+09:00",
+          "endedAt": null,
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 10000,
+              "text": "  x  "
+            },
+            {
+              "startMs": 56000,
+              "endMs": 60000,
+              "text": "   "
+            },
+            {
+              "startMs": 60000,
+              "endMs": 70000,
+              "text": "---"
+            },
+            {
+              "startMs": 359000,
+              "endMs": 360000,
+              "text": "y"
+            },
+            {
+              "startMs": 360000,
+              "endMs": 361000,
+              "text": "z"
+            }
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29",
+      "sessionKey": "DJIMIC3:20260829"
+    },
+    {
+      "name": "no_headings",
+      "overrides": {
+        "obsidian.raw.timestampIntervalSeconds": 0,
+        "obsidian.raw.partBoundaryHeading": false
+      },
+      "parts": [
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+          "startedAt": "2026-08-29T07:12:04+09:00",
+          "endedAt": "2026-08-29T07:42:04+09:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 10000,
+              "text": "おはようございます。"
+            },
+            {
+              "startMs": 300000,
+              "endMs": 310000,
+              "text": "削除条件を整理します。"
+            }
+          ]
+        },
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_074201/TX01_MIC002_20260829_074210_orig.wav",
+          "startedAt": "2026-08-29T07:42:10+09:00",
+          "endedAt": "2026-08-29T08:12:10+09:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 10000,
+              "text": "続きです。"
+            }
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29",
+      "sessionKey": "DJIMIC3:20260829"
+    },
+    {
+      "name": "empty",
+      "overrides": {},
+      "parts": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29",
+      "sessionKey": "DJIMIC3:20260829"
+    },
+    {
+      "name": "part_without_text",
+      "overrides": {},
+      "parts": [
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+          "startedAt": "2026-08-29T07:12:04+09:00",
+          "endedAt": "2026-08-29T07:42:04+09:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 10000,
+              "text": "おはようございます。"
+            },
+            {
+              "startMs": 300000,
+              "endMs": 310000,
+              "text": "削除条件を整理します。"
+            }
+          ]
+        },
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_074201/TX01_MIC002_20260829_074210_orig.wav",
+          "startedAt": "2026-08-29T07:42:10+09:00",
+          "endedAt": "2026-08-29T08:12:10+09:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 10000,
+              "text": "   "
+            }
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29",
+      "sessionKey": "DJIMIC3:20260829"
+    },
+    {
+      "name": "two_minute_segments",
+      "overrides": {},
+      "parts": [
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+          "startedAt": "2026-08-29T07:00:00+09:00",
+          "endedAt": "2026-08-29T07:20:00+09:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 5000,
+              "text": "発話0"
+            },
+            {
+              "startMs": 120000,
+              "endMs": 125000,
+              "text": "発話1"
+            },
+            {
+              "startMs": 240000,
+              "endMs": 245000,
+              "text": "発話2"
+            },
+            {
+              "startMs": 360000,
+              "endMs": 365000,
+              "text": "発話3"
+            },
+            {
+              "startMs": 480000,
+              "endMs": 485000,
+              "text": "発話4"
+            },
+            {
+              "startMs": 600000,
+              "endMs": 605000,
+              "text": "発話5"
+            },
+            {
+              "startMs": 720000,
+              "endMs": 725000,
+              "text": "発話6"
+            },
+            {
+              "startMs": 840000,
+              "endMs": 845000,
+              "text": "発話7"
+            },
+            {
+              "startMs": 960000,
+              "endMs": 965000,
+              "text": "発話8"
+            },
+            {
+              "startMs": 1080000,
+              "endMs": 1085000,
+              "text": "発話9"
+            }
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29",
+      "sessionKey": "DJIMIC3:20260829"
+    },
+    {
+      "name": "boundary_exactly_300s",
+      "overrides": {},
+      "parts": [
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+          "startedAt": "2026-08-29T07:00:00+09:00",
+          "endedAt": "2026-08-29T07:30:00+09:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 1000,
+              "text": "a"
+            },
+            {
+              "startMs": 299999,
+              "endMs": 300000,
+              "text": "b"
+            },
+            {
+              "startMs": 300000,
+              "endMs": 301000,
+              "text": "c"
+            },
+            {
+              "startMs": 599999,
+              "endMs": 600000,
+              "text": "d"
+            },
+            {
+              "startMs": 600001,
+              "endMs": 601000,
+              "text": "e"
+            }
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29",
+      "sessionKey": "DJIMIC3:20260829"
+    },
+    {
+      "name": "subsecond_heading_truncated",
+      "overrides": {},
+      "parts": [
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+          "startedAt": "2026-08-29T07:00:00+09:00",
+          "endedAt": "2026-08-29T07:10:00+09:00",
+          "segments": [
+            {
+              "startMs": 999,
+              "endMs": 2000,
+              "text": "a"
+            },
+            {
+              "startMs": 301999,
+              "endMs": 302500,
+              "text": "b"
+            }
+          ]
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29",
+      "sessionKey": "DJIMIC3:20260829"
+    },
+    {
+      "name": "dst_fixed_offset",
+      "timeZone": "America/New_York",
+      "day": "2026-03-08",
+      "sessionKey": "DJIMIC3:20260308",
+      "overrides": {},
+      "parts": [
+        {
+          "partkey": "DJIMIC3/TX_MIC001_20260308_013000/TX01_MIC002_20260308_013000_orig.wav",
+          "startedAt": "2026-03-08T01:30:00-05:00",
+          "endedAt": "2026-03-08T03:30:00-05:00",
+          "segments": [
+            {
+              "startMs": 0,
+              "endMs": 5000,
+              "text": "before"
+            },
+            {
+              "startMs": 2400000,
+              "endMs": 2405000,
+              "text": "after"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

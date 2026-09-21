@@ -1,0 +1,23 @@
+{
+  "title": "t",
+  "summary": "s",
+  "key_points": [
+    "x"
+  ],
+  "tasks": [
+    {
+      "text": "やる",
+      "due": null
+    }
+  ],
+  "decisions": [
+    "d"
+  ],
+  "ideas": [
+    "i",
+    "j"
+  ],
+  "tags": [
+    "Tag"
+  ]
+}
