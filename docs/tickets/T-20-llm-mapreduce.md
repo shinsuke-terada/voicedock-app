@@ -4,7 +4,7 @@
 |---|---|
 | ID | T-20 |
 | Phase | 5（LLM とモデル） |
-| 前提 | T-19（`AnalysisSchema`・`AnalysisResult`・`Prompts`・`ChatTransport`・`AnalysisCall`・`FakeChatTransport`・テスト補助の `GoldenPayload`）。T-10（`SessionTranscript`・`AbsoluteSegment`・`Instant`・`ZonedTime`・`TextLimit`）、T-45（`PyText`・`PyJSON`）、T-25（golden）、T-09（`GoldenConfig`）は T-19 の前提に含まれる |
+| 前提 | T-19（`AnalysisSchema`・`AnalysisResult`・`Prompts`・`ChatTransport`・`AnalysisCall`・`FakeChatTransport`）。T-45 の `GoldenCase.orderedObject`（`Tests/TestSupport/GoldenCase+PyJSON.swift`）。T-10（`SessionTranscript`・`AbsoluteSegment`・`Instant`・`ZonedTime`・`TextLimit`）、T-45（`PyText`・`PyJSON`）、T-25（golden）、T-09（`GoldenConfig`）は T-19 の前提に含まれる |
 | 見積もり | ソース約 300 行・テスト約 500 行 |
 | 後続 | T-21（本番の `ChatTransport`）、T-22（解析工程）、T-27（Timeline が `partials` と `chunks` を使う）、T-24（受け入れ試験） |
 
@@ -32,7 +32,7 @@ Session の統合結果を LLM に渡せる大きさのチャンクへ分け、1
 
 テスト（`Tests/VDLLMTests/`）:
 - `ChunkerTests.swift`、`DedupeTests.swift`、`ReduceBundlingTests.swift`、`AnalyzerTests.swift`
-- `GoldenPayload+List.swift`（T-19 の internal な `GoldenPayload` への extension。§5.0）
+- `GoldenCase+List.swift`（T-25 の `GoldenCase` への internal な extension。`orderedList(_:)`。§5.0）
 
 `ChatTransport`・`ChatResult`・`FakeChatTransport` は T-19 が作る（修復の流れのテストに要るため）。本チケットはそれを使う。
 
@@ -208,11 +208,12 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 | グループ（ケース数） | 期待値 | 実際の値 | テスト関数 / 表示名（スイート） |
 |---|---|---|---|
 | `llm_chunks`（9） | `.json` `[{texts, startMs, endMs, text}]` | `zone = ZonedTime(timeZone: TimeZone(identifier: item.string("timeZone"))!)`、`base = zone.parseISO(item.string("base"))!`、`segments` の各 `{atMs, endMs, text}` を `AbsoluteSegment(at: base.adding(milliseconds: atMs), endAt: base.adding(milliseconds: endMs), text:)` にし、`Chunker.chunk(_, maxChars: config.llm.maxCharsPerRequest, maxSeconds: config.llm.maxSecondsPerRequest, overlapChars: config.llm.chunkOverlapChars)` の各チャンクを `{"texts": segments の text, "startMs": startAt − base, "endMs": endAt − base, "text": text}` にした配列 | `goldenChunks(item:)` / 「golden llm_chunks」（ChunkerTests） |
-| `llm_dedupe`（4） | `.json` | `kind` が `key` → `inputs` の各要素の `Dedupe.key`、`values` → `Dedupe.strings(inputs)`、`result` → `AnalysisValidator.validate(GoldenPayload.ordered(item), schema: finalSchema)` の成功の結果に `Dedupe.apply` をかけた `pyJSON(schema: finalSchema)` | `goldenDedupe(item:)` / 「golden llm_dedupe」（DedupeTests） |
-| `llm_as_json`（3） | `.out` | `GoldenPayload.orderedList(item, key: "partials")` の各要素を `partialSchema` で `validate` した結果（すべて成功すること）の `ReduceBundling.asJSON(_, schema: partialSchema)` | `goldenAsJSON(item:)` / 「golden llm_as_json」（ReduceBundlingTests） |
+| `llm_dedupe`（4） | `.json` | `kind` が `key` → `inputs` の各要素の `Dedupe.key`、`values` → `Dedupe.strings(inputs)`、`result` → `AnalysisValidator.validate(item.orderedObject("payload"), schema: finalSchema)` の成功の結果に `Dedupe.apply` をかけた `pyJSON(schema: finalSchema)` | `goldenDedupe(item:)` / 「golden llm_dedupe」（DedupeTests） |
+| `llm_as_json`（3） | `.out` | `item.orderedList("partials")` の各要素を `partialSchema` で `validate` した結果（すべて成功すること）の `ReduceBundling.asJSON(_, schema: partialSchema)` | `goldenAsJSON(item:)` / 「golden llm_as_json」（ReduceBundlingTests） |
 | `llm_bundles`（3） | `.json`（束ごとの partial の添字の配列） | 上と同じ partials を `ReduceBundling.bundles(_, schema: partialSchema, limit: item.int("limit"))` で束ね、束の大きさから入力の添字（0 から連番）の配列の配列にしたもの | `goldenBundles(item:)` / 「golden llm_bundles」（ReduceBundlingTests） |
 
-- `GoldenPayload.orderedList(_ item: GoldenCase, key: String) throws -> [[(String, PyJSONValue)]]`（`GoldenPayload+List.swift`。T-19 の `GoldenPayload.ordered` と同じ読み方で、値が `.array` で各要素が `.object` のもの。違えば `GoldenError.typeMismatch(group:name:key:expected: "array of object")`）
+- `GoldenCase.orderedList(_ key: String) throws -> [[(String, PyJSONValue)]]`（`Tests/VDLLMTests/GoldenCase+List.swift`。internal。T-45 の `GoldenCase.orderedObject` と同じ読み方（入力を `PyJSON.decode` で読み直す）で、値が `.array` で各要素が `.object` のもの。違えば `GoldenError.typeMismatch(group:name:key:expected: "array of object")`）。
+  （実装で修正: T-19 は自前の `GoldenPayload` を作らず T-45 の `orderedObject` を使った（T-19 §8 の 7）ので、`GoldenPayload` は存在しない）
 
 ### 5.1 `ChunkerTests.swift`（`@Suite("Chunker") struct ChunkerTests`）
 
@@ -294,7 +295,7 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 | `foldTrimmedNotesArePrefixed` / 「束の Map の切り詰めは reduce1: を前置する」 | maxChars 400・overlap 0、300 スカラーの segment 3 本、Map の応答は summary 150 スカラーの PARTIAL（1 個で 219、2 個で 437 > 400 なので 3 束）、束の Map の応答は 1 つ目が `PARTIAL("f1", kp: ["k"]×25)`、2・3 つ目が `PARTIAL("f2")`・`("f3")`（切り詰め後の 3 個の asJSON は 290 ≤ 400）、最後に FINAL | 呼び出し 7 回、trimmed `["reduce1: key_points: 25 -> 20"]` |
 | `depthLimitStopsRecursion` / 「段数の上限で LLM_INVALID_JSON」 | maxChars 50・overlap 0、40 スカラーの segment 3 本、すべての Map の応答が summary 60 スカラーの PARTIAL | `.failure(StageFailure(.llmInvalidJSON, "多段 Reduce が上限 3 段に達しました"))`、呼び出し 9 回（3 + 3 + 3）、reduce の要求 0 回 |
 | `transportFailureInReduceIsReturned` / 「Reduce の接続失敗はそのまま」 | Reduce が `.failure(unavailable)` | その failure |
-| `ceMaxCharsPerRequest` / 「CE llm.maxCharsPerRequest を小さくすると Map → Reduce になる」 | 5 スカラーの segment 2 本（時刻は近い）を、既定（20000）と `maxCharsPerRequest = 5` で | 既定は呼び出し 1 回（analyze）、5 では 2 チャンクになり呼び出し 3 回（map・map・reduce） |
+| `ceMaxCharsPerRequest` / 「CE llm.maxCharsPerRequest を小さくすると Map → Reduce になる」 | 5 スカラーの segment 2 本（時刻は近い）を、既定（20000）と `maxCharsPerRequest = 5` で | 既定は呼び出し 1 回（analyze）、5 では 2 チャンクになり、最初の 2 回がチャンクの map（user はそれぞれの segment の text）。（実装で修正: Reduce の入力（141 スカラー）も 5 を超えるので §4.4 どおり束の Map へ進み、「呼び出し 3 回」にはならない。総数は問わない） |
 | `ceMaxSecondsPerRequest` / 「CE llm.maxSecondsPerRequest を小さくすると時間で割れる」 | 短い segment を 0 秒と 1800 秒に置き、既定（3600）と `maxSecondsPerRequest = 600` で | 既定は呼び出し 1 回、600 では 3 回（map・map・reduce） |
 | `ceChunkOverlapChars` / 「CE llm.chunkOverlapChars が次のチャンクの重なりを決める」 | `maxCharsPerRequest = 10`、`aaaa@0`・`bb@10`・`cccccc@20`、`chunkOverlapChars = 3` と `0` | 3 では 2 つ目の map の user が `bb\ncccccc`、0 では `cccccc`（§5.1 の D・C と同じ境界） |
 
@@ -333,6 +334,8 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 2. `Analyzer.reduceMaxDepth`（公開の定数）と `Dedupe.strings` / `Dedupe.tasks` を追記 → `reduceMaxDepth` は 00-api-map に反映済み（2026-09-18）。`Dedupe.strings` / `Dedupe.tasks` は地図に無い（追記が要る。モジュールの外で使わないなら internal でもよい）
 3. `ChatTransport` / `ChatResult` / `FakeChatTransport` の作成は T-19（本チケットは使うだけ）→ 00-api-map §8・§15 に反映済み（2026-09-18）
 4. `ReduceBundling` は internal（地図には載せない）
+5. （実装で追記）テスト補助の `GoldenPayload` は T-19 が作らなかった（T-45 の `GoldenCase.orderedObject` を使う）。本チケットの配列版は `Tests/VDLLMTests/GoldenCase+List.swift` の internal な `GoldenCase.orderedList(_:)`（VDLLMTests の中だけで使うので 00-api-map §15 には載せない）
+6. （実装で確認）`Dedupe.strings` / `Dedupe.tasks` は §4.2 どおり public で実装した。00-api-map §16（地図に行の無い公開 API の索引）の VDLLM の行に載っているので、地図の変更は要らない（上の 2 の「地図に無い」は §8 の行のこと）
 
 ## 9. SPEC の変更
 
