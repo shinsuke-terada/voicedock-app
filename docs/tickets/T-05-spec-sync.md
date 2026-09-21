@@ -575,7 +575,9 @@ enum TestNameIndex {
     /// `Tests/` 配下の全 `.swift` から集める。
     static func load() throws -> [TestNameEntry] {
         let root = PackageRoot.file("Tests")
-        guard let enumerator = FileManager.default.enumerator(atPath: root.path) else { return [] }
+        guard let enumerator = FileManager.default.enumerator(atPath: root.path(percentEncoded: false)) else {
+            return []
+        }
         var result: [TestNameEntry] = []
         for case let path as String in enumerator where path.hasSuffix(".swift") {
             let text = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
@@ -914,3 +916,4 @@ struct SpecParserTests {
 - VDCoreTests に `SpecSyncStatesTests.swift`（T-08）と `SpecSyncLogEventsTests.swift`（T-10）を足す（§5 の全文） → 地図の対象外（テストのファイル）。T-08・T-10 のチケットを §5 の置き場所と名前に合わせた
 - Makefile のターゲットに `spec` を足す → 地図の対象外（このチケットで決定）
 - （整合修正で追記）00-api-map §15 は `Markdown/MarkdownDocument` の作り手を T-05 と書くが、作るのは T-04（本チケットは使うだけ）。地図を T-04 に直すことを提案する
+- （実装時に発見・決定）00-api-map §0 は「`URL` からパス文字列を取るときは `url.path(percentEncoded: false)` だけを使う」とするが、§7 の `TestNameIndex.load()` は `root.path` を使っていた。上位の地図に合わせて `root.path(percentEncoded: false)` にした（T-04 の `SourceTree.load` と同じ書き方）。地図の変更は不要
