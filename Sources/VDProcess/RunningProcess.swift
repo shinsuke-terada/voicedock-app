@@ -27,9 +27,13 @@ public final class RunningProcess: Sendable {
     public func stderrTail() async -> Data { stderr.snapshot }
     public func stdoutTail() async -> Data { stdout.snapshot }
 
-    /// SIGTERM（グループ）→ grace 待つ → SIGKILL（グループ）。既に終わっていれば、その終わり方を返す
+    /// SIGTERM（グループ）→ grace 待つ → SIGKILL（グループ）。既に終わっていれば、その終わり方を返す。
+    /// どちらの経路でも、出力の読み取りを最後まで終えてから返す（直後の `stderrTail()` に最後の行まで入る）
     public func terminate(grace: Duration) async -> ProcessResult.Termination {
-        if record.isSet { return WaitStatus.termination(record.raw) }
+        if record.isSet {
+            await ProcessRunner.finishReaders(readers, [stdout, stderr])
+            return WaitStatus.termination(record.raw)
+        }
         ProcessRunner.signalGroup(pid, SIGTERM)
         if await !ProcessRunner.race(exit: exit, timeout: grace) { ProcessRunner.signalGroup(pid, SIGKILL) }
         let raw = await exit.value
@@ -39,8 +43,11 @@ public final class RunningProcess: Sendable {
     }
 
     /// 終了を待つ（llama-server が勝手に落ちたことの検出に使う）
+    /// 出力の読み取りを最後まで終えてから返す（直後の `stderrTail()` に最後の行まで入る）
     public func waitForExit() async -> ProcessResult.Termination {
-        WaitStatus.termination(await exit.value)
+        let raw = await exit.value
+        await ProcessRunner.finishReaders(readers, [stdout, stderr])
+        return WaitStatus.termination(raw)
     }
 }
 
