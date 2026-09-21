@@ -433,7 +433,7 @@ public enum SafeUnlink {
 5. 親の realpath が、ルートの realpath と**等しい**か `ルート + "/"` で始まる、のどちらでもない → `.outsideRoot`（接頭辞だけ一致する兄弟 `staging-old` は配下ではない）
 6. `name = target.lastPathComponent` が空・`.`・`..` → `.nameNotAllowed`
 7. ルートごとの名前の規則: `queueDelete` / `queueResult` は「親の realpath == ルートの realpath」かつ `name.hasSuffix(".json")`、`vaultTmp` は `name.hasPrefix(".")` かつ `name.hasSuffix(".tmp")` かつ `TextLimit.scalarCount(name) > 5`。違えば `.nameNotAllowed`
-8. `path = 親の realpath + "/" + name` に `lstat`: `ENOENT` → `missingOK ? return : throw .notFound`。symlink → `.isSymlink`（リンクも消さない）。通常ファイルでない → `.notRegularFile`
+8. `path = 親の realpath + "/" + name` に `lstat`: `ENOENT` → `missingOK ? return : throw .notFound`。symlink → `.isSymlink`（リンクも消さない）。通常ファイルでない → `.notRegularFile`。`lstat` がほかの errno で失敗 → `.unlinkFailed(errno:)`（`removeEmptyDirectory` では `.rmdirFailed(errno:)`）
 9. `unlink(path)`: 成功で返る。`ENOENT` は 8 と同じ扱い。ほかは `.unlinkFailed(errno:)`
 
 `removeEmptyDirectory` は 1〜6 を同じく行い（7 は行わない）、8 の代わりに `lstat` が `ENOENT` → 返る、symlink → `.isSymlink`、ディレクトリでない → `.notDirectory`、9 の代わりに `rmdir`:
@@ -748,7 +748,7 @@ public final class CapturingLogSink: LogSink {
 | `SafeUnlink` の 5 の判定を `hasPrefix(ルート)`（`/` を付けない）にする | `refusesPrefixSibling` |
 | `SafeUnlink` の lstat の symlink 検査を消す | `refusesSymlinkTarget` |
 | `BlockComputer` の `gap >` を `>=` にする | `blocksExactThresholdDoesNotSplit` |
-| `BlockComputer` の `unknownEnd \|\|` を消す | `blocksUnknownEndAlwaysSplits`、`goldenBlocks(item:)`（`null_end_forces_split`） |
+| `BlockComputer` の `unknownEnd \|\|` を消す（読まれない変数の警告がエラーになるので直前に `_ = unknownEnd` を置く） | `blocksUnknownEndAlwaysSplits`、`goldenBlocks(item:)`（`null_end_forces_split`） |
 | `PartTranscriptCodec.decode` の bool の除外を消す | `decodeRejects` |
 | `TranscriptFingerprint` の `sortKeys: true` を false にする | `fingerprintMatchesVoicedock`、`goldenFingerprint(item:)` |
 
