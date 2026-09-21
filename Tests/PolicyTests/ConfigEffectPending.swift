@@ -13,8 +13,6 @@ enum ConfigEffectPending {
         "llm.modelID": "T-22",
         "vault.path": "T-28",
         "vault.marker": "T-28",
-        "device.includeVolumes": "T-13",
-        "device.excludeVolumes": "T-13",
         "device.maxScanDepth": "T-14",
         "device.stabilityFastPathSeconds": "T-14",
         "device.stabilityIntervalSeconds": "T-14",

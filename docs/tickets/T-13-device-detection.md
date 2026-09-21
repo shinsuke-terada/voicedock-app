@@ -248,7 +248,9 @@ public struct CoexistenceGuard: Sendable {
     /// LaunchAgent が「登録されている」か（今動いているかではない）
     public func isVoicedockHelperLoaded() async -> Bool
     /// argv（テストでも使う）
-    public static func arguments(uid: uid_t) -> [String] { ["print", ["gui", String(uid), Self.label].joined(separator: "/")] }
+    public static func arguments(uid: uid_t) -> [String] {
+        ["print", ["gui", String(uid), Self.label].joined(separator: "/")]
+    }
 }
 ```
 - 起動: `ProcessSpec(executable: Self.launchctl, arguments: Self.arguments(uid: uid), environment: ProcessEnvironment.cLocale)`、`runner.run(spec, timeout: Self.timeout)`
@@ -315,6 +317,7 @@ public actor ScriptedProcessRunner: ProcessRunning {
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `rootIsAMountPoint` / 「/ はマウント点」 | `SystemMountInspector().isMountPoint(path: "/")` | 真 |
+| `dotRootIsAMountPointAfterRealpath` / 「/. も realpath を通すとマウント点」 | `isMountPoint(path: "/.")`（realpath で `/` になる。`f_mntonname` は `/`） | 真 |
 | `tempDirectoryIsNotAMountPoint` / 「一時ディレクトリはマウント点でない」 | `TempDirectory()` の中のディレクトリ | 偽 |
 | `mountInfoOfRootIsObserved` / 「/ の statfs が取れる」 | `mountInfo(path: "/")` | nil でない、`mountOnName == "/"`、`freeBytes > 0` |
 | `mountInfoOfMissingPathIsNil` / 「無いパスは観測できない（nil）」 | `/nonexistent-<uuid>` | nil |
@@ -356,6 +359,7 @@ public actor ScriptedProcessRunner: ProcessRunning {
 | `invalidDateFileDoesNotCount` / 「規則 6: 日付が不正なファイル名は数えない」 | 直下に `TX00_MIC001_20260230_120950_orig.wav` だけ | `.noRecordings` |
 | `nameMismatchIsSkipped` / 「規則 8: ボリューム名と違えば mount_name_mismatch（` 1` 付き）」 | エントリ `DJIMIC3 1`（マウント点）、`volumeNames` は `DJIMIC3` | `.mountNameMismatch` |
 | `missingVolumeNameIsMismatch` / 「規則 8: ボリューム名が取れなければ mount_name_mismatch」 | `volumeNames` を空 | `.mountNameMismatch` |
+| `nameMatchesVolumeComparesScalars` / 「規則 8: 名前とボリューム名はスカラー列で比べ、nil は不一致（純粋関数）」 | `nameMatchesVolume("が", volumeName: "か\u{3099}")`・`nameMatchesVolume("DJIMIC3", volumeName: nil)`・`nameMatchesVolume("DJIMIC3", volumeName: "DJIMIC3")` | 偽・偽・真（NFC と NFD を同じとみなさない。00-api-map §0） |
 | `colonInNameIsInvalidDeviceID` / 「規則 9: `:` を含む名前は invalid_device_id」 | エントリ `DJI:MIC`（マウント点・ボリューム名とも `DJI:MIC`） | `.invalidDeviceID` |
 | `spaceInNameIsValid` / 「規則 9: 空白は可（NO NAME）」 | エントリ `NO NAME` | 検出 |
 | `dotEntryIsSilentlyIgnored` / 「`.` で始まるエントリは skipped にも入らない」 | `.Trashes` をマウント点扱いで置く | skipped に無い |
@@ -368,10 +372,10 @@ public actor ScriptedProcessRunner: ProcessRunning {
 ### 5.4 `CoexistenceGuardTests.swift`（`@Suite("CoexistenceGuard")`）
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `argvIsExact` / 「launchctl の argv と環境が逐語どおり」 | `ScriptedProcessRunner(results: [.exited(1)])`、uid 501 | `recorded[0].executable.path(percentEncoded: false) == "/bin/launchctl"`、`arguments == ["print", "gui/501/com.voicedock.ingest"]`（= `CoexistenceGuard.arguments(uid: 501)`）、`environment == ProcessEnvironment.cLocale`、timeout 10 秒 |
+| `argvIsExact` / 「launchctl の argv と環境が逐語どおり」 | `ScriptedProcessRunner(results: [ScriptedProcessRunner.exited(1)])`、uid 501 | `recorded[0].executable.path(percentEncoded: false) == "/bin/launchctl"`、`arguments == ["print", "gui/501/com.voicedock.ingest"]`（= `CoexistenceGuard.arguments(uid: 501)`）、`environment == ProcessEnvironment.cLocale`、timeout 10 秒 |
 | `exitZeroMeansLoaded` / 「終了コード 0 なら登録されている」 | `.exited(0)` | 真 |
 | `nonZeroMeansNotLoaded` / 「0 以外（113）なら登録されていない」 | `.exited(113)` | 偽 |
-| `timeoutAndSpawnFailureAreNotLoaded` / 「タイムアウト・起動失敗・シグナルは偽」 | `.timedOut` / `.spawnFailed(errno: ENOENT)` / `.signaled(9)` | すべて偽 |
+| `timeoutAndSpawnFailureAreNotLoaded` / 「タイムアウト・起動失敗・シグナルは偽」 | `termination` が `.timedOut` / `.spawnFailed(errno: ENOENT)` / `.signaled(9)` の `ProcessResult`（パラメータ化） | すべて偽 |
 
 ### 5.5 `FakeVolumeNoiseTests.swift`（`@Suite("FakeVolume のノイズ")`。TEST-05。本体のテストは T-07 の `FakeVolumeTests`）
 | 関数名 / 表示名 | 期待 |
@@ -388,11 +392,12 @@ public actor ScriptedProcessRunner: ProcessRunning {
 |---|---|
 | `DeviceDetector` の規則 1 の `fnmatch` を `==` の比較に変える | `includeGlobMatches` |
 | 規則 5 を「`errno == EPERM` のときだけ not_listable、それ以外は列挙結果を空として続ける」に変える | `unlistableVolumeIsNotListableEvenWithEACCES` |
-| 規則 6 の `.` 始まりの除外を消す | `dotEntriesDoNotCount` |
+| 規則 6 の `.` 始まりの除外を消す | 落ちるテストは無い（等価な変異。`.` で始まる名前はフォルダ規則・ファイル規則の先頭の `TX` に一致しないので、除外が無くても数えられない。除外は規則の正規表現が変わったときの多重の防御として残す。`dotEntriesDoNotCount` は `.` 始まりのノイズだけなら no_recordings になることを確かめる陰性対照） |
 | 規則 6 で `entryKind` の代わりに `stat`（symlink を辿る）を使う | `symlinkToFolderDoesNotCount` |
 | 規則 3 と規則 2 の順序を入れ替える | `ruleOrderIsFixed` |
 | 規則 8（`nameMatchesVolume`）で `volumeName` が nil のとき一致とみなす | `missingVolumeNameIsMismatch` |
-| `isMountPoint` で realpath を使わずに比べる | `rootIsAMountPoint` は通るが、T-15 の `.diskImage` テスト（`diskImageIsDetectedAndIngested`）が落ちる（手元で `make test-disk`） |
+| `isMountPoint` で realpath を使わずに比べる | `dotRootIsAMountPointAfterRealpath`（`rootIsAMountPoint` は通る）。加えて T-15 の `.diskImage` テスト（`diskImageIsDetectedAndIngested`）が落ちる（手元で `make test-disk`） |
+| `nameMatchesVolume` の `PyText.scalarsEqual` を `==` に変える | `nameMatchesVolumeComparesScalars` |
 | `CoexistenceGuard` で `.exited(113)` も真にする | `nonZeroMeansNotLoaded` |
 
 ## 7. 受け入れ条件
