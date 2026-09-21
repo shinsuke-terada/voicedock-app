@@ -903,6 +903,7 @@ public final class FileLock: Sendable {
 ## 9. SPEC の変更
 
 `docs/SPEC.md`（T-05 が作る）に、§4.1 の 2 つの正規表現と §4.4 の request_id の正規表現を、このチケットの定数と逐語で同じ形で載せる（SPEC 同期テストが `RecordingName.filePattern` / `folderPattern` / `RequestID.pattern` と照合する）。T-05 が先にマージされていればこの PR で足し、後なら T-05 が足す。
+→ （T-05 の実装で判明）SPEC.md は PLAN の 9 節の機械的な写しで §4.1・§4.4 を写さないので、T-05 には収まらなかった。GitHub issue #18 に切り出した（当面は `patternsAreVerbatim` が逐語を守る）
 
 ## 10. マージ後にやること
 
