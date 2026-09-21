@@ -58,9 +58,15 @@ struct InProcessRetryTests {
         let w = try await PipelineWorld.make()
         let pk = try w.insertPart()
         let calls = Mutex<Int>(0)
-        await InProcessRetry(ctx: try await w.context()).run(entity: .recording, key: pk) {
-            calls.withLock { $0 += 1 }
+        // 戻すたびに retry_count が 0 に戻る壊れ方では終わらないので、10 回で止める（止まらずに落ちるようにする）
+        let stop = StopFlag()
+        await InProcessRetry(ctx: try await w.context(stop: stop)).run(entity: .recording, key: pk) {
+            let n = calls.withLock {
+                $0 += 1
+                return $0
+            }
             Self.failPart(w, pk, .whisperFailed)
+            if n >= 10 { stop.set() }
         }
         #expect(calls.withLock { $0 } == 3)
         #expect(w.sleeper.recorded == [3, 10])
