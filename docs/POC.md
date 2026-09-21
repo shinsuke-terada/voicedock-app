@@ -21,7 +21,8 @@ T-01 に要るのは章 14 の BUNDLE_ID・TEAM_ID・Xcode の版だけなので
 |---|---|
 | 5・6・7・8・10 | T-03（vendor のビルド）の後。実機は使わない（音声は利用者が `~/VoiceDockPoC/audio/` にコピーしたもの） |
 | 2・3・13 | 済み（2026-09-21） |
-| 4・9 | T-31 / T-37 に着手する前。実機の手順は【利用者が行う】。章 4 が ✗ なら Phase 8 に入らない |
+| 4 | 済み（2026-09-22。✅） |
+| 9 | T-31 に着手する前。【利用者が行う】 |
 | 11 | T-02 で記入済み（対象外） |
 | 12 | 任意。時間があれば章 2 と同時 |
 
@@ -30,7 +31,7 @@ T-01 に要るのは章 14 の BUNDLE_ID・TEAM_ID・Xcode の版だけなので
 | 1 | — | ホスト環境 | PLAN §3.3 | ✅ PASS（cmake は T-03 の前に導入する。下記） |
 | 2 | P0-01 | マウント通知・TCC・列挙・システム設定の URL | PLAN §8.1 規則 5、§8.11 DR-11、T-13、T-32 | ✅ PASS（`access(2)` も EPERM になった。PLAN §8.1 規則 5 の理由の文を直す） |
 | 3 | P0-02 | 読み取り専用での再マウント・パスの変化・`-mountPoint` | PLAN §8.1、T-15 | ✅ PASS（実機 18/20 が ro・パスは 18/18 保持、2 回は使用中で拒否。実機では `-mountPoint` は使えない → `useMountPoint: false`） |
-| 4 | P0-03 | 子プロセスの unlink（ディスクイメージ・実機） | PLAN §8.9.3、RK-01、T-37 | ⬜ 未実施 |
+| 4 | P0-03 | 子プロセスの unlink（ディスクイメージ・実機） | PLAN §8.9.3、RK-01、T-37 | ✅ PASS（アプリの子としてディスクイメージと実機の両方で消せた） |
 | 5 | P0-04 | whisper.cpp v1.9.4（Metal）の RTF と JSON の形 | PLAN §8.4、RK-03、T-03、T-17 | ⬜ 未実施 |
 | 6 | P0-05 | AVAudioConverter と ffmpeg の比較 | PLAN §8.3、RK-05、T-16 | ⬜ 未実施 |
 | 7 | P0-06 | llama-server（Metal）と json_object・起動時間・メモリ | PLAN §8.5、RK-04、T-03、T-21 | ⬜ 未実施 |
@@ -810,7 +811,48 @@ Unmount failed for /dev/disk4
 
 ## 4. P0-03 子プロセスの unlink
 
-⬜ 未実施（T-37 の前に【利用者が行う】）
+判定: ✅ PASS
+
+測定日: 2026-09-22（macOS 26.6.2）。PoCMenuBar（Apple Development 署名）の「子に unlink させる」が `Contents/Helpers/pocunlink` を `posix_spawn`（`POSIX_SPAWN_SETPGROUP`、環境は `PATH=/usr/bin:/bin` だけ）で起動し、選んだ 1 つのパスを `unlink(2)` させた。実機の操作は利用者が行った。
+
+### ディスクイメージ（`~/VoiceDockPoC/mnt/PoCDJI`。/Volumes の外。実機は抜いた状態）
+
+`TX_MIC001_20260918_120000/TX00_MIC001_20260918_120000_orig.wav`（1 MiB の乱数）を作って消させた。FAT に書いたとき macOS が `._TX00_…`（AppleDouble）を自動で作ったが、本体の unlink で一緒に消えた。
+
+### 実機（/Volumes/DJIMIC3。この試験のために 5 秒ずつ新しく録った 2 本だけを使った）
+
+削除の前（読み取りの `ls -laT` だけ）:
+
+```text
+TX_MIC001_20260915_165730/
+-rwx------  1 terada  staff  1189096 Sep 22 01:39:50 2026 TX00_MIC001_20260922_013951_orig.wav
+-rwx------  1 terada  staff  1078216 Sep 22 01:40:02 2026 TX00_MIC002_20260922_014002_orig.wav
+```
+
+1 本目をアプリの子で、2 本目をターミナルから直接消した:
+
+```text
+2026-09-22T01:37:51.598+09:00 child unlink /Users/terada/VoiceDockPoC/mnt/PoCDJI/TX_MIC001_20260918_120000/TX00_MIC001_20260918_120000_orig.wav spawn_rc=0 exit=0 out=ok exists_after=false
+2026-09-22T01:42:07.656+09:00 child unlink /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC001_20260922_013951_orig.wav spawn_rc=0 exit=0 out=ok exists_after=false
+```
+
+```text
+$ ~/VoiceDockPoC/.build/release/pocunlink "/Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC002_20260922_014002_orig.wav"
+ok
+```
+
+削除の後、フォルダ `TX_MIC001_20260915_165730` は空（フォルダ自体は残った）。
+
+根拠:
+- ディスクイメージ: `exit=0 out=ok exists_after=false`
+- 実機: `spawn_rc=0 exit=0 out=ok exists_after=false`。**アプリの子として起動した reaper が実機の録音を消せる**（PLAN §8.9.3 の方式が成り立つ。RK-01 は解消）
+- ターミナルから直接でも `ok`（このターミナルは以前にリムーバブルボリュームの許可を得ている。TCC の差はこの環境では観測できなかった）
+
+所見:
+- **DJI Mic 3 は既存のフォルダ（`TX_MIC001_20260915_165730`、9 月 15 日の名前）に新しい録音（9 月 22 日の名前）を追加した。**フォルダ名の日時とファイル名の日時は一致しない。T-13 のフォルダ規則・T-07 の検証はどちらも名前の形だけを見るので影響しないが、partkey は親フォルダ名を含むので、同じフォルダに別の日の録音が入ることを前提にする（取り込み・Session の組み立ての確認は T-18 / T-22 と実機 E2E で）
+- 2 本目のファイル名は `TX00_MIC002_…`（MIC の番号が 002）。1 本目は `MIC001`。T-06 の RecordingName の規則（`TX\d{2}_MIC\d{3}_…`）に合う
+- 許可のダイアログは出なかった（以前の許可が残っていた）
+- 削除の後、空のフォルダは残る（reaper はファイルだけを消す設計のまま）
 
 ## 5. P0-04 whisper.cpp v1.9.4（Metal）
 
