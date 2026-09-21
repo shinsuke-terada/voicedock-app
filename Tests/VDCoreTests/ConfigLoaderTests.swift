@@ -125,6 +125,15 @@ struct ConfigLoaderTests {
     func cv39MissingKey() throws {
         let result = try Self.load(Self.setting(Self.valid(), "device.stabilityChecks", nil))
         #expect(result == .invalid([Self.cv39("device.stabilityChecks", "キーがありません")]))
+        // 欠けたキーは型に写す前に全部出す（JSONDecoder は最初の 1 つしか言わない）。
+        let two = Self.setting(
+            Self.setting(try Self.valid(), "device.stabilityChecks", nil), "device.maxScanDepth", nil)
+        #expect(
+            try Self.load(two)
+                == .invalid([
+                    Self.cv39("device.maxScanDepth", "キーがありません"),
+                    Self.cv39("device.stabilityChecks", "キーがありません"),
+                ]))
     }
 
     @Test("CV-39 null を許すキーでも欠けたら違反")

@@ -585,7 +585,7 @@ public enum TestCatalogs {
 | `cv01UnknownNestedKey` | `CV-01 入れ子の未知のキー` | `llm.analysis.sections.summary2` を足す → keyPath `llm.analysis.sections.summary2` |
 | `cv01UnknownKeysAreSorted` | `CV-01 複数の未知キーは昇順` | `device.zz` と `device.aa` → `aa` が先 |
 | `cv01SummaryMaxItemsIsUnknown` | `CV-01 summary と timeline の maxItems は未知のキー（F-54）` | `llm.analysis.sections.summary.maxItems = 10` を足す → `[CV-01, configUnknownKey, "llm.analysis.sections.summary.maxItems", "未知のキーです"]`。`timeline.maxItems` も同じ。`key_points.maxItems = 10` は `.valid` |
-| `cv39MissingKey` | `CV-39 欠けたキー` | `device.stabilityChecks` を消す → `[CV-39, "device.stabilityChecks", "キーがありません"]` |
+| `cv39MissingKey` | `CV-39 欠けたキー` | `device.stabilityChecks` を消す → `[CV-39, "device.stabilityChecks", "キーがありません"]`。さらに `device.maxScanDepth` も消す → 2 件（`device.maxScanDepth`・`device.stabilityChecks` の順。1 件だけなら JSONDecoder の `keyNotFound` と同じ違反になり、3 段目の検査を消しても落ちないため） |
 | `cv39MissingOptionalKeyStillMissing` | `CV-39 null を許すキーでも欠けたら違反` | `vault.path` を消す → keyPath `vault.path`、「キーがありません」 |
 | `nullForOptionalIsValid` | `null を許すキーは null でよい` | 既定のまま（`vault.path` は null）→ `.valid` |
 | `cv39ObjectExpected` | `CV-39 オブジェクトの位置に数値` | `"vault": 1` → `[CV-39, "vault", "オブジェクトであること"]` |
