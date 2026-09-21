@@ -545,6 +545,7 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 | `ModelManager.download` の `downloading[k]` の検査を消す | `secondDownloadIsRefusedWithoutTouchingState` |
 | `ModelSource.url` の `query == nil` の検査を消す | `queryOrFragmentIsRejected` |
 | `ModelSource.url` の `fragment == nil` の検査を消す | `queryOrFragmentIsRejected` |
+| （参考）`ModelSource.url` の「`path` が `"/" + file` で終わる」の検査を消す | 落ちるテストは無い。手順 4（文字列の末尾）と `query` / `fragment` の検査が揃うと `path` の末尾も必ず合うので、この検査は多重の守り |
 | 既に在るときもダウンロードする | `presentFileSkipsTheNetwork` |
 | `ModelImporter` で `.part` を経由せず直接 `custom-….gguf` へ書く | `existingFileIsReused` |
 | 既存があっても上書きする | `existingFileIsReused` |
