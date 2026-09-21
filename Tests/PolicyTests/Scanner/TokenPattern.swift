@@ -17,7 +17,7 @@ struct TokenPattern: Equatable, Sendable {
     let elements: [PatternElement]
     /// 要素の間に空白を許さない（`try!`・`as!`・`#/`）。
     let adjacent: Bool
-    /// 自由関数の呼び出しとしてだけ数える（直前が `.` でない、または `Darwin.` / `Foundation.` / `Glibc.` で修飾されている。直前が `func` なら宣言なので数えない）。
+    /// 自由関数の呼び出しとしてだけ数える（直前が `.` でない、または `Darwin.` / `Foundation.` / `Glibc.` / `Swift.` で修飾されている。直前が `func` なら宣言なので数えない）。
     let freeCall: Bool
 
     /// 自由関数の呼び出し `name(`。
@@ -49,7 +49,7 @@ struct TokenPattern: Equatable, Sendable {
     }
 
     /// 自由関数の呼び出しを修飾してよい名前。
-    static let callQualifiers: Set<String> = ["Darwin", "Foundation", "Glibc"]
+    static let callQualifiers: Set<String> = ["Darwin", "Foundation", "Glibc", "Swift"]
 
     /// `tokens` の中で一致した位置（先頭のトークンの添字）を返す。
     func matches(in tokens: [CodeToken]) -> [Int] {

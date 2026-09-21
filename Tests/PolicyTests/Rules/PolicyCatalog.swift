@@ -13,7 +13,10 @@ enum PolicyCatalog {
         .sequence(".write(to:", ". write ( to :"),
         .sequence("write(toFile:", "write ( toFile :"),
         .sequence("createFile(", "createFile ("),
-        .sequence("FileHandle(forWritingTo:", "FileHandle ( forWritingTo"),
+        TokenPattern(
+            display: "FileHandle(forWriting",
+            elements: [.identifier("FileHandle"), .punctuation("("), .identifierPrefix("forWriting")],
+            adjacent: false, freeCall: false),
         TokenPattern(
             display: "FileHandle(forUpdating",
             elements: [.identifier("FileHandle"), .punctuation("("), .identifierPrefix("forUpdating")],
@@ -25,6 +28,9 @@ enum PolicyCatalog {
         .call("renameat"),
         .word("O_CREAT"),
     ]
+
+    /// PT-06 の `\(…)/\(…)`（raw 文字列の `\#(…)` も含む。補間の中の括弧は 2 段の入れ子まで）。
+    static let partKeyPattern = "\\\\#*\\((?:[^()]|\\((?:[^()]|\\([^()]*\\))*\\))*\\)/\\\\#*\\("
 
     /// VDContract 以外の VD モジュール（PT-15 が reaper の import を検査する）。
     static let nonContractModules = [
@@ -108,7 +114,7 @@ enum PolicyCatalog {
                         literals: [.words("エラーコード名", vocabulary.errorCodeNames)]),
                     PolicyClause(
                         allowed: PathSet(entries: ["VDContract/PartKey.swift", "VDContract/RelPath.swift"]),
-                        literals: [.regex("\\(…)/\\(…)", "\\\\\\([^)]*\\)/\\\\\\(")]),
+                        literals: [.regex("\\(…)/\\(…)", partKeyPattern)]),
                 ]),
             PolicyRule(
                 id: "PT-08",
@@ -246,7 +252,10 @@ enum PolicyCatalog {
                     PolicyClause(
                         allowed: .none,
                         code: [
-                            .sequence("Regex<", "Regex <"), .sequence("Regex(", "Regex ("),
+                            .sequence("Regex<", "Regex <"), .sequence("Regex(", "Regex ("), .word("Regex"),
+                            .sequence("firstMatch(of:", "firstMatch ( of"),
+                            .sequence("wholeMatch(of:", "wholeMatch ( of"),
+                            .sequence("prefixMatch(of:", "prefixMatch ( of"),
                             .sequence("#/", "# /", adjacent: true),
                         ])
                 ]),

@@ -74,12 +74,14 @@ struct PolicySelfTests {
             violating: [
                 SourceFile(relativePath: "VDPipeline/Bad.swift", text: "let s = \"RAW_SAVED\"\n"),
                 SourceFile(relativePath: "VDPipeline/Key.swift", text: "let k = \"\\(deviceID)/\\(relpath)\"\n"),
+                SourceFile(relativePath: "VDPipeline/Nested.swift", text: "let k = \"\\(key(for: p))/\\(r)\"\n"),
+                SourceFile(relativePath: "VDPipeline/Raw.swift", text: "let k = #\"\\#(a)/\\#(b)\"#\n"),
             ],
             decoy: [
                 SourceFile(
                     relativePath: "VDPipeline/Bad.swift",
                     text:
-                        "// RAW_SAVED にする\nlet t = PartStatus.rawSaved\nlet u = \"WHISPER_FAILED_X\"\nlet RAW_SAVED = 1\nenum E { case WHISPER_FAILED }\n"
+                        "// RAW_SAVED にする\nlet t = PartStatus.rawSaved\nlet u = \"WHISPER_FAILED_X\"\nlet RAW_SAVED = 1\nenum E { case WHISPER_FAILED }\nlet q = \"\\(a)-\\(b)\"\n"
                 )
             ]
         ),
@@ -95,13 +97,15 @@ struct PolicySelfTests {
         ),
         "PT-08": (
             violating: [
-                SourceFile(relativePath: "VDCore/Bad.swift", text: "func f() { print(\"x\") }\n")
+                SourceFile(relativePath: "VDCore/Bad.swift", text: "func f() { print(\"x\") }\n"),
+                SourceFile(relativePath: "VDCore/SwiftPrint.swift", text: "func f() { Swift.print(\"x\") }\n"),
+                SourceFile(relativePath: "VDCore/SwiftDump.swift", text: "func f() { Swift.dump(x) }\n"),
             ],
             decoy: [
                 SourceFile(
                     relativePath: "VDCore/Bad.swift",
                     text:
-                        "// print(\"x\")\nlet s = \"print(1)\"\nstruct Printer { func print() {} }\nfunc g(_ p: Printer) { p.print() }\n"
+                        "// print(\"x\")\nlet s = \"print(1)\"\nstruct Printer { func print() {} }\nfunc g(_ p: Printer) { p.print() }\n// Swift.print(x)\nlet m = Swift.max(1, 2)\n"
                 )
             ]
         ),
@@ -138,13 +142,14 @@ struct PolicySelfTests {
         ),
         "PT-12": (
             violating: [
-                SourceFile(relativePath: "VDPipeline/Bad.swift", text: "func f() throws { try data.write(to: url) }\n")
+                SourceFile(relativePath: "VDPipeline/Bad.swift", text: "func f() throws { try data.write(to: url) }\n"),
+                SourceFile(relativePath: "VDPipeline/Handle.swift", text: "let h = FileHandle(forWritingAtPath: p)\n"),
             ],
             decoy: [
                 SourceFile(
                     relativePath: "VDPipeline/Bad.swift",
                     text:
-                        "// data.write(to: url)\nlet s = \"write(to:)\"\nfunc g() throws { try file.write(from: buffer) }\n"
+                        "// data.write(to: url)\nlet s = \"write(to:)\"\nfunc g() throws { try file.write(from: buffer) }\nlet r = FileHandle(forReadingAtPath: p)\n"
                 )
             ]
         ),
@@ -208,22 +213,35 @@ struct PolicySelfTests {
         ),
         "PT-19": (
             violating: [
-                SourceFile(relativePath: "VDCore/Bad.swift", text: "let x = try! f()\n")
+                SourceFile(relativePath: "VDCore/Bad.swift", text: "let x = try! f()\n"),
+                SourceFile(relativePath: "VDCore/SwiftFatal.swift", text: "func f() { Swift.fatalError() }\n"),
+                SourceFile(
+                    relativePath: "VDCore/SwiftPrecondition.swift", text: "func f() { Swift.precondition(ok) }\n"),
+                SourceFile(relativePath: "VDCore/SwiftAssert.swift", text: "func f() { Swift.assert(ok) }\n"),
             ],
             decoy: [
                 SourceFile(
                     relativePath: "VDCore/Bad.swift",
-                    text: "// try! は使わない\nlet s = \"fatalError()\"\nlet y = try? f()\nlet z = try !flag()\n")
+                    text:
+                        "// try! は使わない\nlet s = \"fatalError()\"\nlet y = try? f()\nlet z = try !flag()\n// Swift.fatalError()\nlet u = \"Swift.assert(ok)\"\n"
+                )
             ]
         ),
         "PT-20": (
             violating: [
-                SourceFile(relativePath: "VDCore/Bad.swift", text: "let r = try Regex(\"a+\")\n")
+                SourceFile(relativePath: "VDCore/Bad.swift", text: "let r = try Regex(\"a+\")\n"),
+                SourceFile(relativePath: "VDCore/Generic.swift", text: "let r: Regex<Substring>? = nil\n"),
+                SourceFile(relativePath: "VDCore/Annotation.swift", text: "let t: Regex? = nil\n"),
+                SourceFile(relativePath: "VDCore/First.swift", text: "let m = s.firstMatch(of: x)\n"),
+                SourceFile(relativePath: "VDCore/Whole.swift", text: "let m = s.wholeMatch(of: x)\n"),
+                SourceFile(relativePath: "VDCore/Prefix.swift", text: "let m = s.prefixMatch(of: x)\n"),
             ],
             decoy: [
                 SourceFile(
                     relativePath: "VDCore/Bad.swift",
-                    text: "// Regex は使わない\nlet s = \"Regex<Substring>\"\nlet t = NSRegularExpression.self\n")
+                    text:
+                        "// Regex は使わない\nlet s = \"Regex<Substring>\"\nlet t = NSRegularExpression.self\nlet m = expression.firstMatch(in: s, range: r)\nlet w = PatternMatch.wholeMatch(filePattern, name)\nlet regexPattern = \"a+\"\n// s.firstMatch(of: x)\nlet u = \"firstMatch(of:\"\n"
+                )
             ]
         ),
         "PT-21": (
