@@ -167,7 +167,7 @@ public struct InboxWriter: Sendable {
 2. `fd = open(partial.path(percentEncoded: false), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0o644)`。負なら `.failure(.writeError(errno))`
 3. `var hasher = SHA256()`、`var total: Int64 = 0`
 4. 繰り返し:
-   - `chunk = try source.read(maxBytes: chunkBytes)`。投げたら `close(fd)` → `discardPartial` → `.failure(.readError(e.errno))`
+   - `chunk = try source.read(maxBytes: chunkBytes)`。投げたら `close(fd)` → `discardPartial` → `.failure(.readError(e.code))`（`ErrnoError` の欄は `code`。T-13）
    - `chunk.isEmpty` なら抜ける
    - `hasher.update(data: chunk)`
    - `chunk` を全部書く（`write` の部分書き込みは残りを続けて書く。`EINTR` は再試行）。`-1` なら `close(fd)` → `discardPartial` → `.failure(.writeError(errno))`
@@ -294,7 +294,8 @@ enum CopyOutcome: Equatable, Sendable { case copied(isNew: Bool), failed(CopyErr
        case .failure(let e): return .failure(e)
        case .success(let handle):
            defer { handle.close() }
-           return writer.writePartial(from: handle, expectedSize: stat.size, partial: partial, chunkBytes: chunk)
+           return writer.writePartial(
+               from: handle, expectedSize: stat.size, partial: partial, chunkBytes: chunk)
        }
    }) ?? .failure(.readError(EIO))
    ```
@@ -306,7 +307,7 @@ enum CopyOutcome: Equatable, Sendable { case copied(isNew: Bool), failed(CopyErr
 8. `copy_completed recording_key=<partkey> bytes=<stat.size> recopy=<!isNew>`（INFO）
 9. `progressCopied += 1`、`lastActivityAt = deps.clock.now()` → `.copied(isNew: isNew)`
 
-`logCopyFailed(partkey, error)`: `copy_failed recording_key=<partkey> reason=<error.reason>`。`readError` / `writeError` のときは `errno=<n>` を足す。レベルは `changed` だけ INFO、ほかは WARNING
+`logCopyFailed(partkey, error)`: `copy_failed recording_key=<partkey> reason=<error.reason>`。（実装で変更）`errno=<n>` は足さない（`LogKey` に `errno` が無く、付録 A.4 の `copy_failed` のフィールドにも無い。§10 の提案 10）。レベルは `changed` だけ INFO、ほかは WARNING
 
 `registerCopied(…)`:
 1. `guard let inboxRel = deps.layout.relativePath(of: final) else { throw CopyError.writeError(EINVAL) }`
@@ -478,7 +479,7 @@ public final class FakeChunkReader: ChunkReading {
 - `TX_MIC001_20260912_163444/TX00_MIC001_20260912_163444_orig.wav`（2.0 秒・発話。320,776 バイト）と `TX_MIC001_20260912_163444/TX00_MIC001_20260912_163444.wav`（denoised）
 - `TX_MIC002_20260913_090000/TX01_MIC003_20260913_090000.wav`（denoised だけ・1.0 秒・無音）
 
-`IngestService(deps:)` を作り、`ingestDevice(deviceID: "DJIMIC3", mountPath: fake.root.path, config: AppConfig.defaults(timeZone: "Asia/Tokyo"))` を呼ぶ。
+`IngestService(deps:)` を作り、`ingestDevice(deviceID: "DJIMIC3", mountPath: fake.root.path(percentEncoded: false), config: AppConfig.defaults(timeZone: "Asia/Tokyo"))` を呼ぶ。
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
@@ -573,3 +574,5 @@ public final class FakeChunkReader: ChunkReading {
 7. `NewRecording` の初期化子を `init(partkey:deviceID:sourceFolder:transmitterID:micIndex:startedAt:durationSeconds:endedAt:sourcePath:sourceSize:sourceMtime:sha256Helper:inboxPath:)` に固定する（T-11）→ 00-api-map に反映済み（2026-09-18。init は T-11 で同じ形に固定）
 8. `RelPath.parent` と `RelPath.lastComponent` は API 地図の追記どおり使う（直下のファイルの親は `""`）→ 00-api-map に反映済み（2026-09-18）
 9. `BWFWriter` の作り手は T-14（T-16 の版を正とする）→ 00-api-map §15 に反映済み（2026-09-18）
+10. （実装で追記）`LogKey` に `errno`（`case errno`）を足す（T-10 の `Log.swift`）。T-14 の `copy_failed` と T-15 の `volume_skipped … errno=<n>`（T-15 §4 の `recordSkip`）が使う。T-14 では `Log.swift` が §3 の表に無いため足さず、`copy_failed` に `errno` を出していない（付録 A.4 の `copy_failed` のフィールドは `recording_key`・`reason` だけなので、PLAN とは食い違わない）。T-15 では必要になる
+11. （実装で追記）`DeviceReader.stat(volumeRoot:relpath:)` を足すと、型の中の `stat()`（Darwin の構造体の初期化）がこのメソッドに解決されるので、T-13 の `entryKind` の `var st = stat()` を `Darwin.stat()` に直した（振る舞いは同じ）
