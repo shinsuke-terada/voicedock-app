@@ -144,6 +144,7 @@ public struct LlamaServerHandle: Equatable, Sendable {
     public let endpoint: LoopbackEndpoint
     public let apiKey: String                 // 小文字 16 進 32 文字
     public let modelID: String                // 要求本文の "model" に入れる（カタログの ID か custom:<sha256>）
+    public init(endpoint: LoopbackEndpoint, apiKey: String, modelID: String)   // 00-api-map §8 の行に合わせる（T-22 の偽物が作る）
 }
 
 public actor LlamaServerSupervisor {
@@ -159,23 +160,27 @@ public actor LlamaServerSupervisor {
 }
 ```
 
-状態: `private var current: (process: RunningProcess, handle: LlamaServerHandle, model: URL, contextSize: Int)?`、`private var starting: Task<Result<LlamaServerHandle, StageFailure>, Never>?`
+状態: `private var current: (process: RunningProcess, handle: LlamaServerHandle, model: URL, contextSize: Int)?`、`private var starting: Task<Result<LlamaServerHandle, StageFailure>, Never>?`、`private var stopping: Task<Void, Never>?`
 
 **`ensureRunning`**:
-1. `starting` が在ればその `value` を待って返す（同時に 2 つ起動しない。actor の再入対策）
-2. `current` が在り、`model`・`config.contextSize`・`modelID` が同じで `await process.isRunning` なら `.success(handle)`
-3. `current` が在る（違う・死んでいる）なら `stopCurrent()`（§ stop の 1〜4）
-4. `starting = Task { await self.startServer(model:modelID:contextSize:) }` → `result = await starting.value` → `starting = nil` → `result` を返す
+1. ループ: `starting` が在ればその `value` を待って 1 に戻る。`stopping` が在ればその `value` を待って 1 に戻る（**待った結果を返さない**。起動中の結果は別のモデルのものかもしれないので、自分の条件で比べ直す。再レビューで判明）
+2. `c = current` が在り、`model`・`config.contextSize`・`modelID` が同じで `await c.process.isRunning` なら、返す前に `starting == nil && stopping == nil && current?.handle == c.handle` を確かめて `.success(c.handle)`。外れたら（`isRunning` の `await` の間に起動・停止が始まった・`current` が替わった）1 に戻る
+3. `starting` か `stopping` が在れば 1 に戻る（2 の `await` の間に別の呼び手が起動・停止を始めていることがある）。どちらも無ければループを抜ける
+4. `starting = Task { await self.stopCurrent(); let r = await self.startServer(model:modelID:contextSize:); self.starting = nil; return r }`（`current` が違う・死んでいるなら止めてから起動。`stopCurrent()` は § stop の 2〜5 で、`current` が nil なら何もしない）
+   → `await starting.value` を返す。**`starting = nil` は Task の中で終わる前に行う**（呼び手の側で空にすると、1 で待っていた別の呼び手が、終わった Task を `await` しても中断しないまま回り続け、呼び手が戻れずに止まる。実装で判明）。
+   **止めることと起動することを 1 つの Task に入れ、最初の `await` より前に `starting` を立てる**（`stopCurrent()` を Task の外で `await` すると、terminate の最大 10 秒の間に別の呼び手が入り、2 つ起動して片方を止められなくなる。レビューで判明。テスト `concurrentCallsKeepOnlyOneAlive`）
+- `starting` の Task は構造化されていないので、呼び手のタスクの取り消しは伝わらない（`server_start_failed: cancelled` は `Sleeper` が投げたときだけ通る）。取り消しを伝えたいなら T-22 が別に決める
+- **T-22 / T-32 への申し送り**: 別のモデル（か contextSize）で `ensureRunning` を呼ぶと、前の呼び手に返した handle のサーバーが止まる。DR-09 などは Worker の解析と直列にするか、同じモデルを使う
 
 **`startServer`**（`maxAttempts` 回まで。1 回ごとに別のポート）:
 ```text
 lastReason = "no_port"; lastStderr = ""
 for attempt in 1...3:
-  port = portPicker()、endpoint = LoopbackEndpoint(port:)。どちらかが nil → lastReason = "no_port"; continue
+  port = portPicker()、endpoint = LoopbackEndpoint(port:)。どちらかが nil → lastReason = "no_port"; lastStderr = ""; continue
   key = SystemRandomNumberGenerator の 16 バイトを小文字 16 進 2 桁ずつつないだ 32 文字
   AtomicFile.write(Data(key.utf8), to: layout.llamaAPIKeyFile, permissions: 0o600)。失敗 → 鍵ファイルを消す（前の試行の鍵が残っていることがある。下と同じ SafeUnlink）→ return .failure(StageFailure(.llmUnavailable, "server_start_failed: api_key_file"))
   spec = ProcessSpec(executable: paths.llamaServer, arguments: LlamaArgs.build(model:, port:, apiKeyFile: layout.llamaAPIKeyFile, contextSize:), environment: ProcessEnvironment.standard)
-  process = try await runner.spawn(spec)。失敗 → lastReason = "spawn_failed"; continue
+  process = try await runner.spawn(spec)。失敗 → lastReason = "spawn_failed"; lastStderr = ""; continue
   started = clock.uptime()
   loop:
     await LoopbackHealth.check(endpoint, factory:) == 200 →
@@ -193,18 +198,20 @@ return .failure(StageFailure(.llmUnavailable, message(lastReason, lastStderr)))
 ```
 - `reason(t)`: `.exited(n)` → `"exited(\(n))"`、`.signaled(n)` → `"signaled(\(n))"`、`.timedOut` → `"timeout"`、`.spawnFailed` → `"spawn_failed"`
 - `message(reason, stderr)`: `s = PyText.strip(stderr)`。空なら `"server_start_failed: \(reason)"`、そうでなければ `"server_start_failed: \(reason): \(s の末尾 150 スカラー)"`（PLAN §8.5 の `server_start_failed: <理由>: <stderr の末尾 150 スカラー>`。DB で 200 文字に切られても理由が残る長さ。
-  stderr が空のときに `": "` で終わらせないのと、理由語に `signaled(<n>)`・`api_key_file`・`cancelled` を足したのは本チケットの決定で、PLAN の理由語の列（`exited(<n>)` / `timeout` / `no_port` / `spawn_failed`）に無い。整合修正の報告に記載）
+  stderr が空のときに `": "` で終わらせないのと、理由語の `signaled(<n>)`・`api_key_file`・`cancelled` は、いまの PLAN §8.5 の理由語の列に反映済み）
 - **API キーファイルは停止したときと起動に失敗したときに必ず消す**（PLAN §8.5）: `startServer` のどの失敗の経路（`api_key_file`・`cancelled`・3 回の失敗）でも、`stop()` / `stopCurrent()` でも消す
 - 経過秒 = `clock.uptime() − started` を秒の `Double` にし、`PyRound.round(x, digits: 1)`（T-45。Python の `round(x, 1)`。PLAN §5.7）
 - 1 回ごとの失敗はログに出さない（最後の失敗は呼び手が `llm_failed` で出す）
 - **メモリの確認はしない**（PLAN §5.4 のガードで Worker が起動の前に行う。ここでは渡されたモデルをそのまま起動する）
 - stdout / stderr はファイルに残さない（`ProcessRunner` が末尾だけメモリに持つ。PR-08）
 
-**`stop()`**（と `stopCurrent()`）:
-1. `current` が nil なら何もしない
-2. `c = current; current = nil`
-3. `_ = await c.process.terminate(grace: .seconds(10))`（SIGTERM → 10 秒 → SIGKILL。プロセスグループごと）
-4. `log.info(.llmServerStopped, [(.port, .int(Int64(c.handle.endpoint.port)))])`、鍵ファイルを消す（SafeUnlink、`missingOK: true`、失敗は無視）
+**`stop()`**（と `stopCurrent()`。`stopCurrent()` は 2〜5）:
+1. （`stop()` だけ）`starting` か `stopping` が在る間はその `value` を待つ（起動の途中で呼ばれても、起動したものを残さない）。その後 `stopping = Task { await self.stopCurrent(); self.stopping = nil }` を立てて待つ。
+   停止も Task にして `stopping` に置くのは、terminate の最大 10 秒の間に来た `ensureRunning` を待たせ、新しい起動の鍵ファイルを古い停止が消さないため（再レビューで判明）。`private var stopping: Task<Void, Never>?` を状態に足す
+2. `current` が nil なら何もしない
+3. `c = current; current = nil`
+4. `_ = await c.process.terminate(grace: .seconds(10))`（SIGTERM → 10 秒 → SIGKILL。プロセスグループごと）
+5. `log.info(.llmServerStopped, [(.port, .int(Int64(c.handle.endpoint.port)))])`、鍵ファイルを消す（SafeUnlink、`missingOK: true`、失敗は無視）
 
 **使い方**（T-22 と T-32 が書く。参考）:
 ```swift
@@ -308,7 +315,7 @@ echo "fake llama-server attempt $N" 1>&2
 | `ceMaxOutputTokens` / 「CE llm.maxOutputTokens が本文の max_tokens に入る」 | `maxOutputTokens = 256` | 本文の `max_tokens` が 256（既定なら 4096） |
 | `validResponseIsParsed` / 「content を取り出す」 | 200 `{"choices":[{"message":{"content":"{\"a\":1}"}}],"usage":{"total_tokens":42}}` | `.content("{\"a\":1}")` |
 | `contentKeepsLeadingBOM` / 「content の先頭の U+FEFF を落とさない（PyJSON.decode）」 | 200 `{"choices":[{"message":{"content":"\ufeff{}"}}]}` | `.content("\u{FEFF}{}")` |
-| `malformedEnvelopeIsEmpty(body:)` / 「外形が壊れた応答は空文字（修復へ回す）」 | 200 で本文が `{"choices":[]}`・`{"choices":[{}]}`・`{"choices":[{"message":{}}]}`・`{"choices":"nope"}`・`{}`・`[]`・`<html>nope</html>`・`{"choices":[{"message":{"content":5}}]}` | どれも `.content("")` |
+| `malformedEnvelopeIsEmpty(body:)` / 「外形が壊れた応答は空文字（修復へ回す）」 | 200 で本文が `{"choices":[]}`・`{"choices":[{}]}`・`{"choices":[{"message":{}}]}`・`{"choices":"nope"}`・`{}`・`[]`・`<html>nope</html>`・`{"choices":[{"message":{"content":5}}]}`・空の本文 `""`（TEST-28） | どれも `.content("")` |
 | `httpErrorIsUnavailable(status:)` / 「HTTP 400 以上は LLM_UNAVAILABLE」 | 400・500・503、本文 `busy` | `.failure(StageFailure(.llmUnavailable, "HTTP <status>: busy"))` |
 | `httpErrorBodyIsCutAt200Scalars` / 「本文は先頭 200 スカラーまで」 | 500、本文が `あ` × 300 | メッセージが `"HTTP 500: " + "あ" × 200` |
 | `connectionFailureIsUnavailable` / 「接続できなければ URLError の番号」 | stub を登録しない | `.failure(StageFailure(.llmUnavailable, "URLError -1004"))` |
@@ -325,6 +332,7 @@ echo "fake llama-server attempt $N" 1>&2
 | `missingFlagIsReported` / 「--help に無いフラグを返す」 | `--offline` を含まない help 文 → `["--offline"]` |
 | `flagMustBeAWord` / 「部分一致を数えない」 | `--portable` だけを含み `--port` を含まない help 文 → 結果に `--port` |
 | `noShortForms` / 「短い形のフラグを使わない」 | `build` の結果に `-c`・`-m`・`-ngl`・`-np` が無い |
+| `emptyHelpMissesEverything` / 「空の help ならすべてのフラグを返す」（TEST-28） | `missingFlags(helpOutput: "")` が `usedFlags` と同じ 10 個を同じ順で（リテラルで比べる） |
 | `ceContextSize` / 「CE llm.contextSize が --ctx-size に渡る」 | `contextSize:` に `AppConfig.defaults(timeZone: "Asia/Tokyo").llm.contextSize` と、`contextSize` を 8192 にした設定の値を渡すと、`--ctx-size` の次がそれぞれ `32768` と `8192` |
 
 ### 5.3 `LlamaServerSupervisorTests.swift`（`@Suite(.serialized)`。本物の `ProcessRunner` と `FakeLlamaServer`）
@@ -332,11 +340,14 @@ echo "fake llama-server attempt $N" 1>&2
 準備: `TempDirectory`、`layout = HomeLayout(root: tmp/home)` と `createDirectories()`、`fake = FakeLlamaServer(directory: tmp/fake, mode: …)`、
 `paths = AppPaths(resources: PackageRoot.url.appendingPathComponent("Resources"), helpers: fake.helpersDirectory)`、`model = tmp/m.gguf`（空ファイル）、
 `factory = BlockingSessionFactory()`、ポートは `FreePort.pick()` で先に取った列を返す `portPicker`、`/health` の応答は `LoopbackStub` に登録（503 を何回返してから 200 にするかをテストごとに決める）。
+`/health` の handler は、そのポートで起動する偽物の n 回目が API キーファイルを読み終える（`fake.apiKey(ofInvocation: n)` が 32 文字になる。最大 10 秒）まで応答を止めてから数える（本物は起動してから応答するので、偽物もスクリプトが走る前に 200 を返さない。止めないと `invocationCount` や stderr がまだ書かれていない。実装で判明）。
+pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spawn した `RunningProcess` を覚えるだけの `ProcessRunning`（テストファイルの中の `SpawnRecordingRunner`）を渡す。
+ログの行は `LogLevel.info.token` が `"INFO "`（5 桁左寄せ）なので、イベント名以降を `hasSuffix` / `contains` で比べる。
 時計・待ち・ログは T-10 の TestSupport を使う（00-api-map §15。このファイルで偽物を作らない）: `RecordingSleeper()`（待たずに秒数を `recorded` に記録する）、`SteppingClock(start: Instant(epochMillis: 0), stepMilliseconds: 1000)`（`now()` と `uptime()` を呼ぶたびに 1 秒進む。時間切れのテストだけ）、それ以外の時計は `FixedClock(epochMillis: 0)`、ログは `CapturingLogSink()`（`lines`）を `AppLog(sink:level: .debug, …)` に渡す。
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `startsAndWaitsForHealth` / 「起動して /health が 200 になるまで待つ」 | stayAlive、/health は 503・503・200 | `.success`、handle のポートが picker の 1 つ目、起動 1 回、`fake.arguments(ofInvocation: 1) == LlamaArgs.build(…)`、鍵ファイルのパーミッションが 0600・中身が小文字 16 進 32 文字で `handle.apiKey` と `fake.apiKey(ofInvocation: 1)` に等しい、`RecordingSleeper.recorded == [1, 1]`、ログに `llm_server_started port=<port>` |
+| `startsAndWaitsForHealth` / 「起動して /health が 200 になるまで待つ」 | stayAlive、/health は 503・503・200 | `.success`、handle のポートが picker の 1 つ目、起動 1 回、`fake.arguments(ofInvocation: 1)` が §4.2 の列（ポート・パスを埋めたリテラル。TEST-01 のため `LlamaArgs.build` を呼ばない）、鍵ファイルのパーミッションが 0600・中身が小文字 16 進 32 文字で `handle.apiKey` と `fake.apiKey(ofInvocation: 1)` に等しい、`RecordingSleeper.recorded == [1, 1]`、ログに `llm_server_started port=<port>` |
 | `reusesARunningServer` / 「同じ条件なら起動し直さない」 | 上の後にもう一度 `ensureRunning` | 同じ handle、起動 1 回のまま |
 | `restartsWhenTheModelChanges` / 「モデルが変わったら止めて起動し直す」 | 2 回目は別の model | 起動 2 回、1 回目の pid に `kill(pid, 0)` が `ESRCH`、ログに `llm_server_stopped` |
 | `retriesOnAnotherPort` / 「起動に失敗したら別のポートで」 | exitBeforeAttempt(3, code: 1)、picker `[p1, p2, p3]`、p3 の /health は 200 | `.success`、handle のポートが p3、起動 3 回、それぞれの `--port` が p1・p2・p3 |
@@ -346,6 +357,9 @@ echo "fake llama-server attempt $N" 1>&2
 | `stopTerminatesAndRemovesTheKey` / 「停止でプロセスと鍵ファイルを消す」 | 起動の後に `stop()` | pid が `ESRCH`、鍵ファイルが無い、ログに `llm_server_stopped port=<port>` |
 | `stopWithoutServerDoesNothing` / 「起動していなければ停止は何もしない」 | 起動せずに `stop()` | ログが空、エラーにならない |
 | `keyIsNotInTheArguments` / 「API キーを引数に置かない」 | 成功の後 | `fake.arguments(ofInvocation: 1)` のどの要素も `handle.apiKey` を含まない |
+| `concurrentCallsKeepOnlyOneAlive` / 「同時に呼ばれても 2 つを同時に生かさない（actor の再入）」 | stayAlive、1 つ起動した後に、別のモデル b と c で `ensureRunning` を `async let` で同時に 2 回、その後 `stop()` | 2 つとも `.success` で handle の endpoint が互いに違う（どちらも自分のモデルで起動したもの）、spawn は合わせて 3 回、`stop()` の前に生きているのは 1 つだけ、`stop()` の後はどの pid も `ESRCH`、鍵ファイルが無い |
+
+後片付け: 各テストは TempDirectory から Rig を作って本体を渡す `withRig` で包み、本体が投げても `stop()` と spawn したすべての `terminate(grace: .zero)` と `LoopbackStub.unregister` を行う（`sleep 600` を残さない）。スイートに `.timeLimit(.minutes(1))` を付ける（壊し方によっては待ちのループが終わらない）。
 
 ### 5.4 `ConfigEffectPending.swift`（PolicyTests。T-09 §9）
 
@@ -368,6 +382,17 @@ echo "fake llama-server attempt $N" 1>&2
 | 起動に 3 回失敗した後に鍵ファイルを消さない | `failsAfterThreeAttempts` |
 | `content(of:)` を `JSONSerialization` に戻す | `contentKeepsLeadingBOM` |
 | 2 回目の `ensureRunning` で生死を確かめずに起動し直す | `reusesARunningServer` |
+| `ensureRunning` の `stopCurrent()` を `starting` の Task の外で `await` し、その後の `starting` の再確認を消す（v1 の手順） | `concurrentCallsKeepOnlyOneAlive` |
+
+実施の結果（2026-09-21。コミット後の清潔な状態で 1 項目ずつ壊し、`git checkout --` で戻した）: どの項目でも表のテストが落ちた。表に無いテストも落ちたのは次のとおり。
+- `-c` にする: `startsAndWaitsForHealth`・`ceContextSize` も落ちる
+- `--api-key <key>`: Supervisor で `LlamaArgs.build(…) + ["--api-key", key]` にすると `keyIsNotInTheArguments` と `startsAndWaitsForHealth`、`LlamaArgs.build` の末尾に足すと `buildIsExact` と `startsAndWaitsForHealth` が落ちる（1 か所では両方は落ちない。表の 2 つはそれぞれの壊し方で落ちる）
+- 同じポートを使い回す: `retriesOnAnotherPort` は 3 回目が登録の無いポートで待ち続け、`FixedClock` が進まないので終わらない。`.timeLimit(.minutes(1))` で失敗と記録されるが、ループが取り消しを見ないのでテストのプロセスは残る（手で止めた）
+- `maxAttempts = 1`: `timesOutAfter300Seconds` も落ちる
+- `stop()` で鍵を消さない: `concurrentCallsKeepOnlyOneAlive` も落ちる
+- 3 回の失敗の後に鍵を消さない: `timesOutAfter300Seconds` も落ちる
+- 手順 2 の「返す前の比べ直し」（`starting == nil && stopping == nil && current?.handle == c.handle`）を `true` にする: 3 回回して、落ちるテストは無かった（`isRunning` の `await` の間に別の呼び手が起動・停止を始める窓を、決まった順で作るテストが無い）。表には載せない。この 3 回で落ちたのは `failsAfterThreeAttempts` だけで、それは T-12 の stderr の取りこぼし（§8-9、T-12 側の PR #42）によるもので、比べ直しとは関係ない
+- v1 の再入の手順: 3 回のうち 2 回は落ちるまでに数分かかった（2 つの起動が同じ鍵ファイルを書き、偽物の `/health` の待ちが食い違うため）。3 回目は手で止めた（この項目は再レビューの修正より前の実装で行った。修正後の `concurrentCallsKeepOnlyOneAlive` は 1 と 3 の比べ直しと、生きているのが 1 つだけであることも見る）
 
 ## 7. 受け入れ条件
 
@@ -378,13 +403,17 @@ echo "fake llama-server attempt $N" 1>&2
 
 ## 8. API 地図への変更提案
 
-1. `LoopbackEndpoint.init(port:)` を `init?(port:)` にする（PT-02 で `URL(string:)` を使えないので `URLComponents.url`（Optional）から作る。port 0 も nil）。`static let host`・`port` を公開 → `init?(port:)` は 00-api-map に反映済み（2026-09-18）。`host`・`port` は地図に無い（追記が要る）
+1. `LoopbackEndpoint.init(port:)` を `init?(port:)` にする（PT-02 で `URL(string:)` を使えないので `URLComponents.url`（Optional）から作る。port 0 も nil）。`static let host`・`port` を公開 → `init?(port:)` は 00-api-map に反映済み（2026-09-18）。`host`・`port` は地図の §16 に反映済み
 2. `LlamaServerSupervisor.init` に `portPicker: @escaping @Sendable () -> UInt16? = FreePort.pick` を足す（テストでポートを決めて `/health` の応答を差し替えるため）。`maxAttempts` などの定数を公開 → `portPicker` は 00-api-map に反映済み（2026-09-18。「API キーファイルは停止・失敗で消す」も地図の注記どおり）。定数は地図に無い
 3. `LlamaArgs.missingFlags(helpOutput:)` を足す（DR-07 と共有）→ 00-api-map に反映済み（2026-09-18）
-4. `LlamaServerHandle` に `Equatable` → 地図に無い（追記が要る）
+4. `LlamaServerHandle` に `Equatable` と `public init(endpoint:apiKey:modelID:)` → 地図の §8 の行と §16 に反映済み（本チケットの §4.3 も地図に合わせて init を足した）
 5. T-12 への前提: `RunningProcess.terminate(grace:)` は、既に終了したプロセスに対しては待たずにその終了の状態（`.exited(n)` / `.signaled(n)`）を返すこと。`stderrTail()` は終了の後も読めること → 00-api-map（「終了済みなら待たずに返す」）と T-12 に反映済み（2026-09-18）
 6. T-10 への前提: `LogKey` に `port` と `elapsed_s` が在ること → T-10 の `LogKey` に在る（2026-09-18 確認）
 7. TestSupport に `BlockingURLProtocol`・`LoopbackStub`・`StubRequest`・`StubReply`・`BlockingSessionFactory`・`FakeLlamaServer` を足す（§4.4）。T-23 も `BlockingURLProtocol` を使う → 00-api-map §15 に反映済み（2026-09-18。作り手は T-21）
+8. 00-api-map §8・§16 への追記（まとめて 1 項）: `LoopbackEndpoint: Equatable`（`LlamaServerHandle: Equatable` のために要る。地図の §8 の行は `Sendable` だけ。実装には不可欠）と、公開定数 `LlamaServerSupervisor.maxAttempts`・`startupTimeoutSeconds`・`stopGraceSeconds`・`LoopbackHealth.timeoutSeconds`（2 の「定数は地図に無い」に `LoopbackHealth.timeoutSeconds` が漏れていた）
+9. T-12 への申し送り: `RunningProcess.terminate(grace:)` は既に終了したプロセスに対しては読み取りの後始末（`finishReaders`）を待たずに返すので、直後の `stderrTail()` に最後の出力がまだ入っていないことがありうる（プロセスの終了の検出と stderr の EOF の読み取りの競争）。
+   終了を検出してから `stderrTail()` を読むまでの間に待ちは何も無く、揃う保証は無い（実測では `failsAfterThreeAttempts` を負荷の下で数百回回して落ちなかったが、それは偶然の余裕）。本番では `server_start_failed: exited(1)` の後ろの stderr が欠けうる。
+   T-12 の側で「終了済みでも読み取りの EOF を `readerDrainGrace` まで待ってから返す」にすることを提案する（VDProcess は本チケットのパスではないので触らない）
 
 ## 9. SPEC の変更
 
