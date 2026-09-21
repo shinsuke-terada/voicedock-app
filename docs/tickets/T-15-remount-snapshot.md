@@ -482,6 +482,12 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | 共存ガードのログを毎回出す | `coexistenceBlocksAndLogsOnce` |
 | `recordSkip` で毎回 WARNING を出す | `unavailableWarnsOnlyOnChange` |
 
+実施結果（コミット後の清潔な状態で 1 項目ずつ。11 項目とも表の「落ちるべきテスト」が落ちた）:
+- 「既に ro なら何もしない」を消すと `info` が使われない警告がエラーになるので、`_ = info` を残して壊した
+- `requestScan()` をまとめない壊し方では、`noZeroDeviceSnapshotDuringRemount` に加えて `scanNowWaitsForAScanStartedAfterTheCall`・`stopResolvesWaiters`・`ceScanIntervalSeconds` も落ちた（並んだ走査が reaper.lock を取り合う）
+- `connectEpoch` を前回を見ずに上げる壊し方では、`skippedScanDoesNotChangeEpoch` も落ちた
+- `.diskImage` の 3 本（§5.5）は `VOICEDOCK_DISK_TESTS` が要るので、実装者は回していない（利用者が実機を抜いて `make test-disk` で確かめる）
+
 ## 7. 受け入れ条件
 
 - [ ] 走査の手順が PLAN §8.1 の 1〜5 の順（共存ガード → ロック → 判定 → 再マウント → 観測 → 取り込み → 公開 → ロックを外す）
