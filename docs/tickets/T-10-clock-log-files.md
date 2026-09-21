@@ -658,7 +658,7 @@ public final class CapturingLogSink: LogSink {
 | 関数名 | 表示名 | 期待 |
 |---|---|---|
 | `appendsLines` | `行を追記する` | 2 行書いて中身が `a\nb\n` |
-| `rotatesBeforeExceeding` | `上限を超える書き込みの前に .1 へ回す` | maxBytes 10 で `12345\n`（6）→ `6789\n`（5。11 > 10）: `app.log.1` が `12345\n`、`app.log` が `6789\n` |
+| `rotatesBeforeExceeding` | `上限を超える書き込みの前に .1 へ回す` | maxBytes 10 で `12345\n`（6）→ `6789\n`（5。11 > 10）: `app.log.1` が `12345\n`、`app.log` が `6789\n`。ちょうど上限に届く `12345\n`（6）→ `678\n`（4。10 = 10）は回さない（`.1` が無く `app.log` が `12345\n678\n`） |
 | `rotationReplacesOldBackup` | `.1 は 1 世代だけ` | 3 回回して `.1` が直前の中身 |
 | `unwritableDirectoryDoesNotThrow` | `書けない場所でも落ちない` | 存在しないディレクトリの URL で write しても例外にならない |
 

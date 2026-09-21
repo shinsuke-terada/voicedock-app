@@ -37,6 +37,16 @@ struct LogFileTests {
         file.close()
         #expect(try contents(temp.url.appendingPathComponent("app.log.1")) == "12345\n")
         #expect(try contents(url) == "6789\n")
+
+        // ちょうど上限に届く書き込み（6 + 4 = 10）は回さない
+        let exactTemp = try TempDirectory()
+        let exactURL = exactTemp.url.appendingPathComponent("app.log")
+        let exact = LogFile(url: exactURL, maxBytes: 10)
+        exact.write(line: "12345", level: .info, category: "core")
+        exact.write(line: "678", level: .info, category: "core")
+        exact.close()
+        #expect(try contents(exactURL) == "12345\n678\n")
+        #expect(!FileManager.default.fileExists(atPath: exactURL.path(percentEncoded: false) + ".1"))
     }
 
     @Test(".1 は 1 世代だけ")
