@@ -561,7 +561,7 @@ final class ExitRecord: Sendable {
 | `spawnMissingExecutableThrows` | 無い実行ファイルの spawn は SpawnError | `<tmp>/nope` | `SpawnError.spawnFailed(errno: ENOENT)` を投げる |
 | `stderrTailWhileRunning` | 動いている間も stderr の末尾を読める | `echo ready >&2; sleep 30` | 2 秒以内に `stderrTail()` が `ready\n` を含む。最後に terminate |
 | `waitForExitReportsCrash` | 勝手に終わったことを waitForExit で知れる | `sleep 0.2; exit 3` | `waitForExit()` が `.exited(3)`、`isRunning == false` |
-| `terminateAfterExitDrainsStderr` | 既に終わった子の terminate は stderr を最後まで読んでから返す | stderr に約 60 KB 書いて最後に `LAST-LINE` を出し `exit 1`。`isRunning == false` になってから `terminate(grace: 0)` | `.exited(1)`、`stderrTail()` が `LAST-LINE\n` で終わる |
+| `terminateAfterExitDrainsStderr` | 既に終わった子の terminate は stderr を最後まで読んでから返す | `(sleep 0.3; echo LAST-LINE >&2) &` の後 `exit 1`（stderr を受け継いだ孫が子の終了後に最後の行を書く）。`isRunning == false` になってから `terminate(grace: 0)` | `.exited(1)`、`stderrTail()` が `LAST-LINE\n` で終わる |
 | `waitForExitDrainsStderr` | waitForExit は stderr を最後まで読んでから返す | 同上のスクリプト | `waitForExit()` が `.exited(1)`、`stderrTail()` が `LAST-LINE\n` で終わる |
 | `terminateAllStopsSpawnedAndRunning` | terminateAll は spawn した子と run 中の子を止める | spawn 2 つ（`sleep 30`）＋別タスクで `run(sleep 30, timeout: 60 秒)`、0.2 秒後に `terminateAll(grace: 1 秒)` | spawn の 2 つが `isRunning == false`、run が `.signaled(SIGTERM)` を返す |
 

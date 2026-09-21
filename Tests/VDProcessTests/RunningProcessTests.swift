@@ -88,17 +88,15 @@ struct RunningProcessTests {
         #expect(await process.isRunning == false)
     }
 
-    /// 64 KiB 近くを stderr に書いてすぐ終わる子。最後の行は読み取りが追いつかないと欠ける
-    private func burstThenExit(_ dir: TempDirectory) throws -> ProcessSpec {
-        try script(
-            "i=0; while [ $i -lt 1500 ]; do echo 'padding-padding-padding-padding-padding' >&2; i=$((i+1)); done; "
-                + "echo LAST-LINE >&2; exit 1\n", name: "burst.sh", in: dir)
+    /// 子はすぐ終わり、stderr を受け継いだ孫が 0.3 秒後に最後の行を書く（読み取りを最後まで待たないと欠ける）
+    private func exitBeforeLastLine(_ dir: TempDirectory) throws -> ProcessSpec {
+        try script("(sleep 0.3; echo LAST-LINE >&2) &\nexit 1\n", name: "late.sh", in: dir)
     }
 
     @Test("既に終わった子の terminate は stderr を最後まで読んでから返す")
     func terminateAfterExitDrainsStderr() async throws {
         let dir = try TempDirectory()
-        let process = try await ProcessRunner().spawn(try burstThenExit(dir))
+        let process = try await ProcessRunner().spawn(try exitBeforeLastLine(dir))
         let deadline = ContinuousClock.now + .seconds(5)
         while await process.isRunning, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
         #expect(await process.terminate(grace: .zero) == .exited(1))
@@ -109,7 +107,7 @@ struct RunningProcessTests {
     @Test("waitForExit は stderr を最後まで読んでから返す")
     func waitForExitDrainsStderr() async throws {
         let dir = try TempDirectory()
-        let process = try await ProcessRunner().spawn(try burstThenExit(dir))
+        let process = try await ProcessRunner().spawn(try exitBeforeLastLine(dir))
         #expect(await process.waitForExit() == .exited(1))
         let tail = String(decoding: await process.stderrTail(), as: UTF8.self)
         #expect(tail.hasSuffix("LAST-LINE\n"))
