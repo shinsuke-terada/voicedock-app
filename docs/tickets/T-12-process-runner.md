@@ -231,8 +231,12 @@ import Foundation
 import Synchronization
 
 enum ExitWaiter {
-    /// NOTE_EXIT の取りこぼしに備えて waitpid(WNOHANG) を見直す間隔
+    /// NOTE_EXIT の取りこぼしに備えて waitpid(WNOHANG) を見直す間隔（起動直後）
     static let pollInterval: DispatchTimeInterval = .milliseconds(100)
+    /// pollInterval で見直す回数。過ぎたら slowPollInterval に落とす（取りこぼしは登録の前後にしか起きない。llama-server は数時間動く）
+    static let fastPollCount = 50
+    /// fastPollCount を過ぎた後の見直しの間隔
+    static let slowPollInterval: DispatchTimeInterval = .seconds(5)
 
     /// waitpid の生の status を返す。回収できなかった（ECHILD など）ときは nil
     static func wait(pid: pid_t) async -> Int32?
@@ -244,12 +248,24 @@ final class ExitWatch: Sendable {
         var resumed = false
         var source: (any DispatchSourceProcess)? = nil
         var timer: (any DispatchSourceTimer)? = nil
+        var ticks = 0
     }
     init() { state = Mutex(State()) }
     func attach(_ s: any DispatchSourceProcess, timer t: any DispatchSourceTimer) {
         state.withLock { st in
             st.source = s
             st.timer = t
+        }
+    }
+    /// 予備のタイマーが 1 回鳴った。fastPollCount 回目で slowPollInterval に落とす
+    func tick() {
+        state.withLock { st in
+            st.ticks += 1
+            if st.ticks == ExitWaiter.fastPollCount {
+                st.timer?.schedule(
+                    deadline: DispatchTime(uptimeNanoseconds: 0), repeating: ExitWaiter.slowPollInterval,
+                    leeway: .seconds(1))
+            }
         }
     }
     /// 最初の 1 回だけ true。source（NOTE_EXIT と予備のタイマー）を取り消して手放す
@@ -290,7 +306,10 @@ await withCheckedContinuation { (continuation: CheckedContinuation<Int32?, Never
     let timer = DispatchSource.makeTimerSource(queue: queue)
     watch.attach(source, timer: timer)  // どちらも resume より前に渡す（claim が取り消せるように）
     source.setEventHandler(handler: reap)
-    timer.setEventHandler(handler: reap)
+    timer.setEventHandler {
+        reap()
+        watch.tick()
+    }
     timer.schedule(deadline: DispatchTime(uptimeNanoseconds: 0), repeating: pollInterval)
     source.resume()
     timer.resume()
@@ -303,6 +322,7 @@ await withCheckedContinuation { (continuation: CheckedContinuation<Int32?, Never
   `setRegistrationHandler` を足しても直らなかった（登録に失敗した source は登録の通知も終了の通知も出さない）。
   診断の試験（`/usr/bin/true` と「起動直後に SIGKILL する `/bin/sleep 30`」を 20 本並行に 20 回）で 400 本中 13〜23 本を取りこぼし、タイマーを足して 0 本になった
 - タイマーの初回は `DispatchTime(uptimeNanoseconds: 0)`（過去の時刻 = すぐ）。`DispatchTime.now()` は PT-09 で使えない
+- 起動から 5 秒（100 ms × 50 回）を過ぎたら 5 秒ごと（leeway 1 秒）に落とす。メニューバーに常駐するアプリで、数時間動く llama-server のために 10 Hz で起き続けないため
 - `ExitWatch.attach` の引数は `any DispatchSourceProcess` と `any DispatchSourceTimer` の型のまま持つ（`[any DispatchSourceProtocol]` に入れると Swift 6 の region isolation で `withLock` の中に渡せない）
 
 - `waitpid` を呼ぶのはここだけ（`waitpid(-1, …)` は使わない。他の子を横取りしない）
@@ -408,6 +428,8 @@ return first
 
 - `Task.sleep(for:)` を使ってよい（実プロセスの時間切れは実時間で測る。`Sleeper` の注入は Worker などの待ちのためのもので、ここには使わない）。`ContinuousClock()` は書かない（PT-09）
 - 呼び手の `Task` が取り消されると、`onCancel` が即座に `false` に決めるので、子は SIGTERM → 即座に SIGKILL で止まり、`.timedOut` が返る
+- 取り消された後は `finishReaders` の `finishes` もすぐ `false` を返すので、EOF を待たずに停止を要求する（パイプに残った最後の出力を読み落とすことがある）。
+  取り消された `run` の結果は `.timedOut` で、出力の末尾は使わない前提。停止の後の stderr の末尾が要る呼び手（T-21）は、`RunningProcess.terminate` を取り消されていないタスクから呼ぶ
 
 `finishReaders(_:_:)`:
 
@@ -522,7 +544,7 @@ final class ExitRecord: Sendable {
 | `largeOutputDoesNotBlockChild` | 大量の出力でも子が止まらない | stdout と stderr にそれぞれ 1 MB | 5 秒以内に `.exited(0)` |
 | `newProcessGroup` | 子は新しいプロセスグループの先頭 | `echo $$; ps -o pgid= -p $$`（環境 `standard`） | 2 行の値（空白を除く）が等しく、`getpgrp()` と違う |
 | `childDoesNotInheritParentFDs` | 子は 0・1・2 以外の fd を受け継がない | テストで `/dev/null` を開き `dup2(fd, 200)`、`/bin/ls /dev/fd` | 出力の行に `200` が無い（後で `close(200)`） |
-| `timeoutKillsChildAndGrandchild` | タイムアウトで子と孫をグループごと止める（ASR-07） | `[ "$1" = warm ] && exit 0` + `sleep 30 & echo $! > "$1"; sleep 30`、`warmUp` の後に timeout 0.5 秒 | `.timedOut`、pid ファイルの孫が 2 秒以内に消える |
+| `timeoutKillsChildAndGrandchild` | タイムアウトで子と孫をグループごと止める（ASR-07） | `[ "$1" = warm ] && exit 0` + `sleep 30 & echo $! > "$1"; sleep 30`、`warmUp` の後に timeout 0.5 秒 | `.timedOut`、5 秒未満で返る（子の `sleep 30` が自然に終わるのを待っていない）、pid ファイルの孫が 2 秒以内に消える |
 | `timeoutEscalatesToSIGKILL` | SIGTERM を無視する子は 5 秒後に SIGKILL | `[ "$1" = warm ] && exit 0` + `trap '' TERM; sleep 30`、`warmUp` の後に timeout 0.2 秒 | `.timedOut`、経過が 5 秒以上 8 秒未満 |
 | `lingeringGrandchildIsKilledAfterExit` | 正常終了でもグループに残った孫を消す | `sleep 30 & echo $! > "$1"; exit 0` | `.exited(0)`、2 秒以内に返り、孫が消える |
 | `runsDoNotBlockEachOther` | 2 つの run は並行に進む（actor を止めない） | `async let` で `/bin/sleep 1` を 2 つ | 両方 `.exited(0)`、合計の経過が 1.9 秒未満 |
@@ -535,7 +557,7 @@ final class ExitRecord: Sendable {
 |---|---|---|---|
 | `spawnAndTerminate` | spawn した子を terminate で止める | `/bin/sleep 30` を spawn | `isRunning == true` → `terminate(grace: 1 秒)` が `.signaled(SIGTERM)` → `isRunning == false` |
 | `terminateTwiceReturnsSameResult` | 2 回目の terminate は最初の終わり方を返す | 上に続けて | 同じ `.signaled(SIGTERM)`、すぐ返る |
-| `terminateEscalatesToSIGKILL` | SIGTERM を無視する子は grace の後 SIGKILL | `trap '' TERM; echo ready >&2; sleep 30`、`ready` を待ってから grace 0.5 秒 | `.signaled(SIGKILL)` |
+| `terminateEscalatesToSIGKILL` | SIGTERM を無視する子は grace の後 SIGKILL | `trap '' TERM; echo ready >&2; sleep 30`、`ready` を待ってから（2 秒で出なければ `#require` で止める）grace 0.5 秒 | `.signaled(SIGKILL)` |
 | `spawnMissingExecutableThrows` | 無い実行ファイルの spawn は SpawnError | `<tmp>/nope` | `SpawnError.spawnFailed(errno: ENOENT)` を投げる |
 | `stderrTailWhileRunning` | 動いている間も stderr の末尾を読める | `echo ready >&2; sleep 30` | 2 秒以内に `stderrTail()` が `ready\n` を含む。最後に terminate |
 | `waitForExitReportsCrash` | 勝手に終わったことを waitForExit で知れる | `sleep 0.2; exit 3` | `waitForExit()` が `.exited(3)`、`isRunning == false` |
@@ -547,6 +569,7 @@ final class ExitRecord: Sendable {
 |---|---|---|
 | `waitStatusDecoding` | waitpid の status を終了コードとシグナルに写す | `0x0700` → `.exited(7)`、`0x0009` → `.signaled(9)`、`nil` → `.exited(-1)` |
 | `outputTailKeepsSuffix` | OutputTail は末尾だけを持つ | limit 4 に `abc` と `defg` を足すと `defg` |
+| `exitWaiterConcurrentEarlyExits` | 並行に起動してすぐ終わる子の終了も取りこぼさない | `Spawn.start` で `/usr/bin/true` と「起動直後に SIGKILL する `/bin/sleep 30`」を交互に 20 本並行、それを 20 回。各本を `ExitWaiter.wait` で待ち、`ProcessRunner.finishes(_, within: 3 秒)` が全部 true（取りこぼし 0 本。取りこぼした子は SIGKILL と `waitpid` で回収して pid を記録） |
 | `environmentKeyWithEqualsIsRejected` | = を含む環境変数名は EINVAL | `Spawn.start` が `.spawnFailed(errno: EINVAL)` |
 
 ## 6. 破壊による証明
@@ -560,9 +583,10 @@ final class ExitRecord: Sendable {
 | 5 | `run` の手順 6 の SIGKILL への引き上げを消す | `timeoutEscalatesToSIGKILL`（1 分の制限で落ちる） |
 | 6 | `OutputTail.append` で先頭を残す（`prefix(limit)`） | `stderrTailKeepsLast4KiB`、`stdoutTailKeepsLast64KiB`、`outputTailKeepsSuffix` |
 | 7 | `run` の手順 8（終了後のグループへの SIGKILL）を消す | `lingeringGrandchildIsKilledAfterExit` |
-| 8 | `race` の catch を `return true` にする | `cancellingTheCallerStopsTheChild` |
-| 9 | `ExitWaiter` の `queue.async(execute: reap)` を消す | `exitWaiterDoesNotMissEarlyExit`（source の登録より前に終わった子を 50 回のうちどこかで取りこぼし、5 秒の時間切れで `.timedOut` になる） |
+| 8 | `finishes` の `onCancel` を `outcome.settle(true)` にする | `cancellingTheCallerStopsTheChild` |
+| 9 | `ExitWaiter` の `queue.async(execute: reap)` と予備のタイマーの `timer.resume()` を両方消す | `exitWaiterConcurrentEarlyExits`（source の登録より前に終わった子を取りこぼす） |
 | 10 | `PipeReader` の読み取りを子の終了後にだけ始める | `largeOutputDoesNotBlockChild` |
+| 11 | 予備のタイマーの `timer.resume()` だけを消す | `exitWaiterConcurrentEarlyExits` |
 
 
 ## 7. 受け入れ条件

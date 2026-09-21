@@ -17,7 +17,6 @@ struct RunningProcessTests {
     }
 
     /// stderrTail() が needle を含むまで 50 ms ごとに最大 2 秒待ち、最後に読んだ文字列を返す
-    @discardableResult
     private func waitForStderr(_ process: RunningProcess, containing needle: String) async throws -> String {
         let clock = ContinuousClock()
         let deadline = clock.now.advanced(by: .seconds(2))
@@ -57,7 +56,8 @@ struct RunningProcessTests {
         let process = try await ProcessRunner().spawn(
             try script("trap '' TERM; echo ready >&2; sleep 30\n", name: "ignoreterm.sh", in: dir))
         // trap を設定し終えたことを stderr で知る（書いたばかりのスクリプトの最初の exec は 0.1〜0.3 秒かかる）
-        try await waitForStderr(process, containing: "ready\n")
+        let ready = try await waitForStderr(process, containing: "ready\n")
+        try #require(ready.contains("ready\n"))
         #expect(await process.terminate(grace: .milliseconds(500)) == .signaled(SIGKILL))
     }
 

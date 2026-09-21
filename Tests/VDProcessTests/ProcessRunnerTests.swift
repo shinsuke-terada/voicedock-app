@@ -186,11 +186,16 @@ struct ProcessRunnerTests {
         let script = try ScriptWriter.write(
             "[ \"$1\" = warm ] && exit 0\nsleep 30 & echo $! > \"$1\"; sleep 30\n", name: "grandchild.sh", in: dir.url)
         await warmUp(script)
-        let result = await ProcessRunner().run(
-            spec(
-                script.path(percentEncoded: false), [pidFile.path(percentEncoded: false)],
-                environment: ProcessEnvironment.standard), timeout: .milliseconds(500))
-        #expect(result.termination == .timedOut)
+        let clock = ContinuousClock()
+        var result: ProcessResult?
+        let elapsed = await clock.measure {
+            result = await ProcessRunner().run(
+                spec(
+                    script.path(percentEncoded: false), [pidFile.path(percentEncoded: false)],
+                    environment: ProcessEnvironment.standard), timeout: .milliseconds(500))
+        }
+        #expect(result?.termination == .timedOut)
+        #expect(elapsed < .seconds(5))  // SIGTERM で止まる（子の sleep 30 が自然に終わるのを待っていない）
         let grandchild = try #require(try readPID(pidFile))
         #expect(await waitUntilGone(pid: grandchild, within: .seconds(2)))
     }
