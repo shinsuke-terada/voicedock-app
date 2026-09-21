@@ -580,13 +580,16 @@ final class ExitRecord: Sendable {
 | 2 | `signalGroup` を `kill(pgid, signal)`（グループでなく本人だけ）にする | `timeoutKillsChildAndGrandchild`、`lingeringGrandchildIsKilledAfterExit` |
 | 3 | `POSIX_SPAWN_CLOEXEC_DEFAULT` を外す | `childDoesNotInheritParentFDs` |
 | 4 | envp に `ProcessInfo.processInfo.environment` を混ぜる（PT-18 にも反する） | `environmentIsOnlyWhatIsGiven`、`emptyEnvironment` |
-| 5 | `run` の手順 6 の SIGKILL への引き上げを消す | `timeoutEscalatesToSIGKILL`（1 分の制限で落ちる） |
+| 5 | `run` の手順 6 の SIGKILL への引き上げを消す | `timeoutEscalatesToSIGKILL`（子の `sleep 30` が自然に終わる 30 秒後に返り、「8 秒未満」で落ちる） |
 | 6 | `OutputTail.append` で先頭を残す（`prefix(limit)`） | `stderrTailKeepsLast4KiB`、`stdoutTailKeepsLast64KiB`、`outputTailKeepsSuffix` |
 | 7 | `run` の手順 8（終了後のグループへの SIGKILL）を消す | `lingeringGrandchildIsKilledAfterExit` |
 | 8 | `finishes` の `onCancel` を `outcome.settle(true)` にする | `cancellingTheCallerStopsTheChild` |
-| 9 | `ExitWaiter` の `queue.async(execute: reap)` と予備のタイマーの `timer.resume()` を両方消す | `exitWaiterConcurrentEarlyExits`（source の登録より前に終わった子を取りこぼす） |
-| 10 | `PipeReader` の読み取りを子の終了後にだけ始める | `largeOutputDoesNotBlockChild` |
-| 11 | 予備のタイマーの `timer.resume()` だけを消す | `exitWaiterConcurrentEarlyExits` |
+| 9 | `ExitWaiter` の `queue.async(execute: reap)` と予備のタイマーの `timer.setEventHandler { … }` を両方消す | `exitWaiterConcurrentEarlyExits`（source の登録の前後に終わった子を取りこぼす。直列の `exitWaiterDoesNotMissEarlyExit` はこの壊し方でも緑のまま） |
+| 10 | `PipeReader` の読み取りを子の終了後にだけ始める（`run` の `readers` の `Task` を `let raw = await exit.value` の後へ移す） | `largeOutputDoesNotBlockChild`、`stdoutTailKeepsLast64KiB` |
+| 11 | 予備のタイマーの `timer.setEventHandler { … }` だけを消す | `exitWaiterConcurrentEarlyExits` |
+
+- #9・#11 で `timer.resume()` を消す壊し方は使わない。resume されないまま解放された dispatch source は libdispatch が SIGTRAP でプロセスごと落とすので、どのテストが落ちたか分からない
+- #1 では表のテストのほかに、グループへの SIGTERM が届かず子の自然終了（30 秒）を待つテスト（`spawnAndTerminate`・`terminateTwiceReturnsSameResult`・`timeoutEscalatesToSIGKILL`・`terminateEscalatesToSIGKILL`・`cancellingTheCallerStopsTheChild`・`terminateAllStopsSpawnedAndRunning`・`lingeringGrandchildIsKilledAfterExit`）も落ちる
 
 
 ## 7. 受け入れ条件
