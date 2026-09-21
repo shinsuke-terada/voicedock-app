@@ -523,7 +523,7 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|
 | `ModelSource.url` の 40 桁の検査を消す | `mainInsteadOfCommitIsRejected` |
-| `ModelSource.url` のホストの検査を消す | `badHostIsRejectedBeforeAnyRequest` |
+| `ModelSource.url` のホストの検査（手順 1 の接頭辞と手順 5 の `host()` の**両方**。どちらか一方はもう一方が止めるので、片方だけ消しても落ちない） | `badHostIsRejectedBeforeAnyRequest` |
 | `ModelSource.url` の「`/` + file で終わる」の検査を消す | `fileNameMismatchIsRejected` |
 | `ModelSource.isSafeFileName` の `..` の検査を消す | `unsafeFileNameIsRejected` |
 | §4.1.4 の 11（サイズの照合）を消す | `sizeMismatchIsDetectedBeforeHashing` |
