@@ -6,15 +6,14 @@ import TestSupport
 import VDContract
 
 struct ReaperBench {
-    /// 層 R1 のデバイス名（一時ディレクトリの下のただのディレクトリ）
-    static let deviceID = "DJIMIC3"
-    /// 層 R3 のディスクイメージの名前（PLAN §10.2: 実機と同じ DJIMIC3 を使わない。一意の VDTxxxx）
-    static let imageDeviceID = "VDT0037"
+    /// 層 R1 のディレクトリ名と層 R3 のディスクイメージの名前（PLAN §10.2: 実機と同じ DJIMIC3 を使わない。一意の VDTxxxx）。
+    /// 層 R1 でも DJIMIC3 にしない: 壊した reaper が VOLUMES_ROOT を既定の /Volumes に倒しても、実機ではなく device_absent になる
+    static let deviceID = "VDT0037"
     static let folder = "TX_MIC001_20260912_090000"
     static let fileName = "TX00_MIC001_20260912_090000_orig.wav"
     static let relpath = "TX_MIC001_20260912_090000/TX00_MIC001_20260912_090000_orig.wav"
-    static let partkey = "DJIMIC3/TX_MIC001_20260912_090000/TX00_MIC001_20260912_090000_orig.wav"
-    static let sessionKey = "DJIMIC3:20260912"
+    static let partkey = "VDT0037/TX_MIC001_20260912_090000/TX00_MIC001_20260912_090000_orig.wav"
+    static let sessionKey = "VDT0037:20260912"
     static let createdAt = "2026-09-12T18:00:00+09:00"
     /// 2026-09-12T09:01:00+09:00。偶数秒（FAT の 2 秒分解能でも変わらない）
     static let mtime: Double = 1_789_171_260
@@ -27,11 +26,6 @@ struct ReaperBench {
     let volumesRoot: URL
     let deviceRoot: URL
     let image: DiskImageVolume?
-    /// 層 R1 は `ReaperBench.deviceID`、層 R3 はイメージの deviceID
-    let deviceID: String
-
-    /// この舞台のデバイスでの `ReaperBench.relpath` の partkey
-    var partkey: String { deviceID + "/" + Self.relpath }
 
     /// diskImage が nil なら普通のディレクトリ（層 R1）、在れば FAT32 / HFS+ のマウント点（層 R3）
     init(in tmp: TempDirectory? = nil, diskImage: DiskImageVolume? = nil, deleteSourceAudio: Bool = true) throws {
@@ -46,10 +40,12 @@ struct ReaperBench {
         guard chmod(layout.reaperExecutable.path(percentEncoded: false), 0o755) == 0 else {
             throw BenchError(description: "chmod に失敗: " + layout.reaperExecutable.path(percentEncoded: false))
         }
+        if let diskImage, diskImage.deviceID != Self.deviceID {
+            throw BenchError(description: "ディスクイメージの名前は ReaperBench.deviceID にする: " + diskImage.deviceID)
+        }
         image = diskImage
         volumesRoot = diskImage?.volumesRoot ?? tmp.url.appendingPathComponent("Volumes", isDirectory: true)
-        deviceID = diskImage?.deviceID ?? Self.deviceID
-        deviceRoot = volumesRoot.appendingPathComponent(deviceID, isDirectory: true)
+        deviceRoot = volumesRoot.appendingPathComponent(Self.deviceID, isDirectory: true)
         if diskImage == nil {
             try FileManager.default.createDirectory(at: deviceRoot, withIntermediateDirectories: true)
         }
@@ -93,18 +89,17 @@ struct ReaperBench {
         try FileManager.default.removeItem(at: layout.reaperConf)
     }
 
-    /// 既定は「今のデバイス上の実物と一致する、通る要求」。引数で 1 か所だけ壊す。deviceID が nil ならこの舞台のデバイス
+    /// 既定は「今のデバイス上の実物と一致する、通る要求」。引数で 1 か所だけ壊す
     @discardableResult
     func writeRequest(
-        requestID: String = ReaperBench.requestID, deviceID: String? = nil,
+        requestID: String = ReaperBench.requestID, deviceID: String = ReaperBench.deviceID,
         relpath: String = ReaperBench.relpath, partkey: String? = nil,
         size: Int64? = nil, mtime: Double? = nil, fileName: String? = nil
     ) throws -> String {
-        let device = deviceID ?? self.deviceID
         let actual = (size == nil || mtime == nil) ? try actualStat(relpath) : (0, 0)
         let request = DeleteRequest(
-            requestID: requestID, createdAt: Self.createdAt, deviceID: device,
-            partkey: partkey ?? (device + "/" + relpath), sessionKey: Self.sessionKey,
+            requestID: requestID, createdAt: Self.createdAt, deviceID: deviceID,
+            partkey: partkey ?? (deviceID + "/" + relpath), sessionKey: Self.sessionKey,
             target: DeleteTarget(relpath: relpath, size: size ?? actual.0, mtime: mtime ?? actual.1))
         let name = fileName ?? (requestID + ".json")
         try ContractJSON.encode(request).write(to: layout.queueDelete.appendingPathComponent(name))

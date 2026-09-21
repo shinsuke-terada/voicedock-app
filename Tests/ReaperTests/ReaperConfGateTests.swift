@@ -49,7 +49,8 @@ struct ReaperConfGateTests {
     @Test("ND-43 [R1] 未知のキーは無効側")
     func nd43UnknownKeyIsInvalid() throws {
         let (bench, name) = try Self.bench()
-        try bench.writeReaperConfRaw("SCHEMA=1\nDELETE_SOURCE_AUDIO=true\nEXTRA=1\n")
+        let root = bench.volumesRoot.path(percentEncoded: false)
+        try bench.writeReaperConfRaw("SCHEMA=1\nDELETE_SOURCE_AUDIO=true\nVOLUMES_ROOT=" + root + "\nEXTRA=1\n")
         try Self.expectInvalid(bench, name)
     }
 
@@ -77,10 +78,13 @@ struct ReaperConfGateTests {
         try Self.expectInvalid(bench, name)
     }
 
-    @Test("ND-43 [R1] 必須のキーが欠けていたら無効側", arguments: ["SCHEMA=1\n", "DELETE_SOURCE_AUDIO=true\n"])
+    @Test(
+        "ND-43 [R1] 必須のキーが欠けていたら無効側",
+        arguments: ["SCHEMA=1\nVOLUMES_ROOT=<ROOT>\n", "DELETE_SOURCE_AUDIO=true\nVOLUMES_ROOT=<ROOT>\n"])
     func nd43MissingKeyIsInvalid(_ text: String) throws {
         let (bench, name) = try Self.bench()
-        try bench.writeReaperConfRaw(text)
+        let root = bench.volumesRoot.path(percentEncoded: false)
+        try bench.writeReaperConfRaw(text.replacingOccurrences(of: "<ROOT>", with: root))
         try Self.expectInvalid(bench, name)
     }
 

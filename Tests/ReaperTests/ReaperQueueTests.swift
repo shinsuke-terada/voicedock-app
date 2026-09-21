@@ -38,8 +38,8 @@ struct ReaperQueueTests {
             "\"schema\": " + schema,
             "\"request_id\": " + requestID,
             "\"created_at\": \"" + ReaperBench.createdAt + "\"",
-            "\"device_id\": \"" + bench.deviceID + "\"",
-            "\"partkey\": \"" + bench.partkey + "\"",
+            "\"device_id\": \"" + ReaperBench.deviceID + "\"",
+            "\"partkey\": \"" + ReaperBench.partkey + "\"",
         ]
         if !dropSessionKey { fields.append("\"session_key\": \"" + ReaperBench.sessionKey + "\"") }
         fields.append("\"targets\": " + (targets ?? "[" + target + "]"))
@@ -61,7 +61,7 @@ struct ReaperQueueTests {
         #expect(result.status == .sourceIdentityMismatch)
         #expect(result.detail == "not_a_mount_point")
         #expect(result.partkey == ReaperBench.partkey)
-        #expect(result.deviceID == "DJIMIC3")
+        #expect(result.deviceID == "VDT0037")
         #expect(result.requestID == Self.id)
         #expect(result.reaperVersion == AppVersion.string)
         #expect(bench.requests() == [])
@@ -287,7 +287,7 @@ struct ReaperQueueTests {
         try Data((Self.id + "\n").utf8).write(to: bench.layout.processedLog)
         let deleted = DeleteResult(
             requestID: Self.id, completedAt: "2026-09-12T18:00:05+09:00", reaperVersion: AppVersion.string,
-            deviceID: "DJIMIC3", partkey: ReaperBench.partkey, status: .deleted, detail: ReaperBench.relpath)
+            deviceID: "VDT0037", partkey: ReaperBench.partkey, status: .deleted, detail: ReaperBench.relpath)
         let resultURL = bench.layout.queueResult.appendingPathComponent(Self.id + ".json")
         let bytes = try ContractJSON.encode(deleted)
         try bytes.write(to: resultURL)
@@ -303,7 +303,7 @@ struct ReaperQueueTests {
     @Test("ND-44 [R1] device_id/relpath が partkey と違えば partkey_mismatch")
     func nd44PartkeyMismatchIsRefused() throws {
         let bench = try ReaperBench()
-        try bench.writeRequest(partkey: "DJIMIC3/other.wav")
+        try bench.writeRequest(partkey: "VDT0037/other.wav")
         _ = try bench.run()
         #expect(try bench.result(Self.id).detail == "partkey_mismatch")
         #expect(bench.requests() == [])
@@ -448,7 +448,7 @@ struct ReaperQueueTests {
         var names: [String] = []
         for index in 0..<50 {
             let id = String(format: "20260912T090000Z-a5d046dce76cfedc-b%05d", index)
-            names.append(try bench.writeRequest(requestID: id, partkey: "DJIMIC3/other.wav"))
+            names.append(try bench.writeRequest(requestID: id, partkey: "VDT0037/other.wav"))
         }
         let process = try bench.start()
         // 1 件目の結果が現れる（= ハンドラを入れた後に走査が始まった）まで待ってから送る

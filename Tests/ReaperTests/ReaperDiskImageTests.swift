@@ -16,7 +16,7 @@ struct ReaperDiskImageTests {
 
     /// 共通の準備: FAT32 のイメージとその上の舞台
     static func bench(_ tmp: TempDirectory) throws -> ReaperBench {
-        let image = try DiskImageVolume(in: tmp, deviceID: ReaperBench.imageDeviceID, filesystem: .fat32)
+        let image = try DiskImageVolume(in: tmp, deviceID: ReaperBench.deviceID, filesystem: .fat32)
         return try ReaperBench(in: tmp, diskImage: image)
     }
 
@@ -215,7 +215,7 @@ struct ReaperDiskImageTests {
     @Test("ND-39 [R3] HFS+ のイメージは unexpected_fs")
     func nd39AnHfsImageIsUnexpectedFS() throws {
         let tmp = try TempDirectory()
-        let image = try DiskImageVolume(in: tmp, deviceID: ReaperBench.imageDeviceID, filesystem: .hfsPlus)
+        let image = try DiskImageVolume(in: tmp, deviceID: ReaperBench.deviceID, filesystem: .hfsPlus)
         let bench = try ReaperBench(in: tmp, diskImage: image)
         try bench.writeRequest()
         try Self.expectRefused(bench, "unexpected_fs")
