@@ -889,7 +889,7 @@ struct SpecParserTests {
 | `TestNameIndex.isTestDisplayName` の先頭に `if literal.offset >= 0 { return true }` を足す（常に真。到達しないコードの警告を避ける書き方） | `testNameIndex()`、`testIDsExistInSpec()` |
 | `docs/PLAN.md` の付録 A.4 のフェンスにイベントを 1 つ足し、SPEC を作り直さない | `errorCodesAndEventsMatchPlan()` |
 | `SpecCoverage.activated` を `[.cv]` にする（CV のテストがまだ無い） | `activatedKindsMatchSpec()` |
-| `SpecDocument.codeBlock` の `end = index; break` を消す（次の見出しで止まらない） | `codeBlockByHeading()`（整合修正で足した項目。未検証） |
+| `SpecDocument.codeBlock` の `end = index; break` を `end = document.lines.count` に替える（次の見出しで止まらない。2 行とも消すと `end` が変わらない変数になり、警告がエラーになってビルドが通らない） | `codeBlockByHeading()`（整合修正で足した項目。T-05 の実装時に確かめた） |
 
 ## 受け入れ条件
 
