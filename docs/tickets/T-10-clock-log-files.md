@@ -253,9 +253,19 @@ public enum LogEvent: String, CaseIterable, Sendable {
 }
 
 public enum LogLevel: Int, Comparable, Sendable, CaseIterable {
-    case debug = 10, info = 20, warning = 30, error = 40
+    case debug = 10
+    case info = 20
+    case warning = 30
+    case error = 40
     /// 行に出す表記（5 桁左寄せ。WARNING は 7 桁のまま。voicedock `{level:<5}`）。
-    public var token: String { switch self { case .debug: "DEBUG"; case .info: "INFO "; case .warning: "WARNING"; case .error: "ERROR" } }
+    public var token: String {
+        switch self {
+        case .debug: "DEBUG"
+        case .info: "INFO "
+        case .warning: "WARNING"
+        case .error: "ERROR"
+        }
+    }
     /// config.json の `logging.level`（大文字。CV-54）から。それ以外は nil。
     public init?(configValue: String)
     public static func < (a: LogLevel, b: LogLevel) -> Bool { a.rawValue < b.rawValue }
@@ -263,8 +273,13 @@ public enum LogLevel: Int, Comparable, Sendable, CaseIterable {
 
 /// ログの値（voicedock の str / int / float / bool / None）。これ以外の型は渡せない。
 public enum LogValue: Sendable, Equatable, ExpressibleByStringLiteral, ExpressibleByIntegerLiteral,
-                      ExpressibleByFloatLiteral, ExpressibleByBooleanLiteral, ExpressibleByNilLiteral {
-    case string(String), int(Int64), double(Double), bool(Bool), null
+    ExpressibleByFloatLiteral, ExpressibleByBooleanLiteral, ExpressibleByNilLiteral
+{
+    case string(String)
+    case int(Int64)
+    case double(Double)
+    case bool(Bool)
+    case null
     // リテラルの init（それぞれ対応するケース）
     public static func of(_ v: String?) -> LogValue   // nil → .null
     public static func of(_ v: Int) -> LogValue
@@ -276,14 +291,31 @@ public enum LogValue: Sendable, Equatable, ExpressibleByStringLiteral, Expressib
 /// 登録制のキー（予約名 ts / level / event を持たないことで型で防ぐ）。
 public enum LogKey: String, CaseIterable, Sendable {
     // 識別・分類
-    case recordingKey = "recording_key", sessionKey = "session_key", requestID = "request_id", relpath, name, path, id
-    case reason, errorCode = "error_code", detail, rule, key, message
+    case recordingKey = "recording_key"
+    case sessionKey = "session_key"
+    case requestID = "request_id"
+    case relpath, name, path, id
+    case reason
+    case errorCode = "error_code"
+    case detail, rule, key, message
     // 数
-    case version, schema, rolledBack = "rolled_back", requeued, count, parts, excluded, chars, chunks, bytes
-    case inBytes = "in_bytes", outBytes = "out_bytes", elapsedS = "elapsed_s", durationS = "duration_s", rtf, speechRatio = "speech_ratio"
-    case regeneratedCount = "regenerated_count", devices, copied, recopy, port, exit, fields, passed, failed, notices
+    case version, schema
+    case rolledBack = "rolled_back"
+    case requeued, count, parts, excluded, chars, chunks, bytes
+    case inBytes = "in_bytes"
+    case outBytes = "out_bytes"
+    case elapsedS = "elapsed_s"
+    case durationS = "duration_s"
+    case rtf
+    case speechRatio = "speech_ratio"
+    case regeneratedCount = "regenerated_count"
+    case devices, copied, recopy, port, exit, fields, passed, failed, notices
     // 本文を運ぶキー（常に遮断。voicedock log.py CONTENT_FIELDS の 15 個。PR-08）
-    case text, transcript, summary, content, body, prompt, title, tags, keyPoints = "key_points", tasks, decisions, ideas, segments, filename, noteName = "note_name"
+    case text, transcript, summary, content, body, prompt, title, tags
+    case keyPoints = "key_points"
+    case tasks, decisions
+    case ideas, segments, filename
+    case noteName = "note_name"
 
     public var isContent: Bool   // 最後の 15 個だけ true（switch で書く）
 }
@@ -365,8 +397,8 @@ public struct TeeSink: LogSink {
 - 状態 `struct State: Sendable { var fd: Int32 = -1; var size: Int64 = 0 }` を `Mutex<State>`（`import Synchronization`）で守る（00-api-map §0。`@unchecked Sendable` を使わない。PT-14）
 - `write` の手順（ロックの中で）:
   1. `bytes = Array((line + "\n").utf8)`
-  2. `fd < 0` なら `open(url.path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o644)`。成功したら `fstat` で `size` を得る。失敗なら何もせず返る（ログの失敗はログに書けない。os.Logger 側には残る）
-  3. `size > 0 && size + bytes.count > maxBytes` なら: `close(fd)` → `rename(url.path, url.path + ".1")`（既存の `.1` を置き換える）→ 2 と同じく開き直し `size = 0`
+  2. `fd < 0` なら `open(url.path(percentEncoded: false), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o644)`。成功したら `fstat` で `size` を得る。失敗なら何もせず返る（ログの失敗はログに書けない。os.Logger 側には残る）
+  3. `size > 0 && size + bytes.count > maxBytes` なら: `close(fd)` → `rename(path, path + ".1")`（`path = url.path(percentEncoded: false)`）（既存の `.1` を置き換える）→ 2 と同じく開き直し `size = 0`
   4. `write` を全部書き終わるまで繰り返す（`EINTR` はやり直し、ほかの失敗は `close` して `fd = -1`）。`size += 書いたバイト数`
 - `close()`: `fd >= 0` なら閉じて `-1`
 - `fsync` はしない（ログは失ってもよい。速度優先）
@@ -380,7 +412,9 @@ public enum SafeUnlinkRoot: Sendable, Equatable {
 }
 public enum SafeUnlinkError: Error, Equatable, Sendable {
     case notAbsolute, containsDotDot, rootUnresolvable, outsideRoot, nameNotAllowed, notFound
-    case isSymlink, notRegularFile, notDirectory, unlinkFailed(errno: Int32), rmdirFailed(errno: Int32)
+    case isSymlink, notRegularFile, notDirectory
+    case unlinkFailed(errno: Int32)
+    case rmdirFailed(errno: Int32)
 }
 public enum SafeUnlink {
     public static func remove(_ target: URL, under root: SafeUnlinkRoot, layout: HomeLayout, missingOK: Bool = true) throws(SafeUnlinkError)
@@ -392,14 +426,14 @@ public enum SafeUnlink {
 `queueResult` → `layout.queueResult`、`models` → `layout.modelsDirectory`、`run` → `layout.runDirectory`、`vaultTmp(vault)` → `vault`。
 
 `remove` の検査の順（最初に当たったもので止める）:
-1. `target.path` が `/` で始まらない → `.notAbsolute`
-2. `target.path` を `/` で分けた要素に `..` がある → `.containsDotDot`
+1. `target.path(percentEncoded: false)`（00-api-map §0）が `/` で始まらない → `.notAbsolute`
+2. 同じパスを `/` で分けた要素に `..` がある → `.containsDotDot`
 3. ルートの `realpath` が取れない → `.rootUnresolvable`
 4. 親（`target.deletingLastPathComponent()`）の `realpath` が取れない: `ENOENT` なら `missingOK ? return : throw .notFound`、ほかは `.outsideRoot`
 5. 親の realpath が、ルートの realpath と**等しい**か `ルート + "/"` で始まる、のどちらでもない → `.outsideRoot`（接頭辞だけ一致する兄弟 `staging-old` は配下ではない）
 6. `name = target.lastPathComponent` が空・`.`・`..` → `.nameNotAllowed`
 7. ルートごとの名前の規則: `queueDelete` / `queueResult` は「親の realpath == ルートの realpath」かつ `name.hasSuffix(".json")`、`vaultTmp` は `name.hasPrefix(".")` かつ `name.hasSuffix(".tmp")` かつ `TextLimit.scalarCount(name) > 5`。違えば `.nameNotAllowed`
-8. `path = 親の realpath + "/" + name` に `lstat`: `ENOENT` → `missingOK ? return : throw .notFound`。symlink → `.isSymlink`（リンクも消さない）。通常ファイルでない → `.notRegularFile`
+8. `path = 親の realpath + "/" + name` に `lstat`: `ENOENT` → `missingOK ? return : throw .notFound`。symlink → `.isSymlink`（リンクも消さない）。通常ファイルでない → `.notRegularFile`。`lstat` がほかの errno で失敗 → `.unlinkFailed(errno:)`（`removeEmptyDirectory` では `.rmdirFailed(errno:)`）
 9. `unlink(path)`: 成功で返る。`ENOENT` は 8 と同じ扱い。ほかは `.unlinkFailed(errno:)`
 
 `removeEmptyDirectory` は 1〜6 を同じく行い（7 は行わない）、8 の代わりに `lstat` が `ENOENT` → 返る、symlink → `.isSymlink`、ディレクトリでない → `.notDirectory`、9 の代わりに `rmdir`:
@@ -444,7 +478,10 @@ public enum TextLimit {
 ### 11. `Transcript.swift`
 
 ```swift
-public struct TranscriptSegment: Equatable, Sendable { public let start: Double; public let end: Double; public let text: String }
+public struct TranscriptSegment: Equatable, Sendable {
+    public let start: Double; public let end: Double; public let text: String
+    public init(start: Double, end: Double, text: String)
+}
 public struct PartTranscript: Equatable, Sendable {
     public let partkey: String
     public let language: String
@@ -452,6 +489,7 @@ public struct PartTranscript: Equatable, Sendable {
     public let startedAt: String     // Part の started_at（ISO 文字列）をそのまま
     public let text: String
     public let segments: [TranscriptSegment]
+    public init(partkey: String, language: String, durationSeconds: Double?, startedAt: String, text: String, segments: [TranscriptSegment])
 }
 public enum PartTranscriptCodec {
     /// transcripts/parts/<slug>.json の中身（PLAN §8.4）: PyJSON の indent 2 ＋ 末尾改行。キーの順は partkey, language, duration_seconds, started_at, text, segments（各要素 start, end, text）。
@@ -471,13 +509,17 @@ public enum PartTranscriptCodec {
 ### 12. `SessionTranscript.swift`
 
 ```swift
-public struct AbsoluteSegment: Equatable, Sendable { public let at: Instant; public let endAt: Instant; public let text: String }
-public struct TimeBlock: Equatable, Sendable { public let start: Instant; public let end: Instant }
+public struct AbsoluteSegment: Equatable, Sendable {
+    public let at: Instant; public let endAt: Instant; public let text: String
+    public init(at: Instant, endAt: Instant, text: String)
+}
+public struct TimeBlock: Equatable, Sendable { public let start: Instant; public let end: Instant; public init(start: Instant, end: Instant) }
 public struct SessionTranscript: Equatable, Sendable {
     public let dayDate: LocalDate
     public let segments: [AbsoluteSegment]      // (at, endAt) で安定ソート済み（作るのは VDPipeline。PLAN §5.6）
     public let blocks: [TimeBlock]
     public let excludedPartkeys: [String]
+    public init(dayDate: LocalDate, segments: [AbsoluteSegment], blocks: [TimeBlock], excludedPartkeys: [String])
 }
 
 public enum TranscriptFingerprint {
@@ -616,7 +658,7 @@ public final class CapturingLogSink: LogSink {
 | 関数名 | 表示名 | 期待 |
 |---|---|---|
 | `appendsLines` | `行を追記する` | 2 行書いて中身が `a\nb\n` |
-| `rotatesBeforeExceeding` | `上限を超える書き込みの前に .1 へ回す` | maxBytes 10 で `12345\n`（6）→ `6789\n`（5。11 > 10）: `app.log.1` が `12345\n`、`app.log` が `6789\n` |
+| `rotatesBeforeExceeding` | `上限を超える書き込みの前に .1 へ回す` | maxBytes 10 で `12345\n`（6）→ `6789\n`（5。11 > 10）: `app.log.1` が `12345\n`、`app.log` が `6789\n`。ちょうど上限に届く `12345\n`（6）→ `678\n`（4。10 = 10）は回さない（`.1` が無く `app.log` が `12345\n678\n`） |
 | `rotationReplacesOldBackup` | `.1 は 1 世代だけ` | 3 回回して `.1` が直前の中身 |
 | `unwritableDirectoryDoesNotThrow` | `書けない場所でも落ちない` | 存在しないディレクトリの URL で write しても例外にならない |
 
@@ -706,7 +748,7 @@ public final class CapturingLogSink: LogSink {
 | `SafeUnlink` の 5 の判定を `hasPrefix(ルート)`（`/` を付けない）にする | `refusesPrefixSibling` |
 | `SafeUnlink` の lstat の symlink 検査を消す | `refusesSymlinkTarget` |
 | `BlockComputer` の `gap >` を `>=` にする | `blocksExactThresholdDoesNotSplit` |
-| `BlockComputer` の `unknownEnd \|\|` を消す | `blocksUnknownEndAlwaysSplits`、`goldenBlocks(item:)`（`null_end_forces_split`） |
+| `BlockComputer` の `unknownEnd \|\|` を消す（読まれない変数の警告がエラーになるので直前に `_ = unknownEnd` を置く） | `blocksUnknownEndAlwaysSplits`、`goldenBlocks(item:)`（`null_end_forces_split`） |
 | `PartTranscriptCodec.decode` の bool の除外を消す | `decodeRejects` |
 | `TranscriptFingerprint` の `sortKeys: true` を false にする | `fingerprintMatchesVoicedock`、`goldenFingerprint(item:)` |
 
@@ -741,3 +783,5 @@ public final class CapturingLogSink: LogSink {
 - （整合修正で追記。地図に合わせた）`TeeSink` を地図 §2.3 の置き場所 `LogFile.swift` へ移した。`AppLog.init` の `category` の既定を地図の `"core"` にした。`LogFile` の状態は地図 §0 に合わせて `Mutex` で守る。`SteppingClock` は地図 §15 のとおり `now()` と `uptime()` の両方を進める
 - （整合修正で追記）T-25 が本チケット向けに作る golden（`keys`・`fingerprint`・`blocks`）の照合を `GoldenCoreTests` に足した（`TranscriptFingerprint.payload` は internal）
 - （整合修正で追記）00-api-map §15 は `TempDirectory` の作り手を T-06 と書くが、T-01 が作る（T-01 §9）。地図を T-01 に直すことを提案する
+- （実装で追記）`TranscriptSegment`・`PartTranscript`・`AbsoluteSegment`・`TimeBlock`・`SessionTranscript` に全フィールドの `public init` を足した（本チケット §11・§12）。memberwise init は internal なので、T-17（VDTranscribe）・T-22（VDPipeline）など別モジュールが作れない。地図 §2.3 の各行に `public init(…全フィールド)` を足すことを提案する → 利用者が承認し、00-api-map §2.3 に反映済み（2026-09-21）
+- （実装で追記）`swift format` の整形に合わせて §5 の `LogLevel`・`LogValue`・`LogKey` と §8 の `SafeUnlinkError` のケースの書き方を直した（値と順は同じ）。§7・§8 のパスは 00-api-map §0 に合わせて `url.path(percentEncoded: false)` にした
