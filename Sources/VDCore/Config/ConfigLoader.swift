@@ -84,7 +84,7 @@ public enum ConfigLoader {
     /// `unrepresentableNumberPath(in:)` でキーのパスを補う（PLAN §6.1「型違い → CV-39、キーのパスを添える」）。
     static func decodingViolation(_ error: DecodingError, object: [String: Any]) -> ConfigViolation {
         let codingPath: [CodingKey]
-        let message: String
+        var message: String
         switch error {
         case .typeMismatch(_, let context):
             codingPath = context.codingPath
@@ -104,8 +104,10 @@ public enum ConfigLoader {
         }
         var joined = codingPath.map { key in key.intValue.map { String($0) } ?? key.stringValue }
             .joined(separator: ".")
-        if joined.isEmpty, case .dataCorrupted = error {
-            joined = unrepresentableNumberPath(in: object) ?? ""
+        if joined.isEmpty, case .dataCorrupted = error, let path = unrepresentableNumberPath(in: object) {
+            // 整数の位置の小数（1.5 など）は型違いと同じ表示にする（利用者の判断。2026-09-21）
+            joined = path
+            message = "型が違います"
         }
         return ConfigViolation(
             rule: "CV-39", code: .configInvalidValue, keyPath: joined.isEmpty ? "<file>" : joined, message: message)
