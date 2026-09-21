@@ -11,8 +11,6 @@ enum ConfigEffectPending {
         "session.maxParts": "T-22",
         "session.maxDurationSeconds": "T-22",
         "llm.modelID": "T-22",
-        "vault.path": "T-28",
-        "vault.marker": "T-28",
         "device.maxScanDepth": "T-14",
         "device.stabilityFastPathSeconds": "T-14",
         "device.stabilityIntervalSeconds": "T-14",
