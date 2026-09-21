@@ -223,7 +223,7 @@ public final class Store: Sendable {
 
 1. `var config = Configuration()`、`config.label = "VoiceDock"`、`config.foreignKeysEnabled = true`、`config.busyMode = .timeout(10)`、
    `config.prepareDatabase { db in try db.execute(sql: "PRAGMA foreign_keys = ON"); try db.execute(sql: "PRAGMA busy_timeout = 10000"); try db.execute(sql: "PRAGMA synchronous = FULL") }`
-2. `pool = try DatabasePool(path: url.path, configuration: config)`。失敗 → `StoreError.open(String(describing: error))`。
+2. `pool = try DatabasePool(path: url.path(percentEncoded: false), configuration: config)`（URL からパス文字列を取るのは `path(percentEncoded: false)` だけ。00-api-map §0）。失敗 → `StoreError.open(String(describing: error))`。
    GRDB が WAL を有効にできなかったときの `DatabaseError`（説明に `"could not activate WAL Mode"` を含む）は `StoreError.notWAL` に写す
 3. writer で（`pool.writeWithoutTransaction`）:
    - `let mode = try String.fetchOne(db, sql: "PRAGMA journal_mode")`。`mode?.lowercased() != "wal"` → `StoreError.notWAL`
@@ -238,11 +238,11 @@ public final class Store: Sendable {
 
 #### 4.4.1 バックアップ
 
-- 名前: `url.lastPathComponent + ".backup-" + last + "-" + stamp`。`last` は `applied.last`（`applied` が空ならこの手順に来ないので、`guard let last = applied.last` で取り出す。`!` は使わない）。
+- 名前: `url.lastPathComponent + ".backup-" + last + "-" + stamp`。`last` は `applied.last`（`applied` が空ならこの手順に来ないので、`guard let last = applied.last` で取り出す。`!` は使わない。到達しない else は `StoreError.migration("no applied migration")`）。
   例 `voicedock.sqlite.backup-v1_initial-20260830T070012+0900`
 - `stamp = zone.iso(clock.now())` から `:` と `-` をすべて取り除いた文字列（`2026-08-30T07:00:12+09:00` → `20260830T070012+0900`。voicedock db.py:287-289 と同じ）
 - 置き場所: `url` と同じディレクトリ
-- 手順: `let destination = try DatabaseQueue(path: backupURL.path)` → `try pool.backup(to: destination)`。失敗 → `StoreError.backup(String(describing:))`。**ファイルコピーは禁止**（WAL の未チェックポイント分が失われる。CONC-04）
+- 手順: `let destination = try DatabaseQueue(path: backupURL.path(percentEncoded: false))` → `try pool.backup(to: destination)`。失敗 → `StoreError.backup(String(describing:))`。**ファイルコピーは禁止**（WAL の未チェックポイント分が失われる。CONC-04）
 
 #### 4.4.2 その他
 
@@ -415,7 +415,7 @@ enum RetryExpression {
 
 `recordPartTransition` の手順（Session も同じ。集合と表だけが違う）:
 
-1. `let edge = Edge(from: from, to: to)`。`TransitionTable.allows(edge, kind: kind)` が偽 → `throw IllegalTransition(from: from.rawValue, to: to.rawValue, kind: kind)`（DB に触らない）
+1. `let edge = Edge(from, to)`（T-08 の `Edge` の init はラベル無し）。`TransitionTable.allows(edge, kind: kind)` が偽 → `throw IllegalTransition(from: from.rawValue, to: to.rawValue, kind: kind)`（DB に触らない）
 2. `retry`: `resetRetry || PartStates.retryReset.contains(to)` なら `.reset`、そうでなく `to == .failed` なら `.increment`、それ以外 `.keep`
    （Session は `SessionStates.retryReset`・`.failed`）
 3. `let storedDetail = kind == .recovery ? Store.recoveryDetail : detail`（`.recovery` のとき引数の detail は無視）
@@ -499,6 +499,7 @@ import GRDB
 import VDCore
 
 public enum RecordingField: Sendable, Equatable {
+    // `.swift-format` の OneCasePerLine により、実装では 1 行に 1 つの `case` で書く
     case sessionKey(String?), durationSeconds(Double?), endedAt(String?), sha256(String?), sha256Helper(String?),
          inboxPath(String?), stagingDir(String?), normalizedPath(String?), transcriptPath(String?),
          sourceSize(Int64?), sourceMtime(Double?), errorCode(ErrorCode?), errorMessage(String?),
@@ -506,6 +507,7 @@ public enum RecordingField: Sendable, Equatable {
 }
 
 public enum SessionField: Sendable, Equatable {
+    // 同上（1 行に 1 つの `case`）
     case startedAt(String?), endedAt(String?), recordedSeconds(Double?), partCount(Int), failedPartCount(Int),
          title(String?), analysisPath(String?), rawOutputPath(String?), rawOutputSHA256(String?),
          outputPath(String?), outputSHA256(String?), regeneratedCount(Int), deleteAttempts(Int),
@@ -517,7 +519,10 @@ extension Store {
     public func updateSession(_ key: String, _ fields: [SessionField]) throws
 }
 
-struct Assignments { let sql: String; let values: [(any DatabaseValueConvertible)?] }
+struct Assignments {  // 実装ではセミコロンを使わず 2 行に分ける（DoNotUseSemicolons）
+    let sql: String
+    let values: [(any DatabaseValueConvertible)?]
+}
 ```
 
 列の対応（`column` と束縛する値。これ以外の列は更新できない。**`status` を表す case は無い**）:
@@ -652,9 +657,9 @@ public final class ReadOnlyStore: Sendable {
 ```
 
 - `open(url:)`:
-  1. `FileManager.default.fileExists(atPath: url.path)` が偽 → nil（**開こうとしない**。SQLite の既定の開き方はファイルを作るため）
+  1. `FileManager.default.fileExists(atPath: url.path(percentEncoded: false))` が偽 → nil（**開こうとしない**。SQLite の既定の開き方はファイルを作るため）
   2. `var config = Configuration(); config.readonly = true; config.busyMode = .timeout(10); config.label = "VoiceDock.readonly"`
-  3. `try? DatabaseQueue(path: url.path, configuration: config)` が nil → nil
+  3. `try? DatabaseQueue(path: url.path(percentEncoded: false), configuration: config)` が nil → nil
 - `statusCounts`: `SELECT status, COUNT(*) AS n FROM recordings GROUP BY status` と `… FROM sessions GROUP BY status`。
   結果は `PartStatus.allCases` / `SessionStatus.allCases` の全値を 0 で埋めた辞書に上書きする。未知の status の行は数えない
 - `backlog`: 非終端（`PartStatus.allCases` のうち `PartStates.terminal` に無いもの。宣言順）を束縛して
@@ -672,8 +677,9 @@ public final class ReadOnlyStore: Sendable {
 ```swift
 // テスト用の DB の行の組み立て（T-11 以降の Store を使うテストが共有する。00-api-map §15 の Builders）。
 import Foundation
-import VDStore
+import VDContract  // PartKey・RelPath
 import VDCore
+import VDStore
 
 public enum Builders {
     /// 既定値: deviceID "DJIMIC3"、folder "TX_MIC001_20260829_071201"、transmitter "TX01"、mic 2、
@@ -710,6 +716,8 @@ public enum Builders {
 | `quickCheckIsOK` | quick_check が ok | 新しい DB | `"ok"` |
 
 ### 5.2 `SchemaTests.swift` — `@Suite("スキーマ")`
+
+スキーマの PRAGMA（`table_info` / `index_list` / `index_info` / `foreign_key_list`）は **writer（`pool.writeWithoutTransaction`）で読む**。GRDB 7.11.1 の reader（`pool.read`）では `index_list` と `foreign_key_list` が 0 行を返す（実装時に確認）。
 
 | 関数名 | 表示名 | 期待 |
 |---|---|---|
@@ -857,7 +865,7 @@ public enum Builders {
 - [ ] `UPDATE … SET … status` と `INSERT INTO recordings / sessions` の文字列が `Transitions.swift` にしか無い（PT-05）
 - [ ] SQL の文字列に状態名・エラーコード名が無い（すべて束縛。PT-06）
 - [ ] `row["…"] as T`（非 Optional の添字）を使っていない（`row.decode` だけ）
-- [ ] 破壊による証明の 13 項目で、表のテストが落ちることを確かめ、PR 本文に貼った
+- [ ] 破壊による証明の 14 項目で、表のテストが落ちることを確かめ、PR 本文に貼った
 
 ## 8. SPEC の変更
 
