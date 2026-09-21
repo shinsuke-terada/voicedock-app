@@ -164,12 +164,13 @@ public actor LlamaServerSupervisor {
 
 **`ensureRunning`**:
 1. ループ: `starting` が在ればその `value` を待って 1 に戻る。`stopping` が在ればその `value` を待って 1 に戻る（**待った結果を返さない**。起動中の結果は別のモデルのものかもしれないので、自分の条件で比べ直す。再レビューで判明）
-2. `current` が在り、`model`・`config.contextSize`・`modelID` が同じで `await process.isRunning` なら `.success(handle)`
+2. `c = current` が在り、`model`・`config.contextSize`・`modelID` が同じで `await c.process.isRunning` なら、返す前に `starting == nil && stopping == nil && current?.handle == c.handle` を確かめて `.success(c.handle)`。外れたら（`isRunning` の `await` の間に起動・停止が始まった・`current` が替わった）1 に戻る
 3. `starting` か `stopping` が在れば 1 に戻る（2 の `await` の間に別の呼び手が起動・停止を始めていることがある）。どちらも無ければループを抜ける
 4. `starting = Task { await self.stopCurrent(); let r = await self.startServer(model:modelID:contextSize:); self.starting = nil; return r }`（`current` が違う・死んでいるなら止めてから起動。`stopCurrent()` は § stop の 2〜5 で、`current` が nil なら何もしない）
    → `await starting.value` を返す。**`starting = nil` は Task の中で終わる前に行う**（呼び手の側で空にすると、1 で待っていた別の呼び手が、終わった Task を `await` しても中断しないまま回り続け、呼び手が戻れずに止まる。実装で判明）。
-   **止めることと起動することを 1 つの Task に入れ、最初の `await` より前に `starting` を立てる**（`stopCurrent()` を Task の外で `await` すると、terminate の最大 10 秒の間に別の呼び手が入り、2 つ起動して片方を止められなくなる。レビューで判明。テスト `concurrentCallsStartOnlyOne`）
+   **止めることと起動することを 1 つの Task に入れ、最初の `await` より前に `starting` を立てる**（`stopCurrent()` を Task の外で `await` すると、terminate の最大 10 秒の間に別の呼び手が入り、2 つ起動して片方を止められなくなる。レビューで判明。テスト `concurrentCallsKeepOnlyOneAlive`）
 - `starting` の Task は構造化されていないので、呼び手のタスクの取り消しは伝わらない（`server_start_failed: cancelled` は `Sleeper` が投げたときだけ通る）。取り消しを伝えたいなら T-22 が別に決める
+- **T-22 / T-32 への申し送り**: 別のモデル（か contextSize）で `ensureRunning` を呼ぶと、前の呼び手に返した handle のサーバーが止まる。DR-09 などは Worker の解析と直列にするか、同じモデルを使う
 
 **`startServer`**（`maxAttempts` 回まで。1 回ごとに別のポート）:
 ```text
@@ -356,7 +357,7 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 | `stopTerminatesAndRemovesTheKey` / 「停止でプロセスと鍵ファイルを消す」 | 起動の後に `stop()` | pid が `ESRCH`、鍵ファイルが無い、ログに `llm_server_stopped port=<port>` |
 | `stopWithoutServerDoesNothing` / 「起動していなければ停止は何もしない」 | 起動せずに `stop()` | ログが空、エラーにならない |
 | `keyIsNotInTheArguments` / 「API キーを引数に置かない」 | 成功の後 | `fake.arguments(ofInvocation: 1)` のどの要素も `handle.apiKey` を含まない |
-| `concurrentCallsStartOnlyOne` / 「同時に呼ばれても 2 つ起動しない（actor の再入）」 | stayAlive、1 つ起動した後に、別のモデル b と c で `ensureRunning` を `async let` で同時に 2 回、その後 `stop()` | 2 つとも `.success` で handle の endpoint が互いに違う（どちらも自分のモデルで起動したもの）、spawn は合わせて 3 回、`stop()` の前に生きているのは 1 つだけ、`stop()` の後はどの pid も `ESRCH`、鍵ファイルが無い |
+| `concurrentCallsKeepOnlyOneAlive` / 「同時に呼ばれても 2 つを同時に生かさない（actor の再入）」 | stayAlive、1 つ起動した後に、別のモデル b と c で `ensureRunning` を `async let` で同時に 2 回、その後 `stop()` | 2 つとも `.success` で handle の endpoint が互いに違う（どちらも自分のモデルで起動したもの）、spawn は合わせて 3 回、`stop()` の前に生きているのは 1 つだけ、`stop()` の後はどの pid も `ESRCH`、鍵ファイルが無い |
 
 後片付け: 各テストは TempDirectory から Rig を作って本体を渡す `withRig` で包み、本体が投げても `stop()` と spawn したすべての `terminate(grace: .zero)` と `LoopbackStub.unregister` を行う（`sleep 600` を残さない）。スイートに `.timeLimit(.minutes(1))` を付ける（壊し方によっては待ちのループが終わらない）。
 
@@ -381,16 +382,16 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 | 起動に 3 回失敗した後に鍵ファイルを消さない | `failsAfterThreeAttempts` |
 | `content(of:)` を `JSONSerialization` に戻す | `contentKeepsLeadingBOM` |
 | 2 回目の `ensureRunning` で生死を確かめずに起動し直す | `reusesARunningServer` |
-| `ensureRunning` の `stopCurrent()` を `starting` の Task の外で `await` し、その後の `starting` の再確認を消す（v1 の手順） | `concurrentCallsStartOnlyOne` |
+| `ensureRunning` の `stopCurrent()` を `starting` の Task の外で `await` し、その後の `starting` の再確認を消す（v1 の手順） | `concurrentCallsKeepOnlyOneAlive` |
 
 実施の結果（2026-09-21。コミット後の清潔な状態で 1 項目ずつ壊し、`git checkout --` で戻した）: どの項目でも表のテストが落ちた。表に無いテストも落ちたのは次のとおり。
 - `-c` にする: `startsAndWaitsForHealth`・`ceContextSize` も落ちる
 - `--api-key <key>`: Supervisor で `LlamaArgs.build(…) + ["--api-key", key]` にすると `keyIsNotInTheArguments` と `startsAndWaitsForHealth`、`LlamaArgs.build` の末尾に足すと `buildIsExact` と `startsAndWaitsForHealth` が落ちる（1 か所では両方は落ちない。表の 2 つはそれぞれの壊し方で落ちる）
 - 同じポートを使い回す: `retriesOnAnotherPort` は 3 回目が登録の無いポートで待ち続け、`FixedClock` が進まないので終わらない。`.timeLimit(.minutes(1))` で失敗と記録されるが、ループが取り消しを見ないのでテストのプロセスは残る（手で止めた）
 - `maxAttempts = 1`: `timesOutAfter300Seconds` も落ちる
-- `stop()` で鍵を消さない: `concurrentCallsStartOnlyOne` も落ちる
+- `stop()` で鍵を消さない: `concurrentCallsKeepOnlyOneAlive` も落ちる
 - 3 回の失敗の後に鍵を消さない: `timesOutAfter300Seconds` も落ちる
-- v1 の再入の手順: 3 回のうち 2 回は落ちるまでに数分かかった（2 つの起動が同じ鍵ファイルを書き、偽物の `/health` の待ちが食い違うため）。3 回目は手で止めた（この項目は再レビューの修正より前の実装で行った。修正後の `concurrentCallsStartOnlyOne` は 1 と 3 の比べ直しと、生きているのが 1 つだけであることも見る）
+- v1 の再入の手順: 3 回のうち 2 回は落ちるまでに数分かかった（2 つの起動が同じ鍵ファイルを書き、偽物の `/health` の待ちが食い違うため）。3 回目は手で止めた（この項目は再レビューの修正より前の実装で行った。修正後の `concurrentCallsKeepOnlyOneAlive` は 1 と 3 の比べ直しと、生きているのが 1 つだけであることも見る）
 
 ## 7. 受け入れ条件
 
@@ -408,7 +409,7 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 5. T-12 への前提: `RunningProcess.terminate(grace:)` は、既に終了したプロセスに対しては待たずにその終了の状態（`.exited(n)` / `.signaled(n)`）を返すこと。`stderrTail()` は終了の後も読めること → 00-api-map（「終了済みなら待たずに返す」）と T-12 に反映済み（2026-09-18）
 6. T-10 への前提: `LogKey` に `port` と `elapsed_s` が在ること → T-10 の `LogKey` に在る（2026-09-18 確認）
 7. TestSupport に `BlockingURLProtocol`・`LoopbackStub`・`StubRequest`・`StubReply`・`BlockingSessionFactory`・`FakeLlamaServer` を足す（§4.4）。T-23 も `BlockingURLProtocol` を使う → 00-api-map §15 に反映済み（2026-09-18。作り手は T-21）
-8. `LoopbackEndpoint` の `Equatable`（`LlamaServerHandle: Equatable` のために要る）→ 地図の §8 の行は `Sendable` だけ。§16 の索引に足すこと（追記が要る。実装には不可欠）
+8. 00-api-map §8・§16 への追記（まとめて 1 項）: `LoopbackEndpoint: Equatable`（`LlamaServerHandle: Equatable` のために要る。地図の §8 の行は `Sendable` だけ。実装には不可欠）と、公開定数 `LlamaServerSupervisor.maxAttempts`・`startupTimeoutSeconds`・`stopGraceSeconds`・`LoopbackHealth.timeoutSeconds`（2 の「定数は地図に無い」に `LoopbackHealth.timeoutSeconds` が漏れていた）
 9. T-12 への申し送り: `RunningProcess.terminate(grace:)` は既に終了したプロセスに対しては読み取りの後始末（`finishReaders`）を待たずに返すので、直後の `stderrTail()` に最後の出力がまだ入っていないことがありうる（プロセスの終了の検出と stderr の EOF の読み取りの競争）。
    終了を検出してから `stderrTail()` を読むまでの間に待ちは何も無く、揃う保証は無い（実測では `failsAfterThreeAttempts` を負荷の下で数百回回して落ちなかったが、それは偶然の余裕）。本番では `server_start_failed: exited(1)` の後ろの stderr が欠けうる。
    T-12 の側で「終了済みでも読み取りの EOF を `readerDrainGrace` まで待ってから返す」にすることを提案する（VDProcess は本チケットのパスではないので触らない）

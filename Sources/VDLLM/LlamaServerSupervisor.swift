@@ -69,7 +69,11 @@ public actor LlamaServerSupervisor {
             if let c = current, c.model == model, c.contextSize == config.contextSize, c.handle.modelID == modelID,
                 await c.process.isRunning
             {
-                return .success(c.handle)
+                // isRunning の await の間に起動・停止が始まっていたり current が替わっていたら、先頭から比べ直す
+                if starting == nil && stopping == nil && current?.handle == c.handle {
+                    return .success(c.handle)
+                }
+                continue
             }
             // 上の await の間に別の呼び手が起動・停止を始めていれば、もう一度待つ
             if starting == nil && stopping == nil { break }

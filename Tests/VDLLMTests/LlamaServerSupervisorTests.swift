@@ -39,13 +39,15 @@ private actor SpawnRecordingRunner: ProcessRunning {
     }
 }
 
-/// 偽の llama-server の invocation 回目が API キーファイルを読み終えるまで（最大 10 秒）応答を止める。
+/// 偽の llama-server の invocation 回目が API キーファイルを読み終えるまで（最大 4 秒）応答を止める。読み終えたら true。
 /// 本物の llama-server は起動してから /health に応答するので、偽物の /health もそれに合わせる（スクリプトが走る前に 200 を返さない）。
-private func waitUntilStarted(_ fake: FakeLlamaServer, invocation: Int) {
-    for _ in 0..<1000 {
-        if let key = try? fake.apiKey(ofInvocation: invocation), key.unicodeScalars.count == 32 { return }
+/// 上限は LoopbackHealth.timeoutSeconds（5 秒）より短くする（URLSession の時間切れより先に、原因の見える失敗を返すため）。
+private func waitUntilStarted(_ fake: FakeLlamaServer, invocation: Int) -> Bool {
+    for _ in 0..<400 {
+        if let key = try? fake.apiKey(ofInvocation: invocation), key.unicodeScalars.count == 32 { return true }
         Thread.sleep(forTimeInterval: 0.01)
     }
+    return false
 }
 
 private typealias HealthHandler = @Sendable (StubRequest) -> StubReply
@@ -54,7 +56,8 @@ private typealias HealthHandler = @Sendable (StubRequest) -> StubReply
 private func healthReply(_ fake: FakeLlamaServer, invocation: Int, failures: Int?) -> HealthHandler {
     let seen = Mutex(0)
     return { _ in
-        waitUntilStarted(fake, invocation: invocation)
+        // 偽物が起動しなかったら黙って 200 を返さず、時間切れの失敗にする（原因が見えるように）
+        guard waitUntilStarted(fake, invocation: invocation) else { return .failure(.timedOut) }
         guard let failures else { return .http(status: 503, body: Data()) }
         let n = seen.withLock { value in
             value += 1
@@ -210,8 +213,8 @@ struct LlamaServerSupervisorTests {
         }
     }
 
-    @Test("同時に呼ばれても 2 つ起動しない（actor の再入）")
-    func concurrentCallsStartOnlyOne() async throws {
+    @Test("同時に呼ばれても 2 つを同時に生かさない（actor の再入）")
+    func concurrentCallsKeepOnlyOneAlive() async throws {
         try await Self.withRig(mode: .stayAlive, ports: 3) { rig in
             for (index, port) in rig.ports.enumerated() {
                 LoopbackStub.register(port: port, healthReply(rig.fake, invocation: index + 1, failures: 0))
