@@ -704,11 +704,11 @@ public enum TestCatalogs {
 | CV-14 と CV-13 の評価の順を入れ替える | `evaluationOrderFollowsTable` |
 | CV-14 に該当したテンプレートを CV-13 から外す処理を消す | CV-14 のテスト（「CV-13 は出ない」） |
 | CV-30 で `.missing` のときも比較する（missing を false 扱い） | CV-30 の「評価しない」のテスト |
-| CV-51 の `+ 2048` を消す | CV-51 の 2 本 |
+| CV-51 の `+ 2048` を消す | CV-51 の違反の例（境界で通る例 `26144` は条件を緩めても通るので落ちない） |
 | `ModelCatalog.load` の `bad_url` の 40 桁検査を消す | `rejectsEachRule`（resolve/main） |
 | `ConfigEffectPending.owners` から `device.mountMode` を消す | `everyKeyIsCoveredOrPending` |
 | `GoldenConfig.set` の `path.count == 1` の分岐で `object[key] = value` を消す | `overridesLandOnKeyPaths` |
-| `AnalysisSections` の `encode(to:)` / `init(from:)` を synthesized に戻す（summary と timeline にも `maxItems` を書く） | `summaryAndTimelineHaveNoMaxItems`、`allKeyPathsMatchDefaultsEncoding`、`roundTrip`、`defaultsMatchSection62` |
+| `AnalysisSections` の `encode(to:)` / `init(from:)` を synthesized に戻す（summary と timeline にも `maxItems` を書く） | `summaryAndTimelineHaveNoMaxItems`、`allKeyPathsMatchDefaultsEncoding`、`roundTrip`（`defaultsMatchSection62` は落ちない。synthesized の復号は `maxItems` の無い JSON も nil として読むので、§6.2 の JSON は読めてしまう。壊れるのは符号化の側） |
 
 ## 受け入れ条件
 
