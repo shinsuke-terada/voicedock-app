@@ -36,6 +36,7 @@ public actor LlamaServerSupervisor {
 
     private var current: (process: RunningProcess, handle: LlamaServerHandle, model: URL, contextSize: Int)?
     private var starting: Task<Result<LlamaServerHandle, StageFailure>, Never>?
+    private var stopping: Task<Void, Never>?
 
     public init(
         runner: any ProcessRunning, paths: AppPaths, layout: HomeLayout, clock: AppClock, sleeper: Sleeper, log: AppLog,
@@ -55,36 +56,57 @@ public actor LlamaServerSupervisor {
     public func ensureRunning(model: URL, modelID: String, config: LLMConfig) async -> Result<
         LlamaServerHandle, StageFailure
     > {
-        if let starting {
-            return await starting.value
-        }
-        if let c = current, c.model == model, c.contextSize == config.contextSize, c.handle.modelID == modelID,
-            await c.process.isRunning
-        {
-            return .success(c.handle)
-        }
-        // 上の await の間に別の呼び手が起動を始めていれば、それを待つ（actor の再入。2 つ起動しない）
-        if let starting {
-            return await starting.value
+        while true {
+            // 起動・停止の途中なら終わりを待ち、自分の条件で比べ直す（actor の再入。2 つ起動しない）
+            if let starting {
+                _ = await starting.value
+                continue
+            }
+            if let stopping {
+                await stopping.value
+                continue
+            }
+            if let c = current, c.model == model, c.contextSize == config.contextSize, c.handle.modelID == modelID,
+                await c.process.isRunning
+            {
+                return .success(c.handle)
+            }
+            // 上の await の間に別の呼び手が起動・停止を始めていれば、もう一度待つ
+            if starting == nil && stopping == nil { break }
         }
         // 止めることと起動することを 1 つの Task にまとめ、await の前に starting を立てる
         let contextSize = config.contextSize
+        // starting を空にするのは Task の中（終わる前）。待っていた呼び手が終わった Task を見て回り続けないため
         let task = Task {
             await self.stopCurrent()
-            return await self.startServer(model: model, modelID: modelID, contextSize: contextSize)
+            let result = await self.startServer(model: model, modelID: modelID, contextSize: contextSize)
+            self.starting = nil
+            return result
         }
         starting = task
-        let result = await task.value
-        starting = nil
-        return result
+        return await task.value
     }
 
     /// 起動していなければ何もしない。起動の途中なら、その終わりを待ってから止める。
+    /// 停止も 1 つの Task（stopping）にして、その間に来た ensureRunning を待たせる（新しい鍵ファイルを消さない）。
     public func stop() async {
-        if let starting {
-            _ = await starting.value
+        while true {
+            if let starting {
+                _ = await starting.value
+                continue
+            }
+            if let stopping {
+                await stopping.value
+                continue
+            }
+            break
         }
-        await stopCurrent()
+        let task = Task {
+            await self.stopCurrent()
+            self.stopping = nil
+        }
+        stopping = task
+        await task.value
     }
 
     /// SIGTERM → stopGraceSeconds → SIGKILL（プロセスグループごと）。API キーファイルを消す（PLAN §8.5）。

@@ -223,12 +223,18 @@ struct LlamaServerSupervisorTests {
             _ = try await rig.supervisor.ensureRunning(model: rig.model, modelID: "m-id", config: rig.config).get()
             async let first = rig.supervisor.ensureRunning(model: b, modelID: "m-id", config: rig.config)
             async let second = rig.supervisor.ensureRunning(model: c, modelID: "m-id", config: rig.config)
-            let results = await [first, second]
-            #expect(results.allSatisfy { (try? $0.get()) != nil })
-            await rig.supervisor.stop()
+            let (forB, forC) = await (first, second)
+            let handleB = try forB.get()
+            let handleC = try forC.get()
+            // 起動中に来た呼び手は、終わりを待ってから自分の条件で比べ直す（別のモデルの handle を受け取らない）
+            #expect(handleB.endpoint != handleC.endpoint)
             let spawned = await rig.runner.spawned
-            // 1 回目の起動と、同時の 2 つのうちどちらか 1 つだけ（もう 1 つは起動中の Task を待つ）
-            #expect(spawned.count == 2)
+            #expect(spawned.count == 3)
+            // 同時に生きている llama-server は 1 つだけ
+            var alive = 0
+            for process in spawned where await process.isRunning { alive += 1 }
+            #expect(alive == 1)
+            await rig.supervisor.stop()
             for process in spawned {
                 #expect(Self.isGone(process.pid))
             }

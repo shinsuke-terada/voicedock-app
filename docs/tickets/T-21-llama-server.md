@@ -160,14 +160,14 @@ public actor LlamaServerSupervisor {
 }
 ```
 
-状態: `private var current: (process: RunningProcess, handle: LlamaServerHandle, model: URL, contextSize: Int)?`、`private var starting: Task<Result<LlamaServerHandle, StageFailure>, Never>?`
+状態: `private var current: (process: RunningProcess, handle: LlamaServerHandle, model: URL, contextSize: Int)?`、`private var starting: Task<Result<LlamaServerHandle, StageFailure>, Never>?`、`private var stopping: Task<Void, Never>?`
 
 **`ensureRunning`**:
-1. `starting` が在ればその `value` を待って返す（同時に 2 つ起動しない。actor の再入対策）
+1. ループ: `starting` が在ればその `value` を待って 1 に戻る。`stopping` が在ればその `value` を待って 1 に戻る（**待った結果を返さない**。起動中の結果は別のモデルのものかもしれないので、自分の条件で比べ直す。再レビューで判明）
 2. `current` が在り、`model`・`config.contextSize`・`modelID` が同じで `await process.isRunning` なら `.success(handle)`
-3. もう一度 `starting` を見て、在ればその `value` を待って返す（2 の `await` の間に別の呼び手が起動を始めていることがある）
-4. `starting = Task { await self.stopCurrent(); return await self.startServer(model:modelID:contextSize:) }`（`current` が違う・死んでいるなら止めてから起動。`stopCurrent()` は § stop の 2〜5 で、`current` が nil なら何もしない）
-   → `result = await starting.value` → `starting = nil` → `result` を返す。
+3. `starting` か `stopping` が在れば 1 に戻る（2 の `await` の間に別の呼び手が起動・停止を始めていることがある）。どちらも無ければループを抜ける
+4. `starting = Task { await self.stopCurrent(); let r = await self.startServer(model:modelID:contextSize:); self.starting = nil; return r }`（`current` が違う・死んでいるなら止めてから起動。`stopCurrent()` は § stop の 2〜5 で、`current` が nil なら何もしない）
+   → `await starting.value` を返す。**`starting = nil` は Task の中で終わる前に行う**（呼び手の側で空にすると、1 で待っていた別の呼び手が、終わった Task を `await` しても中断しないまま回り続け、呼び手が戻れずに止まる。実装で判明）。
    **止めることと起動することを 1 つの Task に入れ、最初の `await` より前に `starting` を立てる**（`stopCurrent()` を Task の外で `await` すると、terminate の最大 10 秒の間に別の呼び手が入り、2 つ起動して片方を止められなくなる。レビューで判明。テスト `concurrentCallsStartOnlyOne`）
 - `starting` の Task は構造化されていないので、呼び手のタスクの取り消しは伝わらない（`server_start_failed: cancelled` は `Sleeper` が投げたときだけ通る）。取り消しを伝えたいなら T-22 が別に決める
 
@@ -205,7 +205,8 @@ return .failure(StageFailure(.llmUnavailable, message(lastReason, lastStderr)))
 - stdout / stderr はファイルに残さない（`ProcessRunner` が末尾だけメモリに持つ。PR-08）
 
 **`stop()`**（と `stopCurrent()`。`stopCurrent()` は 2〜5）:
-1. （`stop()` だけ）`starting` が在ればその `value` を待つ（起動の途中で呼ばれても、起動したものを残さない）
+1. （`stop()` だけ）`starting` か `stopping` が在る間はその `value` を待つ（起動の途中で呼ばれても、起動したものを残さない）。その後 `stopping = Task { await self.stopCurrent(); self.stopping = nil }` を立てて待つ。
+   停止も Task にして `stopping` に置くのは、terminate の最大 10 秒の間に来た `ensureRunning` を待たせ、新しい起動の鍵ファイルを古い停止が消さないため（再レビューで判明）。`private var stopping: Task<Void, Never>?` を状態に足す
 2. `current` が nil なら何もしない
 3. `c = current; current = nil`
 4. `_ = await c.process.terminate(grace: .seconds(10))`（SIGTERM → 10 秒 → SIGKILL。プロセスグループごと）
@@ -355,7 +356,7 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 | `stopTerminatesAndRemovesTheKey` / 「停止でプロセスと鍵ファイルを消す」 | 起動の後に `stop()` | pid が `ESRCH`、鍵ファイルが無い、ログに `llm_server_stopped port=<port>` |
 | `stopWithoutServerDoesNothing` / 「起動していなければ停止は何もしない」 | 起動せずに `stop()` | ログが空、エラーにならない |
 | `keyIsNotInTheArguments` / 「API キーを引数に置かない」 | 成功の後 | `fake.arguments(ofInvocation: 1)` のどの要素も `handle.apiKey` を含まない |
-| `concurrentCallsStartOnlyOne` / 「同時に呼ばれても 2 つ起動しない（actor の再入）」 | stayAlive、1 つ起動した後に、別のモデル b と c で `ensureRunning` を `async let` で同時に 2 回、その後 `stop()` | 2 つとも `.success`、spawn は合わせて 2 回（最初の 1 回と、同時の 2 つのうち 1 つ）、どの pid も `ESRCH`、鍵ファイルが無い |
+| `concurrentCallsStartOnlyOne` / 「同時に呼ばれても 2 つ起動しない（actor の再入）」 | stayAlive、1 つ起動した後に、別のモデル b と c で `ensureRunning` を `async let` で同時に 2 回、その後 `stop()` | 2 つとも `.success` で handle の endpoint が互いに違う（どちらも自分のモデルで起動したもの）、spawn は合わせて 3 回、`stop()` の前に生きているのは 1 つだけ、`stop()` の後はどの pid も `ESRCH`、鍵ファイルが無い |
 
 後片付け: 各テストは TempDirectory から Rig を作って本体を渡す `withRig` で包み、本体が投げても `stop()` と spawn したすべての `terminate(grace: .zero)` と `LoopbackStub.unregister` を行う（`sleep 600` を残さない）。スイートに `.timeLimit(.minutes(1))` を付ける（壊し方によっては待ちのループが終わらない）。
 
@@ -389,7 +390,7 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 - `maxAttempts = 1`: `timesOutAfter300Seconds` も落ちる
 - `stop()` で鍵を消さない: `concurrentCallsStartOnlyOne` も落ちる
 - 3 回の失敗の後に鍵を消さない: `timesOutAfter300Seconds` も落ちる
-- v1 の再入の手順: 3 回のうち 2 回は落ちるまでに数分かかった（2 つの起動が同じ鍵ファイルを書き、偽物の `/health` の待ちが食い違うため）。3 回目は手で止めた
+- v1 の再入の手順: 3 回のうち 2 回は落ちるまでに数分かかった（2 つの起動が同じ鍵ファイルを書き、偽物の `/health` の待ちが食い違うため）。3 回目は手で止めた（この項目は再レビューの修正より前の実装で行った。修正後の `concurrentCallsStartOnlyOne` は 1 と 3 の比べ直しと、生きているのが 1 つだけであることも見る）
 
 ## 7. 受け入れ条件
 
