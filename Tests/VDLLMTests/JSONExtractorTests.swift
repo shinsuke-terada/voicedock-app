@@ -23,9 +23,10 @@ struct JSONExtractorTests {
         PyJSON.decode(json)
     }
 
-    @Test("そのままの JSON", arguments: [valid, validEscaped])
-    func bareJSON(text: String) {
-        #expect(Self.extracted(text) == Self.validValue)
+    @Test("そのままの JSON")
+    func bareJSON() {
+        #expect(Self.extracted(Self.valid) == Self.validValue)
+        #expect(Self.extracted(Self.validEscaped) == Self.validValue)
     }
 
     @Test("json のフェンス")
