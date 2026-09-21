@@ -103,6 +103,7 @@ PLAN §9.4 の禁止事項を、**書いたら落ちる**静的検査にする�
 ### 5. ファイルの全文
 
 以下はすべて `swift format` で整形済み（`make lint` を通る）。Xcode 27.0 で `swift build --build-tests` と `swift test --filter PolicyTests` が通ることを確かめ済み。
+URL からパス文字列を取るところは 00-api-map §0 に合わせて `path(percentEncoded: false)` を使う（`SourceTree.load` はファイルを `root.appendingPathComponent(relative)` で読む。実装時に修正）。
 
 #### `Tests/TestSupport/Markdown/MarkdownDocument.swift`
 
@@ -694,14 +695,15 @@ struct SourceFile: Sendable {
 /// `Sources/` 配下の全 `.swift` を読む。
 enum SourceTree {
     static func load(root: URL = PackageRoot.file("Sources")) throws -> [SourceFile] {
-        let base = root.resolvingSymlinksInPath().path + "/"
-        guard let enumerator = FileManager.default.enumerator(atPath: root.path) else { return [] }
+        guard let enumerator = FileManager.default.enumerator(atPath: root.path(percentEncoded: false)) else {
+            return []
+        }
         var paths: [String] = []
         for case let path as String in enumerator where path.hasSuffix(".swift") {
             paths.append(path)
         }
         return try paths.sorted().map { relative in
-            let text = try String(contentsOfFile: base + relative, encoding: .utf8)
+            let text = try String(contentsOf: root.appendingPathComponent(relative), encoding: .utf8)
             return SourceFile(relativePath: relative, text: text)
         }
     }
@@ -1192,8 +1194,8 @@ enum PinningPolicy {
     /// `root`（リポジトリのルート）の下を検査する。`requiredFiles` のファイルが無ければ違反。
     static func check(root: URL, requiredFiles: [String]) -> [Violation] {
         var violations: [Violation] = []
-        for path in requiredFiles where !FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path)
-        {
+        for path in requiredFiles
+        where !FileManager.default.fileExists(atPath: root.appendingPathComponent(path).path(percentEncoded: false)) {
             violations.append(Violation(rule: id, path: path, line: 1, what: "ファイルがありません"))
         }
         violations += checkPackageSwift(root: root)
@@ -1331,7 +1333,7 @@ enum PinningPolicy {
     /// .github/workflows/*.yml の uses: が 40 桁の SHA、runs-on: に latest が無い。
     static func checkWorkflows(root: URL) -> [Violation] {
         let directory = root.appendingPathComponent(".github/workflows")
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false))) ?? []
         var violations: [Violation] = []
         for name in names.sorted() where name.hasSuffix(".yml") || name.hasSuffix(".yaml") {
             let path = ".github/workflows/\(name)"
@@ -2393,13 +2395,13 @@ struct SourceScannerTests {
 | `OrderingPolicy.check` の `commit < register` を `>` にする | `pt16DetectsViolation`・`pt16IgnoresDecoy` |
 | `ImportPolicy.allowed` の VDCore に `VDStore` を足す | `pt07DetectsViolation` |
 | `ImportPolicy.allowedEverywhere` を空にする | `pt07IgnoresDecoy`（decoy の `import Synchronization`） |
-| `Sources/VDCore/ModuleMarker.swift` に `let x = try! f()` を足す（本番の木に違反を仕込む） | `pt19Holds`（違反の一覧に `VDCore/ModuleMarker.swift:2 try!` が出る） |
+| `Sources/VDCore/PyRound.swift`（17 行）の末尾に `let x = try! f()` を足す（本番の木に違反を仕込む。T-01 の `ModuleMarker.swift` は T-45 で消えた） | `pt19Holds`（違反の一覧に `VDCore/PyRound.swift:18 try!` が出る） |
 
 ## 受け入れ条件
 
 - [ ] 上の全ファイルが全文のとおりに在り、`make lint` と `make test` が通る
 - [ ] `swift test --filter PolicyTests` の出力の件数を PR に貼る（パラメータ化を含めて 100 件前後。T-01〜T-03 のテストを含む）
-- [ ] 破壊による証明の表の 8 項目を行い、落ちたテスト名を PR に貼った
+- [ ] 破壊による証明の表の 9 項目を行い、落ちたテスト名を PR に貼った
 - [ ] PLAN §9.4 の表の各行（語と許可場所）と `PolicyCatalog.swift` を 1 行ずつ突き合わせたことを PR に書いた（食い違いがあれば PLAN を正として直す）
 
 ## SPEC の変更
