@@ -106,8 +106,8 @@ T-30 §4.0 の全体の規則を適用する。**このチケットのコード�
 
 `LiveServices` の実装:
 - `updateConfig` = `await context.config.update(mutate)`
-- `download` = `await context.downloader.download(entry, kind: kind, progress: progress)`
-- `cancelDownload` = `await context.downloader.cancel(id: id)`
+- `download` = `await context.models.download(entry.id, kind: kind, progress: progress)`（UI は `ModelManager` だけを使う。00-api-map §10・T-23 §10。`ModelManager` が状態（`downloading` / `failed`）を動かす）
+- `cancelDownload` = `await context.models.cancel(id: id)`
 - `importGGUF` = `await context.models.importCustomLLM(from: source)`（**T-23 が正**: `ModelManager.importCustomLLM(from:)` が `ModelImporter.importGGUF(from:layout:chunkBytes:)` を包む。`chunkBytes` は `ModelManager.init(… hashChunkBytes:)` に渡した値（設定の `audio.hashChunkBytes`）で、Bootstrap（T-30 手順 14）が `ModelDownloader(layout:factory:log:hashChunkBytes:)` と `ModelManager(layout:catalog:downloader:cache:log:hashChunkBytes:)` に渡す）
 - `importVoicedockKeys`: **このチケットでは 0 を返し、`// T-33 が ImportedKeysScanner.scan(vault:config:) を呼ぶ（PLAN §8.13）。` と書く**（T-33 が本体を入れる。T-30 の「空の段」と同じやり方）
 - `registerLoginItem` / `unregisterLoginItem` / `openSystemSettingsLoginItems` = `context.loginItem` へ委譲
