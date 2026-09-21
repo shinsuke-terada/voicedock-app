@@ -2,13 +2,13 @@
 import Darwin
 import Foundation
 import Synchronization
-import TestSupport
 import Testing
 import VDContract
 import VDCore
 import VDProcess
 import VDStore
 
+@testable import TestSupport
 @testable import VDDevice
 
 @Suite("IngestService の走査", .serialized)
@@ -56,6 +56,8 @@ struct IngestServiceTests {
         var readOnly = false
         /// false なら infos を空にし mountPoints とボリューム名だけ登録する（statfs が取れない）
         var observable = true
+        /// 設定すると statfs の値の mountOnName をこのパスにする（外れて親の FS が見えている状態。mountPoints はそのまま）
+        var statfsMountOnName: String? = nil
         var coexistence: Int32 = 113
         var sleeper: (any Sleeper)? = nil
         var populate = true
@@ -92,8 +94,20 @@ struct IngestServiceTests {
             let path = fake.volumesRoot.appendingPathComponent(IngestServiceTests.deviceID, isDirectory: false)
                 .path(percentEncoded: false)
             var inspector = FakeMountInspector.mounted([path], readOnly: options.readOnly)
+            // 本物の statfs と同じく f_mntonname は realpath 側（/var → /private/var）にする
+            if let info = inspector.infos[path] {
+                let real = SystemMountInspector.realPath(path) ?? path
+                inspector.infos[path] = MountInfo(
+                    mountOnName: real, mountFromName: info.mountFromName, fsTypeName: info.fsTypeName,
+                    readOnly: info.readOnly, freeBytes: info.freeBytes)
+            }
             if !options.observable {
                 inspector.infos = [:]
+            }
+            if let parent = options.statfsMountOnName {
+                inspector.infos[path] = MountInfo(
+                    mountOnName: parent, mountFromName: "/dev/disk3s1", fsTypeName: "apfs", readOnly: false,
+                    freeBytes: 500_000_000_000)
             }
             recordingSleeper = RecordingSleeper()
             let outcomes =
@@ -234,6 +248,19 @@ struct IngestServiceTests {
         #expect(observation.freeBytes == nil)
     }
 
+    @Test("statfs の値がマウント点のものでなければ観測に載せない（親の FS を観測しない）")
+    func parentFileSystemIsNotObserved() async throws {
+        var options = Options()
+        options.statfsMountOnName = "/"
+        let h = try Harness(options)
+        #expect(await h.service.scanNow() == 1)
+        let snapshot = try #require(await h.service.latestSnapshot())
+        #expect(snapshot.devices == [:])
+        #expect(snapshot.unavailable == [:])
+        #expect(h.sink.lines.contains { $0.hasSuffix("DEBUG volume_skipped name=DJIMIC3 reason=not_a_mount_point") })
+        #expect(h.inboxFileCount() == 0)
+    }
+
     @Test("再マウントに失敗しても取り込みは続ける（記録の保護）")
     func remountFailureStillIngests() async throws {
         var options = Options()
@@ -312,6 +339,8 @@ struct IngestServiceTests {
         // アンマウントとマウントの 2 通知。届くまで再マウントの中で待つ
         options.onRemount = {
             guard once.first() else { return }
+            // 購読が登録されるまで待つ（先に send() すると失われる）
+            _ = await IngestServiceTests.waitUntil { await events.subscriberCount > 0 }
             events.send()
             events.send()
             try? await Task.sleep(for: .milliseconds(300))
@@ -504,7 +533,9 @@ struct IngestServiceTests {
                 await Self.settled(service, generation: 1)
             })
         let updates = await service.updates()
-        h.events.send()
+        let events = h.events
+        #expect(await Self.waitUntil { await events.subscriberCount > 0 })
+        events.send()
         let reached = await withTaskGroup(of: Bool.self) { group in
             group.addTask {
                 for await _ in updates where await service.latestSnapshot()?.generation == 2 { return true }

@@ -272,9 +272,11 @@ for device in detection.devices:                                   // 名前の�
                || !DeviceDetector.nameMatchesVolume(device.deviceID, volumeName: deps.inspector.volumeName(path: newPath)):
                 recordSkip(name: device.deviceID, reason: .mountNameMismatch, errno: nil, …); continue   // 規則 8 の再判定
         case .failed(let reason): log WARNING remount_failed name=<deviceID> reason=<reason>   // 取り込みは続ける（記録の保護）
-    if !deps.inspector.isMountPoint(path: mountPath):              // 再マウントの途中で外れた等。親の FS を観測しない（PLAN §8.1）
+    info = deps.inspector.mountInfo(path: mountPath)              // statfs は 1 回だけ。この値を判定にも観測にも使う
+    isMountPoint = info.map { $0.mountOnName == SystemMountInspector.realPath(mountPath) }
+                   ?? deps.inspector.isMountPoint(path: mountPath)   // statfs が取れなければ規則 4 の判定だけ（観測値は nil）
+    if !isMountPoint:                                              // 再マウントの途中で外れた等。親の FS を観測しない（PLAN §8.1）
         log DEBUG volume_skipped name=<deviceID> reason=not_a_mount_point; continue
-    info = deps.inspector.mountInfo(path: mountPath)
     readOnly = info?.readOnly                                      // 観測値。試行の成否から推論しない（DEL-31）
     if remounted && readOnly != true: log WARNING remount_failed name=<deviceID> reason=still_writable
     result = await ingestDevice(deviceID: device.deviceID, mountPath: mountPath, config: config)   // T-14
@@ -411,7 +413,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 
 ### 5.4 `IngestServiceTests.swift`（`@Suite("IngestService の走査", .serialized)`）
 
-共通の準備: `<tmp>/Volumes` に `FakeVolume`（T-14 の既定の木。mtime は古い）、`FakeMountInspector.mounted([<tmp>/Volumes/DJIMIC3], readOnly: false)`、
+共通の準備: `<tmp>/Volumes` に `FakeVolume`（T-14 の既定の木。mtime は古い）、`FakeMountInspector.mounted([<tmp>/Volumes/DJIMIC3], readOnly: false)`（`infos` の `mountOnName` は本物の statfs と同じく realpath 側（`/var` → `/private/var`）に置き換える。走査はこの値を realpath と比べる）、
 `FakeRemounter(outcomes: [.alreadyReadOnly])`、`CoexistenceGuard(runner: ScriptedProcessRunner(results: [.exited(113)]), uid: 501)`、`FakeMountEventSource()`、
 `RecordingSleeper`、`FixedClock`、`Store`（一時ディレクトリ）、`configProvider` は既定の設定（`mountMode = "ro"`）を返す。`volumesRoot` は `<tmp>/Volumes`（5.0）。
 
@@ -423,6 +425,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `readOnlyIsObservedNotInferredFromSuccess` / 「再マウントが成功しても観測が rw なら偽で still_writable」 | remounter `.remounted(同じパス)`、readOnly 偽 | `readOnly == false`、WARNING `remount_failed name=DJIMIC3 reason=still_writable` |
 | `rwModeStillObserves` / 「rw でも観測する」 | `mountMode = "rw"`、readOnly 真 | `readOnly == true` |
 | `unobservableReadOnlyIsNil` / 「statfs が取れなければ readOnly は nil（偽にしない）」 | `infos` を空にし `mountPoints` だけ登録 | `readOnly == nil`、`freeBytes == nil` |
+| `parentFileSystemIsNotObserved` / 「statfs の値がマウント点のものでなければ観測に載せない（親の FS を観測しない）」 | `mountPoints` は登録したまま、`infos[path]` の `mountOnName` を `/`（apfs・rw・空き 500 GB）にする（statfs の間に外れた状態） | generation 1、`devices == [:]`、`unavailable == [:]`、DEBUG `volume_skipped name=DJIMIC3 reason=not_a_mount_point`、inbox は空 |
 | `remountFailureStillIngests` / 「再マウントに失敗しても取り込みは続ける（記録の保護）」 | `.failed("mount_failed")` | inbox に 2 ファイル |
 | `zeroDevicesIsEmptyNotUnknown` / 「0 台なら devices が空（DEL-32）」 | `<tmp>/Volumes` を空 | generation 1、`devices == [:]`、`unavailable == [:]` |
 | `emptyDeviceIsObserved` / 「録音 0 件のデバイスも空の観測として載せる（DEV-19）」 | フォルダだけ | `devices["DJIMIC3"]?.relpaths == []` |
@@ -461,6 +464,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `alreadyReadOnlyImageIsNotUnmounted` / 「読み取り専用で attach したイメージは再マウントしない」 | `disk.reattach(readOnly: true)`、runner は `ScriptedProcessRunner` | `.alreadyReadOnly`、`recorded == []` |
 
 - `-mountPoint` を付けた再マウントで mountpoint のディレクトリが残るか（DiskArbitration が消すか）は P0-02・P0-10 で確かめ、結果に合わせてこのテストの準備（ディレクトリの作り直しの要否）を直す。直した内容を PR に書く
+- P0-02 でディスクイメージ（/Volumes の外）は、アンマウント後もマウント点のディレクトリが残った（20/20。`docs/POC.md` 章 3）ので準備は変更していない。使用中の拒否（dissented）が実機で 20 回中 2 回あり、`realRemountMakesItReadOnly` が不安定になりうる
 
 ### 5.6 `ConfigEffectPending.swift`（PolicyTests。T-09 §9）
 
@@ -473,6 +477,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `DiskutilRemounter` の「既に ro なら何もしない」を消す | `alreadyReadOnlyDoesNotUnmount` |
 | snapshot の `readOnly` を再マウントの成否から決める（`.remounted` なら真） | `readOnlyIsObservedNotInferredFromSuccess` |
 | `readOnly` の観測が取れないとき `false` を入れる | `unobservableReadOnlyIsNil` |
+| 走査の中のマウント点の判定を `isMountPoint` と `mountInfo` の 2 回の statfs に戻す（判定に使った値と観測に使う値が別になる） | `parentFileSystemIsNotObserved` |
 | `connectEpoch` を前回の snapshot を見ずに「今回 1 台以上なら +1」にする | `connectEpochRisesOnZeroToSome`（`[1, 2, 2, 3]` になる） |
 | 走査中の `requestScan()` で新しい走査を並べて起こす（まとめない） | `noZeroDeviceSnapshotDuringRemount` |
 | `scanNow()` の目標を `startedScans`（今の走査）にする | `scanNowWaitsForAScanStartedAfterTheCall` |
@@ -515,4 +520,4 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 3. `MountEvent`・`MountEventSource`・`WorkspaceMountEventSource` を足し、`IngestDependencies` に `remounter` と `mountEvents` を足す（`volumesRoot` の後）→ 形を変えて 00-api-map に反映済み（2026-09-18）: `MountEventSource.events()` は `AsyncStream<Void>`（`MountEvent` は採用されず、本文から外した）、置き場所は `Remounter.swift`、`remounter`・`mountEvents` は `inspector` の後。**`WorkspaceMountEventSource`（`Bootstrap` が注入する本番の実装）は地図に無いので追記が要る**
 4. `IngestService.updates()` が流す契機を「公開・状態の変化・1 本のコピー」と定める
 5. `IngestState` の 4 値（`idle / scanning / coexistenceBlocked / disabled`）を確定する → 00-api-map に反映済み（2026-09-18。置き場所は `IngestService.swift`）
-6. `DiskImageVolume` と `FakeVolume` は T-07 が作る（00-api-map §15）→ 本チケットの `DiskImageVolume` を外し、T-07 の型への extension（`uniqueName()`・`node`）だけにした
+6. `DiskImageVolume` と `FakeVolume` は T-07 が作る（00-api-map §15）→ 本チケットの `DiskImageVolume` を外し、T-07 の型への extension（`uniqueName()`・`node`）だけにした。**00-api-map §15 か §16 に T-15 の extension（`DiskImageVolume.uniqueName()`・`node`）を追記する**（地図は本チケットでは編集しない）

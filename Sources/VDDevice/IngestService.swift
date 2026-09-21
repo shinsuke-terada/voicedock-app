@@ -396,13 +396,18 @@ extension IngestService {
                 }
             }
             // 再マウントの途中で外れた等。親の FS を観測しない（PLAN §8.1）
-            if !deps.inspector.isMountPoint(path: mountPath) {
+            // statfs は 1 回だけ。その f_mntonname が realpath と一致したときだけ同じ値を観測に使う（間で外れたら親の FS の値になる）。
+            // statfs が取れなければ規則 4 の判定だけを行い、観測値は nil にする（DEL-32）
+            let info = deps.inspector.mountInfo(path: mountPath)
+            let isMountPoint =
+                info.map { $0.mountOnName == SystemMountInspector.realPath(mountPath) }
+                ?? deps.inspector.isMountPoint(path: mountPath)
+            if !isMountPoint {
                 deps.log.debug(
                     .volumeSkipped,
                     [(.name, .string(device.deviceID)), (.reason, .string(DetectionReason.notAMountPoint.rawValue))])
                 continue
             }
-            let info = deps.inspector.mountInfo(path: mountPath)
             // 観測値。試行の成否から推論しない（DEL-31）
             let readOnly = info?.readOnly
             if remounted && readOnly != true {
