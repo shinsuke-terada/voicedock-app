@@ -761,6 +761,29 @@ struct ReaperBench {
 | 19 | `ProcessedLog.contains` の `unreadable` を `false` に倒す（fail-open） | （直接の検査が無い。`state/` を `chmod 0o000` にして `processedLines()` が読めない舞台で `nd39PlainDirectoryIsNotAMountPoint` が `replayed` にならないことを確かめるテストを足すか、レビュー項目として PR に書く） |
 | 20 | `ReaperBench` の手順 2（`<HOME>/bin` への複製）を消す | 層 R1・R3 の全テスト（exit 3 になる） |
 
+### 6.1 実施結果（T-37 の実装時。コミット後の清潔な状態で 1 項目ずつ壊し、`git checkout --` で戻した。層 R1 だけ）
+
+| # | 落ちたテスト |
+|---|---|
+| 1 | ND-40 ×2、RV-00 symlink・別の --home・--home が無い（5 本） |
+| 2 | 最初は落ちなかった（`nd40BundledReaperDoesNothing` は一致の検査でも弾かれる）→ `rv00HomeInsideABundleIsRefused` を足して落ちた |
+| 3 | `missingConfIsInvalid`（**実機が挿さったまま行ってしまった**。この変異は VOLUMES_ROOT を `/Volumes` にし、当時の舞台の deviceID は DJIMIC3 だったので reaper は実機を開いた。対象のフォルダ `TX_MIC001_20260912_090000` が実機に無く `target_missing` で止まり何も消えていない。以後、舞台の deviceID を VDT0037 にした） |
+| 4 | `nd22Lock1FalseTouchesNothing` |
+| 5 | `aHeldLockStopsTheReaper` |
+| 6 | 最初は落ちなかった（中の request_id が既定のままだと RV-02b が代わりに弾く）→ 中の request_id を stem にして `nd38BadFileNamesGoToRejected` が落ちた |
+| 7 | `nd38InnerRequestIDMismatchGoesToRejected`、`rv02bNonStringRequestIDGoesToRejected` |
+| 8 | `replayedDoesNotOverwriteAnExistingResult` |
+| 9 | `nd44PartkeyMismatchIsRefused`、`nd44DeviceIDMismatchIsRefused` |
+| 10・12・13 | **未実施**（層 R3。ディスクイメージが要る。実機を抜いてから `make test-disk` で利用者が行う） |
+| 11 | `rv06AbsentDeviceLeavesTheRequest` |
+| 14 | `nonASCIINamesAreProcessedInByteOrder`（ASCII の名前の `namesAreProcessedInByteOrder` は落ちない） |
+| 15 | `sigtermStopsBetweenRequests` |
+| 16 | `detail` を見る層 R1 の 20 本（RV-03 の 12 本・ND-27・ND-39・ND-44 ×2・RV-06 不正な device_id・RV-04 fail-closed・対照 2 本） |
+| 17 | `valuesAreQuoted`、`nonASCIINamesAreProcessedInByteOrder` |
+| 18 | 最初は落ちなかった（5 MiB ちょうどの詰め物では `>` と `>=` のどちらでも回る）→ `theLogDoesNotRotateAtExactlyFiveMiB` を足して落ちた |
+| 19 | `rv04UnreadableProcessedLogIsFailClosed`（足したテスト） |
+| 20 | 舞台を使う層 R1 の 53 本すべて（`ReaperLog の行` の 3 本だけが緑） |
+
 ## 7. 受け入れ条件
 
 - [ ] `Sources/voicedock-reaper/` の import が Foundation・Darwin・Synchronization・VDContract だけ（PT-07・PT-15 が通る）
