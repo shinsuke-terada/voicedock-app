@@ -10,6 +10,7 @@ import VDCore
 struct RawNoteGoldenTests {
     enum GoldenInputError: Error {
         case unknownFieldType(String)
+        case notABool(String)
     }
 
     func zone(_ item: GoldenCase) throws -> ZonedTime {
@@ -32,7 +33,8 @@ struct RawNoteGoldenTests {
         case "i":
             return (key, .int(try #require(typed.last?.intValue)))
         case "b":
-            guard let flag = typed.last?.boolValue else { throw GoldenInputError.unknownFieldType(type) }
+            // Bool? は #require で曖昧になるので guard で取り出す
+            guard let flag = typed.last?.boolValue else { throw GoldenInputError.notABool(key) }
             return (key, .bool(flag))
         case "n":
             return (key, .null)
@@ -110,8 +112,10 @@ struct RawNoteGoldenTests {
         case "rawFolder":
             let actual = RawNote.folder(config: config.obsidian, day: try day(item))
             GoldenAssert.matches(actual, group: item.group, name: item.name)
+        case "daily", "dailyFolder":
+            return  // T-27 の goldenDailyFilename が確かめる
         default:
-            return  // daily / dailyFolder は T-27 の goldenDailyFilename が確かめる
+            Issue.record("未知の kind: \(item.testDescription)")
         }
     }
 

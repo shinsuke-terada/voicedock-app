@@ -3,7 +3,7 @@ import Foundation
 import VDCore
 import Yams
 
-public enum FrontmatterValue: Sendable, Equatable {
+public enum FrontmatterValue: Sendable {
     case string(String)
     case bool(Bool)
     case int(Int)

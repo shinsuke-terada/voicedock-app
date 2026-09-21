@@ -143,7 +143,7 @@ enum PyStr {
 import Foundation
 import Yams
 
-public enum FrontmatterValue: Sendable, Equatable {
+public enum FrontmatterValue: Sendable {
     case string(String)
     case bool(Bool)
     case int(Int)
@@ -470,8 +470,9 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 
 ## 8. SPEC の変更
 
-- `docs/SPEC.md` に SN-1〜SN-9 の表（PLAN §8.6 の表の写し。ID が先頭の列）を足し、SPEC 同期テストの対象に SN を加える（`SanitizeTests` の表示名 `SN-n` と突き合わせる）
-- **（実装時の注記・利用者の判断待ち）** T-26 の PR ではこれを行っていない。理由: (1) PLAN §10.3 の SPEC 同期の表の対象（状態・遷移・復旧写像・エラーコード・CV・ND・RV・DR・ログイベント）に SN が無い、
+なし。
+
+- （実装時に変更）当初は「`docs/SPEC.md` に SN-1〜SN-9 の表を足し、SPEC 同期テストの対象に SN を加える」と書いていたが、上位の PLAN に合わせて外した。理由: (1) PLAN §10.3 の SPEC 同期の表の対象（状態・遷移・復旧写像・エラーコード・CV・ND・RV・DR・ログイベント）に SN が無い、
   (2) `docs/SPEC.md` は `tools/spec/make-spec.py` の生成物で、SN を足すには make-spec.py・`SpecDocument`（TestSupport）・`SpecIDKind`・`TestNameIndex.pattern`・`SpecCoverage` の変更が要り、どれも §3「作るもの」に無い（T-05 の持ち物）。
   いまの `TestNameIndex.pattern` は SN を拾わないので、表示名 `SN-n` は SPEC 同期に違反しない。SN を SPEC 同期に加えるなら、PLAN §10.3 を直したうえで別の issue にする
 
@@ -484,4 +485,6 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 - `VDNotes`: `Frontmatter` に定数（`sessionKeyField` など 5 個）と `stringList(_:_:)` を追加（T-27・T-28・T-36 が同じ名前を使うため）→ 00-api-map に反映済み（2026-09-18）。名前は地図の `keySessionKey`・`keyRecordingKeys`・`keyFailedParts`・`keySkippedParts`・`keyType` に合わせた（`delimiter` は internal）
 - `RawNote` に `noteType` / `sourceLabel` / `intro` / `title(_:)` の定数と関数を追加（テストと T-29 の突き合わせ用）→ 00-api-map に反映済み（2026-09-18）
 - `RawPart.zone` は並べ替えのための `parseISO` にだけ使う。`###` の時刻は started_at の固定オフセットで計算する（DST のある地域で voicedock と一致させるため）→ 00-api-map に反映済み（2026-09-18）。PLAN §5.7 に合わせ `ZonedTime(fixedOffsetSeconds:)` で描く形に直した
-- （実装時・未反映）`FrontmatterValue` は §4.5 のとおり `Sendable, Equatable` で作った。00-api-map §9 の行は `Sendable` だけなので、`Equatable` を足す（テストと T-27 の比較用。実装に不可欠ではない）
+- （実装時）§4.5 の `FrontmatterValue` は `Sendable, Equatable` だったが、00-api-map §9 は `Sendable` だけで、使い手も無いので `Sendable` にそろえた（地図の変更は要らない）
+- （実装時・未反映）`Sanitize.fallbackName` と `Sanitize.reservedNames`（§4.2 の public 定数）が 00-api-map §9 の Sanitize の行にも §16 にも無い。§9 の行に足す（実装に不可欠ではない）
+- （実装時・利用者に確認）`recordingKeys(ofFile:)` は voicedock の `read_text(encoding="utf-8")` と違い、改行を統一しない。そのため `---\r\n` で始まる CRLF のノートは `[]` になる（削除が起きない側への差）。PLAN 付録 D の X 項目に無い差分なので、意図した差分として足すかどうかを決める

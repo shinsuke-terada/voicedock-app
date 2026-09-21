@@ -40,7 +40,8 @@ public enum RawNote {
                 let a = sortKey(lhs.element)
                 let b = sortKey(rhs.element)
                 if a.0 != b.0 { return a.0 < b.0 }
-                if a.1 != b.1 { return precedes(a.1, b.1) }
+                if precedes(a.1, b.1) { return true }
+                if precedes(b.1, a.1) { return false }
                 return lhs.offset < rhs.offset
             }
             .map(\.element)
