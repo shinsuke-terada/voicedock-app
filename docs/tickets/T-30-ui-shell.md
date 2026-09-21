@@ -179,7 +179,7 @@ enum Bootstrap {
         clock: clock, sleeper: TaskSleeper(), zone: zone,
         log: log.withCategory("device"), volumesRoot: Contract.volumesRoot))
     ```
-    `static let useMountPoint = false`（P0-02 の結果で決める値。T-15 §マージ後）
+    `static let useMountPoint = false`（P0-02 で確定。実機では `-mountPoint` が使えない。`docs/POC.md` 章 3）
 12. Worker（`verificationCache` は 14 のモデルと共有するので先に名前を付ける）:
     ```swift
     let verificationCache = ModelVerificationCache()
