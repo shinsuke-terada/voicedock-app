@@ -72,7 +72,7 @@ struct VaultIndexTests {
         let temp = try TempDirectory()
         try note(temp.url, "Daily/Voice/RawNotes/x.md")
         try note(temp.url, "Daily/Voice/Raw/y.md")
-        let index = build(temp.url, exclude: ["/Daily/Voice/Raw/"])
+        let index = build(temp.url, exclude: ["Daily/Voice/Raw"])
         #expect(index.contains("x"))
         #expect(!index.contains("y"))
     }
