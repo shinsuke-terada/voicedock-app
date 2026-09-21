@@ -35,10 +35,15 @@ public struct HomeLayout: Equatable, Sendable {
     /// root 配下なら root からの相対 POSIX パス（先頭の "/" 無し）。配下でなければ nil。
     /// realpath はしない（DB に保存する相対パスを作るための関数で、封じ込めの検査は SafeUnlink が行う）。
     public func relativePath(of url: URL) -> String? {
-        let r = root.standardizedFileURL.path
-        let p = url.standardizedFileURL.path
+        let r = Self.withoutTrailingSlash(root.standardizedFileURL.path(percentEncoded: false))
+        let p = Self.withoutTrailingSlash(url.standardizedFileURL.path(percentEncoded: false))
         guard p.hasPrefix(r + "/") else { return nil }
         return String(p.dropFirst(r.count + 1))
+    }
+
+    /// ディレクトリの URL の `path(percentEncoded: false)` は末尾に "/" が付くので、比べる前に落とす（"/" だけのときはそのまま）。
+    private static func withoutTrailingSlash(_ path: String) -> String {
+        path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
     }
 
     /// root.appendingPathComponent(relative)

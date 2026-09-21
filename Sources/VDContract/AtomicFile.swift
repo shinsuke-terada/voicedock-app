@@ -11,7 +11,8 @@ public enum AtomicFile {
         _ data: Data, to url: URL, permissions: mode_t = 0o644, verifyReadBack: Bool = false
     ) throws(AtomicFileError) {
         let tmp = tmpURL(for: url)
-        let fd = open(tmp.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, permissions)
+        let fd = open(
+            tmp.path(percentEncoded: false), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, permissions)
         if fd < 0 {
             throw .open(errno: errno)
         }
@@ -32,12 +33,13 @@ public enum AtomicFile {
             discard(tmp)
             throw .readBackMismatch
         }
-        if rename(tmp.path, url.path) != 0 {
+        if rename(tmp.path(percentEncoded: false), url.path(percentEncoded: false)) != 0 {
             let code = errno
             discard(tmp)
             throw .rename(errno: code)
         }
-        let dirFD = open(url.deletingLastPathComponent().path, O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        let dirFD = open(
+            url.deletingLastPathComponent().path(percentEncoded: false), O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         if dirFD >= 0 {
             _ = fsync(dirFD)
             close(dirFD)
@@ -51,12 +53,12 @@ public enum AtomicFile {
 
     /// 自分の tmp だけを消す（失敗は無視する）。
     private static func discard(_ tmp: URL) {
-        _ = unlink(tmp.path)
+        _ = unlink(tmp.path(percentEncoded: false))
     }
 
     /// tmp を読み直し、SHA256 が data と一致するか。開けない・読めないときも偽。
     private static func readBackMatches(_ tmp: URL, _ data: Data) -> Bool {
-        let fd = open(tmp.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let fd = open(tmp.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
         guard fd >= 0 else { return false }
         defer { close(fd) }
         guard case .success(let read) = PosixIO.readAll(fd: fd, limit: data.count + 1) else { return false }

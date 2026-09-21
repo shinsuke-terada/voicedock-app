@@ -120,6 +120,8 @@ struct HomeLayoutTests {
 
     @Test("本番の場所")
     func productionPath() {
-        #expect(HomeLayout.production().root.path == NSHomeDirectory() + "/Library/Application Support/VoiceDock")
+        #expect(
+            HomeLayout.production().root.path(percentEncoded: false) == NSHomeDirectory()
+                + "/Library/Application Support/VoiceDock/")
     }
 }
