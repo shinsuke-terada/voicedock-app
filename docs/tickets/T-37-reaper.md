@@ -659,7 +659,7 @@ struct ReaperBench {
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `nd38BadFileNamesGoToRejected` | `ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ` | 名前 `evil.json`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3..json`（`..` を含む。`..json` は `.` で始まり走査が無視するので使わない）・`20260912T090000Z-a5d046dce76cfedc-A1B2C3.json`（大文字 16 進）・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.JSON`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.json.bak`（パラメタ化） | exit 0、`rejected() == [その名前]`、`results() == []`、`processedLines() == []`、外へ書かない、`request_rejected file=<名前> reason=malformed_request_id`、デバイス上のファイルが在る |
+| `nd38BadFileNamesGoToRejected` | `ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ` | 名前 `evil.json`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3..json`（`..` を含む。`..json` は `.` で始まり走査が無視するので使わない）・`20260912T090000Z-a5d046dce76cfedc-A1B2C3.json`（大文字 16 進）・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.JSON`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.json.bak`（パラメタ化）。**中の `request_id` はファイル名の stem（`.json` で終わらない名前は名前そのもの）にする**（既定の request_id のままだと RV-02b が代わりに弾き、§6 の 6 で落ちなかった） | exit 0、`rejected() == [その名前]`、`results() == []`、`processedLines() == []`、外へ書かない、`request_rejected file=<名前> reason=malformed_request_id`、デバイス上のファイルが在る |
 | `nd38InnerRequestIDMismatchGoesToRejected` | `ND-38 [R1] JSON の request_id がファイル名と違えば rejected/ へ（RV-02b）` | 正しい名前、中の `request_id` を `../evil` に | 同上。加えて `<HOME>/queue/evil.json` が無い |
 | `rv02bNonStringRequestIDGoesToRejected` | `RV-02b request_id が文字列でなければ rejected/ へ` | 中の `request_id` を `1` に | 同上 |
 | `nonJSONNamesGoToRejected` | `.json` で終わらない名前は rejected/ へ | 名前 `README` | 同上 |

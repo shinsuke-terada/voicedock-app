@@ -92,7 +92,9 @@ struct ReaperQueueTests {
         ])
     func nd38BadFileNamesGoToRejected(_ name: String) throws {
         let bench = try ReaperBench()
-        try bench.writeRequest(fileName: name)
+        // 中の request_id はファイル名の stem と同じにする（RV-02b が代わりに弾かず、RV-02a だけが弾く。TEST-19）
+        let stem = name.hasSuffix(".json") ? String(name.dropLast(5)) : name
+        try bench.writeRequest(requestID: stem, fileName: name)
         let run = try bench.run()
         Self.expectRejected(bench, run, name: name)
     }
