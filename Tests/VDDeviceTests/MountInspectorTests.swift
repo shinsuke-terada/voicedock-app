@@ -12,6 +12,11 @@ struct MountInspectorTests {
         #expect(SystemMountInspector().isMountPoint(path: "/"))
     }
 
+    @Test("/. も realpath を通すとマウント点")
+    func dotRootIsAMountPointAfterRealpath() {
+        #expect(SystemMountInspector().isMountPoint(path: "/."))
+    }
+
     @Test("一時ディレクトリはマウント点でない")
     func tempDirectoryIsNotAMountPoint() throws {
         let tmp = try TempDirectory()

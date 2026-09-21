@@ -251,6 +251,13 @@ struct DeviceDetectorTests {
         #expect(f.detect().skipped == [SkippedVolume(name: "DJIMIC3", reason: .mountNameMismatch, listingError: nil)])
     }
 
+    @Test("規則 8: 名前とボリューム名はスカラー列で比べ、nil は不一致（純粋関数）")
+    func nameMatchesVolumeComparesScalars() {
+        #expect(!DeviceDetector.nameMatchesVolume("が", volumeName: "か\u{3099}"))
+        #expect(!DeviceDetector.nameMatchesVolume("DJIMIC3", volumeName: nil))
+        #expect(DeviceDetector.nameMatchesVolume("DJIMIC3", volumeName: "DJIMIC3"))
+    }
+
     @Test("規則 9: `:` を含む名前は invalid_device_id")
     func colonInNameIsInvalidDeviceID() throws {
         var f = try Fixture()

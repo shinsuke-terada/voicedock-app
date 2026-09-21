@@ -317,6 +317,7 @@ public actor ScriptedProcessRunner: ProcessRunning {
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `rootIsAMountPoint` / 「/ はマウント点」 | `SystemMountInspector().isMountPoint(path: "/")` | 真 |
+| `dotRootIsAMountPointAfterRealpath` / 「/. も realpath を通すとマウント点」 | `isMountPoint(path: "/.")`（realpath で `/` になる。`f_mntonname` は `/`） | 真 |
 | `tempDirectoryIsNotAMountPoint` / 「一時ディレクトリはマウント点でない」 | `TempDirectory()` の中のディレクトリ | 偽 |
 | `mountInfoOfRootIsObserved` / 「/ の statfs が取れる」 | `mountInfo(path: "/")` | nil でない、`mountOnName == "/"`、`freeBytes > 0` |
 | `mountInfoOfMissingPathIsNil` / 「無いパスは観測できない（nil）」 | `/nonexistent-<uuid>` | nil |
@@ -358,6 +359,7 @@ public actor ScriptedProcessRunner: ProcessRunning {
 | `invalidDateFileDoesNotCount` / 「規則 6: 日付が不正なファイル名は数えない」 | 直下に `TX00_MIC001_20260230_120950_orig.wav` だけ | `.noRecordings` |
 | `nameMismatchIsSkipped` / 「規則 8: ボリューム名と違えば mount_name_mismatch（` 1` 付き）」 | エントリ `DJIMIC3 1`（マウント点）、`volumeNames` は `DJIMIC3` | `.mountNameMismatch` |
 | `missingVolumeNameIsMismatch` / 「規則 8: ボリューム名が取れなければ mount_name_mismatch」 | `volumeNames` を空 | `.mountNameMismatch` |
+| `nameMatchesVolumeComparesScalars` / 「規則 8: 名前とボリューム名はスカラー列で比べ、nil は不一致（純粋関数）」 | `nameMatchesVolume("が", volumeName: "か\u{3099}")`・`nameMatchesVolume("DJIMIC3", volumeName: nil)`・`nameMatchesVolume("DJIMIC3", volumeName: "DJIMIC3")` | 偽・偽・真（NFC と NFD を同じとみなさない。00-api-map §0） |
 | `colonInNameIsInvalidDeviceID` / 「規則 9: `:` を含む名前は invalid_device_id」 | エントリ `DJI:MIC`（マウント点・ボリューム名とも `DJI:MIC`） | `.invalidDeviceID` |
 | `spaceInNameIsValid` / 「規則 9: 空白は可（NO NAME）」 | エントリ `NO NAME` | 検出 |
 | `dotEntryIsSilentlyIgnored` / 「`.` で始まるエントリは skipped にも入らない」 | `.Trashes` をマウント点扱いで置く | skipped に無い |
@@ -394,7 +396,8 @@ public actor ScriptedProcessRunner: ProcessRunning {
 | 規則 6 で `entryKind` の代わりに `stat`（symlink を辿る）を使う | `symlinkToFolderDoesNotCount` |
 | 規則 3 と規則 2 の順序を入れ替える | `ruleOrderIsFixed` |
 | 規則 8（`nameMatchesVolume`）で `volumeName` が nil のとき一致とみなす | `missingVolumeNameIsMismatch` |
-| `isMountPoint` で realpath を使わずに比べる | `rootIsAMountPoint` は通るが、T-15 の `.diskImage` テスト（`diskImageIsDetectedAndIngested`）が落ちる（手元で `make test-disk`） |
+| `isMountPoint` で realpath を使わずに比べる | `dotRootIsAMountPointAfterRealpath`（`rootIsAMountPoint` は通る）。加えて T-15 の `.diskImage` テスト（`diskImageIsDetectedAndIngested`）が落ちる（手元で `make test-disk`） |
+| `nameMatchesVolume` の `PyText.scalarsEqual` を `==` に変える | `nameMatchesVolumeComparesScalars` |
 | `CoexistenceGuard` で `.exited(113)` も真にする | `nonZeroMeansNotLoaded` |
 
 ## 7. 受け入れ条件
