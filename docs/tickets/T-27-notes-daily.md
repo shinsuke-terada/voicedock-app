@@ -104,17 +104,17 @@ public enum DailyNote {
 **`rawLinkName`**: `rawOutputPath` が nil なら `RawNote.baseName(config:day:)`。そうでなければ最後の `/` より後（`/` が無ければ全体）を取り、スカラー列が `.md` で終われば取り除く
 （例 `Daily/Voice/Raw/20260829/2026-08-29 raw (2).md` → `2026-08-29 raw (2)`。voicedock は常に基本名だった。X-15）
 
-**`recorded(seconds)`**（daily.py:364-369）: nil・負・`isFinite` でない → `"00:00:00"`。そうでなければ `t = Int(seconds)`（0 方向へ切り捨て）、
+**`recorded(seconds)`**（daily.py:364-369）: nil・負・`isFinite` でない・`Int(exactly: seconds.rounded(.towardZero))` が nil（Int に収まらない。`Int(seconds)` はトラップするので PT-19 の趣旨で避ける。T-27 の実装で判明）→ `"00:00:00"`。そうでなければ `t = Int(exactly: seconds.rounded(.towardZero))`（0 方向へ切り捨て）、
 `String(format: "%02d:%02d:%02d", t / 3600, t / 60 % 60, t % 60)`（時は 2 桁を超えうる: `90061.7` → `25:01:01`、`34880.9` → `09:41:20`）
 
 **`tags(analysisTags:defaults:)`**（daily.py:343-361）:
 ```text
 values = defaults + (analysisTags ?? [])
-seen = Set<String>(); kept = []
+seen = Set<[UInt32]>(); kept = []      // 鍵はスカラー値の列（Swift の String の == は正準等価で比べ、Python の set[str] と違う。T-27 の実装で判明）
 for v in values:
   cleaned = PyText.strip(v)、その後 U+0020 と U+3000 のスカラーを "-" に置換（この 2 つだけ）
   if cleaned.isEmpty { continue }
-  k = PyText.casefold(cleaned); if seen.contains(k) { continue }
+  k = PyText.casefold(cleaned).unicodeScalars.map(\.value); if seen.contains(k) { continue }
   seen.insert(k); kept.append(cleaned)
 return kept
 ```
@@ -173,7 +173,7 @@ return kept
 ```swift
 // Daily ノートの警告行（PLAN §8.6 / NOTE-05。voicedock daily.py:300-340）。欠落を隠さない。SKIPPED に「再試行されます」と書かない。
 public enum DailyWarnings {
-    public static let failedLineTemplate: String    // 下の逐語
+    public static let failedLineTemplate: String    // 下の逐語。本数の位置は `%d`（`String(format:)` で埋める。T-27 の実装で決めた）
     public static let retryAction = "デバイスから採り直してください。"
     public static func lines(failed: [ExcludedPart], skipped: [ExcludedPart]) -> [String]
     public static func displayName(_ code: ErrorCode?) -> String
@@ -186,7 +186,7 @@ public enum DailyWarnings {
 
 `lines` の手順:
 1. `out = []`
-2. `failed` が空でなければ: `"> ⚠ この日の録音のうち \(failed.count) 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"`（`⚠` は U+26A0、その後に半角空白）
+2. `failed` が空でなければ: `String(format: failedLineTemplate, failed.count)`。`failedLineTemplate = "> ⚠ この日の録音のうち %d 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"`（`⚠` は U+26A0、その後に半角空白）
 3. `skipped` が空でなければ:
    - `actionable = skipped.contains { $0.errorCode == nil || !SkipReasons.benign.contains($0.errorCode!) }`（未知のコード・理由なしは操作が要る側）
    - `mark = actionable ? "⚠ " : ""`、`action = actionable ? retryAction : ""`
@@ -553,6 +553,7 @@ tags:
 | `TTL の境界は古い側` | `staleAtBoundary` | `builtAt .seconds(0)`、TTL 300: `now 299` → 新しい、`now 300` → 古い |
 | `builtAt は渡した値` | `builtAtIsGiven` | `build(…, builtAt: .seconds(42)).builtAt == .seconds(42)` |
 | `入れ子まで降りる` | `walksNested` | `a/b/c/Deep.md` → 含む、`scannedDirectories >= 4` |
+| `空の Vault は空の索引` | `emptyVault` | 空のディレクトリ → `names` が空、`scannedDirectories == 1`（TEST-28。T-27 の実装で足した） |
 
 ### 5.5 `LinkPlannerTests.swift`
 
@@ -580,6 +581,7 @@ tags:
 | `上限を超えたタグは #タグ で残す` | `capKeepsTags` | maxLinks 3、`Kept` が索引に在る → tags `["#Kept"]`、dropped に `Kept` |
 | `maxLinks 0` | `zeroMaxLinks` | dailyNote nil、adjacent 空、tags `["#Tag"]`、raw `["[[raw]]"]` |
 | `予算切れの日付は dropped に入れない` | `exhaustedDailyNotDropped` | maxLinks 0 → dropped に `2026-09-12` を含まない、`2026-09-11 Voice` は含む |
+| `タグも Raw も無ければ Raw とタグは空` | `emptyInputs` | tags `[]`・rawNames `[]` → tags・raw・dropped が空、`LinkPlan.empty.counted == 0`（TEST-28。T-27 の実装で足した） |
 
 ### 5.6 `DailyNoteGoldenTests.swift`（`@Suite("DailyNote golden")`）
 
