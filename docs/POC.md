@@ -28,8 +28,8 @@ T-01 に要るのは章 14 の BUNDLE_ID・TEAM_ID・Xcode の版だけなので
 | 章 | P0 | 内容 | 反映先 | 判定 |
 |---|---|---|---|---|
 | 1 | — | ホスト環境 | PLAN §3.3 | ✅ PASS（cmake は T-03 の前に導入する。下記） |
-| 2 | P0-01 | マウント通知・TCC・列挙・システム設定の URL | PLAN §8.1 規則 5、§8.11 DR-11、T-13、T-32 | ⬜ 未実施 |
-| 3 | P0-02 | 読み取り専用での再マウント・パスの変化・`-mountPoint` | PLAN §8.1、T-15 | ⬜ 未実施 |
+| 2 | P0-01 | マウント通知・TCC・列挙・システム設定の URL | PLAN §8.1 規則 5、§8.11 DR-11、T-13、T-32 | ✅ PASS（`access(2)` も EPERM になった。PLAN §8.1 規則 5 の理由の文を直す） |
+| 3 | P0-02 | 読み取り専用での再マウント・パスの変化・`-mountPoint` | PLAN §8.1、T-15 | ✅ PASS（実機 18/20 が ro・パスは 18/18 保持、2 回は使用中で拒否。実機では `-mountPoint` は使えない → `useMountPoint: false`） |
 | 4 | P0-03 | 子プロセスの unlink（ディスクイメージ・実機） | PLAN §8.9.3、RK-01、T-37 | ⬜ 未実施 |
 | 5 | P0-04 | whisper.cpp v1.9.4（Metal）の RTF と JSON の形 | PLAN §8.4、RK-03、T-03、T-17 | ⬜ 未実施 |
 | 6 | P0-05 | AVAudioConverter と ffmpeg の比較 | PLAN §8.3、RK-05、T-16 | ⬜ 未実施 |
@@ -92,11 +92,721 @@ $ security find-identity -v -p codesigning
 
 ## 2. P0-01 マウント通知・TCC・列挙
 
-⬜ 未実施（T-13 の前に【利用者が行う】）
+判定: ✅ PASS
+
+測定日: 2026-09-21（macOS 26.6.2、DJI Mic 3。実機の操作は利用者が行った。アプリ PoCMenuBar は読み取りだけ）
+
+### 1 回目（許可ダイアログが出ることの確認）
+
+`tccutil reset SystemPolicyRemovableVolumes io.github.shinsuke-terada.VoiceDockPoC` → 起動 → 実機を挿す → **許可ダイアログが出た**（利用者は誤って「許可」を選んだ）。
+
+その後 `tccutil reset SystemPolicyRemovableVolumes …` をもう一度実行してから挿し直したが、**ダイアログは出ず最初から読めた**（ログは下）。`SystemPolicyRemovableVolumes` のリセットでは許可が消えなかった。`tccutil reset All <bundle id>` では消えた（3 回目）。
+
+```text
+2026-09-21T22:55:44.594+09:00 launch pid=58340 bundle=io.github.shinsuke-terada.VoiceDockPoC
+2026-09-21T22:55:55.216+09:00 mount /Volumes/DJIMIC3
+2026-09-21T22:55:55.266+09:00   opendir ok
+2026-09-21T22:55:55.271+09:00   access(R_OK)=0
+```
+
+### 拒否と許可（`tccutil reset All io.github.shinsuke-terada.VoiceDockPoC` の後）
+
+利用者の記録: 実機を挿した時刻 22:58:30、ダイアログで「許可しない」を選んだ。その後「システム設定を開く」→ 許可を与える（アプリが再起動した）→ 抜き挿し → 「列挙する」。
+
+```text
+2026-09-21T22:58:27.055+09:00 launch pid=66563 bundle=io.github.shinsuke-terada.VoiceDockPoC
+2026-09-21T22:58:40.551+09:00 mount /Volumes/DJIMIC3
+2026-09-21T22:58:45.243+09:00   opendir errno=1 (Operation not permitted)
+2026-09-21T22:58:45.266+09:00   access(R_OK)=-1 errno=1 (Operation not permitted)
+2026-09-21T22:59:32.843+09:00 open settings -> true
+2026-09-21T23:00:01.142+09:00 launch pid=69228 bundle=io.github.shinsuke-terada.VoiceDockPoC
+2026-09-21T23:00:05.907+09:00 unmount /Volumes/DJIMIC3
+2026-09-21T23:00:10.581+09:00 mount /Volumes/DJIMIC3
+2026-09-21T23:00:10.614+09:00   opendir ok
+2026-09-21T23:00:10.618+09:00   access(R_OK)=0
+2026-09-21T23:00:17.218+09:00 enumerate /Volumes/Macintosh HD access(R_OK)=0 entries=["home", "usr", ".resolve", "bin", "sbin", ".file", "etc", "var", "Library", "System", ".VolumeIcon.icns", "private", ".vol", "Users", "Applications", "opt", "dev", "Volumes", ".nofollow", "tmp"]
+2026-09-21T23:00:17.220+09:00 enumerate /Volumes/DJIMIC3 access(R_OK)=0 entries=[".Spotlight-V100", ".fseventsd", "TX_MIC001_20260915_165730", ".Trashes"]
+```
+
+```text
+$ mount | grep -i djimic
+/dev/disk4 on /Volumes/DJIMIC3 (msdos, local, nodev, nosuid, noowners, noatime, fskit)
+$ diskutil info /Volumes/DJIMIC3 | grep -E "Volume Name|Mount Point|File System Personality|Device Node|Read-Only|Removable|Protocol"
+   Device Node:               /dev/disk4
+   Volume Name:               DJIMIC3
+   Mount Point:               /Volumes/DJIMIC3
+   File System Personality:   MS-DOS FAT32
+   Protocol:                  USB
+   Media Read-Only:           No
+   Volume Read-Only:          No
+   Removable Media:           Removable
+```
+
+根拠:
+- 検出: 挿した時刻 22:58:30（利用者が手で記録。±1 秒程度）→ `mount` 22:58:40.551 で約 10.5 秒。抜き挿しでは `unmount` 23:00:05.907 → `mount` 23:00:10.581 で約 4.7 秒。ほぼ全部がデバイス自体のマウントの時間で、通知は即時に届いている。合格の目安（10 秒）の境界だが、アプリ側で縮められる時間ではないので PASS とする
+- 拒否時: `opendir errno=1 (Operation not permitted)`（EPERM）。ダイアログの応答を待ってから返った（22:58:40 → 22:58:45）
+- 許可後: `opendir ok`、直下に録音フォルダ `TX_MIC001_20260915_165730` が見えた
+- システム設定の URL: `open settings -> true`（開けた。開いた画面の名前は利用者の確認待ち）
+
+所見と反映先:
+- **`access(R_OK)` も拒否時に EPERM（-1）になった。**PLAN §8.1 規則 5 の「`access(2)` は TCC の拒否でも成功するので使わない（DEV-03）」の理由の文は、この OS では成り立たない。**設計（`access` に頼らず `opendir` の列挙で判定する）はそのままで正しい**ので、動作は変えない。PLAN の文を「`access(2)` の結果は OS の版で変わる（macOS 26.6 では EPERM、以前は成功）ので判定に使わない」に直す（P0 の PR で）
+- ファイルシステムは `msdos` を **FSKit**（`fskit`）でマウントしている（macOS 26）。デバイスは `/dev/disk4`（パーティション無しの superfloppy。T-07 の `-layout NONE` と同じ形）
+- 許可をやり直す案内（DR-11・T-32）は `tccutil reset SystemPolicyRemovableVolumes` では足りず、システム設定の「ファイルとフォルダ」で切り替えるのが確実。切り替えるとアプリが再起動した
+- `.Spotlight-V100`・`.fseventsd`・`.Trashes` は macOS が作ったもの（アプリは書いていない）
 
 ## 3. P0-02 読み取り専用での再マウント
 
-⬜ 未実施（T-15 の前に【利用者が行う】）
+判定: ✅ PASS
+
+測定日: 2026-09-21（macOS 26.6.2）。実機の操作は利用者が PoCMenuBar の「ro 再マウント ×20」で行った。各回の手順は P0-poc.md §4 のとおり（`-mountPoint` 付きで試し、失敗したら付けずに再試行。最後に rw へ戻す）。
+
+### 実機（/Volumes/DJIMIC3、/dev/disk4、FAT32 を FSKit でマウント）
+
+```text
+23:03:22.930+09:00 remount20 begin /Volumes/DJIMIC3
+23:03:22.932+09:00 [1] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:23.221+09:00 unmount /Volumes/DJIMIC3
+23:03:23.359+09:00 [1] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:23.359+09:00 [1] after unmount dir exists=false
+23:03:23.429+09:00 [1] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:23.845+09:00 mount /Volumes/DJIMIC3
+23:03:23.845+09:00   opendir ok
+23:03:23.846+09:00   access(R_OK)=0 
+23:03:23.963+09:00 [1] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:23.964+09:00 [1] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:24.016+09:00 unmount /Volumes/DJIMIC3
+23:03:24.168+09:00 [1] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:24.239+09:00 [1] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:24.643+09:00 mount /Volumes/DJIMIC3
+23:03:24.644+09:00   opendir ok
+23:03:24.645+09:00   access(R_OK)=0 
+23:03:24.766+09:00 [1] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:24.767+09:00 [2] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:25.830+09:00 unmount /Volumes/DJIMIC3
+23:03:25.969+09:00 [2] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:25.970+09:00 [2] after unmount dir exists=false
+23:03:26.045+09:00 [2] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:26.458+09:00 mount /Volumes/DJIMIC3
+23:03:26.460+09:00   opendir ok
+23:03:26.461+09:00   access(R_OK)=0 
+23:03:26.584+09:00 [2] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:26.585+09:00 [2] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:26.647+09:00 unmount /Volumes/DJIMIC3
+23:03:26.759+09:00 [2] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:26.829+09:00 [2] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:27.245+09:00 mount /Volumes/DJIMIC3
+23:03:27.246+09:00   opendir ok
+23:03:27.247+09:00   access(R_OK)=0 
+23:03:27.364+09:00 [2] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:27.366+09:00 [3] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:28.444+09:00 unmount /Volumes/DJIMIC3
+23:03:28.591+09:00 [3] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:28.593+09:00 [3] after unmount dir exists=false
+23:03:28.667+09:00 [3] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:29.079+09:00 mount /Volumes/DJIMIC3
+23:03:29.081+09:00   opendir ok
+23:03:29.081+09:00   access(R_OK)=0 
+23:03:29.216+09:00 [3] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:29.217+09:00 [3] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:29.278+09:00 unmount /Volumes/DJIMIC3
+23:03:29.421+09:00 [3] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:29.492+09:00 [3] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:29.910+09:00 mount /Volumes/DJIMIC3
+23:03:29.911+09:00   opendir ok
+23:03:29.912+09:00   access(R_OK)=0 
+23:03:30.045+09:00 [3] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:30.047+09:00 [4] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:31.143+09:00 unmount /Volumes/DJIMIC3
+23:03:31.292+09:00 [4] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:31.293+09:00 [4] after unmount dir exists=false
+23:03:31.369+09:00 [4] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:31.782+09:00 mount /Volumes/DJIMIC3
+23:03:31.783+09:00   opendir ok
+23:03:31.784+09:00   access(R_OK)=0 
+23:03:31.901+09:00 [4] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:31.901+09:00 [4] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:31.955+09:00 unmount /Volumes/DJIMIC3
+23:03:32.099+09:00 [4] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:32.170+09:00 [4] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:32.574+09:00 mount /Volumes/DJIMIC3
+23:03:32.577+09:00   opendir ok
+23:03:32.578+09:00   access(R_OK)=0 
+23:03:32.694+09:00 [4] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:32.695+09:00 [5] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:33.736+09:00 unmount /Volumes/DJIMIC3
+23:03:33.888+09:00 [5] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:33.888+09:00 [5] after unmount dir exists=false
+23:03:33.965+09:00 [5] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:34.402+09:00 mount /Volumes/DJIMIC3
+23:03:34.403+09:00   opendir ok
+23:03:34.404+09:00   access(R_OK)=0 
+23:03:34.540+09:00 [5] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:34.541+09:00 [5] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:34.611+09:00 unmount /Volumes/DJIMIC3
+23:03:34.763+09:00 [5] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:34.844+09:00 [5] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:35.278+09:00 mount /Volumes/DJIMIC3
+23:03:35.279+09:00   opendir ok
+23:03:35.280+09:00   access(R_OK)=0 
+23:03:35.391+09:00 [5] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:35.393+09:00 [6] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:36.544+09:00 unmount /Volumes/DJIMIC3
+23:03:36.688+09:00 [6] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:36.689+09:00 [6] after unmount dir exists=false
+23:03:36.773+09:00 [6] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:37.192+09:00 mount /Volumes/DJIMIC3
+23:03:37.193+09:00   opendir ok
+23:03:37.194+09:00   access(R_OK)=0 
+23:03:37.308+09:00 [6] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:37.309+09:00 [6] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:37.381+09:00 unmount /Volumes/DJIMIC3
+23:03:37.515+09:00 [6] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:37.599+09:00 [6] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:38.033+09:00 mount /Volumes/DJIMIC3
+23:03:38.034+09:00   opendir ok
+23:03:38.035+09:00   access(R_OK)=0 
+23:03:38.143+09:00 [6] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:38.145+09:00 [7] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:39.209+09:00 unmount /Volumes/DJIMIC3
+23:03:39.354+09:00 [7] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:39.355+09:00 [7] after unmount dir exists=false
+23:03:39.440+09:00 [7] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:39.871+09:00 mount /Volumes/DJIMIC3
+23:03:39.872+09:00   opendir ok
+23:03:39.873+09:00   access(R_OK)=0 
+23:03:40.005+09:00 [7] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:40.006+09:00 [7] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:40.079+09:00 unmount /Volumes/DJIMIC3
+23:03:40.221+09:00 [7] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:40.303+09:00 [7] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:40.728+09:00 mount /Volumes/DJIMIC3
+23:03:40.729+09:00   opendir ok
+23:03:40.730+09:00   access(R_OK)=0 
+23:03:40.849+09:00 [7] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:40.851+09:00 [8] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:41.999+09:00 unmount /Volumes/DJIMIC3
+23:03:42.142+09:00 [8] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:42.143+09:00 [8] after unmount dir exists=false
+23:03:42.223+09:00 [8] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:42.653+09:00 mount /Volumes/DJIMIC3
+23:03:42.654+09:00   opendir ok
+23:03:42.654+09:00   access(R_OK)=0 
+23:03:42.787+09:00 [8] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:42.788+09:00 [8] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:42.861+09:00 unmount /Volumes/DJIMIC3
+23:03:43.010+09:00 [8] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:43.093+09:00 [8] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:43.536+09:00 mount /Volumes/DJIMIC3
+23:03:43.537+09:00   opendir ok
+23:03:43.538+09:00   access(R_OK)=0 
+23:03:43.663+09:00 [8] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:43.664+09:00 [9] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:44.760+09:00 unmount /Volumes/DJIMIC3
+23:03:44.910+09:00 [9] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:44.911+09:00 [9] after unmount dir exists=false
+23:03:44.992+09:00 [9] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:45.423+09:00 mount /Volumes/DJIMIC3
+23:03:45.425+09:00   opendir ok
+23:03:45.425+09:00   access(R_OK)=0 
+23:03:45.537+09:00 [9] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:45.538+09:00 [9] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:45.613+09:00 unmount /Volumes/DJIMIC3
+23:03:45.780+09:00 [9] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:45.861+09:00 [9] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:46.287+09:00 mount /Volumes/DJIMIC3
+23:03:46.290+09:00   opendir ok
+23:03:46.290+09:00   access(R_OK)=0 
+23:03:46.434+09:00 [9] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:46.436+09:00 [10] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:47.452+09:00 unmount /Volumes/DJIMIC3
+23:03:47.551+09:00 [10] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:47.552+09:00 [10] after unmount dir exists=false
+23:03:47.632+09:00 [10] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:48.065+09:00 mount /Volumes/DJIMIC3
+23:03:48.065+09:00   opendir ok
+23:03:48.066+09:00   access(R_OK)=0 
+23:03:48.185+09:00 [10] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:48.187+09:00 [10] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:48.256+09:00 unmount /Volumes/DJIMIC3
+23:03:48.361+09:00 [10] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:48.445+09:00 [10] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:48.874+09:00 mount /Volumes/DJIMIC3
+23:03:48.876+09:00   opendir ok
+23:03:48.877+09:00   access(R_OK)=0 
+23:03:48.996+09:00 [10] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:48.998+09:00 [11] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:50.029+09:00 unmount /Volumes/DJIMIC3
+23:03:50.164+09:00 [11] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:50.166+09:00 [11] after unmount dir exists=false
+23:03:50.252+09:00 [11] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:50.674+09:00 mount /Volumes/DJIMIC3
+23:03:50.675+09:00   opendir ok
+23:03:50.676+09:00   access(R_OK)=0 
+23:03:50.792+09:00 [11] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:50.793+09:00 [11] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:50.863+09:00 unmount /Volumes/DJIMIC3
+23:03:51.000+09:00 [11] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:51.080+09:00 [11] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:51.508+09:00 mount /Volumes/DJIMIC3
+23:03:51.510+09:00   opendir ok
+23:03:51.511+09:00   access(R_OK)=0 
+23:03:51.634+09:00 [11] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:51.636+09:00 [12] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:52.762+09:00 unmount /Volumes/DJIMIC3
+23:03:52.896+09:00 [12] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:52.897+09:00 [12] after unmount dir exists=false
+23:03:52.979+09:00 [12] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:53.423+09:00 mount /Volumes/DJIMIC3
+23:03:53.424+09:00   opendir ok
+23:03:53.425+09:00   access(R_OK)=0 
+23:03:53.544+09:00 [12] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:53.545+09:00 [12] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:53.618+09:00 unmount /Volumes/DJIMIC3
+23:03:53.764+09:00 [12] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:53.851+09:00 [12] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:54.280+09:00 mount /Volumes/DJIMIC3
+23:03:54.283+09:00   opendir ok
+23:03:54.284+09:00   access(R_OK)=0 
+23:03:54.426+09:00 [12] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:54.428+09:00 [13] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:55.676+09:00 [13] unmount rc=1 Volume DJIMIC3 on disk4 failed to unmount: dissented by PID 75766 (/bin/bash)
+arent PPID 75765 (/Users/terada/VoiceDock/bin/voicedock-ingest-launcher)
+23:03:55.677+09:00 [14] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:55.924+09:00 unmount /Volumes/DJIMIC3
+23:03:56.057+09:00 [14] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:56.059+09:00 [14] after unmount dir exists=false
+23:03:56.138+09:00 [14] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:56.579+09:00 mount /Volumes/DJIMIC3
+23:03:56.580+09:00   opendir ok
+23:03:56.580+09:00   access(R_OK)=0 
+23:03:56.721+09:00 [14] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:56.721+09:00 [14] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:56.797+09:00 unmount /Volumes/DJIMIC3
+23:03:56.955+09:00 [14] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:57.035+09:00 [14] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:57.474+09:00 mount /Volumes/DJIMIC3
+23:03:57.476+09:00   opendir ok
+23:03:57.476+09:00   access(R_OK)=0 
+23:03:57.600+09:00 [14] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:03:57.601+09:00 [15] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:03:58.639+09:00 unmount /Volumes/DJIMIC3
+23:03:58.772+09:00 [15] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:58.774+09:00 [15] after unmount dir exists=false
+23:03:58.855+09:00 [15] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:03:59.292+09:00 mount /Volumes/DJIMIC3
+23:03:59.292+09:00   opendir ok
+23:03:59.293+09:00   access(R_OK)=0 
+23:03:59.410+09:00 [15] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:03:59.411+09:00 [15] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:03:59.484+09:00 unmount /Volumes/DJIMIC3
+23:03:59.622+09:00 [15] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:03:59.699+09:00 [15] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:00.132+09:00 mount /Volumes/DJIMIC3
+23:04:00.133+09:00   opendir ok
+23:04:00.133+09:00   access(R_OK)=0 
+23:04:00.261+09:00 [15] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:04:00.262+09:00 [16] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:04:01.426+09:00 unmount /Volumes/DJIMIC3
+23:04:01.567+09:00 [16] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:04:01.568+09:00 [16] after unmount dir exists=false
+23:04:01.648+09:00 [16] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:02.076+09:00 mount /Volumes/DJIMIC3
+23:04:02.078+09:00   opendir ok
+23:04:02.078+09:00   access(R_OK)=0 
+23:04:02.194+09:00 [16] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:04:02.195+09:00 [16] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:04:02.266+09:00 unmount /Volumes/DJIMIC3
+23:04:02.421+09:00 [16] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:04:02.503+09:00 [16] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:02.929+09:00 mount /Volumes/DJIMIC3
+23:04:02.930+09:00   opendir ok
+23:04:02.931+09:00   access(R_OK)=0 
+23:04:03.051+09:00 [16] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:04:03.052+09:00 [17] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:04:04.141+09:00 unmount /Volumes/DJIMIC3
+23:04:04.277+09:00 [17] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:04:04.278+09:00 [17] after unmount dir exists=false
+23:04:04.360+09:00 [17] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:04.793+09:00 mount /Volumes/DJIMIC3
+23:04:04.794+09:00   opendir ok
+23:04:04.795+09:00   access(R_OK)=0 
+23:04:04.934+09:00 [17] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:04:04.936+09:00 [17] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:04:05.017+09:00 unmount /Volumes/DJIMIC3
+23:04:05.165+09:00 [17] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:04:05.244+09:00 [17] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:05.677+09:00 mount /Volumes/DJIMIC3
+23:04:05.678+09:00   opendir ok
+23:04:05.679+09:00   access(R_OK)=0 
+23:04:05.809+09:00 [17] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:04:05.810+09:00 [18] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:04:07.051+09:00 [18] unmount rc=1 Volume DJIMIC3 on disk4 failed to unmount
+23:04:07.052+09:00 [19] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:04:07.371+09:00 unmount /Volumes/DJIMIC3
+23:04:07.468+09:00 [19] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:04:07.469+09:00 [19] after unmount dir exists=false
+23:04:07.548+09:00 [19] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:07.967+09:00 mount /Volumes/DJIMIC3
+23:04:07.969+09:00   opendir ok
+23:04:07.969+09:00   access(R_OK)=0 
+23:04:08.075+09:00 [19] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:04:08.076+09:00 [19] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:04:08.150+09:00 unmount /Volumes/DJIMIC3
+23:04:08.290+09:00 [19] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:04:08.373+09:00 [19] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:08.812+09:00 mount /Volumes/DJIMIC3
+23:04:08.815+09:00   opendir ok
+23:04:08.815+09:00   access(R_OK)=0 
+23:04:08.930+09:00 [19] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:04:08.932+09:00 [20] before ro=false from=/dev/disk4 on=/Volumes/DJIMIC3
+23:04:10.098+09:00 unmount /Volumes/DJIMIC3
+23:04:10.254+09:00 [20] unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:04:10.255+09:00 [20] after unmount dir exists=false
+23:04:10.339+09:00 [20] mount readOnly -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:10.809+09:00 mount /Volumes/DJIMIC3
+23:04:10.811+09:00   opendir ok
+23:04:10.812+09:00   access(R_OK)=0 
+23:04:10.955+09:00 [20] fallback mount readOnly (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted
+23:04:10.956+09:00 [20] new path=/Volumes/DJIMIC3 ro=true kept=true
+23:04:11.056+09:00 unmount /Volumes/DJIMIC3
+23:04:11.205+09:00 [20] restore unmount rc=0 Volume DJIMIC3 on disk4 unmounted
+23:04:11.286+09:00 [20] restore mount -mountPoint rc=1 Mountpoint /Volumes/DJIMIC3 does not exist
+23:04:11.737+09:00 mount /Volumes/DJIMIC3
+23:04:11.738+09:00   opendir ok
+23:04:11.739+09:00   access(R_OK)=0 
+23:04:11.855+09:00 [20] restore fallback mount (no -mountPoint) rc=0 Volume DJIMIC3 on /dev/disk4 mounted now=/Volumes/DJIMIC3
+23:04:11.856+09:00 remount20 end ro=18/20 pathKept=18 busy=0
+```
+
+### ディスクイメージ（~/VoiceDockPoC/mnt/PoCDJI。/Volumes の外。実機は抜いた状態）
+
+```text
+23:06:44.212+09:00 remount20 begin /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:44.213+09:00 [1] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:44.473+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:44.614+09:00 [1] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:44.615+09:00 [1] after unmount dir exists=true
+23:06:44.819+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:44.820+09:00   opendir ok
+23:06:44.820+09:00   access(R_OK)=0 
+23:06:44.944+09:00 [1] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:44.945+09:00 [1] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:45.012+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:45.179+09:00 [1] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:45.371+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:45.373+09:00   opendir ok
+23:06:45.373+09:00   access(R_OK)=0 
+23:06:45.477+09:00 [1] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:45.478+09:00 [2] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:45.779+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:45.927+09:00 [2] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:45.928+09:00 [2] after unmount dir exists=true
+23:06:46.119+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:46.119+09:00   opendir ok
+23:06:46.120+09:00   access(R_OK)=0 
+23:06:46.236+09:00 [2] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:46.237+09:00 [2] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:46.313+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:46.434+09:00 [2] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:46.626+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:46.627+09:00   opendir ok
+23:06:46.628+09:00   access(R_OK)=0 
+23:06:46.742+09:00 [2] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:46.744+09:00 [3] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:47.043+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:47.215+09:00 [3] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:47.216+09:00 [3] after unmount dir exists=true
+23:06:47.424+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:47.425+09:00   opendir ok
+23:06:47.426+09:00   access(R_OK)=0 
+23:06:47.536+09:00 [3] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:47.537+09:00 [3] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:47.632+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:47.771+09:00 [3] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:47.972+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:47.973+09:00   opendir ok
+23:06:47.974+09:00   access(R_OK)=0 
+23:06:48.085+09:00 [3] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:48.087+09:00 [4] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:48.378+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:48.508+09:00 [4] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:48.509+09:00 [4] after unmount dir exists=true
+23:06:48.728+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:48.729+09:00   opendir ok
+23:06:48.730+09:00   access(R_OK)=0 
+23:06:48.846+09:00 [4] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:48.848+09:00 [4] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:48.944+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:49.099+09:00 [4] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:49.320+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:49.321+09:00   opendir ok
+23:06:49.322+09:00   access(R_OK)=0 
+23:06:49.429+09:00 [4] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:49.430+09:00 [5] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:49.730+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:49.842+09:00 [5] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:49.843+09:00 [5] after unmount dir exists=true
+23:06:50.070+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:50.071+09:00   opendir ok
+23:06:50.071+09:00   access(R_OK)=0 
+23:06:50.180+09:00 [5] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:50.182+09:00 [5] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:50.283+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:50.443+09:00 [5] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:50.651+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:50.652+09:00   opendir ok
+23:06:50.652+09:00   access(R_OK)=0 
+23:06:50.763+09:00 [5] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:50.764+09:00 [6] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:51.042+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:51.183+09:00 [6] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:51.185+09:00 [6] after unmount dir exists=true
+23:06:51.406+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:51.408+09:00   opendir ok
+23:06:51.409+09:00   access(R_OK)=0 
+23:06:51.526+09:00 [6] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:51.527+09:00 [6] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:51.629+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:51.737+09:00 [6] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:51.966+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:51.968+09:00   opendir ok
+23:06:51.969+09:00   access(R_OK)=0 
+23:06:52.085+09:00 [6] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:52.087+09:00 [7] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:52.378+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:52.533+09:00 [7] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:52.534+09:00 [7] after unmount dir exists=true
+23:06:52.757+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:52.759+09:00   opendir ok
+23:06:52.759+09:00   access(R_OK)=0 
+23:06:52.876+09:00 [7] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:52.877+09:00 [7] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:52.979+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:53.132+09:00 [7] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:53.357+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:53.358+09:00   opendir ok
+23:06:53.360+09:00   access(R_OK)=0 
+23:06:53.504+09:00 [7] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:53.506+09:00 [8] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:53.785+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:53.929+09:00 [8] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:53.930+09:00 [8] after unmount dir exists=true
+23:06:54.154+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:54.155+09:00   opendir ok
+23:06:54.155+09:00   access(R_OK)=0 
+23:06:54.271+09:00 [8] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:54.272+09:00 [8] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:54.371+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:54.528+09:00 [8] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:54.748+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:54.749+09:00   opendir ok
+23:06:54.750+09:00   access(R_OK)=0 
+23:06:54.870+09:00 [8] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:54.871+09:00 [9] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:55.147+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:55.290+09:00 [9] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:55.292+09:00 [9] after unmount dir exists=true
+23:06:55.514+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:55.515+09:00   opendir ok
+23:06:55.516+09:00   access(R_OK)=0 
+23:06:55.655+09:00 [9] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:55.656+09:00 [9] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:55.763+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:55.918+09:00 [9] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:56.141+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:56.144+09:00   opendir ok
+23:06:56.144+09:00   access(R_OK)=0 
+23:06:56.283+09:00 [9] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:56.285+09:00 [10] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:56.612+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:56.749+09:00 [10] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:56.750+09:00 [10] after unmount dir exists=true
+23:06:56.970+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:56.971+09:00   opendir ok
+23:06:56.972+09:00   access(R_OK)=0 
+23:06:57.109+09:00 [10] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:57.110+09:00 [10] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:57.213+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:57.347+09:00 [10] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:57.584+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:57.585+09:00   opendir ok
+23:06:57.586+09:00   access(R_OK)=0 
+23:06:57.719+09:00 [10] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:57.721+09:00 [11] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:58.056+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:58.195+09:00 [11] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:58.197+09:00 [11] after unmount dir exists=true
+23:06:58.419+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:58.420+09:00   opendir ok
+23:06:58.421+09:00   access(R_OK)=0 
+23:06:58.553+09:00 [11] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:58.553+09:00 [11] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:58.657+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:58.761+09:00 [11] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:58.988+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:58.989+09:00   opendir ok
+23:06:58.990+09:00   access(R_OK)=0 
+23:06:59.126+09:00 [11] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:59.127+09:00 [12] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:59.388+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:59.514+09:00 [12] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:06:59.515+09:00 [12] after unmount dir exists=true
+23:06:59.740+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:06:59.742+09:00   opendir ok
+23:06:59.743+09:00   access(R_OK)=0 
+23:06:59.879+09:00 [12] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:06:59.880+09:00 [12] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:06:59.981+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:00.141+09:00 [12] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:00.366+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:00.367+09:00   opendir ok
+23:07:00.367+09:00   access(R_OK)=0 
+23:07:00.503+09:00 [12] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:00.505+09:00 [13] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:00.808+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:00.957+09:00 [13] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:00.959+09:00 [13] after unmount dir exists=true
+23:07:01.184+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:01.185+09:00   opendir ok
+23:07:01.186+09:00   access(R_OK)=0 
+23:07:01.311+09:00 [13] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:01.313+09:00 [13] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:07:01.414+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:01.571+09:00 [13] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:01.791+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:01.792+09:00   opendir ok
+23:07:01.793+09:00   access(R_OK)=0 
+23:07:01.920+09:00 [13] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:01.922+09:00 [14] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:02.193+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:02.332+09:00 [14] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:02.333+09:00 [14] after unmount dir exists=true
+23:07:02.560+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:02.561+09:00   opendir ok
+23:07:02.561+09:00   access(R_OK)=0 
+23:07:02.677+09:00 [14] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:02.679+09:00 [14] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:07:02.783+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:02.901+09:00 [14] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:03.127+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:03.128+09:00   opendir ok
+23:07:03.129+09:00   access(R_OK)=0 
+23:07:03.244+09:00 [14] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:03.245+09:00 [15] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:03.525+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:03.659+09:00 [15] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:03.661+09:00 [15] after unmount dir exists=true
+23:07:03.882+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:03.885+09:00   opendir ok
+23:07:03.885+09:00   access(R_OK)=0 
+23:07:03.997+09:00 [15] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:03.999+09:00 [15] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:07:04.097+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:04.251+09:00 [15] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:04.477+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:04.477+09:00   opendir ok
+23:07:04.478+09:00   access(R_OK)=0 
+23:07:04.588+09:00 [15] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:04.589+09:00 [16] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:04.866+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:05.021+09:00 [16] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:05.023+09:00 [16] after unmount dir exists=true
+23:07:05.250+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:05.251+09:00   opendir ok
+23:07:05.251+09:00   access(R_OK)=0 
+23:07:05.366+09:00 [16] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:05.367+09:00 [16] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:07:05.466+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:05.624+09:00 [16] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:05.845+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:05.847+09:00   opendir ok
+23:07:05.848+09:00   access(R_OK)=0 
+23:07:05.964+09:00 [16] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:05.965+09:00 [17] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:06.254+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:06.403+09:00 [17] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:06.405+09:00 [17] after unmount dir exists=true
+23:07:06.623+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:06.625+09:00   opendir ok
+23:07:06.626+09:00   access(R_OK)=0 
+23:07:06.754+09:00 [17] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:06.756+09:00 [17] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:07:06.860+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:06.997+09:00 [17] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:07.216+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:07.219+09:00   opendir ok
+23:07:07.220+09:00   access(R_OK)=0 
+23:07:07.337+09:00 [17] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:07.338+09:00 [18] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:07.610+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:07.718+09:00 [18] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:07.719+09:00 [18] after unmount dir exists=true
+23:07:07.951+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:07.953+09:00   opendir ok
+23:07:07.954+09:00   access(R_OK)=0 
+23:07:08.069+09:00 [18] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:08.071+09:00 [18] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:07:08.171+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:08.322+09:00 [18] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:08.550+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:08.551+09:00   opendir ok
+23:07:08.552+09:00   access(R_OK)=0 
+23:07:08.667+09:00 [18] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:08.669+09:00 [19] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:08.942+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:09.093+09:00 [19] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:09.094+09:00 [19] after unmount dir exists=true
+23:07:09.312+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:09.312+09:00   opendir ok
+23:07:09.313+09:00   access(R_OK)=0 
+23:07:09.431+09:00 [19] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:09.432+09:00 [19] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:07:09.532+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:09.650+09:00 [19] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:09.865+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:09.865+09:00   opendir ok
+23:07:09.866+09:00   access(R_OK)=0 
+23:07:09.971+09:00 [19] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:09.972+09:00 [20] before ro=false from=/dev/disk4 on=/Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:10.356+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:10.510+09:00 [20] unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:10.512+09:00 [20] after unmount dir exists=true
+23:07:10.730+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:10.732+09:00   opendir ok
+23:07:10.733+09:00   access(R_OK)=0 
+23:07:10.864+09:00 [20] mount readOnly -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:10.866+09:00 [20] new path=/Users/terada/VoiceDockPoC/mnt/PoCDJI ro=true kept=true
+23:07:10.967+09:00 unmount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:11.096+09:00 [20] restore unmount rc=0 Volume POCDJI on disk4 unmounted
+23:07:11.314+09:00 mount /Users/terada/VoiceDockPoC/mnt/PoCDJI
+23:07:11.315+09:00   opendir ok
+23:07:11.316+09:00   access(R_OK)=0 
+23:07:11.439+09:00 [20] restore mount -mountPoint rc=0 Volume POCDJI on /dev/disk4 mounted
+23:07:11.439+09:00 remount20 end ro=20/20 pathKept=20 busy=0
+```
+
+### 同じ名前のボリュームが 2 つあるときのパス（【利用者が行う】。実機は抜いた状態）
+
+`-volname PoCDJI` のイメージを 2 つ `-mountpoint` 無しで attach すると `/Volumes/POCDJI` と `/Volumes/POCDJI 1` になった（**FAT のボリューム名は大文字で記録される**: `PoCDJI` → `POCDJI`）。1 つ目を `diskutil unmount /dev/disk4` すると `Unmount failed for /dev/disk4` で外れず（2 回試して 2 回とも）、再マウントのパスの変化は**測定できなかった**。
+
+```text
+/dev/disk4                                              /Volumes/POCDJI
+/dev/disk5                                              /Volumes/POCDJI 1
+== 2 つをマウントした直後
+/dev/disk4 on /Volumes/POCDJI (msdos, local, nodev, nosuid, noowners, noatime, fskit, mounted by terada)
+/dev/disk5 on /Volumes/POCDJI 1 (msdos, local, nodev, nosuid, noowners, noatime, fskit, mounted by terada)
+A=/dev/disk4
+/dev/disk5
+Unmount failed for /dev/disk4
+```
+
+根拠と判断:
+- 実機: 20 回中 18 回で `ro=true`。**`diskutil mount readOnly -mountPoint /Volumes/DJIMIC3 <node>` は毎回 `Mountpoint /Volumes/DJIMIC3 does not exist` で失敗**（アンマウントで DiskArbitration が `/Volumes/DJIMIC3` を消し、利用者は `/Volumes` に作れない）。`-mountPoint` 無しの `diskutil mount readOnly /dev/disk4` はパスを保った（18/18 が `/Volumes/DJIMIC3`）
+- 実機の 2 回（[13]・[18]）は `failed to unmount`（[13] は `dissented by PID 75766 (/bin/bash)`）。使用中による拒否で、voicedock #107（34 回中 3 回）と同じ種類。T-15 の再試行で扱う
+- ディスクイメージ（/Volumes の外）は、アンマウントの後もディレクトリが残り、`-mountPoint` 付きで 20/20 が ro・パス保持
+- **決定（章 14）: 本番の再マウントは `-mountPoint` を使わない（T-15 の `DiskutilRemounter(useMountPoint: false)` を既定）。テストは一時ディレクトリに attach するので `useMountPoint: true`**
+- 限界: 同じ名前のボリュームが 2 つあるときの再マウントのパスの変化は測れなかった。起きても T-13 の規則 8（マウント名とボリューム名の不一致 → `mount_name_mismatch` で取り込まない）が安全側に倒す
+- FAT のボリューム名は大文字で記録される（`PoCDJI` → `POCDJI`）。DJI Mic 3 の既定名 `DJIMIC3` は元から大文字なので影響しないが、利用者が小文字を含む名前に改名した場合の照合（T-13）に関わる
 
 ## 4. P0-03 子プロセスの unlink
 
@@ -180,5 +890,5 @@ gh: Upgrade to GitHub Pro or make this repository public to enable this feature.
 | Xcode | 27.0（27A266a） | 章 1 |
 | llama.cpp | b11033（8ed1a55efcd7424d2c592f6cbc9f97756db1d74d）。章 7 で問題があれば見直す | 章 7（未実施） |
 | whisper.cpp | v1.9.4（927cfce34f31707e17f2bff35c349632fb9e2c3a） | 章 5（未実施） |
-| 再マウントの -mountPoint | 未決（章 3 で決める。T-15 の前） | 章 3 |
+| 再マウントの -mountPoint | **使わない**（本番 `useMountPoint: false`。テストは一時ディレクトリなので `true`） | 章 3 |
 | CI のランナー | 開発機のセルフホストランナー `voicedock-local`（self-hosted, macOS, ARM64。v2.337.0） | 章 11 |

@@ -71,7 +71,7 @@ public struct DiskutilRemounter: Remounter {
 6. `guard let newPath = inspector.allMounts().first(where: { $0.mountFromName == node })?.mountOnName else { return .failed(reason: "mount_failed") }`
 7. `.remounted(newPath: newPath)`
 - `still_writable` の判定はここでしない（呼び手が statfs の観測で判定する。観測値だけを書く。DEL-31）
-- `useMountPoint` の本番の値は P0-02 の結果で決め、`Bootstrap`（T-30）が渡す。それまでは `false`
+- `useMountPoint` の本番の値は **`false`**（P0-02 で確定。実機では `diskutil unmount` で `/Volumes/<名前>` が消え、`-mountPoint` 付きの mount は毎回 `Mountpoint … does not exist` で失敗した。付けなくてもパスは 18/18 保たれた。`docs/POC.md` 章 3）。`Bootstrap`（T-30）が渡す
 
 ### 4.2 `DeviceSnapshot.swift`
 
@@ -495,7 +495,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 
 ## 9. マージ後にやること
 
-- P0-02 の結果（`-mountPoint` でパスが保たれるか）に合わせて、`Bootstrap`（T-30）が渡す `useMountPoint` の値を決める
+- P0-02 で本番の `useMountPoint` は `false` に決まった（`docs/POC.md` 章 3・章 14）。T-30 の `Bootstrap.useMountPoint = false` のまま
 
 ## 10. API 地図への変更提案
 

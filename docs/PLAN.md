@@ -1052,7 +1052,7 @@ CREATE TABLE imported_keys (
 3. エントリ自体が symlink（`lstat`）なら除外（`symlink`。`/Volumes/Macintosh HD -> /` が実在する。DEV-08）
 4. マウント点であること: `statfs` の `f_mntonname` が、エントリの realpath と一致（`not_a_mount_point`。本計画の追加。判定は `MountInspector` プロトコル経由にし、単体テストでは差し替える）
 5. **列挙できるか**: `opendir` を試す。**失敗したら errno によらず `not_listable`**（errno を detail に残す）。`EPERM` のときだけ TCC の案内（DR-11）を出す。
-   `access(2)` は TCC の拒否でも成功するので使わない（DEV-03）。テストの `chmod 000` は `EACCES` になるので、EPERM だけを見ると「録音なし」に化ける
+   `access(2)` は TCC の拒否に対する結果が OS の版で変わる（voicedock の時点では成功した。macOS 26.6 では EPERM。P0-01）ので判定に使わない（DEV-03）。テストの `chmod 000` は `EACCES` になるので、EPERM だけを見ると「録音なし」に化ける
 6. 直下に（`.` 始まりを除き）「フォルダ規則に一致するディレクトリ」か「ファイル規則に一致するファイル（denoised も可）」が 1 つ以上ある。無ければ対象外（`no_recordings`）。
    全部消した後もフォルダは残る（reaper はディレクトリを消さない）ので、録音 0 件のデバイスはここを通る（DEV-19）
 7. （欠番。v1 の規則 7 は走査の規則へ移した）
@@ -3102,3 +3102,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-56 | 事 | §2 D-6・§10.8・§12.2・§14 | （T-02 の着手時に利用者が決定）CI のランナーを開発機のセルフホストランナーにした。`sudo xcode-select` の代わりに `make check-toolchain`、`.diskImage` のテストは CI で走らせない、P0-10 は行わない、RK-06・RK-33 を書き換えた |
 | F-57 | 事 | §9.4 | （T-04 のレビューで発見、利用者が承認）PT-08・PT-19 は `Swift.` 修飾の呼び出しも検出、PT-20 に `Regex` の語と `firstMatch(of:` などを追加（Swift 6 のスラッシュ正規表現リテラル対策）、PT-12 は `FileHandle(forWriting…` の接頭辞、PT-06 は補間の入れ子と raw 文字列。PT-03 の関数参照と PT-09・PT-17・PT-22 の暗黙メンバーは既知の限界として残した |
 | F-58 | 事 | §2.1・§6.1・00-api-map §2.2・§3 | （T-09・T-11・T-12 の実装で発見、利用者が承認）子の終了の待ちに `waitpid(WNOHANG)` の予備のタイマーを併用（kqueue の登録前に終わった子の取りこぼし）、`ConfigLoader.load`・`ConfigStore.update` のラベルは `reaperConfObservation:`（PT-11）、地図に `ConfigViolation: Error`・`NewSession: Equatable`・`EntityType: CaseIterable` を明記。整数の位置の小数の CV-39 の表示を「型が違います」に揃えた |
+| F-59 | 事 | §8.1 規則 5・§8.1（再マウント） | （P0-01・P0-02 の実測）`access(2)` は macOS 26.6 では TCC の拒否で EPERM になる（「成功する」は版による）。判定は従来どおり列挙で行う。実機の再マウントでは `-mountPoint` は使えない（アンマウントで `/Volumes/<名前>` が消える）ので本番は `useMountPoint: false` |
