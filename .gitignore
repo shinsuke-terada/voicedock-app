@@ -1,0 +1,22 @@
+# SwiftPM / Xcode
+.build/
+.swiftpm/
+*.xcodeproj/
+xcuserdata/
+DerivedData/
+
+# Vendor のビルド（T-03。成果物はコミットしない）
+Vendor/work/
+Vendor/build/
+
+# .app と dmg（T-34）
+dist/
+
+# 計画書の元の置き場所（docs/PLAN.md が正）
+tmp/
+
+# 個人用の Claude Code の設定（ハーネス本体はコミットする）
+.claude/settings.local.json
+
+# macOS
+.DS_Store

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "deny": [
+      "Bash(diskutil)",
+      "Bash(diskutil *)",
+      "Bash(/usr/sbin/diskutil)",
+      "Bash(/usr/sbin/diskutil *)",
+      "Bash(gh pr merge *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Edit(//Volumes/**)",
+      "Read(//Users/terada/Projects/voicedock/**)",
+      "Edit(//Users/terada/Projects/voicedock/**)"
+    ],
+    "ask": [
+      "Bash(hdiutil *)",
+      "Bash(sudo *)",
+      "Bash(xcode-select *)",
+      "Bash(launchctl *)",
+      "Bash(tccutil *)",
+      "Bash(sfltool *)",
+      "Bash(gh repo create *)",
+      "Bash(gh release *)",
+      "Bash(xcrun notarytool *)",
+      "Bash(codesign *)"
+    ],
+    "allow": [
+      "Bash(make lint)",
+      "Bash(make fmt)",
+      "Bash(make build)",
+      "Bash(make test)",
+      "Bash(make test-nd)",
+      "Bash(make test-policy)",
+      "Bash(make test-other)",
+      "Bash(make check-toolchain)",
+      "Bash(swift build *)",
+      "Bash(swift test *)",
+      "Bash(swift format lint *)",
+      "Bash(swift package resolve)",
+      "Bash(swift package describe *)",
+      "Bash(python3 docs/porting-notes/check-tickets.py)",
+      "Bash(git -C /Users/terada/Projects/voicedock show *)",
+      "Bash(git -C /Users/terada/Projects/voicedock archive *)",
+      "Bash(git -C /Users/terada/Projects/voicedock log *)",
+      "Bash(gh pr create *)",
+      "Bash(gh pr view *)",
+      "Bash(gh issue *)"
+    ],
+    "additionalDirectories": [
+      "/Users/terada/VoiceDockPoC"
+    ]
+  },
+  "env": {
+    "CLAUDE_CODE_MAX_CONCURRENT_SUBAGENTS": "4"
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/guard-volumes.py",
+            "timeout": 10,
+            "statusMessage": "実機と参照ツリーの保護を確認中"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/session-start.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
