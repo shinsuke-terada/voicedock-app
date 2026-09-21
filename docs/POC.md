@@ -20,7 +20,7 @@ T-01 に要るのは章 14 の BUNDLE_ID・TEAM_ID・Xcode の版だけなので
 | 章 | 実施の予定 |
 |---|---|
 | 5・6・7・8・10 | T-03（vendor のビルド）の後。実機は使わない（音声は利用者が `~/VoiceDockPoC/audio/` にコピーしたもの） |
-| 2・3・13 | T-13 / T-15 / T-28 に着手する前。実機の手順は【利用者が行う】 |
+| 2・3・13 | 済み（2026-09-21） |
 | 4・9 | T-31 / T-37 に着手する前。実機の手順は【利用者が行う】。章 4 が ✗ なら Phase 8 に入らない |
 | 11 | T-02 で記入済み（対象外） |
 | 12 | 任意。時間があれば章 2 と同時 |
@@ -39,7 +39,7 @@ T-01 に要るのは章 14 の BUNDLE_ID・TEAM_ID・Xcode の版だけなので
 | 10 | P0-09 | 1 日分の処理見込み（文字数で外挿） | PLAN §12.2、E2E-06 | ⬜ 未実施 |
 | 11 | P0-10 | GitHub ランナーでのディスクイメージ | PLAN §10.8、RK-06、RK-33、T-02 | — 対象外（CI は開発機のセルフホストランナー。下記） |
 | 12 | P0-11 | DADiskMountApprovalCallback（任意） | PLAN §8.1（v1 では採用しない） | ⬜ 未実施 |
-| 13 | P0-12 | Vault が書類フォルダ・iCloud Drive にあるときの TCC | PLAN §8.7、§8.11 DR-10、T-28、T-32 | ⬜ 未実施 |
+| 13 | P0-12 | Vault が書類フォルダ・iCloud Drive にあるときの TCC | PLAN §8.7、§8.11 DR-10、T-28、T-32 | ✅ PASS（NSOpenPanel で選んだ Vault は再起動後もパネル無しで書ける。拒否の経路は再現できず） |
 | 14 | — | Phase 0 で決めたこと | PLAN §3.1、§3.3、§8.1、`identity.env` | ⬜ 一部決定（識別子と Xcode は確定。下記） |
 
 ## 1. ホスト環境
@@ -879,7 +879,39 @@ gh: Upgrade to GitHub Pro or make this repository public to enable this feature.
 
 ## 13. P0-12 Vault の TCC
 
-⬜ 未実施（T-28 の前に【利用者が行う】）
+判定: ✅ PASS（限界あり。下記）
+
+測定日: 2026-09-21（macOS 26.6.2）。操作は利用者が PoCMenuBar の「Vault を試す」（NSOpenPanel で選ぶ）と「前回の Vault を再試行（パネル無し）」（UserDefaults に覚えたパスへ、パネルを出さずに opendir・access(W_OK)・`.poc-write-test.tmp` の作成と削除）で行った。
+
+手順: `~/Documents/PoCVault/.obsidian` と `~/Library/Mobile Documents/iCloud~md~obsidian/Documents/PoCVault/.obsidian` を作る → `tccutil reset SystemPolicyDocumentsFolder io.github.shinsuke-terada.VoiceDockPoC` → 書類の Vault をパネルで選ぶ → パネル無しで再試行 → 再起動してパネル無しで再試行 → `tccutil reset All io.github.shinsuke-terada.VoiceDockPoC` → 再起動してパネル無しで再試行 → iCloud の Vault をパネルで選ぶ → 再起動してパネル無しで再試行。**どの場面でも許可ダイアログは出なかった**（利用者の観察）。終わった後に 2 つの Vault を消した。
+
+```text
+2026-09-21T23:17:03.065+09:00 launch pid=99359 bundle=io.github.shinsuke-terada.VoiceDockPoC
+2026-09-21T23:17:27.185+09:00 vault[panel] /Users/terada/Documents/PoCVault opendir ok access(W_OK)=0 
+2026-09-21T23:17:27.185+09:00 vault create ok, unlink=ok
+2026-09-21T23:18:02.975+09:00 vault[no-panel] /Users/terada/Documents/PoCVault opendir ok access(W_OK)=0 
+2026-09-21T23:18:02.976+09:00 vault create ok, unlink=ok
+2026-09-21T23:18:23.398+09:00 launch pid=1783 bundle=io.github.shinsuke-terada.VoiceDockPoC
+2026-09-21T23:18:34.225+09:00 vault[no-panel] /Users/terada/Documents/PoCVault opendir ok access(W_OK)=0 
+2026-09-21T23:18:34.226+09:00 vault create ok, unlink=ok
+2026-09-21T23:19:22.456+09:00 launch pid=3861 bundle=io.github.shinsuke-terada.VoiceDockPoC
+2026-09-21T23:19:30.553+09:00 vault[no-panel] /Users/terada/Documents/PoCVault opendir ok access(W_OK)=0 
+2026-09-21T23:19:30.553+09:00 vault create ok, unlink=ok
+2026-09-21T23:20:42.312+09:00 vault[panel] /Users/terada/Library/Mobile Documents/iCloud~md~obsidian/Documents/PoCVault opendir ok access(W_OK)=0 
+2026-09-21T23:20:42.312+09:00 vault create ok, unlink=ok
+2026-09-21T23:20:57.488+09:00 launch pid=6277 bundle=io.github.shinsuke-terada.VoiceDockPoC
+2026-09-21T23:21:06.753+09:00 vault[no-panel] /Users/terada/Library/Mobile Documents/iCloud~md~obsidian/Documents/PoCVault opendir ok access(W_OK)=0 
+2026-09-21T23:21:06.754+09:00 vault create ok, unlink=ok
+```
+
+根拠:
+- NSOpenPanel で選んだ Vault（書類フォルダ・iCloud Drive の Obsidian の保管庫）は、ダイアログ無しで opendir・`access(W_OK)=0`・ファイルの作成と削除ができた
+- **アプリを再起動した後も、パネルを出さずに同じパスへ書けた**（書類・iCloud とも）。本番のアプリ（T-31 の最初の設定で Vault を NSOpenPanel で選び、以後はパスで書く）の前提が成り立つ
+- `tccutil reset All <bundle id>` の後でも、一度パネルで選んだ書類の Vault にはダイアログ無しで書けた
+
+限界:
+- **拒否（EPERM）の経路と、パネルで一度も選んでいない書類フォルダの場所に書いたときのダイアログは再現できなかった。**一度パネルで選ぶと、`tccutil reset SystemPolicyDocumentsFolder`・`tccutil reset All` の後も許可が残った（P0-01 のリムーバブルボリュームは `reset All` で消えたのと違う）。PLAN §8.7 の `.notReadable` の文言と DR-10 の案内文は、実測で直す材料が無いので**そのまま**にする
+- Vault を別の場所（別のマシンから移した保管庫など）に変えたときも、T-31 の設定の画面で NSOpenPanel で選び直す前提を保つ（パスを文字列で入力させない）
 
 ## 14. Phase 0 で決めたこと
 
