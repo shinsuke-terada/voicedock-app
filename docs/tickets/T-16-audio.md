@@ -57,26 +57,40 @@ enum ErrorText {
 
 ```swift
 // 空き容量の 2 条件（PLAN §8.3「空き容量」。voicedock audio.py:292-349）。
-import Darwin
 import Foundation
 import VDContract
 import VDCore
 
 public enum SpaceMath {
     /// 16 kHz / 1 ch / s16 のバイトレート。
-    public static let bytesPerSecond: Int64 = 32_000
+    static let bytesPerSecond: Int64 = 32_000
     /// duration が不明なときの仮定値（30 分）。
-    public static let defaultDurationSeconds: Double = 1800
+    static let defaultDurationSeconds: Double = 1800
 
-    /// `Int64(max(0, duration ?? 1800) × 32000)`（0 方向への切り捨て）。
+    /// `Int64(max(0, duration ?? 1800) × 32000)`（0 方向への切り捨て）。Int64 に収まらない積は `Int64.max`（トラップしない。PT-19）。
     public static func expectedBytes(_ durationSeconds: Double?) -> Int64 {
         let seconds = durationSeconds ?? defaultDurationSeconds
-        return Int64(max(0, seconds) * Double(bytesPerSecond))
+        return saturatingInt64(max(0, seconds) * Double(bytesPerSecond))
     }
 
-    /// `Int64(Double(expected) × freeSpaceMultiplier) + freeSpaceMarginBytes`。
+    /// `Int64(Double(expected) × freeSpaceMultiplier) + freeSpaceMarginBytes`。桁あふれは `Int64.max`（トラップしない。PT-19）。
     public static func requiredBytes(expected: Int64, config: AudioConfig) -> Int64 {
-        Int64(Double(expected) * config.freeSpaceMultiplier) + Int64(config.freeSpaceMarginBytes)
+        saturatingAdd(
+            saturatingInt64(Double(expected) * config.freeSpaceMultiplier), Int64(config.freeSpaceMarginBytes))
+    }
+
+    /// 0 方向へ切り捨てて Int64 にする。`Int64.max` 以上と NaN は `Int64.max`、`Int64.min` 以下は `Int64.min`。
+    static func saturatingInt64(_ value: Double) -> Int64 {
+        if value.isNaN || value >= Double(Int64.max) { return Int64.max }
+        if value <= Double(Int64.min) { return Int64.min }
+        return Int64(value)
+    }
+
+    /// 桁あふれを `Int64.max` / `Int64.min` に留める足し算。
+    static func saturatingAdd(_ lhs: Int64, _ rhs: Int64) -> Int64 {
+        let (sum, overflow) = lhs.addingReportingOverflow(rhs)
+        guard overflow else { return sum }
+        return rhs > 0 ? Int64.max : Int64.min
     }
 }
 
@@ -95,14 +109,16 @@ public struct SpaceCheck: Sendable {
 1. `expected = SpaceMath.expectedBytes(durationSeconds)`、`required = SpaceMath.requiredBytes(expected: expected, config: config)`
 2. `statfs` の対象は `layout.staging` がディレクトリならそれ、でなければ `layout.root`。`statfs` が失敗したら
    `.insufficient("空き容量を取得できません: errno \(errno)")`
-3. `free = Int64(st.f_bavail) * Int64(st.f_bsize)`
+3. `free = Int64(clamping: st.f_bavail) × Int64(clamping: st.f_bsize)`（`multipliedReportingOverflow` で桁あふれは `Int64.max`。PT-19）
 4. `used = stagingBytes()`: `layout.staging` 配下を再帰的に列挙し（`FileManager.default.enumerator(at:includingPropertiesForKeys: [.isRegularFileKey, .fileSizeKey], options: [])`）、
-   `isRegularFile == true` のものの `fileSize` を合計する。読めないものは飛ばす（例外を投げない）。staging が無ければ 0
+   `isRegularFile == true` のものの `fileSize` を合計する（`SpaceMath.saturatingAdd`）。読めないものは飛ばす（例外を投げない）。staging が無ければ 0
 5. `free < required` → `.insufficient("空き \(free) バイトが必要量 \(required) バイトを下回る")`
-6. `used + expected > Int64(config.stagingMaxBytes)` → `.insufficient("staging 使用量 \(used) + 想定 \(expected) が上限 \(config.stagingMaxBytes) を超える")`
+6. `SpaceMath.saturatingAdd(used, expected) > Int64(config.stagingMaxBytes)` → `.insufficient("staging 使用量 \(used) + 想定 \(expected) が上限 \(config.stagingMaxBytes) を超える")`
 7. それ以外 `.ok`
 
 数値は `Int64` の 10 進（区切り記号なし）で埋め込む。
+
+VDAudio の import は Foundation / AVFoundation / CryptoKit / VDContract / VDCore だけ（PLAN §3.4。PT-07）。`statfs`・`errno`・`rename`・`open`・`fsync`・`lrint` は Foundation が再輸出する Darwin から使い、`import Darwin` は書かない（T-16 の実装で直した。旧版は `import Darwin` を書いていた）。
 
 ### 4.3 `InputHasher.swift`（internal）
 
@@ -153,16 +169,19 @@ enum AudioConversion {
     static let inputFramesPerBuffer: AVAudioFrameCount = 65_536
 
     /// 出力ファイルの settings（逐語。キーの意味は PLAN §8.3）。
-    static let outputSettings: [String: Any] = [
-        AVFormatIDKey: kAudioFormatLinearPCM,
-        AVSampleRateKey: 16_000.0,
-        AVNumberOfChannelsKey: 1,
-        AVLinearPCMBitDepthKey: 16,
-        AVLinearPCMIsFloatKey: false,
-        AVLinearPCMIsBigEndianKey: false,
-        AVLinearPCMIsNonInterleaved: false,
-        AVAudioFileTypeKey: kAudioFileWAVEType,
-    ]
+    /// `[String: Any]` は Sendable でないため、static let ではなく計算プロパティで持つ（Swift 6。static let はコンパイルエラー）。
+    static var outputSettings: [String: Any] {
+        [
+            AVFormatIDKey: kAudioFormatLinearPCM,
+            AVSampleRateKey: 16_000.0,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false,
+            AVLinearPCMIsNonInterleaved: false,
+            AVAudioFileTypeKey: kAudioFileWAVEType,
+        ]
+    }
 
     /// `input` を読み、`tmpOutput` に 16 kHz / 1 ch / Int16 の WAV を書いて閉じる。rename はしない。
     static func convert(input: URL, tmpOutput: URL, deadline: Deadline) throws
@@ -181,6 +200,8 @@ guard let floatFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRat
 }
 converter.sampleRateConverterQuality = AVAudioQuality.max.rawValue
 converter.downmix = inFormat.channelCount >= 2
+// 入力の sampleRate が 1 Hz 未満だと容量が UInt32 に収まらない（トラップしない。PT-19）。
+guard inFormat.sampleRate >= 1 else { throw AudioConversionError.cannotAllocateBuffer }
 let outFile = try AVAudioFile(forWriting: tmpOutput, settings: outputSettings,
                               commonFormat: .pcmFormatInt16, interleaved: true)
 let outCapacity = AVAudioFrameCount((Double(inputFramesPerBuffer) * outputSampleRate / inFormat.sampleRate).rounded(.up)) + 1024
@@ -193,6 +214,11 @@ while !finished {
     }
     var conversionError: NSError?
     let status = converter.convert(to: floatBuffer, error: &conversionError) { _, inputStatus in
+        // 末尾で read(into:) を呼ぶと nilError を投げる（T-16 で実測）。読む前に終わりを確かめる。
+        if inFile.framePosition >= inFile.length {
+            inputStatus.pointee = .endOfStream
+            return nil
+        }
         guard let inBuffer = AVAudioPCMBuffer(pcmFormat: inFormat, frameCapacity: inputFramesPerBuffer) else {
             inputStatus.pointee = .endOfStream
             return nil
@@ -250,6 +276,7 @@ static func writeInt16(_ floatBuffer: AVAudioPCMBuffer, to outFile: AVAudioFile)
 
 - `lrint` は既定の丸め（最近接偶数）。`Int16(clamping:)` が −32768〜32767 に収める
 - 入力が既に 16 kHz でも同じ経路を通す（特別扱いしない）
+- `AVAudioFile.read(into:frameCount:)` はファイルの末尾で呼ぶと 0 フレームを返さず `_GenericObjCError.nilError` を投げる（macOS 27 SDK で実測）。だから入力ブロックの先頭で `framePosition >= length` を確かめて `.endOfStream` を返す（旧版はこれが無く、変換がすべて IMPORT_FAILED になった）
 - `outFile.close()` の後、`open(tmpOutput.path(percentEncoded: false), O_RDONLY)` → `fsync` → `close` で内容をディスクへ（失敗は無視）
 
 ### 4.5 `OutputVerifier.swift`
@@ -260,14 +287,20 @@ import AVFoundation
 import Foundation
 
 public enum OutputVerifier {
-    public static let expectedSampleRate: Double = 16_000
-    public static let expectedChannels: AVAudioChannelCount = 1
+    static let expectedSampleRate: Double = 16_000
+    static let expectedChannels: AVAudioChannelCount = 1
 
     /// 合格なら nil、不合格なら error_message の文言。例外を投げない。
     public static func verify(output: URL, inputDuration: Double?, tolerance: Double) -> String?
 
     /// AVAudioCommonFormat を ffmpeg 風の名前へ（文言用）。
     static func sampleFormatName(_ f: AVAudioCommonFormat) -> String
+
+    /// `Int(sampleRate)` の文言。Int に収まらない値（NaN・無限大・巨大）は `Double.description`（トラップしない。PT-19）。
+    static func integerText(_ value: Double) -> String {
+        guard let integer = Int(exactly: value.rounded(.towardZero)) else { return value.description }
+        return String(integer)
+    }
 }
 ```
 
@@ -278,7 +311,7 @@ public enum OutputVerifier {
 | 1 | `stat` で通常ファイルでない（symlink は辿る。無い・ディレクトリ） | `<path> がありません` |
 | 2 | size == 0 | `<path> が 0 バイトです` |
 | 3 | `AVAudioFile(forReading:)` が投げる | `出力を読めません: <ErrorText.describe(error)>` |
-| 4 | `fileFormat.sampleRate != 16000` | `sample_rate が <Int(sampleRate)>（期待 16000）` |
+| 4 | `fileFormat.sampleRate != 16000` | `sample_rate が <integerText(sampleRate)>（期待 16000）` |
 | 5 | `fileFormat.channelCount != 1` | `channels が <n>（期待 1）` |
 | 6 | `fileFormat.commonFormat != .pcmFormatInt16` | `sample_fmt が <sampleFormatName>（期待 s16）` |
 | 7 | `inputDuration` が nil → 合格（長さを照合しない） | — |
@@ -293,7 +326,6 @@ public enum OutputVerifier {
 
 ```swift
 // inbox の原本 → 16 kHz WAV（PLAN §8.3。voicedock audio.py:379-500）。状態遷移と DB 更新はしない。
-import Darwin
 import Foundation
 import VDContract
 import VDCore
@@ -358,7 +390,7 @@ public struct Normalizer: Sendable {
 - `discard(url)` = `try? SafeUnlink.remove(url, under: .staging, layout: layout)`（後片付けの失敗は握りつぶし、元の結果を返す。CR-21）
 - `output の size` は `FileManager.default.attributesOfItem(atPath:)[.size]` を `Int64` に（取れなければ 0）
 - **入力（inbox の原本）には一切書き込まない・消さない**。inbox の解放は呼び手（T-18）が DB 更新の後に行う（CONC-08）
-- `timeoutSeconds`: `guard let d = duration else { return config.minTimeoutSeconds }`、`return Int(max(Double(config.minTimeoutSeconds), d * config.timeoutFactor))`（`Int(Double)` は 0 方向への切り捨て）
+- `timeoutSeconds`: `guard let d = duration else { return config.minTimeoutSeconds }`、`let seconds = max(Double(config.minTimeoutSeconds), d * config.timeoutFactor)`、`guard seconds < Double(Int.max) else { return Int.max }`、`return Int(seconds)`（`Int(Double)` は 0 方向への切り捨て。Int に収まらない値でトラップしない。PT-19）
 
 ## 5. TestSupport: `BWFWriter.swift`（T-14 が作る）
 
@@ -384,7 +416,8 @@ T-14 が作る（T-14 §5.6。make_wav とのバイト一致を確かめる 9 �
 | `marginIsEnforced` / 「CE audio.freeSpaceMarginBytes 空きが必要量を下回ると不足」 | `freeSpaceMarginBytes = Int(Int64.max / 4)`（既定の 2147483648 では `.ok`） | `.insufficient` で文言が `空き ` で始まり `バイトが必要量 ` と ` バイトを下回る` を含む |
 | `stagingCapIsEnforced` / 「CE audio.stagingMaxBytes staging の上限」 | margin 0、`stagingMaxBytes = 100`、staging に 80 バイトの通常ファイル、duration 0.001（既定の 5368709120 では `.ok`） | `.insufficient("staging 使用量 80 + 想定 32 が上限 100 を超える")` |
 | `stagingCapExactlyAtLimitPasses` / 「上限ちょうどは ok」 | 同上で 68 バイトのファイル | `.ok`（68 + 32 = 100） |
-| `missingStagingCountsAsZero` / 「staging が無ければ使用量 0」 | staging を消す | `.ok`（margin 0 のとき） |
+| `missingStagingCountsAsZero` / 「staging が無ければ使用量 0」 | staging を消す、margin 0、`stagingMaxBytes = 32`、duration 0.001 | `.ok`（0 + 32 = 32） |
+| `hugeDurationSaturates` / 「Int64 に収まらない長さでもトラップせず不足になる」 | `expectedBytes(.infinity)`・`expectedBytes(1e300)`・`requiredBytes(expected: Int64.max, 既定)`、既定の設定で `check(durationSeconds: .infinity)` | `Int64.max`・`Int64.max`・`Int64.max`、`.insufficient` で文言が `空き ` で始まる |
 
 ### 6.3 `OutputVerifierTests.swift`（`@Suite("OutputVerifier")`）
 
@@ -401,6 +434,8 @@ T-14 が作る（T-14 §5.6。make_wav とのバイト一致を確かめる 9 �
 | `unknownInputDurationSkipsLength` / 「入力の長さが不明なら長さを見ない」 | 見本、inputDuration nil | nil |
 | `gapExactlyToleranceIsAccepted` / 「ずれが 1.0 ちょうどは合格」 | 見本、inputDuration 2.0 | nil |
 | `gapOverToleranceFails` / 「ずれが 1.0 を超えると不合格」 | 見本、inputDuration 2.001 | `長さが入力と 1.00 秒ずれています（許容 1.0 秒）` |
+| `directoryIsMissing` / 「ディレクトリは無い出力として扱う」 | TempDirectory の URL | `<path> がありません` |
+| `sampleFormatNames` / 「sample_fmt の名前の表」 | `.pcmFormatInt16`・`.pcmFormatInt32`・`.pcmFormatFloat32`・`.pcmFormatFloat64`・`.otherFormat` | `s16`・`s32`・`flt`・`dbl`・`other` |
 
 ### 6.4 `NormalizerTests.swift`（`@Suite("Normalizer", .serialized)`）
 
@@ -424,12 +459,14 @@ T-14 が作る（T-14 §5.6。make_wav とのバイト一致を確かめる 9 �
 | `reusePathChecksDuplicate` / 「再利用でも重複を判定する」 | 1 回目の成功の後、duplicateOf が別の Part を返す | `.duplicate`、出力が消えている |
 | `brokenOutputIsRegenerated` / 「壊れた出力は作り直す」 | 出力の位置に `broken` を書いておく | `.success(reused: false)` |
 | `missingInputIsImportFailed` / 「入力が無ければ IMPORT_FAILED」 | 存在しない入力 | `.importFailed`、tmp も出力も無い |
+| `emptyInputIsImportFailed` / 「0 バイトの入力は IMPORT_FAILED」（TEST-28） | 入力を 0 バイトにする、helper = 空の SHA-256、duration nil | `.importFailed`、tmp も出力も無い、入力が在る |
 | `diskSpaceLowIsReported` / 「空きが足りなければ DISK_SPACE_LOW」 | `freeSpaceMarginBytes = Int(Int64.max / 4)` | `.diskSpaceLow`、出力が無い、入力が在る |
 | `deadlineExceededIsImportFailed` / 「時間上限を超えたら中断して IMPORT_FAILED」 | `SteppingClock(start: Instant(epochMillis: 0), stepMilliseconds: 1_000_000)`（`uptime()` を呼ぶたびに 1000 秒進む。T-10）、duration nil | `.importFailed("180 秒を超えました")`、tmp も出力も無い |
 | `timeoutTable` / 「時間上限の式」（パラメータ化） | duration `nil`, `100`, `360`, `361`, `1800.7` | `180`, `180`, `180`, `180`, `900` |
 | `ceAudioTimeoutFactor` / 「CE audio.timeoutFactor を 2.0 にすると時間上限が伸びる」 | duration 1800.7、`timeoutFactor = 2.0` | `3601`（既定の 0.5 なら `900`） |
 | `ceAudioMinTimeoutSeconds` / 「CE audio.minTimeoutSeconds が時間上限の下限」 | duration `nil` と `100`、`minTimeoutSeconds = 600` | どちらも `600`（既定の 180 なら `180`） |
 | `ceDurationToleranceSeconds` / 「CE audio.durationToleranceSeconds 許容を広げると検証を通る」 | 2 秒の入力、duration 4.0、`durationToleranceSeconds = 3.0` | `.success`（既定の 1.0 では `.normalizeVerifyFailed`。`durationMismatchFailsVerification` と対） |
+| `hugeDurationTimeoutSaturates` / 「Int に収まらない長さでも時間上限はトラップしない」 | duration `.infinity` と `1e300` | どちらも `Int.max` |
 
 ### 6.5 `ConfigEffectPending.swift`（PolicyTests。T-09 §9）
 
@@ -472,3 +509,4 @@ T-14 が作る（T-14 §5.6。make_wav とのバイト一致を確かめる 9 �
 2. `NormalizeRequest` に公開の `init(input:partkey:durationSeconds:sha256Helper:claimedBy:duplicateOf:)` が要る（地図に init の記載が無い）→ 00-api-map に反映済み（2026-09-18）
 3. TestSupport の `SteppingClock` は `uptime()` も呼ばれるたびに進むこと（時間上限のテストで使う）→ 00-api-map §15 に反映済み（2026-09-18）。T-10 の形は `SteppingClock(start: Instant, stepMilliseconds: Int64)`（`now()` と `uptime()` の両方を進める）
 4. `BWFWriter` の作り手を T-14 にし、本チケットの版を正とする → 00-api-map §15 に反映済み（2026-09-18）。宣言とテストは T-14 へ移した
+5. 旧版は `SpaceMath.bytesPerSecond` / `defaultDurationSeconds` と `OutputVerifier.expectedSampleRate` / `expectedChannels` を `public` にしていたが、地図 §6 に無く、モジュールの外で使う者もいない → 地図に合わせて internal にした（T-16 の実装。地図の変更は不要）
