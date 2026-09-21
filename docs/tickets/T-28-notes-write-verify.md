@@ -41,8 +41,8 @@ T-26 の「4.0 全体の規則」を適用する。この章のコードはフ�
 
 ```swift
 // Vault の確認（PLAN §8.7 手順 0 / DEL-06）。ガード・Raw・Daily・診断・削除条件が共有する唯一の判定関数。Vault のルートを作らない。
-import Darwin
 import Foundation
+import VDCore
 
 public enum VaultStatus: Equatable, Sendable {
     case notConfigured
@@ -59,6 +59,8 @@ public enum VaultCheck {
 }
 ```
 
+（VDNotes の import の許可リスト（PLAN §3.4・PT-07）に Darwin は無い。`stat` / `opendir` / `lstat` は Foundation 経由で使う。`PyText` のために VDCore を import する）
+
 **`evaluate`** の手順（この順。最初に当たったものを返す）:
 1. `path == nil` → `.notConfigured`
 2. `var st = stat(); let r = stat(path, &st)`（symlink を辿る）:
@@ -66,7 +68,7 @@ public enum VaultCheck {
    - `r != 0`（それ以外の errno）→ `.missingRoot`
    - `(st.st_mode & S_IFMT) != S_IFDIR` → `.missingRoot`
 3. `opendir(path)` が nil → `.notReadable(errno: errno)`（`EPERM` は TCC。書類フォルダ・iCloud Drive の Vault で起こる）。成功したら `closedir`
-4. `marker` の `PyText.strip` が空、または `marker` に `/` を含む、または `marker` が `.` か `..` → `.missingMarker`（CV-41 が弾くが、ここでも fail-closed。voicedock の「空で検査を無効化」は廃止。X-18）
+4. `marker` の `PyText.strip` が空、または `marker` に `/` を含む、または `marker` が `.` か `..`（`PyText.scalarsEqual` で比べる）→ `.missingMarker`（CV-41 が弾くが、ここでも fail-closed。voicedock の「空で検査を無効化」は廃止。X-18）
 5. `stat(path + "/" + marker)`（symlink を辿る。連結は `URL(fileURLWithPath: path).appendingPathComponent(marker, isDirectory: false).path(percentEncoded: false)`）が失敗するかディレクトリでない → `.missingMarker`
 6. `.available`
 
@@ -157,8 +159,9 @@ public enum NoteVerifier {
 8. `doc == nil` のとき: `add(keyRule, false)`、`add(keyRule + 1, false)`。Daily ならさらに `dailyBodyChecks(text)`（DN-8・DN-9）。終わり
 9. **RN-5 / DN-6**: `add(keyRule, (doc[Frontmatter.keySessionKey] as? String).map { PyText.scalarsEqual($0, sessionKey) } ?? false)`（文字列でなければ偽。鍵はスカラー列で比べる。00-api-map §0）
 10. `found = Set(Frontmatter.stringList(doc, Frontmatter.keyRecordingKeys))`（配列でなければ空集合）
-    - Raw **RN-6**: `add(6, expectedKeys.isSubset(of: found))`（**包含**）
-    - Daily **DN-7**: `add(7, found == expectedKeys)`（**完全一致**。RN-6 と混同しない。NOTE-12）
+    - 鍵の集合は**スカラー列の集合**（`Set(keys.map { Array($0.unicodeScalars) })`。内部の `NoteVerifier.scalarSet`）で比べる。`Set<String>` は正準等価で比べるので、partkey の照合（00-api-map §0）に使わない。`expected = scalarSet(expectedKeys)`、`found = scalarSet(stringList(…))`
+    - Raw **RN-6**: `add(6, expected.isSubset(of: found))`（**包含**）
+    - Daily **DN-7**: `add(7, found == expected)`（**完全一致**。RN-6 と混同しない。NOTE-12）
 11. Daily なら `dailyBodyChecks(text)`
 
 `dailyBodyChecks(text)`:
@@ -202,7 +205,7 @@ public enum OutputPathResolver {
 3. `doc = Frontmatter.parse(text)` が nil → 偽
 4. `(doc[Frontmatter.keySessionKey] as? String).map { PyText.scalarsEqual($0, sessionKey) } ?? false` が偽 → 偽
 5. `keys = stringList(doc, Frontmatter.keyRecordingKeys)`。Daily なら `+ stringList(doc, Frontmatter.keyFailedParts) + stringList(doc, Frontmatter.keySkippedParts)`
-6. `keys` の全要素が `ownedPartkeys` に含まれれば真、1 つでも含まれなければ偽（`keys` が空なら真）
+6. `keys` の全要素が `ownedPartkeys` に含まれれば真、1 つでも含まれなければ偽（`keys` が空なら真）。スカラー列で照合する（`NoteVerifier.scalarSet(keys).isSubset(of: NoteVerifier.scalarSet(ownedPartkeys))`。00-api-map §0）
 
 - 読めないノート・voicedock が書いたノート（鍵がアプリの DB に無い）・利用者が作ったノートは上書きしない
 - rename の後・DB 更新の前に落ちた場合、自分のノートは鍵が全部自分の DB に在るので上書きされる（` (2)` が増え続けない）
