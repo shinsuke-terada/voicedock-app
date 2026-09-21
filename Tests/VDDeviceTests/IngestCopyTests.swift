@@ -307,5 +307,6 @@ struct IngestCopyTests {
         #expect(IngestService.durationMillis(1799.9996) == 1_799_999)
         #expect(IngestService.durationMillis(0.0005) == 0)
         #expect(IngestService.durationMillis(0.0015) == 1)
+        #expect(IngestService.durationMillis(1e300) == nil)  // Int64 に収まらない長さはトラップせず nil
     }
 }

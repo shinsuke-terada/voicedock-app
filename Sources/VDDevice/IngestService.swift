@@ -157,7 +157,7 @@ public actor IngestService {
             return false
         }
         let start = deps.zone.instant(of: parsed.local)  // ファイル名の時刻にタイムゾーンを付与するだけ（TIME-03）
-        let endedAt = duration.map { deps.zone.iso(start.adding(milliseconds: Self.durationMillis($0))) }
+        let endedAt = duration.flatMap(Self.durationMillis).map { deps.zone.iso(start.adding(milliseconds: $0)) }
         try deps.store.insertRecording(
             NewRecording(
                 partkey: partkey, deviceID: deviceID, sourceFolder: RelPath.parent(relpath),
@@ -168,9 +168,11 @@ public actor IngestService {
         return true
     }
 
-    /// Python の `timedelta(seconds=s)` は µ 秒に偶数丸めし、`isoformat(timespec="seconds")` は切り捨てる。ms へは切り捨てで落とす
-    static func durationMillis(_ seconds: Double) -> Int64 {
-        Int64((seconds * 1_000_000).rounded(.toNearestOrEven)) / 1000
+    /// Python の `timedelta(seconds=s)` は µ 秒に偶数丸めし、`isoformat(timespec="seconds")` は切り捨てる。ms へは切り捨てで落とす。
+    /// Int64 の µ 秒で表せない長さ（壊れたファイルが巨大なフレーム数を名乗る場合など）は nil（ended_at を書かない。トラップしない。PT-19）
+    static func durationMillis(_ seconds: Double) -> Int64? {
+        guard let micros = Int64(exactly: (seconds * 1_000_000).rounded(.toNearestOrEven)) else { return nil }
+        return micros / 1000
     }
 
     /// copy_failed。changed だけ INFO、ほかは WARNING

@@ -324,7 +324,7 @@ enum CopyOutcome: Equatable, Sendable { case copied(isNew: Bool), failed(CopyErr
        sha256Helper: sha256, inboxPath: inboxRel))
    ```
    → `true`
-- `durationMillis(s)`: `Int64((s * 1_000_000).rounded(.toNearestOrEven)) / 1000`（Python の `timedelta(seconds=s)` は µ 秒に偶数丸めし、`isoformat(timespec="seconds")` は切り捨てる。ms へは切り捨てで落とす）
+- `durationMillis(s) -> Int64?`: `Int64(exactly: (s * 1_000_000).rounded(.toNearestOrEven))` を 1000 で割る（Python の `timedelta(seconds=s)` は µ 秒に偶数丸めし、`isoformat(timespec="seconds")` は切り捨てる。ms へは切り捨てで落とす）。Int64 に収まらなければ nil で、`ended_at` を書かない（壊れたファイルが巨大なフレーム数を名乗ってもトラップしない。PT-19。T-14 のレビューで判明）
 - `source_size` / `source_mtime` は**原本の stat の値**（`stat` 引数。安定性判定の最後の観測。DEL-12）。inbox のコピーを stat しない
 
 ### 4.6 `Sources/VDAudio/AudioProbe.swift`
