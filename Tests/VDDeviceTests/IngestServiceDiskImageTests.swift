@@ -90,7 +90,9 @@ struct IngestServiceDiskImageTests {
         var s = statfs()
         try #require(statfs(h.disk.mountPoint.path(percentEncoded: false), &s) == 0)
         #expect((s.f_flags & UInt32(MNT_RDONLY)) != 0)
-        #expect(observation.mountPath.hasPrefix(h.tmp.url.path(percentEncoded: false)))
+        // 観測のパスは realpath（/private/var/…）。TempDirectory.url は /var/… のことがあるので realpath どうしで比べる
+        let tmpReal = try #require(SystemMountInspector.realPath(h.tmp.url.path(percentEncoded: false)))
+        #expect(observation.mountPath.hasPrefix(tmpReal + "/"))
         #expect(!observation.mountPath.hasPrefix("/Volumes/"))
     }
 

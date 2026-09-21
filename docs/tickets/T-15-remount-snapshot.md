@@ -460,7 +460,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `diskImageIsDetectedAndIngested` / 「本物の FAT をマウント点として検出し取り込む（realpath の比較）」 | イメージに BWF の `_orig` を 1 本置き（mtime を古くする）、`mountMode = "rw"` | `devices[<名前>]` が在り `readOnly == false`、inbox に 1 ファイル、`source_mtime` が FAT の 2 秒刻みの値 |
-| `realRemountMakesItReadOnly` / 「本物の diskutil で読み取り専用に再マウントし、観測が真になる」 | `mountMode = "ro"`、`DiskutilRemounter(runner: ProcessRunner(), inspector: SystemMountInspector(), useMountPoint: true)` | `readOnly == true`、`statfs` の `MNT_RDONLY` が立つ、mountpoint は `<tmp>` の下のまま |
+| `realRemountMakesItReadOnly` / 「本物の diskutil で読み取り専用に再マウントし、観測が真になる」 | `mountMode = "ro"`、`DiskutilRemounter(runner: ProcessRunner(), inspector: SystemMountInspector(), useMountPoint: true)` | `readOnly == true`、`statfs` の `MNT_RDONLY` が立つ、mountpoint は `<tmp>` の下のまま（`<tmp>` は realpath にしてから比べる。観測のパスは `/private/var/…`、`TempDirectory.url` は `/var/…` のことがある。`make test-disk` で判明） |
 | `alreadyReadOnlyImageIsNotUnmounted` / 「読み取り専用で attach したイメージは再マウントしない」 | `disk.reattach(readOnly: true)`、runner は `ScriptedProcessRunner` | `.alreadyReadOnly`、`recorded == []` |
 
 - `-mountPoint` を付けた再マウントで mountpoint のディレクトリが残るか（DiskArbitration が消すか）は P0-02・P0-10 で確かめ、結果に合わせてこのテストの準備（ディレクトリの作り直しの要否）を直す。直した内容を PR に書く
