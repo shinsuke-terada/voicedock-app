@@ -19,7 +19,7 @@ reaper の RV-06〜RV-12 そのもの（PLAN §4.6）を VDContract に実装す
 - voicedock@d3d595e: `helper/voicedock-reaper:138-173`（`target_is_identical`。realpath 比較版の検証 5〜10）、`tests/unit/test_reaper.py:40-173`（ベンチと mtime の事例 `+120` / `+1`）、`tests/fixtures/fake_tree.py`（`DEVICE_MTIME_OFFSET`）
 - 実機の確認（このチケットを書く時点で手元の macOS 26.6 / Xcode 27.0 で確かめた事実）:
   - `openat(dirfd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)` は、name が symlink のとき **ENOTDIR**（ELOOP ではない）、通常ファイル・FIFO のときも ENOTDIR、無いとき ENOENT
-  - `hdiutil create -size 64m -fs "MS-DOS FAT32" -volname DJIMIC3 -layout NONE` → `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <dir>` で、`fstatfs` の `f_mntonname` は `<dir>` の realpath と一致し、`f_fstypename` は `msdos`。`-readonly` を付けると `f_flags & MNT_RDONLY` が立つ。`-fs HFS+` は `hfs`
+  - `hdiutil create -size 64m -fs "MS-DOS FAT32" -volname VDT0007 -layout NONE` → `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <dir>` で、`fstatfs` の `f_mntonname` は `<dir>` の realpath と一致し、`f_fstypename` は `msdos`。`-readonly` を付けると `f_flags & MNT_RDONLY` が立つ。`-fs HFS+` は `hfs`
   - FAT に mtime `1787000001` を設定すると `1787000000` として保存される（2 秒分解能・切り捨て）
   - 普通の一時ディレクトリに `fstatfs` すると `f_mntonname` は `/System/Volumes/Data`、`apfs`
 
@@ -236,7 +236,7 @@ public final class DiskImageVolume: Sendable {
     public let filesystem: Filesystem
 
     /// create → mountPoint を作る → attach（書き込み可）
-    public init(in tmp: TempDirectory, deviceID: String = "DJIMIC3", filesystem: Filesystem = .fat32, sizeMB: Int = 64) throws
+    public init(in tmp: TempDirectory, deviceID: String = "VDT0007", filesystem: Filesystem = .fat32, sizeMB: Int = 64) throws
     /// detach → attach（readOnly なら -readonly）
     public func reattach(readOnly: Bool) throws
     /// hdiutil detach -force <mountPoint>（失敗は無視）
@@ -251,6 +251,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 - マウント: `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <mountPoint> [-readonly] <image>`
 - 外す: `hdiutil detach -force <mountPoint>`
 - **`/Volumes` の下には決してマウントしない**（利用者の実機 `/Volumes/DJIMIC3` と衝突させない。mountPoint は必ず一時ディレクトリの下）
+- **ボリューム名に `DJIMIC3` を使わない**（PLAN §10.2。既定の deviceID は `VDT0007`。T-15 は extension の `uniqueName()` で `VDTxxxx` を作って渡す）
 - **テストの安全**: このチケットのテストは `/Volumes` 配下の実機（利用者が挿している DJI Mic 3 など）に一切触れない。`openVolume`・`SystemVolumeOpener`・`FakeVolumeOpener` に渡す `volumesRoot` は必ず一時ディレクトリの下（`FakeVolume.volumesRoot` / `DiskImageVolume.volumesRoot`）にし、`Contract.volumesRoot`（`/Volumes`）を渡さない。`/Volumes` 配下に `diskutil`・`hdiutil detach`・書き込み・削除・再マウントを行わない（`hdiutil detach` は自分が attach した `mountPoint` だけ）
 
 ## 5. テスト
@@ -307,7 +308,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `rv06Fat32IsOpened` | RV-06 FAT32 のマウント点は開ける | `DiskImageVolume(.fat32)` | `.opened`、`readOnly == false`、`mountPath == realpath(volumesRoot) + "/DJIMIC3"` |
+| `rv06Fat32IsOpened` | RV-06 FAT32 のマウント点は開ける | `DiskImageVolume(.fat32)` | `.opened`、`readOnly == false`、`mountPath == realpath(volumesRoot) + "/VDT0007"` |
 | `rv06HfsIsUnexpectedFS` | RV-06 HFS+ は unexpected_fs | `DiskImageVolume(.hfsPlus)` | `.rejected(unexpected_fs)` |
 | `rv07ReadOnlyIsObserved` | RV-07 読み取り専用のマウントを観測する | FAT32 を `reattach(readOnly: true)` | `.opened`、`readOnly == true` |
 | `fullChainOnFat` | FAT の上で検証が通る | FAT32 に `FOLDER/FILE` を 4096 バイトで置き、mtime を読み直した値で `withVerifiedTarget` | `.success` |

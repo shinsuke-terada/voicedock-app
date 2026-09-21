@@ -50,7 +50,7 @@ struct TargetIdentityDiskImageTests {
         }
         let root = try #require(PosixIO.realpath(volume.volumesRoot.path(percentEncoded: false)))
         #expect(handle.readOnly == false)
-        #expect(handle.mountPath == root + "/DJIMIC3")
+        #expect(handle.mountPath == root + "/VDT0007")
     }
 
     @Test("RV-06 HFS+ は unexpected_fs")

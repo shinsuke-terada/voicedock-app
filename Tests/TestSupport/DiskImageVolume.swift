@@ -18,7 +18,7 @@ public final class DiskImageVolume: Sendable {
 
     /// create → mountPoint を作る → attach（書き込み可）
     public init(
-        in tmp: TempDirectory, deviceID: String = "DJIMIC3", filesystem: Filesystem = .fat32, sizeMB: Int = 64
+        in tmp: TempDirectory, deviceID: String = "VDT0007", filesystem: Filesystem = .fat32, sizeMB: Int = 64
     ) throws {
         volumesRoot = tmp.url.appendingPathComponent("Volumes", isDirectory: true)
         mountPoint = volumesRoot.appendingPathComponent(deviceID, isDirectory: true)
