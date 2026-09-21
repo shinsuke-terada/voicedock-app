@@ -2473,6 +2473,11 @@ struct SourceScannerTests {
 | `PinningPolicy.runsOnValues` のブロック形式のリストの収集をやめる（`guard value.isEmpty else` の条件を常に偽にする） | ✓ `pt13DetectsViolation`（nightly.yml の違反が無くなる） |
 | `PinningPolicy.checkWorkflows` の `${{ matrix.` の簡易版の検査を常に偽にする | ✓ `pt13DetectsViolation`（matrix.yml の違反が無くなる） |
 | `PolicyEngine.check` で文字列の照合をコード（`scanned.codeText`）にも当てる | ✓ `pt04IgnoresDecoy`・`pt05IgnoresDecoy`・`pt06IgnoresDecoy` |
+| `TokenPattern.callQualifiers` から `Swift` を外す（F-57） | ✓ `pt08DetectsViolation`（`Swift.print(`・`Swift.dump(`）、`pt19DetectsViolation`（`Swift.fatalError(`・`Swift.precondition(`・`Swift.assert(`） |
+| PT-20 の `.word("Regex")` を外す（F-57） | ✓ `pt20DetectsViolation`（`let t: Regex? = nil`） |
+| PT-20 の `firstMatch ( of`・`wholeMatch ( of`・`prefixMatch ( of` を外す（F-57） | ✓ `pt20DetectsViolation`（3 つのファイルすべてで空振り） |
+| PT-12 の `.identifierPrefix("forWriting")` を `.identifier("forWritingTo")` に戻す（F-57） | ✓ `pt12DetectsViolation`（`FileHandle(forWritingAtPath:`） |
+| `PolicyCatalog.partKeyPattern` を入れ子と raw 文字列を見ない形（`\\\([^)]*\)/\\\(`）に戻す（F-57） | ✓ `pt06DetectsViolation`（`"\(key(for: p))/\(r)"` と `#"\#(a)/\#(b)"#`） |
 | `OrderingPolicy.check` の `commit < register` を `>` にする | ✓ `pt16DetectsViolation`・`pt16IgnoresDecoy` |
 | `ImportPolicy.allowed` の VDCore に `VDStore` を足す | ✓ `pt07DetectsViolation` |
 | `ImportPolicy.allowedEverywhere` を空にする | ✓ `pt07IgnoresDecoy`（decoy の `import Synchronization`） |
@@ -2482,7 +2487,7 @@ struct SourceScannerTests {
 
 - [ ] 上の全ファイルが全文のとおりに在り、`make lint` と `make test` が通る
 - [ ] `swift test --filter PolicyTests` の出力の件数を PR に貼る（パラメータ化を含めて 100 件前後。T-01〜T-03 のテストを含む）
-- [ ] 破壊による証明の表の 12 項目を行い、落ちたテスト名を PR に貼った
+- [ ] 破壊による証明の表の 17 項目を行い、落ちたテスト名を PR に貼った
 - [ ] PLAN §9.4 の表の各行（語と許可場所）と `PolicyCatalog.swift` を 1 行ずつ突き合わせたことを PR に書いた（食い違いがあれば PLAN を正として直す）
 
 ## SPEC の変更
