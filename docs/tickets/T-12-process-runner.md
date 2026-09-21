@@ -499,13 +499,13 @@ final class ExitRecord: Sendable {
 
 `terminate(grace:)`:
 
-1. `if record.isSet { return WaitStatus.termination(record.raw) }`
+1. `if record.isSet { await ProcessRunner.finishReaders(readers, [stdout, stderr]); return WaitStatus.termination(record.raw) }`（読み取りを終えてから返す。T-21 のレビューで判明: 待たずに返すと直後の `stderrTail()` から最後の行が欠け、`server_start_failed` の理由が消えた）
 2. `ProcessRunner.signalGroup(pid, SIGTERM)`
 3. `if await !ProcessRunner.race(exit: exit, timeout: grace) { ProcessRunner.signalGroup(pid, SIGKILL) }`
 4. `let raw = await exit.value` → `ProcessRunner.signalGroup(pid, SIGKILL)`（残った孫）→ `await ProcessRunner.finishReaders(readers, [stdout, stderr])`
 5. `return WaitStatus.termination(raw)`（`.timedOut` は返さない。実際の終わり方を返す）
 
-`waitForExit()`: `WaitStatus.termination(await exit.value)`
+`waitForExit()`: `let raw = await exit.value` → `await ProcessRunner.finishReaders(readers, [stdout, stderr])` → `WaitStatus.termination(raw)`（同上）
 
 ### 4.9 使う側の約束（後続のチケットが守る）
 
@@ -561,6 +561,8 @@ final class ExitRecord: Sendable {
 | `spawnMissingExecutableThrows` | 無い実行ファイルの spawn は SpawnError | `<tmp>/nope` | `SpawnError.spawnFailed(errno: ENOENT)` を投げる |
 | `stderrTailWhileRunning` | 動いている間も stderr の末尾を読める | `echo ready >&2; sleep 30` | 2 秒以内に `stderrTail()` が `ready\n` を含む。最後に terminate |
 | `waitForExitReportsCrash` | 勝手に終わったことを waitForExit で知れる | `sleep 0.2; exit 3` | `waitForExit()` が `.exited(3)`、`isRunning == false` |
+| `terminateAfterExitDrainsStderr` | 既に終わった子の terminate は stderr を最後まで読んでから返す | `(sleep 0.3; echo LAST-LINE >&2) &` の後 `exit 1`（stderr を受け継いだ孫が子の終了後に最後の行を書く）。`isRunning == false` になってから `terminate(grace: 0)` | `.exited(1)`、`stderrTail()` が `LAST-LINE\n` で終わる |
+| `waitForExitDrainsStderr` | waitForExit は stderr を最後まで読んでから返す | 同上のスクリプト | `waitForExit()` が `.exited(1)`、`stderrTail()` が `LAST-LINE\n` で終わる |
 | `terminateAllStopsSpawnedAndRunning` | terminateAll は spawn した子と run 中の子を止める | spawn 2 つ（`sleep 30`）＋別タスクで `run(sleep 30, timeout: 60 秒)`、0.2 秒後に `terminateAll(grace: 1 秒)` | spawn の 2 つが `isRunning == false`、run が `.signaled(SIGTERM)` を返す |
 
 ### 5.3 `SpawnTests.swift` — `@Suite("Spawn")`（internal を `@testable import VDProcess` で）
