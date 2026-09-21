@@ -36,7 +36,7 @@ voicedock は 1,500 本超のテストと 56 版の仕様改訂で、多くの�
 | D-3 | ノート形式 | **voicedock と同一**（Raw / Daily の 2 枚、パス、frontmatter） |
 | D-4 | 課金 | **v1 には入れない**（無償配布）。将来の差し込み口だけ残す（§8.14） |
 | D-5 | ロック 2-A | **reaper を .app に同梱し、有効化フローで `bin/` へ複製したときだけ実行可能にする**（§8.9） |
-| D-6 | CI | **GitHub の macOS ランナー**（非公開リポジトリ。分数を節約する設計にする。§10.8） |
+| D-6 | CI | **開発機のセルフホストランナー**（非公開リポジトリ。GitHub の macOS ランナーは分数が 10 倍のため。2026-09-21 利用者の決定。§10.8） |
 | D-7 | 画面 | **起動するとメニューバーにアイコンが出て、バックグラウンドで動く。アイコンを押すと設定パネルが出る。**それ以外の画面は作らない（§8.12） |
 | D-8 | voicedock 本体 | **変更しない。**参照のみ |
 
@@ -2293,7 +2293,7 @@ reaper は偽物を作らず本物を起動する。本物は「結果を書い�
 - 戻すのは `git checkout -- <そのファイル>` だけ（範囲の広い checkout で未コミットの作業を消した事故がある）
 - 「壊したのに通った」を放置しない。多重防御なら層を分けたテストを足し、空振りならテストを直す
 
-### 10.8 CI（GitHub Actions、macOS ランナー、非公開リポジトリ）
+### 10.8 CI（GitHub Actions、開発機のセルフホストランナー、非公開リポジトリ）
 
 分数を節約するため **job は 1 つ**にし、ステップ名で見分ける（voicedock は ND を別 job にしていたが、macOS は分数が 10 倍）。ND と Policy は最後のステップで**もう一度走らせない**。
 
@@ -2306,11 +2306,11 @@ concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
 permissions: { contents: read }
 jobs:
   check:
-    runs-on: xcode-27            # 手元と同じ Xcode 27.0（27A266a）。T-02 で確定（下記）
+    runs-on: [self-hosted, macOS, ARM64]   # 開発機のセルフホストランナー（Xcode 27.0）。利用者の決定（T-02）
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
-      - run: sudo xcode-select -s "/Applications/Xcode_$(cat .xcode-version).app"
+      - run: make check-toolchain
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9      # v6.1.0。.build を Package.resolved と .xcode-version のハッシュで
         with:
           path: .build
@@ -2328,11 +2328,11 @@ jobs:
 ```
 
 - 警告はエラー: `-Xswiftc -warnings-as-errors` ではなく、`Package.swift` の自分のターゲットに `swiftSettings: [.treatAllWarnings(as: .error)]`（SE-0480、tools-version 6.2 以上。リモートの依存には掛からない）
-- ランナー: `xcode-27` は Xcode 27.0（27A266a）を持つプレビューのラベル（2026-09 時点）。**T-02 で非公開リポジトリから使えるか確かめ**、使えなければ `macos-26`（Xcode 26.6）に下げ、
-  そのときは `.xcode-version` と手元の Xcode も同じ版にそろえる（CI と手元で同じコンパイラを使う）。`runs-on` に `latest` を使わない（PT-13）
+- ランナー: 開発機（実機 DJI Mic 3 がつながることがある Mac）のセルフホストランナー。ラベルは既定の `self-hosted`・`macOS`・`ARM64` で固定し、`runs-on` に `latest` を使わない（PT-13）。
+  CI では `sudo` を使わず、Xcode の版は `make check-toolchain` で確かめるだけにする（`.xcode-version` と開発機の Xcode を利用者がそろえる）
 - `main` のブランチ保護で `check` を必須にする（**非公開リポジトリで GitHub の無料プランだとブランチ保護が使えない**（API が 403）。その場合は T-02 に記録し、「保護した」とは書かない）
-- `.diskImage` のテストが GitHub のランナーで動くかは **T-02 で確かめる**（P0-10。hdiutil attach と diskutil の再マウント）。動くなら CI の ND ステップに `VOICEDOCK_DISK_TESTS=1` を付ける。
-  動かなければ CI の ND は層 1・2 だけになることを README に書き、**削除に触れる PR では手元で `make test-disk` を回した結果を PR 本文に貼る**ことを必須にする（未検証と動かないを混ぜない）
+- `.diskImage` のテストは **CI で走らせない**（`VOICEDOCK_DISK_TESTS` を付けない）。ランナーが開発機なので、CI が走るたびに実機が抜いてあることを保証できないため（P0-10 は行わない）。
+  CI の ND は層 1・2 だけになることを README に書き、**削除に触れる PR では、実機を抜いたことを利用者が確かめてから手元で `make test-disk` を回した結果を PR 本文に貼る**ことを必須にする
 - `.app` の組み立て・署名・公証は CI で行わない（手元の `make release`。証明書を CI に置かない）
 
 ---
@@ -2435,7 +2435,7 @@ cmake --build build --config Release --target llama-server -j       # → build/
 | P0-07 | 1 日分（約 350,000 文字）の Map-Reduce | 30 分以内 |
 | P0-08 | SwiftPM で組み立てた .app で `SMAppService.mainApp.register()` が効き、再ログイン後に起動する | 起動する |
 | P0-09 | 1 日分（16 時間の密な発話）の処理見込み（P0-04 の RTF × 文字数で外挿。**音声の長さではなく文字数で外挿する**。ASR-10） | 次の接続（24 時間）までに終わる |
-| P0-10 | GitHub の macOS ランナー（§10.8 のラベル）で `hdiutil` の FAT32 イメージを attach・再マウント・statfs・unlink できるか。ディスクイメージに TCC が掛かるか | 可否を記録（§10.8） |
+| P0-10 | GitHub の macOS ランナーで `hdiutil` の FAT32 イメージを attach・再マウント・statfs・unlink できるか | **行わない**（CI は開発機のセルフホストランナー。§10.8）。対象外と記録する |
 | P0-11 | `DADiskMountApprovalCallback` で最初から読み取り専用にマウントできるか（任意。できれば rw の窓が消える） | 可否を記録。**v1 では採用しない**（採用は別計画） |
 | P0-12 | Vault が `~/Documents` と iCloud Drive にあるとき、非サンドボックスのアプリの `opendir` / `access(W_OK)` / 書き込みに TCC がどう掛かるか（許可前・拒否・許可後） | 挙動を記録（§8.7 の `.notReadable` の文言と DR-10 に反映） |
 
@@ -2518,7 +2518,7 @@ v1.0 を出す前に**すべて**を満たす:
 | 段 | 方法 | 合格 |
 |---|---|---|
 | 毎 PR | CI の `check`（lint → build → ND → policy / SPEC 同期 → 全テスト）＋破壊による証明 | すべて緑、落ちたテスト名が PR にある |
-| 削除に触れる PR | 手元で `make test-disk`（P0-10 が不可の場合） | 結果を PR に貼る |
+| 削除に触れる PR | 実機を抜いてから手元で `make test-disk`（CI では走らせない。§10.8） | 結果を PR に貼る |
 | ノート形式 | golden（voicedock@d3d595e とのバイト一致） | 差分なし |
 | LLM | `make llm-acceptance MODEL=<id>` | §10.6 |
 | リリース | `make release` → `verify-bundle.sh` | 全項目 |
@@ -2538,7 +2538,7 @@ v1.0 を出す前に**すべて**を満たす:
 | RK-03 | whisper.cpp v1.9.4 の Metal ビルドの速度と安定性 | P0-04 / P0-09。問題があれば v1.9.4 のまま CPU に戻す選択肢を残す（`-ng`） |
 | RK-04 | llama-server の引数・`response_format` の対応が版によって変わる | 版を固定し、`--help` 照合テスト（DR-07） |
 | RK-05 | AVAudioConverter と ffmpeg のリサンプルの差が文字起こしに効くか | P0-05 |
-| RK-06 | GitHub ランナーでディスクイメージのテストが動くか | P0-10 |
+| RK-06 | ディスクイメージのテストが CI で動くか | CI では走らせない（§10.8）。手元の `make test-disk` で回す |
 | RK-07 | 送信機 2 台のときボリュームがどう見えるか | 実機未検証のまま（voicedock と同じ）。コードは複数台を扱い、テストで担保 |
 | RK-18 | Daily / Raw ノートを利用者が編集すると、再生成で上書きされる | 受容（voicedock と同じ）。README に書く。編集中は RN-4 が落ちて削除が止まる（安全側） |
 | RK-19 | `/Volumes/Macintosh HD` は `/` への symlink | デバイス判定の規則 3 と openat 連鎖 |
@@ -2551,7 +2551,7 @@ v1.0 を出す前に**すべて**を満たす:
 | RK-30 | 利用者が編集した frontmatter を Obsidian が書き換える（引用符が外れる等） | 読み取りは Yams（YAML として読む）。書き出しは自前 |
 | RK-31 | 30 分ちょうどで 0 文字の NO_SPEECH（whisper の取りこぼし）を根拠 B で消しうる | 根拠 B の既定は false、有効化は別の `ENABLE` 入力。transcript の JSON は残る |
 | RK-32 | 利用者が `timeZone` を変えると、DB の時刻文字列のオフセットが混ざり、文字列比較（`MIN(started_at)` など）と日付の境界がずれる | 受容（voicedock と同じ）。README に「使い始めた後にタイムゾーンを変えない」と書く。変えたときの挙動は既存行を書き換えない |
-| RK-33 | CI の `xcode-27` ラベルはプレビューで、非公開リポジトリで使えない・消える可能性がある | T-02 で確かめ、使えなければ `macos-26` と Xcode 26.6 に手元ごとそろえる（§10.8） |
+| RK-33 | CI のセルフホストランナー（開発機）が止まっていると CI が進まない | 開発機の再起動後に `~/actions-runner/svc.sh status` を確かめる（§10.8） |
 | RK-34 | whisper.cpp は不明な引数・読めない音声でも終了コード 0 を返すことがある | 成功の判定を「終了 0 かつ JSON が在って読める」にした（§8.4） |
 | RK-35 | Qwen3-2507 の GGUF に公式の配布元が無い（unsloth / lmstudio-community） | T-24 でライセンスと中身（受け入れ試験）を確かめ、コミット SHA と sha256 で固定する |
 | RK-36 | reaper がアプリより長生きした場合（アプリのクラッシュ）に、走査が reaper より前の観測になる | `state/reaper.lock` の flock（§2.1）。reaper は SIGTERM で 1 件を終えてから止まる |
@@ -3098,3 +3098,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-53 | 欠 | §6.1・§8.9.4・§8.9.8・§8.10・§8.13・§8.11・§8.15・§11.1・§11.3・§11.4・§12.4・付録 A.4・付録 B.3・§14 | （第 2 段の B3〜B6 のチケット執筆で発見）`reconcileLock1` は reaper.conf だけを書く、reaper の書き込み失敗の扱いと `reaper_completed requests=0`、trash の表示条件、ダウンロード前の `isPresent`、乗り換えの 2 規則、要対応に `toolMissing`、起動に失敗したときの `NSAlert`、Info.plist の 2 キーと TCC 文の逐語の共有、本体の `--identifier`、リリースの作り方、削除のゲートの 5 番目（削除 ON で E2E-01〜09 を再実行）、`✗` は U+2717、E2E-11 は 0 件にならない、README に載せる RK |
 | F-54 | 誤 | §6.2・§6.4 | （ConfigEffect の設計で発見）`sections.summary.maxItems` と `sections.timeline.maxItems` はどこからも読まれない「効かない設定」だった（voicedock にも無い）→ この 2 つのキーを無くした（`maxItems` を持つのは 5 節だけ） |
 | F-55 | 誤・欠 | 00-api-map・目次・付録 A.4 | （最終の整合確認で発見）T-25 と T-45 の循環（`GoldenCase.orderedObject` は T-45 の extension に）、Phase 7 の UI・診断が Phase 8 の型を使っていた（`LockObserving` と既定の無効実装を T-32 に置き、T-36 が差し替える）、`reaperConf` の引数ラベル（PT-11）、`RecordingRow.errorCodeRaw`、`ChatTransportFactory` の引数、`BacklogAction` の戻り、`ConfigStore.init`、`ModelManager` / `ModelDownloader` の init、`WorkerDependencies` の末尾に足す順、TestSupport の置き場所、目次の前提の抜け、`normalize_failed reason=input` ほかの reason 語 |
+| F-56 | 事 | §2 D-6・§10.8・§12.2・§14 | （T-02 の着手時に利用者が決定）CI のランナーを開発機のセルフホストランナーにした。`sudo xcode-select` の代わりに `make check-toolchain`、`.diskImage` のテストは CI で走らせない、P0-10 は行わない、RK-06・RK-33 を書き換えた |

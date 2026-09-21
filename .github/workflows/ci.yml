@@ -1,0 +1,27 @@
+name: ci
+on:
+  push: { branches: [main, develop] }
+  pull_request: { branches: [main, develop, "feat/**"] }
+concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
+permissions: { contents: read }
+jobs:
+  check:
+    runs-on: [self-hosted, macOS, ARM64]   # 開発機のセルフホストランナー（Xcode 27.0）。利用者の決定（T-02）
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
+      - run: make check-toolchain
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9      # v6.1.0。.build を Package.resolved と .xcode-version のハッシュで
+        with:
+          path: .build
+          key: spm-${{ runner.os }}-${{ hashFiles('Package.resolved', '.xcode-version') }}
+      - name: lint
+        run: make lint
+      - name: build
+        run: swift build --build-tests
+      - name: ND（削除禁止。最初に走らせる）
+        run: swift test --skip-build --filter "NoDeleteTests|ReaperTests"
+      - name: policy + spec sync
+        run: swift test --skip-build --filter PolicyTests
+      - name: other tests
+        run: swift test --skip-build --skip "NoDeleteTests|ReaperTests|PolicyTests|LLMAcceptance"
