@@ -1,0 +1,70 @@
+{
+  "schema": 1,
+  "group": "note_filename",
+  "cases": [
+    {
+      "name": "raw_default",
+      "kind": "raw",
+      "overrides": {},
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "raw_colon_template",
+      "kind": "raw",
+      "overrides": {
+        "obsidian.raw.filenameTemplate": "{date}:raw"
+      },
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "raw_all_placeholders",
+      "kind": "raw",
+      "overrides": {
+        "obsidian.raw.filenameTemplate": "{yyyymmdd}-{date}-{time}"
+      },
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "raw_max_bytes_5",
+      "kind": "raw",
+      "overrides": {
+        "obsidian.maxTitleBytes": 5
+      },
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "daily_default",
+      "kind": "daily",
+      "overrides": {},
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "daily_custom",
+      "kind": "daily",
+      "day": "2026-01-02",
+      "overrides": {
+        "obsidian.wiki.filenameTemplate": "{yyyymmdd} 声"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "raw_folder_default",
+      "kind": "rawFolder",
+      "overrides": {},
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "daily_folder_default",
+      "kind": "dailyFolder",
+      "overrides": {},
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    }
+  ]
+}

@@ -1,0 +1,175 @@
+{
+  "schema": 1,
+  "group": "daily_parts",
+  "cases": [
+    {
+      "name": "recorded_values",
+      "kind": "recorded",
+      "inputs": [
+        null,
+        -1.0,
+        0.0,
+        59.999,
+        60.0,
+        3599.9,
+        3600.0,
+        34880.9,
+        90061.7,
+        360000.0
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "tags_adversarial",
+      "kind": "tags",
+      "defaults": [
+        "voice",
+        "voicedock"
+      ],
+      "tags": [
+        "VoiceDock",
+        "DJI Mic",
+        "a: b",
+        "c \"d\"",
+        "e\\f",
+        "  ",
+        "全角\u3000空白",
+        "Straße",
+        "STRASSE"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "tags_missing",
+      "kind": "tags",
+      "defaults": [
+        "voice",
+        "voicedock"
+      ],
+      "tags": null,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "tags_defaults_dup",
+      "kind": "tags",
+      "defaults": [
+        "Voice",
+        "voice",
+        " x "
+      ],
+      "tags": [
+        "X"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "warnings_cases",
+      "kind": "warnings",
+      "sets": [
+        [],
+        [
+          {
+            "partkey": "DJIMIC3/F/f_orig.wav",
+            "status": "FAILED",
+            "errorCode": "WHISPER_FAILED"
+          }
+        ],
+        [
+          {
+            "partkey": "DJIMIC3/F/f_orig.wav",
+            "status": "FAILED",
+            "errorCode": "WHISPER_FAILED"
+          },
+          {
+            "partkey": "DJIMIC3/F/f_orig.wav",
+            "status": "FAILED",
+            "errorCode": "WHISPER_FAILED"
+          }
+        ],
+        [
+          {
+            "partkey": "DJIMIC3/S/s1_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "NO_SPEECH_DETECTED"
+          }
+        ],
+        [
+          {
+            "partkey": "DJIMIC3/S/s2_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "DUPLICATE_CONTENT"
+          },
+          {
+            "partkey": "DJIMIC3/S/s1_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "NO_SPEECH_DETECTED"
+          }
+        ],
+        [
+          {
+            "partkey": "DJIMIC3/S/s3_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "SOURCE_MISSING"
+          }
+        ],
+        [
+          {
+            "partkey": "DJIMIC3/S/s4_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": null
+          }
+        ],
+        [
+          {
+            "partkey": "DJIMIC3/S/s5_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "LLM_FAILED"
+          }
+        ],
+        [
+          {
+            "partkey": "DJIMIC3/S/s6_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "NORMALIZED_MISSING"
+          },
+          {
+            "partkey": "DJIMIC3/S/s3_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "SOURCE_MISSING"
+          }
+        ],
+        [
+          {
+            "partkey": "DJIMIC3/F/f_orig.wav",
+            "status": "FAILED",
+            "errorCode": "WHISPER_FAILED"
+          },
+          {
+            "partkey": "DJIMIC3/S/s1_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "NO_SPEECH_DETECTED"
+          },
+          {
+            "partkey": "DJIMIC3/S/s3_orig.wav",
+            "status": "SKIPPED",
+            "errorCode": "SOURCE_MISSING"
+          }
+        ]
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "sentences_cases",
+      "kind": "sentences",
+      "inputs": [
+        "",
+        "A。B。 C",
+        "一文目。二文目。\n三文目 。 \n\n四",
+        "。。",
+        "no period",
+        "a\u2028b。c\u001cd"
+      ],
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

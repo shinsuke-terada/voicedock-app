@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "group": "llm_extract",
+  "cases": [
+    {
+      "name": "think_prefix",
+      "text": "<think>x</think> {\"a\":1}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "fence_json",
+      "text": "```json\n{\"a\":1}\n```",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "brace_in_string",
+      "text": "pre {\"a\":\"}\"} post",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "array_then_object",
+      "text": "[{\"a\":1}]",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "unclosed_think",
+      "text": "<think>{\"a\":1}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "fence_not_json_then_object",
+      "text": "```\nnot json\n```\n{\"b\":2}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "two_fences",
+      "text": "```json\n[1]\n```\n```json\n{\"c\":3}\n```",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "plain",
+      "text": "{\"x\": [1, 2], \"y\": \"z\"}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "escaped_quote",
+      "text": "noise {\"a\": \"q\\\"}\"} tail",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "nothing",
+      "text": "no json here",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "empty",
+      "text": "",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "think_multiline",
+      "text": "<think>\n{\"no\":1}\n</think>\n{\"yes\": true}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "nested",
+      "text": "{\"a\": {\"b\": {\"c\": [1]}}}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "whitespace",
+      "text": "\u3000 {\"a\": 1} \u3000",
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

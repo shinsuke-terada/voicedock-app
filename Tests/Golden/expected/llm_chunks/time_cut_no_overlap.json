@@ -1,0 +1,20 @@
+[
+  {
+    "texts": [
+      "a",
+      "b"
+    ],
+    "startMs": 0,
+    "endMs": 35000,
+    "text": "a\nb"
+  },
+  {
+    "texts": [
+      "c",
+      "d"
+    ],
+    "startMs": 60000,
+    "endMs": 75000,
+    "text": "c\nd"
+  }
+]

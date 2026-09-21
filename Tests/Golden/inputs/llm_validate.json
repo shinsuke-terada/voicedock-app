@@ -1,0 +1,297 @@
+{
+  "schema": 1,
+  "group": "llm_validate",
+  "cases": [
+    {
+      "name": "ok_minimal",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "ok_full",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "key_points": [
+          "a"
+        ],
+        "tasks": [
+          {
+            "text": "x",
+            "due": null
+          }
+        ],
+        "decisions": [],
+        "ideas": [],
+        "tags": [
+          "t"
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "missing_summary",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "missing_both",
+      "partial": false,
+      "overrides": {},
+      "payload": {},
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "extra",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "mood": "x"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "empty_summary",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": ""
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "wrong_list",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "key_points": "文字列"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "list_item_type",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "key_points": [
+          "a",
+          1
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "task_missing_text",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tasks": [
+          {
+            "due": null
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "task_not_dict",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tasks": [
+          "x"
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "task_extra",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tasks": [
+          {
+            "text": "a",
+            "x": 1
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "task_due_int",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tasks": [
+          {
+            "text": "a",
+            "due": 3
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "task_due_missing_ok",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tasks": [
+          {
+            "text": "a"
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "task_text_empty",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tasks": [
+          {
+            "text": ""
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "task_text_long",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tasks": [
+          {
+            "text": "あああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ"
+          }
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "title_int",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": 5,
+        "summary": "s"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "title_bool",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": true,
+        "summary": "s"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "title_too_long",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "あああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ",
+        "summary": "s"
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "summary_null",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": null
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "list_null",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tags": null
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "multi_order",
+      "partial": false,
+      "overrides": {},
+      "payload": {
+        "mood": 1,
+        "summary": 3,
+        "tags": [
+          1
+        ],
+        "zzz": 2
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "partial_with_title_tags",
+      "partial": true,
+      "overrides": {},
+      "payload": {
+        "title": "t",
+        "summary": "s",
+        "tags": [
+          "a"
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "partial_ok",
+      "partial": true,
+      "overrides": {},
+      "payload": {
+        "summary": "s",
+        "key_points": [
+          "a"
+        ]
+      },
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

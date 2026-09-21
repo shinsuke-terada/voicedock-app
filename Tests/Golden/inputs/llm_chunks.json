@@ -1,0 +1,239 @@
+{
+  "schema": 1,
+  "group": "llm_chunks",
+  "cases": [
+    {
+      "name": "v4_example",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {
+        "llm.maxCharsPerRequest": 10,
+        "llm.chunkOverlapChars": 4,
+        "llm.maxSecondsPerRequest": 3600
+      },
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 5000,
+          "text": "aaa"
+        },
+        {
+          "atMs": 10000,
+          "endMs": 15000,
+          "text": "bbb"
+        },
+        {
+          "atMs": 20000,
+          "endMs": 25000,
+          "text": "ccc"
+        },
+        {
+          "atMs": 30000,
+          "endMs": 35000,
+          "text": "dd"
+        },
+        {
+          "atMs": 40000,
+          "endMs": 45000,
+          "text": "eeeee"
+        },
+        {
+          "atMs": 5000000,
+          "endMs": 5005000,
+          "text": "ff"
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "time_cut_no_overlap",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {
+        "llm.maxCharsPerRequest": 100,
+        "llm.chunkOverlapChars": 4,
+        "llm.maxSecondsPerRequest": 60
+      },
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 5000,
+          "text": "a"
+        },
+        {
+          "atMs": 30000,
+          "endMs": 35000,
+          "text": "b"
+        },
+        {
+          "atMs": 60000,
+          "endMs": 65000,
+          "text": "c"
+        },
+        {
+          "atMs": 70000,
+          "endMs": 75000,
+          "text": "d"
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "both_exceeded_no_overlap",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {
+        "llm.maxCharsPerRequest": 5,
+        "llm.chunkOverlapChars": 2,
+        "llm.maxSecondsPerRequest": 60
+      },
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 5000,
+          "text": "aaa"
+        },
+        {
+          "atMs": 100000,
+          "endMs": 105000,
+          "text": "bbb"
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "overlap_takes_at_least_one",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {
+        "llm.maxCharsPerRequest": 10,
+        "llm.chunkOverlapChars": 1,
+        "llm.maxSecondsPerRequest": 3600
+      },
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 1000,
+          "text": "aaaa"
+        },
+        {
+          "atMs": 1000,
+          "endMs": 2000,
+          "text": "bbbbb"
+        },
+        {
+          "atMs": 2000,
+          "endMs": 3000,
+          "text": "cc"
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "overlap_whole_drops_first",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {
+        "llm.maxCharsPerRequest": 6,
+        "llm.chunkOverlapChars": 2,
+        "llm.maxSecondsPerRequest": 3600
+      },
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 1000,
+          "text": "a"
+        },
+        {
+          "atMs": 1000,
+          "endMs": 2000,
+          "text": "b"
+        },
+        {
+          "atMs": 2000,
+          "endMs": 3000,
+          "text": "ccccc"
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "single_over_limit",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {
+        "llm.maxCharsPerRequest": 3,
+        "llm.chunkOverlapChars": 1,
+        "llm.maxSecondsPerRequest": 3600
+      },
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 1000,
+          "text": "abcdef"
+        },
+        {
+          "atMs": 1000,
+          "endMs": 2000,
+          "text": "g"
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "multibyte_counts_scalars",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {
+        "llm.maxCharsPerRequest": 5,
+        "llm.chunkOverlapChars": 2,
+        "llm.maxSecondsPerRequest": 3600
+      },
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 1000,
+          "text": "あいう"
+        },
+        {
+          "atMs": 1000,
+          "endMs": 2000,
+          "text": "えお"
+        },
+        {
+          "atMs": 2000,
+          "endMs": 3000,
+          "text": "か"
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "empty",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {},
+      "segments": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "default_limits_one_chunk",
+      "base": "2026-08-29T07:12:04+09:00",
+      "overrides": {},
+      "segments": [
+        {
+          "atMs": 0,
+          "endMs": 1000,
+          "text": "一"
+        },
+        {
+          "atMs": 3000000,
+          "endMs": 3001000,
+          "text": "二"
+        }
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    }
+  ]
+}

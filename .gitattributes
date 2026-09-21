@@ -1,0 +1,3 @@
+# golden の期待値と Unicode のデータはバイト列のまま扱う（改行を変換しない。T-25）
+Tests/Golden/** -text
+tools/unicode/*.txt -text

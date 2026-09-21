@@ -1,0 +1,146 @@
+{
+  "schema": 1,
+  "group": "pyjson_decode",
+  "cases": [
+    {
+      "name": "object_basic",
+      "text": "{\"a\": 1, \"b\": [true, false, null], \"c\": \"x\"}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "duplicate_key_last_wins_first_position",
+      "text": "{\"b\":1,\"a\":2,\"b\":3}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "numbers",
+      "text": "[0, -0, 1.0, 1e5, 1E-5, -1.5e+2, 12345678901234567890, 9223372036854775807, -9223372036854775808, 9223372036854775808, 0.1, 1e400]",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "constants",
+      "text": "[NaN, Infinity, -Infinity]",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "string_escapes",
+      "text": "\"\\u3042\\ud834\\udd1e\\n\\/\\\\\\\"\\b\\f\\r\\t\\u00E9\"",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "lone_surrogate",
+      "text": "\"\\ud800x\"",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "ascii_whitespace_around",
+      "text": " \t\n\r{\"a\":1}\r\n ",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "ideographic_space_rejected",
+      "text": "\u3000{\"a\":1}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "extra_data_rejected",
+      "text": "{\"a\":1} x",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "empty_rejected",
+      "text": "",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "bom_rejected",
+      "text": "\ufeff{}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "raw_control_char_rejected",
+      "text": "\"a\u0001b\"",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "raw_tab_in_string_rejected",
+      "text": "\"a\tb\"",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "invalid_escape_rejected",
+      "text": "\"\\x\"",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "short_unicode_escape_rejected",
+      "text": "\"\\u12\"",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "non_string_key_rejected",
+      "text": "{1: 2}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "trailing_comma_array_rejected",
+      "text": "[1,]",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "trailing_comma_object_rejected",
+      "text": "{\"a\":1,}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "leading_zero_rejected",
+      "text": "01",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "minus_only_rejected",
+      "text": "-",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "dot_without_digits_rejected",
+      "text": "1.",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "leading_dot_rejected",
+      "text": ".5",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "nested_ten",
+      "text": "[[[[[[[[[[1]]]]]]]]]]",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "top_string",
+      "text": "\"x\"",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "top_number",
+      "text": "3",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "top_true",
+      "text": "true",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "non_ascii_raw",
+      "text": "{\"日\": \"本\u2028\"}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "empty_containers",
+      "text": "{\"a\": [], \"b\": {}}",
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

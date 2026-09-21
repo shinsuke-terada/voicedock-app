@@ -1,0 +1,30 @@
+[
+  {
+    "texts": [
+      "aaa",
+      "bbb",
+      "ccc"
+    ],
+    "startMs": 0,
+    "endMs": 25000,
+    "text": "aaa\nbbb\nccc"
+  },
+  {
+    "texts": [
+      "ccc",
+      "dd",
+      "eeeee"
+    ],
+    "startMs": 20000,
+    "endMs": 45000,
+    "text": "ccc\ndd\neeeee"
+  },
+  {
+    "texts": [
+      "ff"
+    ],
+    "startMs": 5000000,
+    "endMs": 5005000,
+    "text": "ff"
+  }
+]

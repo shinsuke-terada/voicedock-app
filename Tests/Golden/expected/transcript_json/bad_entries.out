@@ -1,0 +1,14 @@
+{
+  "partkey": "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+  "language": "ja",
+  "duration_seconds": 10.0,
+  "started_at": "2026-08-29T07:12:04+09:00",
+  "text": "ok",
+  "segments": [
+    {
+      "start": 1.234,
+      "end": 5.678,
+      "text": "ok"
+    }
+  ]
+}

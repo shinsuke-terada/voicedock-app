@@ -2109,7 +2109,8 @@ public enum Golden {
         }
         let parts = key.split(separator: ".", omittingEmptySubsequences: false).map(String.init)
         guard parts.count == 5, parts[0] == "llm", parts[1] == "analysis", parts[2] == "sections",
-              overridableSections.contains(parts[3]), overridableSectionFields.contains(parts[4]) else {
+            overridableSections.contains(parts[3]), overridableSectionFields.contains(parts[4])
+        else {
             return false
         }
         // summary / timeline に maxItems は無い（書けば CV-01。PLAN §6.2・F-54）。

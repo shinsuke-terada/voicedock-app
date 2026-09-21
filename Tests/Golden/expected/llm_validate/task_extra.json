@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "errors": "- tasks.0.x: Extra inputs are not permitted",
+  "result": null
+}

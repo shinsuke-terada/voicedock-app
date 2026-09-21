@@ -1,0 +1,123 @@
+{
+  "schema": 1,
+  "group": "pytext",
+  "cases": [
+    {
+      "name": "enumerations",
+      "kind": "enumerations",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "strip_cases",
+      "kind": "strip",
+      "inputs": [
+        "",
+        "  a  ",
+        "\u3000a\u3000",
+        "\u001ca\u001f",
+        "\u200ba\u200b",
+        "\u0085a\u00a0",
+        "\t\n\u000b\f\ra b\r\n",
+        "a"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "strip_dot_cases",
+      "kind": "stripChars",
+      "chars": ".",
+      "inputs": [
+        "..a..",
+        "a.b",
+        "...",
+        "",
+        ". a ."
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "strip_slash_cases",
+      "kind": "stripChars",
+      "chars": "/",
+      "inputs": [
+        "/Daily/Voice/Raw/",
+        "Raw",
+        "//",
+        "/a//"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "splitlines_cases",
+      "kind": "splitlines",
+      "inputs": [
+        "",
+        "\n",
+        "a\n",
+        "a",
+        "a\r\nb\rc\n\nd\u000be\ff\u001cg\u001dh\u001ei\u0085j\u2028k\u2029l\n",
+        "\r\n\r",
+        "a\u001fb",
+        "a\r\r\nb"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "collapse_cases",
+      "kind": "collapse",
+      "inputs": [
+        "a  b",
+        "a\t\tb",
+        "a\u3000\u3000b",
+        " a ",
+        "a\u200bb",
+        "a\u001c\u001db",
+        "a\u00a0b"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "casefold_cases",
+      "kind": "casefold",
+      "inputs": [
+        "Straße",
+        "ǅ",
+        "ΣΑΣ",
+        "İ",
+        "ﬁ",
+        "ΐ",
+        "ＡＢＣ",
+        "ẞ",
+        "Ǆ",
+        "ﬀ",
+        "ŉ",
+        "abc"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "nfc_cases",
+      "kind": "nfc",
+      "inputs": [
+        "か\u3099",
+        "e\u0301",
+        "Å",
+        "한"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "nfkc_cases",
+      "kind": "nfkc",
+      "inputs": [
+        "ﾃｽﾄ",
+        "Ｖｏｉｃｅ",
+        "①",
+        "㍍",
+        "ﬁ",
+        "\u3000"
+      ],
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

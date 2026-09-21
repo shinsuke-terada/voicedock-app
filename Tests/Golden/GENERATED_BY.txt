@@ -1,0 +1,6 @@
+voicedock_ref=d3d595e
+voicedock_commit=d3d595ed217afdc89199633562d3003546a0f50e
+python=3.12.13
+unicodedata=15.0.0
+uv=uv 0.12.15 (Homebrew 2026-09-15 aarch64-apple-darwin)
+generator=tools/golden/generate.py
