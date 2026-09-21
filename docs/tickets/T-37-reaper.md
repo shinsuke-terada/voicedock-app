@@ -631,6 +631,7 @@ struct ReaperBench {
 | `nd40AnyOtherPlaceIsRefused` | `ND-40 [R1] <HOME>/bin 以外の場所からの起動は 3` | `<tmp>/elsewhere/voicedock-reaper` に複製 | 同上（exit 3） |
 | `rv00SymlinkedReaperIsRefused` | `RV-00 <HOME>/bin/voicedock-reaper が symlink なら 3` | 本体を `bin/real` に置き、`bin/voicedock-reaper` をその symlink に | exit 3、何も書かれない |
 | `rv00AnotherHomeIsRefused` | `RV-00 別の --home を渡すと 3` | 舞台を 2 つ作り、A の実行ファイルに `--home <B>` | exit 3、A・B のどちらにも何も書かれない |
+| `rv00HomeInsideABundleIsRefused` | `RV-00 <HOME> が .app/Contents/ の下なら 3` | 舞台の `<HOME>` を `<tmp>/VoiceDock.app/Contents/home` へ移し、その `bin/voicedock-reaper` を `--home <移した先>` で起動（置き場所の一致は通る） | exit 3、stdout・stderr 空、ログが無い、要求が残る、結果 0 件（§6 の 2 のために足した。`nd40BundledReaperDoesNothing` は一致の検査でも弾かれるので、`bundleMarker` の検査を消しても緑のままだった） |
 | `rv00MissingHomeIsRefused` | `RV-00 --home が無いディレクトリなら 3` | `--home <tmp>/nope` | exit 3 |
 | `badArgumentsExitTwo` | 引数が不正なら 2（キューに触らない） | `[]`・`["--help"]`・`["-h"]`・`["--home"]`・`["--home", "<HOME>", "--x"]`・`["--version", "x"]`（パラメタ化） | exit 2、stderr == `ReaperArguments.usage`、`logs/reaper.log` が無い、要求が残る |
 

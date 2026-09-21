@@ -104,6 +104,30 @@ struct ReaperArgumentsTests {
         Self.expectNothingWritten(b, request: nameB)
     }
 
+    /// 置き場所の一致の検査は通るので、`.app/Contents/` の検査だけが弾く（T-37 §4.5 の手順 2 を手順 5 より先に置く理由）
+    @Test("RV-00 <HOME> が .app/Contents/ の下なら 3")
+    func rv00HomeInsideABundleIsRefused() throws {
+        let bench = try ReaperBench()
+        try bench.writeRequest()
+        let contents = bench.tmp.url.appendingPathComponent("VoiceDock.app/Contents", isDirectory: true)
+        try FileManager.default.createDirectory(at: contents, withIntermediateDirectories: true)
+        let home = contents.appendingPathComponent("home", isDirectory: true)
+        try FileManager.default.moveItem(at: bench.layout.root, to: home)
+        let moved = HomeLayout(root: home)
+        let run = try ReaperBinary.run(
+            executable: moved.reaperExecutable, arguments: ["--home", home.path(percentEncoded: false)])
+        #expect(run.exitCode == 3)
+        #expect(run.stdout == "")
+        #expect(run.stderr == "")
+        #expect(!FileManager.default.fileExists(atPath: moved.reaperLog.path(percentEncoded: false)))
+        let requests = try FileManager.default.contentsOfDirectory(
+            atPath: moved.queueDelete.path(percentEncoded: false))
+        #expect(requests == [ReaperBench.requestID + ".json"])
+        let results = try FileManager.default.contentsOfDirectory(atPath: moved.queueResult.path(percentEncoded: false))
+        #expect(results == [])
+        #expect(bench.sourceExists())
+    }
+
     @Test("RV-00 --home が無いディレクトリなら 3")
     func rv00MissingHomeIsRefused() throws {
         let bench = try ReaperBench()
