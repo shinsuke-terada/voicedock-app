@@ -537,13 +537,15 @@ public final class FakeChunkReader: ChunkReading {
 | `selectCandidates` で `importedKeys` を無視する | `importedKeyIsSkipped` |
 | `StabilityChecker` の fast path を `<` にする | `fastPathBoundaryIsInclusive` |
 | `StabilityChecker` を候補ごとに待つ実装にする | `waitingDoesNotScaleWithFileCount` |
-| 不一致で 0 に戻さず続ける | `changeInFirstRoundDefers` |
+| 不一致でも数えて続ける（`ok[r] = 0` の代わりに `ok[r] += 1`） | `changeInFirstRoundDefers`・`changeInLastRoundDefers` |
 | `writePartial` の読み取りエラーで `discardPartial` を呼ばない | `readErrorRemovesPartial` |
 | `scan` で `entryKind` の代わりに symlink を辿る `stat` を使う | `symlinksAreNotFollowed` |
 | `scan` の `.` 始まりの除外を消す | `dotEntriesAreIgnoredSilently` |
 | `openForCopy` から `O_NOFOLLOW` を外す | `openForCopyRejectsSymlink` |
 | `durationMillis` を `(s * 1000).rounded()` にする | `durationMillisMatchesPython` |
 | `BWFWriter` の pcm24 の量子化を `rounded()` にする | `pcm24SpeechMatchesVoicedock` |
+
+（実装で追記）不一致のときに `ok[r] = 0` へ戻す行を消すだけ（据え置き）の変異は**等価**で、落ちるテストは無い。回数はちょうど `checks` 回なので、`checks` に届くのは全回が一致したときだけで、戻しても戻さなくても結果は変わらない（§4.3 の「残りの回数では `checks` に届かない」）。そのため表の壊し方を「不一致でも数えて続ける」にした。
 
 ## 7. 受け入れ条件
 
