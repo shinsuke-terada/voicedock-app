@@ -474,7 +474,7 @@ exit <exitCode>
 ```
 ````
 
-**実装の注記（T-17 の実装時）**: この節は T-17 の PR では実装していない。(1) `PolicyTests` のターゲットは `TestSupport` にしか依存せず（`Package.swift`。T-01 の持ち物）、`WhisperArgs.build` を呼べない。(2) 上のブロックは PLAN §8.4 の `text` フェンス（先頭に `<bundle>/Contents/Helpers/whisper-cli`、`-t <threads>`、5 行に折り返し）と逐語で一致せず、「そのまま写す」と両立しない。どちらも利用者の判断が要る（末尾の変更提案 9）。
+**実装の注記（T-17 の実装時）**: この節は T-17 の PR では実装していない。(1) `PolicyTests` のターゲットは `TestSupport` にしか依存せず（`Package.swift`。T-01 の持ち物）、`WhisperArgs.build` を呼べない。(2) 上のブロックは PLAN §8.4 の `text` フェンス（先頭に `<bundle>/Contents/Helpers/whisper-cli`、`-t <threads>`、5 行に折り返し）と逐語で一致せず、「そのまま写す」と両立しない。どちらも利用者の判断が要る（末尾の変更提案 9）。 → GitHub issue #18（SPEC 同期の拡張。T-06・T-07 の分と同じ）に切り出した。当面は `argvMatchesPlan` が PLAN §8.4 の argv を固定値で照合する
 
 ## 10. マージ後にやること
 
