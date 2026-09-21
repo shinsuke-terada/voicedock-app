@@ -120,7 +120,6 @@ public enum WhisperOutputParser {
 
 ```swift
 // whisper-cli を実行し正規化 transcript を保存する（PLAN §8.4）。状態遷移と DB 更新はしない。
-import Darwin
 import Foundation
 import VDContract
 import VDCore
@@ -171,6 +170,7 @@ public struct Transcriber: Sendable {
 ```
 
 **前提の確認（`missingPrerequisites`）**。この順に調べ、欠けたものを全部返す:
+（VDTranscribe の import 許可リスト（PLAN §3.4・PT-07）に Darwin は無い。`stat` / `access` は Foundation 経由で使う。2 と 3 は T-09 の `ModelFiles.isPresent` / `ModelFiles.url` で書く。中身は下の条件と同じ）
 1. `.whisperMissing`: `paths.whisperCLI` が通常ファイルで `access(p, X_OK) == 0`
 2. `.modelMissing`: `catalog.entry(kind: .whisper, id: config.whisperModelID)` が在り、`layout.modelFile(kind: "whisper", file: entry.file)` が通常ファイルで size == `entry.bytes`
 3. `.vadModelMissing`（`config.vad.enabled` のときだけ）: `catalog.entry(kind: .vad, id: config.vad.modelID)` が在り、`layout.modelFile(kind: "vad", file: entry.file)` が通常ファイルで size == `entry.bytes`
@@ -374,7 +374,7 @@ exit <exitCode>
 | `timeoutRemovesPartialOutput` / 「タイムアウトで whisper.json を消す」 | 同上、実行前に whisper.json を置く | whisper.json が無い |
 | `noSpeechIsNotFailure` / 「発話なしは失敗ではない」 | utterances 空 | `.noSpeech(t, "0 文字（min_chars=1）")`、`t.text == ""` |
 | `noSpeechStillWritesTranscript` / 「ASR-09 無音でも transcript を先に書く」 | 同上 | transcript のファイルが在り、decode でき、text が空 |
-| `minCharsIsRespected` / 「CE transcription.minChars を守る」 | 発話 `(0, 1, " あ")`、minChars 1（既定）と 2 | 1 → `.transcribed`、2 → `.noSpeech(_, "1 文字（min_chars=2）")` |
+| `minCharsIsRespected` / 「CE transcription.minChars を守る」 | 発話 `(0, 1, " あ")`、minChars 1（既定）と 2 | 1 → `.transcribed`、2 → `.noSpeech(_, "1 文字（min_chars=2）")`。結合文字の発話 `(0, 1, " か\u{3099}")`（2 スカラー・1 書記素）は minChars 2 で `.transcribed`（§7 の最後の行） |
 | `ceWhisperModelID` / 「CE transcription.whisperModelID を変えると -m のパスが変わる」 | `whisperModelID = "medium-q5_0"` | `recordedArgv` の `-m` の次が `<H>/models/whisper/ggml-medium-q5_0.bin`（既定なら `ggml-large-v3-turbo-q5_0.bin`） |
 | `ceVADModelID` / 「CE transcription.vad.modelID を変えると --vad-model のパスが変わる」 | `vad.modelID = "silero-v4"` | `--vad-model` の次が `<H>/models/vad/ggml-silero-v4.bin`（既定なら `ggml-silero-v5.1.2.bin`） |
 | `missingCLIIsPrerequisite` / 「whisper-cli が無ければ前提の欠け」 | whisper-cli を消す | `.prerequisiteMissing(.whisperMissing)`、何も書かない |
@@ -447,10 +447,10 @@ exit <exitCode>
 | `defer` の whisper.json の削除を消す | `rawJSONIsRemovedAfterSuccess`、`timeoutRemovesPartialOutput` |
 | 冪等の確認を消す | `existingTranscriptIsReused` |
 | `vad.enabled` の分岐を消して常に VAD のフラグを渡す | `vadDisabledPassesNoVadFlag` |
-| `num` を常に `description` にする | `numFormat`、`argvMatchesPlan` |
+| `num` を常に `description` にする | `numFormat`（`argvMatchesPlan` は落ちない。既定の argv で `num` を通るのは threshold の 0.5 だけで、`description` でも `"0.5"`。実装時に確認） |
 | `missingVADFlags` を部分一致（`contains`）にする | `prefixIsNotEnough` |
 | `.signaled` の分岐を `.exited` と同じ文言にする | `signalIsWhisperFailed` |
-| `TextLimit.scalarCount` を `String.count` にする（結合文字を含む text で） | `minCharsIsRespected` に結合文字の例（`"か\u{3099}"` は 2 スカラー・1 書記素）を足して確かめる |
+| `TextLimit.scalarCount` を `String.count` にする（結合文字を含む text で） | `minCharsIsRespected`（結合文字の例 `"か\u{3099}"` は 2 スカラー・1 書記素。§6.3 の行に含めた） |
 
 ## 8. 受け入れ条件
 
@@ -474,6 +474,8 @@ exit <exitCode>
 ```
 ````
 
+**実装の注記（T-17 の実装時）**: この節は T-17 の PR では実装していない。(1) `PolicyTests` のターゲットは `TestSupport` にしか依存せず（`Package.swift`。T-01 の持ち物）、`WhisperArgs.build` を呼べない。(2) 上のブロックは PLAN §8.4 の `text` フェンス（先頭に `<bundle>/Contents/Helpers/whisper-cli`、`-t <threads>`、5 行に折り返し）と逐語で一致せず、「そのまま写す」と両立しない。どちらも利用者の判断が要る（末尾の変更提案 9）。 → GitHub issue #18（SPEC 同期の拡張。T-06・T-07 の分と同じ）に切り出した。当面は `argvMatchesPlan` が PLAN §8.4 の argv を固定値で照合する
+
 ## 10. マージ後にやること
 
 なし。
@@ -492,3 +494,4 @@ exit <exitCode>
 6. PolicyTests（T-05）の SPEC 読み取りに「見出しの名前でコードブロックを取る」関数（例 `SpecDocument.codeBlock(heading:language:)`）が要る（§9 の SPEC 同期）→ 00-api-map §15 に反映済み（2026-09-18）
 7. T-17 の前提に T-03 を足す（`Tests/Fixtures/whisper-cli-help.txt`。ファイル名は T-03 で確定させる）→ README の索引に反映済み（2026-09-18）
 8. （整合修正で追加）生 JSON の読み取りを `PyJSON.decode`（`PyJSONValue`）にした（PLAN §5.7・F-45）。T-09 を README の前提に足す必要がある（`TranscriptionConfig`・`ModelCatalog`）
+9. （T-17 の実装時）§9 の SPEC 同期は未実装。決めることは 2 つ: (a) `whisperArgvMatchesSpec` を置く場所（`PolicyTests` に `VDTranscribe` への依存を足す＝`Package.swift` の変更か、`VDTranscribeTests` に置くか）、(b) SPEC の S10 の中身（PLAN §8.4 のフェンスを写すなら、比べる前に argv[0] を落とし `<threads>` を置き換え、空白で区切って比べる規則が要る。§9 の 1 行のブロックにするなら PLAN §8.4 にそのブロックを足す）

@@ -1,0 +1,215 @@
+// whisper-cli を実行し正規化 transcript を保存する（PLAN §8.4）。状態遷移と DB 更新はしない。
+import Foundation
+import VDContract
+import VDCore
+import VDProcess
+
+public enum TranscribePrerequisite: String, Sendable, CaseIterable, Equatable {
+    case whisperMissing = "whisper_missing"  // PauseReason と同じ語（PLAN 付録 A.4）。ケース名は 00-api-map §7
+    case modelMissing = "model_missing"
+    case vadModelMissing = "vad_model_missing"
+}
+
+public struct TranscribeRequest: Sendable {
+    public let partkey: String
+    public let slug: String  // KeySlug.of(partkey)
+    public let input: URL  // staging/<slug>/audio16k.wav
+    public let durationSeconds: Double?
+    public let startedAt: String  // Part の started_at（DB の文字列そのまま）
+
+    public init(partkey: String, slug: String, input: URL, durationSeconds: Double?, startedAt: String) {
+        self.partkey = partkey
+        self.slug = slug
+        self.input = input
+        self.durationSeconds = durationSeconds
+        self.startedAt = startedAt
+    }
+}
+
+public struct TranscribeMetrics: Equatable, Sendable {
+    public let elapsedSeconds: Double  // 丸めない（ログで Python 互換の round(…, 1) をかける）
+    public let chars: Int  // text の Unicode スカラー数
+    public let rtf: Double?  // round(elapsed / duration, 3)。duration が nil か 0 以下なら nil
+    public let speechRatio: Double?  // round(Σmax(0, end − start) / duration, 3)。同上
+
+    public init(elapsedSeconds: Double, chars: Int, rtf: Double?, speechRatio: Double?) {
+        self.elapsedSeconds = elapsedSeconds
+        self.chars = chars
+        self.rtf = rtf
+        self.speechRatio = speechRatio
+    }
+}
+
+public enum TranscribeOutcome: Equatable, Sendable {
+    case transcribed(PartTranscript, metrics: TranscribeMetrics)
+    case noSpeech(PartTranscript, message: String)
+    case prerequisiteMissing(TranscribePrerequisite)  // 遷移せずに待つ（ガード。PLAN §5.4）
+    case failure(StageFailure)
+}
+
+public struct Transcriber: Sendable {
+    let runner: any ProcessRunning
+    let paths: AppPaths
+    let layout: HomeLayout
+    let config: TranscriptionConfig
+    let catalog: ModelCatalog
+    let clock: any AppClock
+
+    public init(
+        runner: any ProcessRunning, paths: AppPaths, layout: HomeLayout,
+        config: TranscriptionConfig, catalog: ModelCatalog, clock: any AppClock
+    ) {
+        self.runner = runner
+        self.paths = paths
+        self.layout = layout
+        self.config = config
+        self.catalog = catalog
+        self.clock = clock
+    }
+
+    /// ガード（T-18）が使う。前提の欠けを宣言順で返す。
+    public func missingPrerequisites() -> [TranscribePrerequisite] {
+        var missing: [TranscribePrerequisite] = []
+        if !Self.isExecutableFile(paths.whisperCLI) { missing.append(.whisperMissing) }
+        if whisperModel() == nil { missing.append(.modelMissing) }
+        if config.vad.enabled && vadModel() == nil { missing.append(.vadModelMissing) }
+        return missing
+    }
+
+    public func transcribe(_ req: TranscribeRequest) async -> TranscribeOutcome {
+        let target = layout.transcript(slug: req.slug)
+        let rawJSON = layout.whisperJSON(slug: req.slug)
+        let outBase = layout.whisperOutputBase(slug: req.slug)
+
+        // 1. 冪等: 読める transcript が minChars 以上なら whisper を起動しない。
+        if let data = try? Data(contentsOf: target), let existing = PartTranscriptCodec.decode(data),
+            TextLimit.scalarCount(existing.text) >= config.minChars
+        {
+            return .transcribed(existing, metrics: metrics(existing, elapsed: 0, duration: req.durationSeconds))
+        }
+
+        // 2. 前提: 欠けていれば起動しない。何も消さない。
+        if let first = missingPrerequisites().first { return .prerequisiteMissing(first) }
+        guard let model = whisperModel() else { return .prerequisiteMissing(.modelMissing) }
+        let vad: URL?
+        if config.vad.enabled {
+            guard let url = vadModel() else { return .prerequisiteMissing(.vadModelMissing) }
+            vad = url
+        } else {
+            vad = nil
+        }
+
+        // 3. ここから先はどの経路でも whisper.json を消す。
+        defer { try? SafeUnlink.remove(rawJSON, under: .staging, layout: layout) }
+
+        // 4〜7. 起動と計測。
+        let argv = WhisperArgs.build(
+            model: model, input: req.input, outputBase: outBase, config: config, vadModel: vad,
+            threads: WhisperArgs.resolvedThreads(config.threads))
+        let timeout = Transcriber.timeoutSeconds(duration: req.durationSeconds, config: config)
+        let start = clock.uptime()
+        let result = await runner.run(
+            ProcessSpec(executable: paths.whisperCLI, arguments: argv, environment: ProcessEnvironment.standard),
+            timeout: .seconds(timeout))
+        let d = clock.uptime() - start
+        let elapsed = Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
+
+        // 8. 結果の写し方。
+        let tail = Transcriber.stderrTail(result.stderrTail)
+        switch result.termination {
+        case .spawnFailed(let n):
+            return .failure(StageFailure(.whisperExecMissing, "spawn: errno \(n)"))
+        case .timedOut:
+            return .failure(StageFailure(.whisperTimeout, "\(timeout) 秒を超えました"))
+        case .exited(let n) where n != 0:
+            return .failure(StageFailure(.whisperFailed, "終了コード \(n): \(tail)"))
+        case .signaled(let n):
+            return .failure(StageFailure(.whisperFailed, "シグナル \(n): \(tail)"))
+        case .exited:
+            break
+        }
+
+        // 9. RK-34: 成功は「終了 0 かつ JSON が在って読める」。
+        guard let raw = try? Data(contentsOf: rawJSON),
+            let parsed = WhisperOutputParser.parse(raw, fallbackLanguage: config.language)
+        else {
+            let shown = layout.relativePath(of: rawJSON) ?? WhisperArgs.p(rawJSON)
+            return .failure(StageFailure(.whisperFailed, "生 JSON を読めません: \(shown)"))
+        }
+
+        // 10〜11. ASR-09: 無音判定より前に保存する（根拠 B の証拠）。
+        let t = PartTranscript(
+            partkey: req.partkey, language: parsed.language, durationSeconds: req.durationSeconds,
+            startedAt: req.startedAt, text: parsed.text, segments: parsed.segments)
+        do {
+            try FileManager.default.createDirectory(
+                at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try AtomicFile.write(PartTranscriptCodec.encode(t), to: target)
+        } catch {
+            return .failure(StageFailure(.whisperFailed, "正規化 transcript を書けません: \(Self.describe(error))"))
+        }
+
+        // 12. 無音（失敗ではない）。
+        let n = TextLimit.scalarCount(t.text)
+        if n < config.minChars {
+            return .noSpeech(t, message: "\(n) 文字（min_chars=\(config.minChars)）")
+        }
+
+        // 13. 成功。
+        return .transcribed(t, metrics: metrics(t, elapsed: elapsed, duration: req.durationSeconds))
+    }
+
+    /// Int(min(max(duration × timeoutFactor, minTimeoutSeconds), maxTimeoutSeconds))。duration 不明なら maxTimeoutSeconds（ASR-08）。
+    static func timeoutSeconds(duration: Double?, config: TranscriptionConfig) -> Int {
+        guard let d = duration else { return config.maxTimeoutSeconds }
+        return Int(
+            min(max(d * config.timeoutFactor, Double(config.minTimeoutSeconds)), Double(config.maxTimeoutSeconds)))
+    }
+
+    /// ProcessResult.stderrTail を UTF-8（不正は置換）で読み、末尾 1000 Unicode スカラー。strip しない。
+    static func stderrTail(_ data: Data) -> String {
+        let s = String(decoding: data, as: UTF8.self)
+        return String(String.UnicodeScalarView(s.unicodeScalars.suffix(1000)))
+    }
+
+    /// メトリクス。duration が nil か 0 以下なら rtf と speechRatio は nil。
+    func metrics(_ t: PartTranscript, elapsed: Double, duration: Double?) -> TranscribeMetrics {
+        let chars = TextLimit.scalarCount(t.text)
+        guard let duration, duration > 0 else {
+            return TranscribeMetrics(elapsedSeconds: elapsed, chars: chars, rtf: nil, speechRatio: nil)
+        }
+        let speech = t.segments.reduce(0.0) { $0 + max(0, $1.end - $1.start) }
+        return TranscribeMetrics(
+            elapsedSeconds: elapsed, chars: chars, rtf: PyRound.round(elapsed / duration, digits: 3),
+            speechRatio: PyRound.round(speech / duration, digits: 3))
+    }
+
+    /// 在り、大きさがカタログどおりの Whisper モデルの URL。
+    private func whisperModel() -> URL? {
+        guard let entry = catalog.entry(kind: .whisper, id: config.whisperModelID),
+            ModelFiles.isPresent(entry, kind: .whisper, layout: layout)
+        else { return nil }
+        return ModelFiles.url(kind: .whisper, entry: entry, layout: layout)
+    }
+
+    /// 在り、大きさがカタログどおりの VAD モデルの URL。
+    private func vadModel() -> URL? {
+        guard let entry = catalog.entry(kind: .vad, id: config.vad.modelID),
+            ModelFiles.isPresent(entry, kind: .vad, layout: layout)
+        else { return nil }
+        return ModelFiles.url(kind: .vad, entry: entry, layout: layout)
+    }
+
+    /// 通常ファイルで実行権がある。
+    private static func isExecutableFile(_ url: URL) -> Bool {
+        let path = url.path(percentEncoded: false)
+        var info = stat()
+        guard stat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return false }
+        return access(path, X_OK) == 0
+    }
+
+    /// `"<型名>: <説明>"`
+    private static func describe(_ error: any Error) -> String {
+        "\(type(of: error)): \(error)"
+    }
+}
