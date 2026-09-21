@@ -295,7 +295,7 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 | `foldTrimmedNotesArePrefixed` / 「束の Map の切り詰めは reduce1: を前置する」 | maxChars 400・overlap 0、300 スカラーの segment 3 本、Map の応答は summary 150 スカラーの PARTIAL（1 個で 219、2 個で 437 > 400 なので 3 束）、束の Map の応答は 1 つ目が `PARTIAL("f1", kp: ["k"]×25)`、2・3 つ目が `PARTIAL("f2")`・`("f3")`（切り詰め後の 3 個の asJSON は 290 ≤ 400）、最後に FINAL | 呼び出し 7 回、trimmed `["reduce1: key_points: 25 -> 20"]` |
 | `depthLimitStopsRecursion` / 「段数の上限で LLM_INVALID_JSON」 | maxChars 50・overlap 0、40 スカラーの segment 3 本、すべての Map の応答が summary 60 スカラーの PARTIAL | `.failure(StageFailure(.llmInvalidJSON, "多段 Reduce が上限 3 段に達しました"))`、呼び出し 9 回（3 + 3 + 3）、reduce の要求 0 回 |
 | `transportFailureInReduceIsReturned` / 「Reduce の接続失敗はそのまま」 | Reduce が `.failure(unavailable)` | その failure |
-| `ceMaxCharsPerRequest` / 「CE llm.maxCharsPerRequest を小さくすると Map → Reduce になる」 | 5 スカラーの segment 2 本（時刻は近い）を、既定（20000）と `maxCharsPerRequest = 5` で | 既定は呼び出し 1 回（analyze）、5 では 2 チャンクになり、最初の 2 回がチャンクの map（user はそれぞれの segment の text）。（実装で修正: Reduce の入力（141 スカラー）も 5 を超えるので §4.4 どおり束の Map へ進み、「呼び出し 3 回」にはならない。総数は問わない） |
+| `ceMaxCharsPerRequest` / 「CE llm.maxCharsPerRequest を小さくすると Map → Reduce になる」 | 100 スカラーの segment 2 本（時刻は近い。1 本目は `a`、2 本目は `b` の繰り返し）を、既定（20000）と `maxCharsPerRequest = 150` で。Map の応答は `PARTIAL("朝")`・`PARTIAL("夜")` | 既定は呼び出し 1 回（analyze）、150 では 2 チャンク（200 > 150）になり呼び出し 3 回（map・map・reduce）。Reduce の user は `multipleChunksRunMapThenReduce` と同じ配列（139 スカラー ≤ 150 なので束ねない） |
 | `ceMaxSecondsPerRequest` / 「CE llm.maxSecondsPerRequest を小さくすると時間で割れる」 | 短い segment を 0 秒と 1800 秒に置き、既定（3600）と `maxSecondsPerRequest = 600` で | 既定は呼び出し 1 回、600 では 3 回（map・map・reduce） |
 | `ceChunkOverlapChars` / 「CE llm.chunkOverlapChars が次のチャンクの重なりを決める」 | `maxCharsPerRequest = 10`、`aaaa@0`・`bb@10`・`cccccc@20`、`chunkOverlapChars = 3` と `0` | 3 では 2 つ目の map の user が `bb\ncccccc`、0 では `cccccc`（§5.1 の D・C と同じ境界） |
 
@@ -332,11 +332,12 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 ## 8. API 地図への変更提案
 
 1. `AnalyzeOutcome` に `Equatable` を足す（テストで比べるため。要素はすべて Equatable）→ 00-api-map に反映済み（2026-09-18）
-2. `Analyzer.reduceMaxDepth`（公開の定数）と `Dedupe.strings` / `Dedupe.tasks` を追記 → `reduceMaxDepth` は 00-api-map に反映済み（2026-09-18）。`Dedupe.strings` / `Dedupe.tasks` は地図に無い（追記が要る。モジュールの外で使わないなら internal でもよい）
+2. `Analyzer.reduceMaxDepth`（公開の定数）と `Dedupe.strings` / `Dedupe.tasks` を追記 → `reduceMaxDepth` は 00-api-map に反映済み（2026-09-18）。`Dedupe.strings` / `Dedupe.tasks` は地図に無い（追記が要る。モジュールの外で使わないなら internal でもよい） → §16 に掲載済み。§8 への追記は不要
 3. `ChatTransport` / `ChatResult` / `FakeChatTransport` の作成は T-19（本チケットは使うだけ）→ 00-api-map §8・§15 に反映済み（2026-09-18）
 4. `ReduceBundling` は internal（地図には載せない）
 5. （実装で追記）テスト補助の `GoldenPayload` は T-19 が作らなかった（T-45 の `GoldenCase.orderedObject` を使う）。本チケットの配列版は `Tests/VDLLMTests/GoldenCase+List.swift` の internal な `GoldenCase.orderedList(_:)`（VDLLMTests の中だけで使うので 00-api-map §15 には載せない）
 6. （実装で確認）`Dedupe.strings` / `Dedupe.tasks` は §4.2 どおり public で実装した。00-api-map §16（地図に行の無い公開 API の索引）の VDLLM の行に載っているので、地図の変更は要らない（上の 2 の「地図に無い」は §8 の行のこと）
+7. （実装で追記）00-api-map §15 の `GoldenCase.orderedObject` の行の使い手に T-20 を追加する（llm_dedupe の `payload` を読むのに使う）
 
 ## 9. SPEC の変更
 

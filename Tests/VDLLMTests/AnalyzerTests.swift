@@ -268,12 +268,11 @@ struct AnalyzerTests {
         }
         #expect(harness.kinds(calls) == [.map, .map, .map, .map, .map, .reduce])
         let empty = #""key_points":[],"tasks":[],"decisions":[],"ideas":[]}"#
-        if calls.count == 6 {
-            #expect(calls[3].system == harness.mapSystem)
-            #expect(calls[3].user == #"[{"summary":"s1","# + empty + #",{"summary":"s2","# + empty + "]")
-            #expect(calls[4].user == #"[{"summary":"s3","# + empty + "]")
-            #expect(calls[5].user == #"[{"summary":"f1","# + empty + #",{"summary":"f2","# + empty + "]")
-        }
+        try #require(calls.count == 6)
+        #expect(calls[3].system == harness.mapSystem)
+        #expect(calls[3].user == #"[{"summary":"s1","# + empty + #",{"summary":"s2","# + empty + "]")
+        #expect(calls[4].user == #"[{"summary":"s3","# + empty + "]")
+        #expect(calls[5].user == #"[{"summary":"f1","# + empty + #",{"summary":"f2","# + empty + "]")
         #expect(AnalyzerHarness.success(outcome)?.partials.map(\.summary) == ["s1", "s2", "s3"])
     }
 
@@ -338,21 +337,24 @@ struct AnalyzerTests {
     @Test("CE llm.maxCharsPerRequest を小さくすると Map → Reduce になる")
     func ceMaxCharsPerRequest() async throws {
         let harness = try AnalyzerHarness()
-        let segs = [ChunkFixtures.seg("あいうえお", 0), ChunkFixtures.seg("かきくけこ", 10)]
+        let segs = [ChunkFixtures.seg(Self.repeated("a", 100), 0), ChunkFixtures.seg(Self.repeated("b", 100), 10)]
         let respond: @Sendable (AnalyzerHarness.Kind, String) -> ChatResult = { kind, user in
             switch kind {
             case .analyze, .reduce: return AnalyzerHarness.final()
-            case .map: return AnalyzerHarness.partial(user)
-            case .repair: return AnalyzerHarness.unexpected
+            case .map where user.hasPrefix("a"): return AnalyzerHarness.partial("朝")
+            case .map where user.hasPrefix("b"): return AnalyzerHarness.partial("夜")
+            default: return AnalyzerHarness.unexpected
             }
         }
         let (_, defaultCalls) = await harness.run(segs, respond: respond)
         #expect(harness.kinds(defaultCalls) == [.analyze])
-        let (_, smallCalls) = await harness.run(
-            segs, config: AnalyzerHarness.config { $0.maxCharsPerRequest = 5 }, respond: respond)
-        // 2 チャンクになり、最初の 2 回がチャンクの map。Reduce の入力も 5 を超えるので、その後は束の Map へ進む。
-        #expect(Array(harness.kinds(smallCalls).prefix(2)) == [.map, .map])
-        #expect(Array(smallCalls.map(\.user).prefix(2)) == ["あいうえお", "かきくけこ"])
+        let (outcome, smallCalls) = await harness.run(
+            segs, config: AnalyzerHarness.config { $0.maxCharsPerRequest = 150 }, respond: respond)
+        // 2 チャンク（200 > 150）。Reduce の入力は 139 スカラー（≤ 150）なので束ねずに reduce 1 回。
+        #expect(harness.kinds(smallCalls) == [.map, .map, .reduce])
+        #expect(smallCalls.last?.user == Self.emptyPartialsJSON)
+        #expect(TextLimit.scalarCount(Self.emptyPartialsJSON) == 139)
+        #expect(AnalyzerHarness.success(outcome)?.chunks.count == 2)
     }
 
     @Test("CE llm.maxSecondsPerRequest を小さくすると時間で割れる")
