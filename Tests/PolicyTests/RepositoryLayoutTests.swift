@@ -1,7 +1,7 @@
 // リポジトリの骨組みの検査（T-01）。
 import Foundation
-import Testing
 import TestSupport
+import Testing
 
 @Suite("RepositoryLayout")
 struct RepositoryLayoutTests {
