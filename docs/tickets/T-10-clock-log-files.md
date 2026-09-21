@@ -783,5 +783,5 @@ public final class CapturingLogSink: LogSink {
 - （整合修正で追記。地図に合わせた）`TeeSink` を地図 §2.3 の置き場所 `LogFile.swift` へ移した。`AppLog.init` の `category` の既定を地図の `"core"` にした。`LogFile` の状態は地図 §0 に合わせて `Mutex` で守る。`SteppingClock` は地図 §15 のとおり `now()` と `uptime()` の両方を進める
 - （整合修正で追記）T-25 が本チケット向けに作る golden（`keys`・`fingerprint`・`blocks`）の照合を `GoldenCoreTests` に足した（`TranscriptFingerprint.payload` は internal）
 - （整合修正で追記）00-api-map §15 は `TempDirectory` の作り手を T-06 と書くが、T-01 が作る（T-01 §9）。地図を T-01 に直すことを提案する
-- （実装で追記）`TranscriptSegment`・`PartTranscript`・`AbsoluteSegment`・`TimeBlock`・`SessionTranscript` に全フィールドの `public init` を足した（本チケット §11・§12）。memberwise init は internal なので、T-17（VDTranscribe）・T-22（VDPipeline）など別モジュールが作れない。地図 §2.3 の各行に `public init(…全フィールド)` を足すことを提案する
+- （実装で追記）`TranscriptSegment`・`PartTranscript`・`AbsoluteSegment`・`TimeBlock`・`SessionTranscript` に全フィールドの `public init` を足した（本チケット §11・§12）。memberwise init は internal なので、T-17（VDTranscribe）・T-22（VDPipeline）など別モジュールが作れない。地図 §2.3 の各行に `public init(…全フィールド)` を足すことを提案する → 利用者が承認し、00-api-map §2.3 に反映済み（2026-09-21）
 - （実装で追記）`swift format` の整形に合わせて §5 の `LogLevel`・`LogValue`・`LogKey` と §8 の `SafeUnlinkError` のケースの書き方を直した（値と順は同じ）。§7・§8 のパスは 00-api-map §0 に合わせて `url.path(percentEncoded: false)` にした
