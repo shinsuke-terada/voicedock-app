@@ -57,6 +57,11 @@ struct SanitizeTests {
         #expect(scalars(run(input)) == scalars(expected))
     }
 
+    @Test("SN-4 は SN-5 より先", arguments: [("a # b", "a b"), ("[ x ]", "x")])
+    func sn4RunsBeforeSN5(input: String, expected: String) {
+        #expect(scalars(run(input)) == scalars(expected))
+    }
+
     @Test(
         "SN-5 空白を畳んで前後を落とす",
         arguments: [("  a   b  ", "a b"), ("x\u{3000}\u{3000}y", "x y"), ("a\u{a0}b\u{200b}c", "a b\u{200b}c")])

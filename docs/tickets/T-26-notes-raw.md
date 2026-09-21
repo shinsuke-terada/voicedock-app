@@ -308,6 +308,7 @@ public enum RawNote {
 | `SN-2 タブと改行は SN-5 より先に消える` | `sn2RemovesTabsBeforeSN5` | `a\t\tb` → `ab`、`a\nb` → `ab`、`a  b` → `a b` |
 | `SN-3 パス区切りと Windows の禁止文字を - にする` | `sn3ReplacesForbiddenCharacters` | `a/b` `a\b` `a:b` `a*b` `a?b` `a"b` `a<b` `a>b` `a\|b` → `a-b`、`a/b:c*d?e"f<g>h\|i` → `a-b-c-d-e-f-g-h-i`、`a\|b<c>d*e?f"g\h` → `a-b-c-d-e-f-g-h` |
 | `SN-3 は SN-5 より先` | `sn3RunsBeforeSN5` | `a / b` → `a - b`、`  a / b  ` → `a - b` |
+| `SN-4 は SN-5 より先` | `sn4RunsBeforeSN5` | `a # b` → `a b`、`[ x ]` → `x`（逆順だと `a  b`・` x ` が残る） |
 | `SN-4 Obsidian の記法文字を取り除く` | `sn4RemovesObsidianSyntax` | `a#b` `a^b` `a[b` `a]b` → `ab`、`[[Note]]` → `Note`、`a#b^c[d]e` → `abcde` |
 | `SN-5 空白を畳んで前後を落とす` | `sn5CollapsesWhitespace` | `  a   b  ` → `a b`、`x\u{3000}\u{3000}y` → `x y`、`a\u{a0}b\u{200b}c` → `a b\u{200b}c`（ZWSP は空白でない） |
 | `SN-6 前後の . を落とす` | `sn6StripsDots` | `.hidden.` → `hidden`、`...a...` → `a`、`..hidden..` → `hidden`、`a.b.c` → `a.b.c` |
@@ -440,7 +441,8 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 
 | 壊し方 | 落ちるべきテスト |
 |---|---|
-| SN-3 と SN-5 の順を入れ替える | `sn3RunsBeforeSN5` |
+| SN-3 と SN-5 の順を入れ替える | （落ちない。SN-3 は空白でないスカラーを `-` に 1 対 1 で置き換え、SN-5 は空白だけに作用するので、2 つは可換。実装時に確認。`sn3RunsBeforeSN5` は voicedock の docstring の例の写し） |
+| SN-4 を SN-5 の後に移す | `sn4RunsBeforeSN5` |
 | SN-7 の「削ったかどうかにかかわらず」をやめ、切り詰めたときだけ結合文字を削る | `sn7DropsTrailingCombiningMarks` |
 | SN-7 をスカラーではなく `Character` 単位で削る | `sn7DropsTrailingCombiningMarks`（`あああ\u{301}`・maxBytes 10） |
 | SN-9 を SN-7 の前に移す | `sn9RunsAfterSN7` |
