@@ -144,6 +144,7 @@ public struct LlamaServerHandle: Equatable, Sendable {
     public let endpoint: LoopbackEndpoint
     public let apiKey: String                 // 小文字 16 進 32 文字
     public let modelID: String                // 要求本文の "model" に入れる（カタログの ID か custom:<sha256>）
+    public init(endpoint: LoopbackEndpoint, apiKey: String, modelID: String)   // 00-api-map §8 の行に合わせる（T-22 の偽物が作る）
 }
 
 public actor LlamaServerSupervisor {
@@ -193,7 +194,7 @@ return .failure(StageFailure(.llmUnavailable, message(lastReason, lastStderr)))
 ```
 - `reason(t)`: `.exited(n)` → `"exited(\(n))"`、`.signaled(n)` → `"signaled(\(n))"`、`.timedOut` → `"timeout"`、`.spawnFailed` → `"spawn_failed"`
 - `message(reason, stderr)`: `s = PyText.strip(stderr)`。空なら `"server_start_failed: \(reason)"`、そうでなければ `"server_start_failed: \(reason): \(s の末尾 150 スカラー)"`（PLAN §8.5 の `server_start_failed: <理由>: <stderr の末尾 150 スカラー>`。DB で 200 文字に切られても理由が残る長さ。
-  stderr が空のときに `": "` で終わらせないのと、理由語に `signaled(<n>)`・`api_key_file`・`cancelled` を足したのは本チケットの決定で、PLAN の理由語の列（`exited(<n>)` / `timeout` / `no_port` / `spawn_failed`）に無い。整合修正の報告に記載）
+  stderr が空のときに `": "` で終わらせないのと、理由語の `signaled(<n>)`・`api_key_file`・`cancelled` は、いまの PLAN §8.5 の理由語の列に反映済み）
 - **API キーファイルは停止したときと起動に失敗したときに必ず消す**（PLAN §8.5）: `startServer` のどの失敗の経路（`api_key_file`・`cancelled`・3 回の失敗）でも、`stop()` / `stopCurrent()` でも消す
 - 経過秒 = `clock.uptime() − started` を秒の `Double` にし、`PyRound.round(x, digits: 1)`（T-45。Python の `round(x, 1)`。PLAN §5.7）
 - 1 回ごとの失敗はログに出さない（最後の失敗は呼び手が `llm_failed` で出す）
@@ -308,7 +309,7 @@ echo "fake llama-server attempt $N" 1>&2
 | `ceMaxOutputTokens` / 「CE llm.maxOutputTokens が本文の max_tokens に入る」 | `maxOutputTokens = 256` | 本文の `max_tokens` が 256（既定なら 4096） |
 | `validResponseIsParsed` / 「content を取り出す」 | 200 `{"choices":[{"message":{"content":"{\"a\":1}"}}],"usage":{"total_tokens":42}}` | `.content("{\"a\":1}")` |
 | `contentKeepsLeadingBOM` / 「content の先頭の U+FEFF を落とさない（PyJSON.decode）」 | 200 `{"choices":[{"message":{"content":"\ufeff{}"}}]}` | `.content("\u{FEFF}{}")` |
-| `malformedEnvelopeIsEmpty(body:)` / 「外形が壊れた応答は空文字（修復へ回す）」 | 200 で本文が `{"choices":[]}`・`{"choices":[{}]}`・`{"choices":[{"message":{}}]}`・`{"choices":"nope"}`・`{}`・`[]`・`<html>nope</html>`・`{"choices":[{"message":{"content":5}}]}` | どれも `.content("")` |
+| `malformedEnvelopeIsEmpty(body:)` / 「外形が壊れた応答は空文字（修復へ回す）」 | 200 で本文が `{"choices":[]}`・`{"choices":[{}]}`・`{"choices":[{"message":{}}]}`・`{"choices":"nope"}`・`{}`・`[]`・`<html>nope</html>`・`{"choices":[{"message":{"content":5}}]}`・空の本文 `""`（TEST-28） | どれも `.content("")` |
 | `httpErrorIsUnavailable(status:)` / 「HTTP 400 以上は LLM_UNAVAILABLE」 | 400・500・503、本文 `busy` | `.failure(StageFailure(.llmUnavailable, "HTTP <status>: busy"))` |
 | `httpErrorBodyIsCutAt200Scalars` / 「本文は先頭 200 スカラーまで」 | 500、本文が `あ` × 300 | メッセージが `"HTTP 500: " + "あ" × 200` |
 | `connectionFailureIsUnavailable` / 「接続できなければ URLError の番号」 | stub を登録しない | `.failure(StageFailure(.llmUnavailable, "URLError -1004"))` |
@@ -325,6 +326,7 @@ echo "fake llama-server attempt $N" 1>&2
 | `missingFlagIsReported` / 「--help に無いフラグを返す」 | `--offline` を含まない help 文 → `["--offline"]` |
 | `flagMustBeAWord` / 「部分一致を数えない」 | `--portable` だけを含み `--port` を含まない help 文 → 結果に `--port` |
 | `noShortForms` / 「短い形のフラグを使わない」 | `build` の結果に `-c`・`-m`・`-ngl`・`-np` が無い |
+| `emptyHelpMissesEverything` / 「空の help ならすべてのフラグを返す」（TEST-28） | `missingFlags(helpOutput: "")` が `usedFlags` と同じ 10 個を同じ順で（リテラルで比べる） |
 | `ceContextSize` / 「CE llm.contextSize が --ctx-size に渡る」 | `contextSize:` に `AppConfig.defaults(timeZone: "Asia/Tokyo").llm.contextSize` と、`contextSize` を 8192 にした設定の値を渡すと、`--ctx-size` の次がそれぞれ `32768` と `8192` |
 
 ### 5.3 `LlamaServerSupervisorTests.swift`（`@Suite(.serialized)`。本物の `ProcessRunner` と `FakeLlamaServer`）
@@ -332,6 +334,9 @@ echo "fake llama-server attempt $N" 1>&2
 準備: `TempDirectory`、`layout = HomeLayout(root: tmp/home)` と `createDirectories()`、`fake = FakeLlamaServer(directory: tmp/fake, mode: …)`、
 `paths = AppPaths(resources: PackageRoot.url.appendingPathComponent("Resources"), helpers: fake.helpersDirectory)`、`model = tmp/m.gguf`（空ファイル）、
 `factory = BlockingSessionFactory()`、ポートは `FreePort.pick()` で先に取った列を返す `portPicker`、`/health` の応答は `LoopbackStub` に登録（503 を何回返してから 200 にするかをテストごとに決める）。
+`/health` の handler は、そのポートで起動する偽物の n 回目が API キーファイルを読み終える（`fake.apiKey(ofInvocation: n)` が 32 文字になる。最大 10 秒）まで応答を止めてから数える（本物は起動してから応答するので、偽物もスクリプトが走る前に 200 を返さない。止めないと `invocationCount` や stderr がまだ書かれていない。実装で判明）。
+pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spawn した `RunningProcess` を覚えるだけの `ProcessRunning`（テストファイルの中の `SpawnRecordingRunner`）を渡す。
+ログの行は `LogLevel.info.token` が `"INFO "`（5 桁左寄せ）なので、イベント名以降を `hasSuffix` / `contains` で比べる。
 時計・待ち・ログは T-10 の TestSupport を使う（00-api-map §15。このファイルで偽物を作らない）: `RecordingSleeper()`（待たずに秒数を `recorded` に記録する）、`SteppingClock(start: Instant(epochMillis: 0), stepMilliseconds: 1000)`（`now()` と `uptime()` を呼ぶたびに 1 秒進む。時間切れのテストだけ）、それ以外の時計は `FixedClock(epochMillis: 0)`、ログは `CapturingLogSink()`（`lines`）を `AppLog(sink:level: .debug, …)` に渡す。
 
 | 関数名 / 表示名 | 準備 | 期待 |
@@ -385,6 +390,9 @@ echo "fake llama-server attempt $N" 1>&2
 5. T-12 への前提: `RunningProcess.terminate(grace:)` は、既に終了したプロセスに対しては待たずにその終了の状態（`.exited(n)` / `.signaled(n)`）を返すこと。`stderrTail()` は終了の後も読めること → 00-api-map（「終了済みなら待たずに返す」）と T-12 に反映済み（2026-09-18）
 6. T-10 への前提: `LogKey` に `port` と `elapsed_s` が在ること → T-10 の `LogKey` に在る（2026-09-18 確認）
 7. TestSupport に `BlockingURLProtocol`・`LoopbackStub`・`StubRequest`・`StubReply`・`BlockingSessionFactory`・`FakeLlamaServer` を足す（§4.4）。T-23 も `BlockingURLProtocol` を使う → 00-api-map §15 に反映済み（2026-09-18。作り手は T-21）
+8. `LoopbackEndpoint` の `Equatable`（`LlamaServerHandle: Equatable` のために要る）→ 地図の §8 の行は `Sendable` だけ。§16 の索引に足すこと（追記が要る。実装には不可欠）
+9. T-12 への申し送り: `RunningProcess.terminate(grace:)` は既に終了したプロセスに対しては読み取りの後始末（`finishReaders`）を待たずに返すので、直後の `stderrTail()` に最後の出力がまだ入っていないことがありうる（プロセスの終了の検出と stderr の EOF の読み取りの競争）。
+   本チケットでは、`/health` の要求 1 回ぶんの遅れがあるので実測では揃っている（`failsAfterThreeAttempts` を負荷の下で数百回回して落ちず）。確実にするなら T-12 の側で「終了済みでも読み取りの EOF を `readerDrainGrace` まで待ってから返す」にする
 
 ## 9. SPEC の変更
 
