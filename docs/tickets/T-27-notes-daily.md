@@ -335,6 +335,8 @@ public enum LinkPlanner {
 ## 5. テスト
 
 T-26 の `NotesFixtures` を使う。追加:
+
+（T-26 の実装で判明）`NotesFixtures` の `jst`・`day`・`partA`・`partB` は `get throws` の計算プロパティ、`at(_:_:_:)` は `throws` の関数になった（強制アンラップ `!` は swift-format の NeverForceUnwrap で落ちるため）。下の固定値も `static var … { get throws { … } }` にし、使う側は `try` を付ける。
 - `analysisFull = AnalysisView(title: "開発と打ち合わせの一日", summary: "VoiceDock の削除条件を整理した。午後に MVP の範囲を確定した。", keyPoints: ["削除の根拠をテキストの保全に置く"], decisions: ["MVP では GUI を作らない"], ideas: ["将来的に話者識別を追加する"], tags: ["VoiceDock", "DJI Mic", "a: b", "c \"d\"", "e\\f", "  ", "全角\u{3000}空白"], tasks: [("DJI Mic 3 のマウント構造を確認する", nil), ("Whisper の速度を実測する", "2026-09-05")])`
 - `linksFull = LinkPlan(dailyNote: "[[2026-08-29]]", adjacent: ["[[2026-08-28 Voice]]", "[[2026-08-30 Voice]]"], tags: ["[[VoiceDock]]", "#DJI-Mic"], raw: ["[[2026-08-29 raw]]"], dropped: [])`
 - `timelineFull = [TimelineBlock(start: at(7,12,0), end: at(11,12,0), lines: ["朝の移動中に整理した", "二点目"]), TimelineBlock(start: at(13,12,0), end: at(19,12,0), lines: ["MVP を確定した"])]`
