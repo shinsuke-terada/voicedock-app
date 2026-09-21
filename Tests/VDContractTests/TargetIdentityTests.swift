@@ -201,7 +201,7 @@ struct TargetIdentityTests {
     func nd24ParentTraversal() throws {
         let bench = try Self.makeBench()
         let outsideFile = try Self.writeOutside(bench, Self.rel)
-        let outcome = bench.verify(relpath: "../outside/" + Self.rel)
+        let outcome = bench.verify(relpath: "../../outside/" + Self.rel)
         #expect(Self.reason(outcome.result) == "relpath_unsafe")
         #expect(outcome.calls == 0)
         #expect(FileManager.default.fileExists(atPath: outsideFile.path(percentEncoded: false)))

@@ -64,4 +64,13 @@ struct FakeVolumeTests {
         }
         #expect(handle.readOnly == readOnly)
     }
+
+    @Test("DiskImageVolume は実機に触れ得る名前を hdiutil の前に拒む", arguments: ["DJIMIC3", "", "../x", "a:b"])
+    func diskImageVolumeRefusesUnsafeNames(_ deviceID: String) throws {
+        let tmp = try TempDirectory()
+        #expect(throws: DiskImageError.self) { try DiskImageVolume(in: tmp, deviceID: deviceID) }
+        #expect(
+            !FileManager.default.fileExists(
+                atPath: tmp.url.appendingPathComponent("Volumes").path(percentEncoded: false)))
+    }
 }

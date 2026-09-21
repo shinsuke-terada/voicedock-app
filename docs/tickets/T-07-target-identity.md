@@ -252,6 +252,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 - 外す: `hdiutil detach -force <mountPoint>`
 - **`/Volumes` の下には決してマウントしない**（利用者の実機 `/Volumes/DJIMIC3` と衝突させない。mountPoint は必ず一時ディレクトリの下）
 - **ボリューム名に `DJIMIC3` を使わない**（PLAN §10.2。既定の deviceID は `VDT0007`。T-15 は extension の `uniqueName()` で `VDTxxxx` を作って渡す）
+- init は hdiutil を起動する前に拒む（`DiskImageError`）: `DeviceID.isValid(deviceID)` が偽、`deviceID == "DJIMIC3"`、一時ディレクトリの realpath が `/Volumes` かその下。`detach()` は mountPoint の `statfs` の `f_mntonname` が realpath と一致するときだけ `hdiutil detach -force` を起動する（二重の detach・未 attach で撃たない）
 - **テストの安全**: このチケットのテストは `/Volumes` 配下の実機（利用者が挿している DJI Mic 3 など）に一切触れない。`openVolume`・`SystemVolumeOpener`・`FakeVolumeOpener` に渡す `volumesRoot` は必ず一時ディレクトリの下（`FakeVolume.volumesRoot` / `DiskImageVolume.volumesRoot`）にし、`Contract.volumesRoot`（`/Volumes`）を渡さない。`/Volumes` 配下に `diskutil`・`hdiutil detach`・書き込み・削除・再マウントを行わない（`hdiutil detach` は自分が attach した `mountPoint` だけ）
 
 ## 5. テスト
@@ -280,7 +281,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 |---|---|---|---|
 | `positiveControl` | 正の対照 [R2] 正しい対象なら body が呼ばれ、親 fd と名前を渡す | 変更なし。body の中で `fstatat(parentFD, name, &st, AT_SYMLINK_NOFOLLOW) == 0` を確かめ 42 を返す | `.success(42)`、body が 1 回呼ばれた |
 | `rv08UnsafeRelpath` | RV-08 不健全な relpath は relpath_unsafe（パラメータ化） | relpath `""`・`"/abs"`・`"a//b"`・`"./" + REL`・`FOLDER + "/../" + REL` | `relpath_unsafe` |
-| `nd24ParentTraversal` | ND-24 [R2] relpath に ../ があれば relpath_unsafe | ボリュームの外（`tmp/outside/<FOLDER>/<FILE>`）に同じファイルを置き、relpath `"../outside/" + REL` | `relpath_unsafe`、外のファイルは残る |
+| `nd24ParentTraversal` | ND-24 [R2] relpath に ../ があれば relpath_unsafe | ボリュームの外（`tmp/outside/<FOLDER>/<FILE>`）に同じファイルを置き、relpath `"../../outside/" + REL`（ボリュームの root は `<tmp>/` の 2 段下なので、2 段上がると外のファイルに届く） | `relpath_unsafe`、外のファイルは残る |
 | `nd28DotPrefixed` | ND-28 [R2] . 始まりの要素は relpath_unsafe | `.Trashes/501/<FILE>` を置き、その relpath | `relpath_unsafe`、ファイルは残る |
 | `rv09IntermediateSymlink` | RV-09 経路の途中の symlink は path_contains_symlink | `FOLDER` を実ディレクトリ `real` への symlink にし、`real/<FILE>` を置く | `path_contains_symlink` |
 | `nd25SymlinkEscapesVolume` | ND-25 [R2] symlink 経由でボリュームの外を指せば path_contains_symlink | `FOLDER` をボリュームの外の `tmp/outside/<FOLDER>` への絶対パスの symlink にし、外にファイルを置く | `path_contains_symlink`、外のファイルは残る |
@@ -322,6 +323,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 | `deviceMtimeIsOffset` | 原本の mtime はコピー時刻の 4 時間 34 分前 | 全ファイルの mtime が `1787000000`（= 1787016440 − 16440） |
 | `origNamesParse` | 候補の名前は規則に一致する | `origInScope` の各最後の要素が `RecordingName.parseFile` で `isOrig == true` |
 | `fakeOpenerSkipsMountCheck` | FakeVolumeOpener は普通のディレクトリを開く | `.opened`、`readOnly` が引数どおり |
+| `diskImageVolumeRefusesUnsafeNames` | DiskImageVolume は実機に触れ得る名前を hdiutil の前に拒む（パラメータ化） | `"DJIMIC3"`・`""`・`"../x"`・`"a:b"` で `DiskImageError`。`<tmp>/Volumes` は作られない（hdiutil を起動しない） |
 
 ## 6. 破壊による証明
 
