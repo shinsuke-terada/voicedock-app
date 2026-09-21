@@ -485,6 +485,12 @@ T-14 が作る（T-14 §5.6。make_wav とのバイト一致を確かめる 9 �
 | `commonFormat: .pcmFormatInt16` を外して `forWriting:settings:` にする | `convertsPCM24` ほか（書き込みで失敗する） |
 | `Deadline.isExceeded` を常に false にする | `deadlineExceededIsImportFailed` |
 | `SpaceCheck` の 2 つ目の条件を消す | `stagingCapIsEnforced` |
+| 入力ブロックの `framePosition >= length` の確かめを消す | `convertsPCM24` ほか変換の成功を見るテストすべて（末尾の `read(into:)` が nilError を投げる） |
+| `timeoutSeconds` の `Int.max` への留めを消す | `hugeDurationTimeoutSaturates`（`Int(Double)` のトラップでテストの実行が止まる） |
+
+T-16 の実装で上の 11 項目を 1 つずつ行い、どれも表の「落ちるべきテスト」が落ちることを確かめた。
+`AVAudioFileTypeKey` を消すと出力は CAF（先頭 `caff`）になり、`AVAudioFile` はそれも読めるので、落ちるのは `outputIsRIFFWave` だけ（変換のテストは通る）。
+`commonFormat: .pcmFormatInt16` を外すと、変換の成功を前提にするテスト 17 本がすべて落ちる。
 
 ## 8. 受け入れ条件
 
