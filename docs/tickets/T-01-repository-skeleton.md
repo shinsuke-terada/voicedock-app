@@ -482,7 +482,8 @@ public enum TestEnvironment {
         return id
     }
 
-    private static func value(_ name: String) -> String? {
+    /// 環境変数の値。TestSupport の extension（T-25・T-24）もこれを通して読む（PLAN §10.1。ProcessInfo を読むのはこのファイルだけ）。
+    static func value(_ name: String) -> String? {
         ProcessInfo.processInfo.environment[name]
     }
 }

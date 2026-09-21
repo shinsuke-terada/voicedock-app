@@ -6,7 +6,7 @@
 | 題 | golden（voicedock@d3d595e の出力）の生成ツール・入力 fixture・期待値と、TestSupport の読み込み・比較の API |
 | Phase | 1 |
 | 前提 | T-01（`Package.swift` の `TestSupport` と `PolicyTests`、`Makefile` の `golden`、`PackageRoot`・`TestEnvironment`） |
-| 見積もり | 手で書く行 約 2269（生成ツール 1304、TestSupport 729、テスト 236）。生成物（`inputs/*.json` 31、期待値 294 ファイル・約 153 KiB、`GENERATED_BY.txt`）は数えない。600 行の目安を超えるが、ケースの定義・生成器・読み込みを分けると「期待値が再現しない PR」ができるので 1 つにする（PR 本文に理由を書く） |
+| 見積もり | 手で書く行 約 2307（生成ツール 1315、TestSupport 741、テスト 251）。生成物（`inputs/*.json` 31、期待値 294 ファイル・約 153 KiB、`GENERATED_BY.txt`）は数えない。600 行の目安を超えるが、ケースの定義・生成器・読み込みを分けると「期待値が再現しない PR」ができるので 1 つにする（PR 本文に理由を書く） |
 
 ## 1. 目的
 
@@ -1108,7 +1108,7 @@ if __name__ == "__main__":
 ````
 
 
-#### `tools/golden/generate.py`（全文。549 行）
+#### `tools/golden/generate.py`（全文。560 行）
 
 voicedock のモジュールは `Generator.__init__` の中で import する（`generate.sh` が作る uv 環境にだけ在る）。一時ファイルは展開した木の中に作り、`generate.sh` の `trap` が消す。
 
@@ -1953,7 +1953,7 @@ extension GoldenJSON: ExpressibleByNilLiteral, ExpressibleByBooleanLiteral, Expr
 }
 ```
 
-#### `Tests/TestSupport/Golden.swift`（全文。235 行）
+#### `Tests/TestSupport/Golden.swift`（全文。247 行）
 
 ```swift
 // golden（voicedock@d3d595e の出力）の入力と期待値を読む（PLAN §10.4、T-25）。
@@ -2462,7 +2462,7 @@ import Foundation
 extension TestEnvironment {
     /// `VOICEDOCK_GOLDEN_WRITE_ACTUAL=1` のとき、golden の不一致で実際の出力を `.build/golden-actual/` に書く（T-25）。
     public static var goldenWriteActual: Bool {
-        ProcessInfo.processInfo.environment["VOICEDOCK_GOLDEN_WRITE_ACTUAL"] == "1"
+        value("VOICEDOCK_GOLDEN_WRITE_ACTUAL") == "1"
     }
 }
 ```
@@ -2687,7 +2687,7 @@ struct GoldenInventoryTests {
 ```
 
 
-#### `Tests/PolicyTests/GoldenSupportTests.swift`（全文。161 行）
+#### `Tests/PolicyTests/GoldenSupportTests.swift`（全文。176 行）
 
 ```swift
 // TestSupport の golden の道具（GoldenJSON・Golden・GoldenAssert・UnifiedDiff）そのものを確かめる（TEST-05、T-25）。

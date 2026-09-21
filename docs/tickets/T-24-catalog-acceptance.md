@@ -321,6 +321,8 @@ extension TestEnvironment {
     public static func llmReportURL(model: String) -> URL
 }
 ```
+
+環境変数は `TestEnvironment.value(_:)`（T-01。internal）を通して読む。`ProcessInfo` を直接読まない（PLAN §10.1「環境変数は `Tests/TestSupport/TestEnvironment.swift` だけが読む」）。
 `model` はファイル名に使う前に `[A-Za-z0-9._-]` 以外を `_` に置き換える。
 
 ### 4.7 `Makefile` と `.gitignore`

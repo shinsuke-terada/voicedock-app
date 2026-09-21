@@ -4,6 +4,6 @@ import Foundation
 extension TestEnvironment {
     /// `VOICEDOCK_GOLDEN_WRITE_ACTUAL=1` のとき、golden の不一致で実際の出力を `.build/golden-actual/` に書く（T-25）。
     public static var goldenWriteActual: Bool {
-        ProcessInfo.processInfo.environment["VOICEDOCK_GOLDEN_WRITE_ACTUAL"] == "1"
+        value("VOICEDOCK_GOLDEN_WRITE_ACTUAL") == "1"
     }
 }
