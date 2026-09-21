@@ -1669,8 +1669,8 @@ struct PyCaseFoldTableTests {
 ```swift
 // GoldenCase.orderedObject がキーの順を保つことを golden の入力で確かめる（T-45 4.11）。
 import Foundation
-import Testing
 import TestSupport
+import Testing
 import VDCore
 
 @Suite("GoldenCase.orderedObject") struct GoldenCasePyJSONTests {
@@ -1703,7 +1703,9 @@ import VDCore
         #expect(throws: GoldenError.missingKey(group: "llm_validate", name: "ok_minimal", key: "nope")) {
             try item.orderedObject("nope")
         }
-        #expect(throws: GoldenError.typeMismatch(group: "llm_validate", name: "ok_minimal", key: "name", expected: "オブジェクト")) {
+        #expect(
+            throws: GoldenError.typeMismatch(group: "llm_validate", name: "ok_minimal", key: "name", expected: "オブジェクト")
+        ) {
             try item.orderedObject("name")
         }
     }
