@@ -360,6 +360,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 ## 9. SPEC の変更
 
 `docs/SPEC.md` の付録 B.2 の理由語の列と `IdentityReason.all` を照合するテストは T-05 の SPEC 同期に足す（このチケットでは `reasonsAreVerbatim` で固定値と照合する）。
+→ （T-05 の実装で判明）T-05 の設計（PolicyTests は VDContract を import できない、SPEC.md は付録 B.2 を写さない）に収まらなかった。GitHub issue #18 に切り出した
 
 ## 10. マージ後にやること
 
