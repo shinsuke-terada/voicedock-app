@@ -32,7 +32,7 @@ public struct VaultIndex: Sendable {
             scanned += 1
             for name in entries {
                 if ScalarText.hasPrefix(name, hiddenPrefix) { continue }
-                let child = dir.appendingPathComponent(name)
+                let child = dir.appending(path: name, directoryHint: .notDirectory)
                 var info = stat()
                 guard lstat(child.path(percentEncoded: false), &info) == 0 else { continue }
                 if (info.st_mode & S_IFMT) == S_IFDIR {

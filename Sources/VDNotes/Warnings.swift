@@ -3,8 +3,8 @@ import Foundation
 import VDCore
 
 public enum DailyWarnings {
-    /// FAILED の行。`%d` に本数が入る（`⚠` は U+26A0、その後に半角空白）
-    public static let failedLineTemplate = "> ⚠ この日の録音のうち %d 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"
+    /// FAILED の行。`%ld` に本数が入る（`⚠` は U+26A0、その後に半角空白）
+    public static let failedLineTemplate = "> ⚠ この日の録音のうち %ld 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"
     public static let retryAction = "デバイスから採り直してください。"
 
     static let actionableMark = "⚠ "
@@ -34,7 +34,7 @@ public enum DailyWarnings {
             }
             let mark = actionable ? actionableMark : ""
             let action = actionable ? retryAction : ""
-            let reasons = orderedReasonKeys(Set(skipped.map(\.reasonKey)))
+            let reasons = orderedReasonKeys(uniqueKeys(skipped.map(\.reasonKey)))
                 .map { displayName(reasonKey: $0) }
                 .joined(separator: reasonSeparator)
             out.append(
@@ -56,8 +56,18 @@ public enum DailyWarnings {
         return reasonKey.unicodeScalars.isEmpty ? unknownReasonName : reasonKey
     }
 
-    /// 理由の鍵の集合を並べる（宣言順、同順位は鍵のスカラー値の辞書順）
-    static func orderedReasonKeys(_ keys: Set<String>) -> [String] {
+    /// 鍵の重複をスカラー列で除く（出現順。Swift の String の == は正準等価で比べ、Python の set[str] と違う）
+    static func uniqueKeys(_ keys: [String]) -> [String] {
+        var seen = Set<[UInt32]>()
+        var unique: [String] = []
+        for key in keys where seen.insert(key.unicodeScalars.map(\.value)).inserted {
+            unique.append(key)
+        }
+        return unique
+    }
+
+    /// 重複の無い理由の鍵を並べる（宣言順、同順位は鍵のスカラー値の辞書順）
+    static func orderedReasonKeys(_ keys: [String]) -> [String] {
         func rank(_ key: String) -> Int {
             ErrorCode(rawValue: key)?.declarationIndex ?? Int.max
         }

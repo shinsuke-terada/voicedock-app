@@ -182,7 +182,7 @@ public enum DailyNote {
     public static func recorded(_ seconds: Double?) -> String {
         guard let seconds, seconds.isFinite, seconds >= 0, let t = Int(exactly: seconds.rounded(.towardZero))
         else { return "00:00:00" }
-        return String(format: "%02d:%02d:%02d", t / 3600, t / 60 % 60, t % 60)
+        return String(format: "%02ld:%02ld:%02ld", t / 3600, t / 60 % 60, t % 60)
     }
 
     /// DN-8 の見出し: sections.summary.heading が nil か空でなければそれ、でなければ "## Summary"

@@ -105,7 +105,7 @@ public enum DailyNote {
 （例 `Daily/Voice/Raw/20260829/2026-08-29 raw (2).md` → `2026-08-29 raw (2)`。voicedock は常に基本名だった。X-15）
 
 **`recorded(seconds)`**（daily.py:364-369）: nil・負・`isFinite` でない・`Int(exactly: seconds.rounded(.towardZero))` が nil（Int に収まらない。`Int(seconds)` はトラップするので PT-19 の趣旨で避ける。T-27 の実装で判明）→ `"00:00:00"`。そうでなければ `t = Int(exactly: seconds.rounded(.towardZero))`（0 方向へ切り捨て）、
-`String(format: "%02d:%02d:%02d", t / 3600, t / 60 % 60, t % 60)`（時は 2 桁を超えうる: `90061.7` → `25:01:01`、`34880.9` → `09:41:20`）
+`String(format: "%02ld:%02ld:%02ld", t / 3600, t / 60 % 60, t % 60)`（Int は 64 ビットなので `%ld`）（時は 2 桁を超えうる: `90061.7` → `25:01:01`、`34880.9` → `09:41:20`）
 
 **`tags(analysisTags:defaults:)`**（daily.py:343-361）:
 ```text
@@ -173,28 +173,30 @@ return kept
 ```swift
 // Daily ノートの警告行（PLAN §8.6 / NOTE-05。voicedock daily.py:300-340）。欠落を隠さない。SKIPPED に「再試行されます」と書かない。
 public enum DailyWarnings {
-    public static let failedLineTemplate: String    // 下の逐語。本数の位置は `%d`（`String(format:)` で埋める。T-27 の実装で決めた）
+    public static let failedLineTemplate: String    // 下の逐語。本数の位置は `%ld`（`String(format:)` で Int を埋める。T-27 の実装で決めた）
     public static let retryAction = "デバイスから採り直してください。"
     public static func lines(failed: [ExcludedPart], skipped: [ExcludedPart]) -> [String]
     public static func displayName(_ code: ErrorCode?) -> String
     /// 理由の鍵（ExcludedPart.reasonKey）から表示名へ
     static func displayName(reasonKey: String) -> String
     /// 理由の鍵の集合を並べる（宣言順、同順位は鍵のスカラー値の辞書順）
-    static func orderedReasonKeys(_ keys: Set<String>) -> [String]
+    /// 鍵の重複をスカラー列（`Set<[UInt32]>`）で除く。出現順（T-27 の実装で判明: String の == は正準等価で比べ、Python の set[str] と違う）
+    static func uniqueKeys(_ keys: [String]) -> [String]
+    static func orderedReasonKeys(_ keys: [String]) -> [String]
 }
 ```
 
 `lines` の手順:
 1. `out = []`
-2. `failed` が空でなければ: `String(format: failedLineTemplate, failed.count)`。`failedLineTemplate = "> ⚠ この日の録音のうち %d 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"`（`⚠` は U+26A0、その後に半角空白）
+2. `failed` が空でなければ: `String(format: failedLineTemplate, failed.count)`。`failedLineTemplate = "> ⚠ この日の録音のうち %ld 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"`（`⚠` は U+26A0、その後に半角空白）
 3. `skipped` が空でなければ:
    - `actionable = skipped.contains { $0.errorCode == nil || !SkipReasons.benign.contains($0.errorCode!) }`（未知のコード・理由なしは操作が要る側）
    - `mark = actionable ? "⚠ " : ""`、`action = actionable ? retryAction : ""`
-   - `reasons = orderedReasonKeys(Set(skipped.map(\.reasonKey))).map(displayName(reasonKey:)).joined(separator: "・")`（`・` は U+30FB。表示名の重複は除かない）
+   - `reasons = orderedReasonKeys(uniqueKeys(skipped.map(\.reasonKey))).map(displayName(reasonKey:)).joined(separator: "・")`（`・` は U+30FB。表示名の重複は除かない）
    - `"> " + mark + "この日の録音のうち \(skipped.count) 本を除外しました（" + reasons + "）。自動では再試行されません。" + action`（括弧は全角）
 4. 最大 2 行
 
-`orderedReasonKeys`: 各鍵の順位 = `ErrorCode(rawValue: key)?.declarationIndex ?? Int.max`（未知・空は末尾）。順位の昇順、同じ順位は `Array(key.unicodeScalars.map(\.value))` の辞書順（voicedock は集合の順で非決定だった。PLAN §8.6）。
+`orderedReasonKeys`（入力は `uniqueKeys` 済み）: 各鍵の順位 = `ErrorCode(rawValue: key)?.declarationIndex ?? Int.max`（未知・空は末尾）。順位の昇順、同じ順位は `Array(key.unicodeScalars.map(\.value))` の辞書順（voicedock は集合の順で非決定だった。PLAN §8.6）。
 
 `displayName(reasonKey:)`: `"DUPLICATE_CONTENT"`→`重複`、`"SOURCE_MISSING"`→`元ファイルが見つかりません`、`"NORMALIZED_MISSING"`→`元ファイルが見つかりません`、`"NO_SPEECH_DETECTED"`→`無音`、
 それ以外で空でなければ鍵そのもの（コード名のまま）、空なら `理由不明`。
@@ -228,7 +230,7 @@ public enum Timeline {
    - `blocks = transcript.blocks`。空なら、`transcript.segments` が空でなければ `[TimeBlock(start: segments[0].at, end: segments の endAt の最大)]`、segments も空なら `[]`
    - 各 block に**同じ `s` を付けて**返す
 
-**`sentences(text)`**: `text` の `。` の直後にそれぞれ `\n` を入れる（`replacingOccurrences(of: "。", with: "。\n")`）→ `PyText.splitLines` → 各行を `PyText.strip` → 空を捨てる。
+**`sentences(text)`**: `text` の `。` の直後にそれぞれ `\n` を入れる（`replacingOccurrences(of: "。", with: "。\n", options: .literal)`。結合文字が続く `。` も置換する。Python の str.replace と同じ。T-27 の実装で判明）→ `PyText.splitLines` → 各行を `PyText.strip` → 空を捨てる。
 例 `"A。B。 C"` → `["A。","B。","C"]`、`"一文目。二文目。\n三文目 。 \n\n四"` → `["一文目。","二文目。","三文目 。","四"]`
 
 **`encode`**（daily.py:449-482。書き込みは呼び手が `AtomicFile` で行い、失敗しても失敗にしない）:
@@ -281,6 +283,7 @@ public struct VaultIndex: Sendable {
 3. `while let (dir, rel) = stack.popLast()`:
    - `FileManager.default.contentsOfDirectory(atPath: dir.path(percentEncoded: false))` が失敗 → 次へ（読めないディレクトリは飛ばす）。成功したら `scanned += 1`
    - 各 `name`: スカラー列が `.` で始まる → 無視（`.obsidian`・`.trash` を含む）
+   - `dir/name` は `dir.appending(path: name, directoryHint: .notDirectory)` で作る（末尾に `/` が付くと lstat が symlink を解決しうる。symlink を辿らないことを Foundation の内部挙動に依存させない。T-27 の実装で判明）
    - `lstat(dir/name)` が失敗 → 無視
    - ディレクトリ（`S_ISDIR`。**symlink は辿らない**）なら、`childRel = RelPath.join(rel + [name])` が `excluded` のどれかと等しいか `その接頭辞 + "/"` で始まる（スカラー単位）なら入らない。そうでなければ `stack.append((dir/name, rel + [name]))`
    - ディレクトリでないもの（通常ファイル・symlink・その他）: 名前のスカラー列が `.md`（大小区別）で終われば、`.md` を除いた名前を `normalize` して `names` に入れる
@@ -349,7 +352,7 @@ T-26 の `NotesFixtures` を使う。追加:
 |---|---|---|
 | `全部入りの Daily ノートは voicedock と同じ` | `fullNoteMatchesVoicedock` | `recordingKeys [keyA, keyB]`、`excludedFull`、`recordedSeconds 34880.9`、`blockCount 2`、`timelineFull`、`linksFull`、`analysisFull` → 下の「期待 B」とバイト一致 |
 | `最小形の Daily ノートは voicedock と同じ` | `minimalNoteMatchesVoicedock` | `AnalysisView(title: "題", summary: "一文目。二文目。", keyPoints: [], decisions: [], ideas: [], tags: [], tasks: [])`、`recordingKeys []`、excluded = SKIPPED の 3 件（`errorCode: .sourceMissing`・`errorCode: nil, unknownCode: nil`・`errorCode: .llmFailed`。partkey は `DJIMIC3/S/s3_orig.wav`・`s4`・`s5`）、`recordedSeconds nil`、`blockCount 0`、timeline `[]`、links `.empty` → 下の「期待 C」とバイト一致 |
-| `recorded は切り捨てで 2 桁を超えうる` | `recordedFormat` | `recorded(90061.7)` == `"25:01:01"`、`recorded(-1)` == `"00:00:00"`、`recorded(0)` == `"00:00:00"`、`recorded(nil)` == `"00:00:00"`、`recorded(.nan)` == `"00:00:00"` |
+| `recorded は切り捨てで 2 桁を超えうる` | `recordedFormat` | `recorded(90061.7)` == `"25:01:01"`、`recorded(-1)` == `"00:00:00"`、`recorded(0)` == `"00:00:00"`、`recorded(nil)` == `"00:00:00"`、`recorded(.nan)` == `"00:00:00"`、`recorded(.infinity)`・`recorded(1e300)`・`recorded(9.3e18)`（Int.max 超）== `"00:00:00"`（T-27 の実装で足した） |
 | `タグは既定タグと合わせて正規化する` | `tagsAreNormalized` | 4.1 の例 |
 | `タグの重複は casefold で除く` | `tagsDedupeByCasefold` | defaults `["voice"]`、tags `["Voice", "STRASSE", "straße"]` → `["voice", "STRASSE"]` |
 | `CE llm.analysis.order 節の順は設定の order` | `sectionOrderFollowsConfig` | order を `["ideas","summary"]` に変える → `## Ideas` が `## Summary` より前、`## Tasks` が無い |
@@ -581,7 +584,7 @@ tags:
 | `上限を超えたタグは #タグ で残す` | `capKeepsTags` | maxLinks 3、`Kept` が索引に在る → tags `["#Kept"]`、dropped に `Kept` |
 | `maxLinks 0` | `zeroMaxLinks` | dailyNote nil、adjacent 空、tags `["#Tag"]`、raw `["[[raw]]"]` |
 | `予算切れの日付は dropped に入れない` | `exhaustedDailyNotDropped` | maxLinks 0 → dropped に `2026-09-12` を含まない、`2026-09-11 Voice` は含む |
-| `タグも Raw も無ければ Raw とタグは空` | `emptyInputs` | tags `[]`・rawNames `[]` → tags・raw・dropped が空、`LinkPlan.empty.counted == 0`（TEST-28。T-27 の実装で足した） |
+| `タグも Raw も無ければ tags・raw・dropped は空` | `emptyInputs` | tags `[]`・rawNames `[]` → tags・raw・dropped が空、`LinkPlan.empty.counted == 0`（TEST-28。T-27 の実装で足した） |
 
 ### 5.6 `DailyNoteGoldenTests.swift`（`@Suite("DailyNote golden")`）
 
@@ -620,6 +623,7 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 | タグの正規化で U+3000 を置換しない | `tagsAreNormalized` |
 | タグの重複除去を `lowercased()` にする | `tagsDedupeByCasefold` |
 | `recorded` を四捨五入にする | `recordedFormat` / `fullNoteMatchesVoicedock` |
+| `recorded` の `Int(exactly:)` を `Int(seconds)` に戻す | `recordedFormat`（Int に収まらない値でトラップし、テストのプロセスごと落ちる） |
 | `linksLines` で `#タグ` も並べる | `plainTagsNotInLinks` |
 | `rawLinkName` で常に基本名を返す | `rawLinkNameUsesActualBasename` |
 | `decode` で指紋を比べない | `otherFingerprintIgnored` |

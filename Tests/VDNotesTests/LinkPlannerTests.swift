@@ -184,7 +184,7 @@ struct LinkPlannerTests {
         #expect(result.dropped.contains("2026-09-11 Voice"))
     }
 
-    @Test("タグも Raw も無ければ Raw とタグは空")
+    @Test("タグも Raw も無ければ tags・raw・dropped は空")
     func emptyInputs() throws {
         let result = try plan()
         #expect(result.tags == [])

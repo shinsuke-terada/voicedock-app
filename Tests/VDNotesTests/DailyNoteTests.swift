@@ -223,6 +223,9 @@ struct DailyNoteTests {
         #expect(DailyNote.recorded(0) == "00:00:00")
         #expect(DailyNote.recorded(nil) == "00:00:00")
         #expect(DailyNote.recorded(.nan) == "00:00:00")
+        #expect(DailyNote.recorded(.infinity) == "00:00:00")
+        #expect(DailyNote.recorded(1e300) == "00:00:00")
+        #expect(DailyNote.recorded(9.3e18) == "00:00:00")
     }
 
     @Test("タグは既定タグと合わせて正規化する")

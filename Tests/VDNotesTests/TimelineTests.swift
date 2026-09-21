@@ -208,7 +208,7 @@ struct TimelineTests {
     @Test("行の先頭の U+FEFF を落とさない（PyJSON.decode）")
     func leadingBOMInLineKept() throws {
         let entry =
-            #"[{"start_at": "2026-08-29T08:00:00+09:00", "end_at": "2026-08-29T09:00:00+09:00", "lines": ["﻿a"]}]"#
+            #"[{"start_at": "2026-08-29T08:00:00+09:00", "end_at": "2026-08-29T09:00:00+09:00", "lines": ["\ufeffa"]}]"#
         let lines = try #require(try decode(document(blocks: entry)).first?.lines)
         #expect(lines.map { Array($0.unicodeScalars) } == [Array("\u{FEFF}a".unicodeScalars)])
     }
