@@ -151,7 +151,9 @@ public struct WorkspaceMountEventSource: MountEventSource {
                     }
                 }
             }
-            continuation.onTermination = { _ in tasks.forEach { $0.cancel() } }
+            continuation.onTermination = { _ in
+                for task in tasks { task.cancel() }   // swift format の ReplaceForEachWithForLoop
+            }
         }
     }
 }
@@ -204,8 +206,8 @@ static let lockRetrySeconds = 1
 
 `start()`:
 1. `started` なら何もしない。`started = true`、`stopRequested = false`
-2. 通知の購読: `backgroundTasks.append(Task { for await _ in deps.mountEvents.events() { await self.requestScan() } })`（`deps` は let で先に取り出す）
-3. 周期: `backgroundTasks.append(Task { while !Task.isCancelled { let seconds = await deps.configProvider()?.device.scanIntervalSeconds ?? 300; do { try await deps.sleeper.sleep(seconds: seconds) } catch { return }; await self.requestScan() } })`
+2. 通知の購読: `backgroundTasks.append(Task { for await _ in deps.mountEvents.events() { self.requestScan() } })`（`deps` は let で先に取り出す。actor の中で作った `Task` は actor の隔離を引き継ぐので `requestScan()` に `await` を付けない。付けると「await の中に async の呼び出しが無い」の警告がエラーになる）
+3. 周期: `backgroundTasks.append(Task { while !Task.isCancelled { let seconds = await deps.configProvider()?.device.scanIntervalSeconds ?? 300; do { try await deps.sleeper.sleep(seconds: seconds) } catch { return }; self.requestScan() } })`
 4. `requestScan()`（最初の走査）
 
 `stop()`: `stopRequested = true` → `backgroundTasks` を全部 cancel して空に → `waiters` の全部に `nil` を返して空に → `updateContinuations` を全部 `finish()` して空に → `started = false`
@@ -288,7 +290,7 @@ finishWaiters(index, generation)
 
 `recordSkip(name:reason:errno:into:)`:
 - `reason.needsUserAction` なら `unavailable[name] = reason.rawValue`、`errno` があれば `notListableErrno[name] = errno`
-- ログ `volume_skipped name=<name> reason=<reason>`（`errno` があれば `errno=<n>`）。レベルは `reason.needsUserAction && previousUnavailable[name] != reason.rawValue` なら WARNING、それ以外は DEBUG（**変化したときだけ WARNING**。毎回の走査で鳴らし続けない。OPS-12）
+- ログ `volume_skipped name=<name> reason=<reason>`（`errno` があれば `detail=<n>`。PLAN §8.1 規則 5 の「errno を detail に残す」に合わせる。付録 A.4 のフィールドに `errno` のキーは無いので `LogKey` に足さない）。レベルは `reason.needsUserAction && previousUnavailable[name] != reason.rawValue` なら WARNING、それ以外は DEBUG（**変化したときだけ WARNING**。毎回の走査で鳴らし続けない。OPS-12）
 
 `acquireReaperLock()`:
 ```swift
@@ -436,7 +438,7 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `nameMismatchAfterRemountIsUnavailable` / 「再マウントでパスに ` 1` が付けば取り込まず mount_name_mismatch」 | remounter `.remounted("<tmp>/Volumes/DJIMIC3 1")` | `devices` に無い、`unavailable["DJIMIC3"] == "mount_name_mismatch"`、inbox は空 |
 | `incompleteListingIsNotObserved` / 「列挙に失敗したサブディレクトリがあればそのデバイスを観測に載せない」 | 1 つのフォルダを `chmod 000` | `devices` に無い、`unavailable["DJIMIC3"] == "not_listable"` |
 | `notListableCarriesErrno` / 「not_listable の errno を snapshot に残す」 | ボリュームのルートを `chmod 000` | `notListableErrno["DJIMIC3"] == EACCES` |
-| `unavailableWarnsOnlyOnChange` / 「利用者の操作が要る理由は変わったときだけ WARNING」 | 上と同じ状態で 2 回走査 | 1 回目は WARNING `volume_skipped name=DJIMIC3 reason=not_listable errno=13`、2 回目は DEBUG だけ |
+| `unavailableWarnsOnlyOnChange` / 「利用者の操作が要る理由は変わったときだけ WARNING」 | 上と同じ状態で 2 回走査 | 1 回目は WARNING `volume_skipped name=DJIMIC3 reason=not_listable detail=13`、2 回目は DEBUG だけ |
 | `scanCompletedLevels` / 「scan_completed はコピーがあれば INFO、無ければ DEBUG」 | 2 回走査 | 1 回目 INFO `scan_completed devices=1 copied=2 elapsed_s=…`、2 回目 DEBUG `copied=0` |
 | `activityTracksCopies` / 「進捗を IngestActivity に出す」 | 走査の後 | `copied == 2`、`total == 2`、`lastActivityAt == clock.now()`、`scanning == false` |
 | `updatesYieldOnPublish` / 「公開のたびに updates に流れる」 | `updates()` を購読してから `scanNow()` | 1 つ以上受け取る |
@@ -444,6 +446,9 @@ path は `<tmp>/Volumes/DJIMIC3`、node は `/dev/disk99`（実在しない番�
 | `mountEventTriggersScan` / 「マウント通知で走査する」 | `start()`（周期は `SuspendingSleeper`）→ 最初の走査の後に `send()` | generation が 2 になる（`updates()` を待つ。5 秒で打ち切り） |
 | `stopResolvesWaiters` / 「stop で待っている scanNow に nil を返す」 | 走査を止めておき `scanNow()` を待たせてから `stop()` | nil |
 | `unlistableVolumesRootIsNotPublished` / 「volumesRoot 自体を列挙できなければ 0 台として公開しない（DEL-32）」 | 1 回目は通常、2 回目の前に `<tmp>/Volumes` を `chmod 000`（テスト後に 755 へ戻す） | 2 回目の `scanNow() == nil`、`latestSnapshot()` は 1 回目のまま（generation 1、`devices["DJIMIC3"]` が在る） |
+
+- `noZeroDeviceSnapshotDuringRemount` の `onRemount` は**最初の 1 回だけ** `send()` を 2 回呼び、通知が走査に届くまで（300 ms）待ってから戻る。`send()` は `Task` で渡すので、待たないと走査が終わった後に届いて別の走査になる。2 回目以降の `onRemount` は何もしない（毎回送ると再走査が止まらない）。数えるのは `scan_completed` の行（2 行とも `devices=1`）
+- `scanNowWaitsForAScanStartedAfterTheCall`・`stopResolvesWaiters` の「走査を止めておく」は、`onRemount` の中で開けるまで待つ門（テスト内の小さな actor）。2 本目の `scanNow()` が待ちに入ったことは `waiters.count == 2`（`@testable`）で確かめてから門を開ける／`stop()` する
 
 ### 5.5 `IngestServiceDiskImageTests.swift`（`@Suite("IngestService × FAT32 イメージ", .serialized, .enabled(if: TestEnvironment.diskTests))`、タグ `.diskImage`）
 

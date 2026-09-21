@@ -72,6 +72,7 @@ struct IngestCopyTests {
             let config = self.config
             let deps = IngestDependencies(
                 layout: layout, configProvider: { config }, store: store, inspector: FakeMountInspector(),
+                remounter: FakeRemounter(outcomes: [.alreadyReadOnly]), mountEvents: FakeMountEventSource(),
                 reader: DeviceReader(),
                 coexistence: CoexistenceGuard(runner: ScriptedProcessRunner(results: []), uid: 501), clock: clock,
                 sleeper: sleeper(fake), zone: zone, log: log,

@@ -11,8 +11,6 @@ enum ConfigEffectPending {
         "session.maxParts": "T-22",
         "session.maxDurationSeconds": "T-22",
         "llm.modelID": "T-22",
-        "device.mountMode": "T-15",
-        "device.scanIntervalSeconds": "T-15",
         "device.snapshotMaxAgeSeconds": "T-38",
         "cleanup.deleteSourceAudio": "T-38",
         "cleanup.deleteEvaluationBackoffSeconds": "T-38",

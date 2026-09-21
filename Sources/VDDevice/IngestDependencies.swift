@@ -1,4 +1,4 @@
-// IngestService が使う部品の束（PLAN §8.1）。T-15 が remounter と mountEvents を inspector の後に足す。
+// IngestService が使う部品の束（PLAN §8.1）。並びは 00-api-map §5。
 import Foundation
 import VDContract
 import VDCore
@@ -10,6 +10,8 @@ public struct IngestDependencies: Sendable {
     public let configProvider: @Sendable () async -> AppConfig?
     public let store: Store
     public let inspector: any MountInspector
+    public let remounter: any Remounter
+    public let mountEvents: any MountEventSource
     public let reader: DeviceReader
     public let coexistence: CoexistenceGuard
     public let clock: any AppClock
@@ -21,13 +23,16 @@ public struct IngestDependencies: Sendable {
 
     public init(
         layout: HomeLayout, configProvider: @escaping @Sendable () async -> AppConfig?, store: Store,
-        inspector: any MountInspector, reader: DeviceReader, coexistence: CoexistenceGuard, clock: any AppClock,
+        inspector: any MountInspector, remounter: any Remounter, mountEvents: any MountEventSource,
+        reader: DeviceReader, coexistence: CoexistenceGuard, clock: any AppClock,
         sleeper: any Sleeper, zone: ZonedTime, log: AppLog, volumesRoot: String
     ) {
         self.layout = layout
         self.configProvider = configProvider
         self.store = store
         self.inspector = inspector
+        self.remounter = remounter
+        self.mountEvents = mountEvents
         self.reader = reader
         self.coexistence = coexistence
         self.clock = clock
