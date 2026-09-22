@@ -64,8 +64,11 @@ struct RunbookGate: Sendable {
         return nil
     }
 
-    /// 判定が「通った」と言えるか（`✅` か `—` で始まる）。
+    /// 判定表（§2）の判定が「通った」と言えるか（`✅` か `—` で始まる。`—` は取り下げた E2E-15・18）。
     static func passes(_ verdict: String) -> Bool { verdict.hasPrefix("✅") || verdict.hasPrefix("—") }
+
+    /// G と R の判定が「通った」と言えるか（`✅` だけ。`— 対象外` でゲートを開けさせない。利用者の決定: R-02・R-03 も必須）。
+    static func gatePasses(_ verdict: String) -> Bool { verdict.hasPrefix("✅") }
 
     /// 判定が「実施した」と言えるか（`✅` か `✗` で始まる）。生の出力を要求する条件。
     static func wasRun(_ verdict: String) -> Bool { verdict.hasPrefix("✅") || verdict.hasPrefix("✗") }
@@ -93,8 +96,8 @@ struct RunbookGateTests {
     /// 判定の 4 つの記号（`✗` は U+2717）。T-35 と同じ。
     static let verdictMarkers = RunbookTests.verdictMarkers
 
-    /// ゲートの条件の列に現れなければならない語（PLAN §12.4 の 1〜4）。
-    static let planWords = ["付録 B.1", "付録 B.3", ".diskImage", "1 日"]
+    /// ゲートの条件の列に現れなければならない語（PLAN §12.4 の 1〜5）。
+    static let planWords = ["付録 B.1", "付録 B.3", ".diskImage", "1 日", "E2E-01〜09"]
 
     /// 1 日運用の節の見出しの前方一致の鍵。
     static let oneDayKey = "5. 三重ロックを全部外して 1 日"
@@ -130,6 +133,16 @@ struct RunbookGateTests {
         #expect(!RunbookGate.passes(""))
     }
 
+    @Test("陽性対照: G と R の「通った」は ✅ だけ")
+    func theGatePassPredicateIsExact() {
+        #expect(RunbookGate.gatePasses("✅ PASS"))
+        #expect(!RunbookGate.gatePasses("— 対象外"))
+        #expect(!RunbookGate.gatePasses("⬜ 未実施"))
+        #expect(!RunbookGate.gatePasses("✗ FAIL"))
+        #expect(!RunbookGate.gatePasses("PASS"))
+        #expect(!RunbookGate.gatePasses(""))
+    }
+
     @Test("ゲートの 4 条件が PLAN §12.4 と対応する")
     func theGateTableCoversPlanSection124() throws {
         let plan = try Self.planConditions()
@@ -158,7 +171,9 @@ struct RunbookGateTests {
         let reruns = try gate.rerunRows()
         // 番犬: 表が読めないまま「全部通った」にしない
         #expect(!table.isEmpty && !gates.isEmpty && !reruns.isEmpty)
-        let failing = (table + gates + reruns).filter { !RunbookGate.passes($0.verdict) }.map(\.id)
+        let failing =
+            table.filter { !RunbookGate.passes($0.verdict) }.map(\.id)
+            + (gates + reruns).filter { !RunbookGate.gatePasses($0.verdict) }.map(\.id)
         #expect(failing.isEmpty, "ゲートが開なのに通っていない: \(failing.joined(separator: ", "))")
     }
 

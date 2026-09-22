@@ -18,7 +18,7 @@
 - `#### 記録` には、打ったコマンドと出力を ```text のフェンスでそのまま貼る。**端末からのコピーを整形しない**
 - 日時・録音の本数・デバイス名を書く。`<VAULT>` と `<HOME>` は伏せてよいが、**行を削らない**
 - **`【利用者が行う】` と書いた手順は利用者が自分で実行する。**エージェントは実行しない
-- 実機で消えてよいのは「この試験のために新しく録った録音」だけである
+- 実機で消えてよいのは「この試験のために新しく録った録音」と「すでに Raw ノートで確認済みの録音」だけである。削除 OFF の試験（§3 の E2E-10・11・17 以外）では 1 本も消えない。**E2E-11 の「過去分を削除対象にする」では、以前の録音（§1 の下準備で取り込んだものを含む）も Raw ノートの検証を通っていれば消える**
 - **1 件でも FAIL なら修正チケットを起票し、次の Phase へ進まない**（PLAN §12.4）
 
 ## 1. 前提
@@ -29,7 +29,7 @@
 
 - `make app` で組み立てた `VoiceDock.app`（T-34）を使う。**ad-hoc 署名では行わない**（TCC の許可がビルドのたびに失効する）。
   署名の確認: `codesign -dvvv <VoiceDock.app のパス> 2>&1 | grep -E 'Identifier=|TeamIdentifier='`
-- **削除は OFF のまま行う**（E2E-10 / E2E-11 / E2E-17 を除く）。パネルの「元音声の削除」で三重ロックが 3 つとも掛かっていることを確かめてから始める
+- **削除は OFF のまま行う**（E2E-10 / E2E-11 / E2E-17、§5、§6 を除く）。パネルの「元音声の削除」で三重ロックが 3 つとも掛かっていることを確かめてから始める
 - パネルの「詳細 → 診断を実行」がすべて ✓ か ! であること（✗ が残っていたら先に直す）
 - 環境変数（各シナリオのコマンドが使う）:
 
@@ -444,6 +444,14 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 #### 前提
 削除 ON。**この節から実機の録音が本当に消える。**消えてよいのは「この試験のために新しく録った録音」と「すでに Raw ノートで確認済みの録音」だけである。
 
+**止め方（削除 ON の試験すべてに共通。§5・§6 も同じ）**: 想定外のファイルが消えたら、次の順で止める。
+
+1. 直ちにパネルの「元音声の削除」の「無効にする」を押す
+2. Finder でデバイスを取り出す
+3. その時点の [C-7]・[C-6]・[C-12] を取る（[C-7] はデバイスが要る。無効化の後なので、挿し直すと読み取り専用でマウントされる）
+4. 判定を `✗ FAIL` にし、修正チケットを起票する（§0）
+
+
 - **`make app` か `make release` の `.app` を使う。**`ReaperSignature.requirement`（PLAN §8.9.3）は識別子と Team ID（`certificate leaf[subject.OU]`）で束縛しているので、
   Apple Development の証明書でも Developer ID の証明書でも満たす。**ad-hoc 署名の `.app` では `.disabled(reaper_invalid)` になり、この Phase の試験が全部空振りする**。
   確かめ方（読み取りだけ）: `codesign -dvvv "<VoiceDock.app のパス>/Contents/Helpers/voicedock-reaper" 2>&1 | grep -E 'Identifier=|TeamIdentifier='`。
@@ -451,31 +459,38 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 - 削除 OFF の 13 件（E2E-01〜09・12〜14・16）が PASS 済み。パネルの「詳細 → 診断を実行」に ✗ が無い
 - 削除はまだ OFF。[C-11] が `ロック 1  : アプリ=無効, reaper.conf=無し`（前に無効化していれば `reaper.conf=無効`）と `ロック 2-A: 削除モジュール=未導入` を示している
 - デバイスに**未処理の録音が無い**（E2E-01〜09 で処理済み。パネルが「待機中」）
-- **消えてよいファイルの範囲を利用者が決めて書き留める。**デバイスの全ファイルの一覧を退避しておく（§1「実機を使う前にやること」の 2 と同じ `find`。ファイル名は `device-all-before-on.txt`）。
-  心配なら、デバイスの中身を丸ごと Mac に写しておく（読み取りだけ）: `ditto "/Volumes/$DEV" "$HOME/VoiceDockE2E/device-backup"`
+- **消えてよいファイルの範囲を利用者が決めて書き留める。**
+- **退避は必須**（手順 1。削除 OFF で読み取り専用の間に行う）。退避先の `$HOME/VoiceDockE2E/device-backup` は空か、まだ無いこと
+- **削除の段で止まっている Session と Part が無い**（手順 1 で確かめる。残っていると、有効にした直後にその Part の元音声が消えうる）
 - 1 分程度の**普通の録音 2 本**と**無音の録音 1 本**（マイクを止めて 1 分）を、有効化の後に新しく録る（手順の 4）
 
 #### 手順
 【利用者が行う】
 
-1. デバイスを挿し、[C-8] に `read-only` が出たら [C-7]・[C-15]・[C-11]・[C-16]・[C-1] を取る（前。削除 OFF なので読み取り専用で挿さっている）
+1. デバイスを挿し、[C-8] に `read-only` が出たら [C-7]・[C-15]・[C-11]・[C-16]・[C-1] を取る（前。削除 OFF なので読み取り専用で挿さっている）。続けて、読み取り専用のうちに次を行う:
+   - 全ファイルの一覧: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before-on.txt"`
+   - **退避（必須）**: `ditto "/Volumes/$DEV" "$HOME/VoiceDockE2E/device-backup"`
+   - 件数の照合: `find "/Volumes/$DEV" -type f | wc -l` と `find "$HOME/VoiceDockE2E/device-backup" -type f | wc -l` が同じ数であること（違えば始めない）
+   - 削除の段で止まっている Session: `sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions WHERE status IN ('SAVED','SOURCE_DELETING','SOURCE_DELETE_PENDING','CLEANUP') GROUP BY status;"` が **0 行**
+   - `RAW_SAVED` の Part: `sqlite3 "$VD_DB" "SELECT COUNT(*) FROM recordings WHERE status = 'RAW_SAVED';"` が **0**
+   - どちらかが 0 でなければ有効化しない（処理が終わるのを待つ。終わらなければ調べる）
 2. パネルの「元音声の削除」で有効化する。まず事前確認の 2 文と、その下の診断の要約（または「診断を実行」のボタン）を書き写す。
    次に入力欄に **`enable`（小文字）** を打って「有効にする」を押し、弾かれた表示を書き写す。最後に入力欄に **`ENABLE`** を打って「有効にする」を押す
 3. 直ちに [C-11]・[C-16]・[C-14] を取る。3 行の下の注意書きと、メニューバーのアイコンの横のゴミ箱（`trash`）を確かめる
-4. デバイスを**抜き**、普通の録音 2 本と無音の録音 1 本を新しく録る
+4. Finder でデバイスを**取り出してから抜き**、普通の録音 2 本と無音の録音 1 本を新しく録る
 5. 挿す（**有効化してから初めての接続**）。[C-8] を取り、マウントが出たら直ちに [C-7] と [C-15] を取る（前。`read-only` は出ない。最初の削除は Raw ノートの保存の後なので、挿した直後の一覧がそのまま「前」になる）
-6. 完走を待つ（パネルが「待機中」に戻る）
+6. 完走を待つ（パネルが「待機中」に戻る）。**[C-1] を取る前に 1〜2 分待つ**（削除の評価のバックオフ 60 秒。元音声が消えた後、Session が `COMPLETED` になるのは次の評価）
 7. [C-1]・[C-13]・[C-14]・[C-12]・[C-6]・[C-7]・[C-15]・[C-9]・[C-11] を取る（後）。無音の Part の行も取る:
    `sqlite3 -header -column "$VD_DB" "SELECT partkey, status, error_code, delete_request_id, source_deleted_at FROM recordings WHERE status='SKIPPED';"`
 8. 5 と 7 の [C-7] を `diff` し、消えたファイルが**普通の録音 2 本だけ**であることを確かめる
-9. **何も消えないことの確認**（ND-40 / RV-00 の実機での裏取り）。**デバイスを抜いてから**、[C-6] で `queue/delete` が空であることを確かめ、下の 3 つを順に手で実行する。
+9. **何も消えないことの確認**（ND-40 / RV-00 の実機での裏取り）。**Finder でデバイスを取り出してから抜き**、[C-6] で `queue/delete` が空であることを確かめ、下の 3 つを順に手で実行する。
    各回の前後で `wc -c "$VD_HOME/logs/reaper.log"` と [C-6] を取る
 
 | # | 手で実行するもの【利用者が行う】 | 期待 |
 |---|---|---|
 | 10-a | `"<VoiceDock.app のパス>/Contents/Helpers/voicedock-reaper" --home "$VD_HOME"; echo "exit=$?"` | `exit=3`。標準出力にも標準エラーにも何も出ず、`reaper.log` の大きさが変わらず、`queue/delete` も変わらない（RV-00。バンドルの中から起動しても何もしない） |
 | 10-b | `"$VD_HOME/bin/voicedock-reaper" --version; echo "exit=$?"` | リポジトリの `VERSION` と同じ 1 行と `exit=0`。`reaper.log` の大きさが変わらない（`--version` は RV-00 より前に処理して終わり、要求を読まない） |
-| 10-c | `"$VD_HOME/bin/voicedock-reaper" --home "$VD_HOME"; echo "exit=$?"`（`queue/delete` が空で、デバイスを抜いてあるときに限る） | `exit=0`。何も消えない。`reaper.log` に `reaper_started` と `reaper_completed requests=0` の 2 行が足される。`exit=4` なら `reaper_busy`（アプリの走査と重なった）なので少し待ってもう一度。**要求がある状態・デバイスが挿さった状態では手で叩かない** |
+| 10-c | `"$VD_HOME/bin/voicedock-reaper" --home "$VD_HOME"; echo "exit=$?"`（`queue/delete` が空で、デバイスを取り出して抜いてあるときに限る） | `exit=0`。何も消えない。`reaper.log` に `reaper_started` と `reaper_completed requests=0` の 2 行が足される。`exit=4` なら `reaper_busy`（アプリの走査と重なった）なので少し待ってもう一度。**要求がある状態・デバイスが挿さった状態では手で叩かない** |
 
 **落とし穴**: 有効化の直後、挿し直す前のデバイスは観測が `読み取り専用` なので削除されない（その時点で削除の段に来た Session は `source_delete_skipped session_key=… reason=device_readonly` で削除せずに完了する）。
 これは正しい動き。消し損ねた分は E2E-11 の「過去分を削除対象にする」で拾う。
@@ -512,7 +527,7 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 9: 表の期待のとおり。
 
 #### 記録
-2 の事前確認の 2 文・診断の要約・`enable` を弾いた表示、3 と 7 の [C-11]、[C-16] の前後、5 と 7 の [C-7] の `diff`（**消えたファイルだけが差分**）、[C-15] の前後、[C-13]、[C-14]、[C-12]、[C-6]、無音の Part の行、9 の 3 つの出力（終了コードと `wc -c` の前後）。
+1 の件数の照合（2 つの `wc -l`）と削除の段の 2 つのクエリの出力、2 の事前確認の 2 文・診断の要約・`enable` を弾いた表示、3 と 7 の [C-11]、[C-16] の前後、5 と 7 の [C-7] の `diff`（**消えたファイルだけが差分**）、[C-15] の前後、[C-13]、[C-14]、[C-12]、[C-6]、無音の Part の行、9 の 3 つの出力（終了コードと `wc -c` の前後）。
 
 ```text
 ```
@@ -524,13 +539,14 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 
 #### 前提
 削除 ON。E2E-10 が PASS（削除が有効で、デバイスを挿すと読み書き可能でマウントされる）。
-**削除 OFF の期間に処理した Part が残っている**（E2E-01〜09 などで処理したもの）。
+**削除 OFF の期間に処理した Part が残っている**（E2E-01〜09 などで処理したもの）。E2E-10 の手順 1 の退避が済んでいる。
 
-- **「過去分を削除対象にする」は、条件を満たす過去の Part を 1 件ずつ選ばずに全部消す。**§1 の下準備の接続で取り込んだ以前の録音も、Raw ノートの検証を通っていれば対象になる。
-  消えてよい範囲に収まらないなら、この試験を行わない（手順 2 のプレビューで「やめる」を押す）。心配なら E2E-10 の前提の `ditto` でデバイスの中身を写しておく
+- **この試験では以前の録音も消える。**「過去分を削除対象にする」は、条件を満たす過去の Part を 1 件ずつ選ばずに全部消す。§1 の下準備の接続で取り込んだ以前の録音も、Raw ノートの検証を通っていれば対象になる。
+  消えてよい範囲に収まらないなら、この試験を行わない（手順 2 のプレビューで「やめる」を押す）
 - 対象になりうる Part の一覧（読み取りだけ。実際の対象はこの一覧のうち Raw ノートの検証を通り、デバイスに今在るもの）:
   `sqlite3 -header -column "$VD_DB" "SELECT r.partkey, r.source_path FROM recordings r JOIN sessions s ON r.session_key = s.session_key WHERE s.status = 'COMPLETED' AND r.status IN ('COMPLETED', 'SOURCE_DELETE_PENDING') AND r.source_deleted_at IS NULL AND r.delete_request_id IS NULL ORDER BY r.started_at;"`
-- 「手動で消した分を完了にする」の対象は **`SOURCE_DELETE_PENDING` の Part だけ**である（reaper に拒否された・期限が切れた・消した後もまだ在った Part。`source_delete_pending` のログが出ている）
+- **実機で確かめるのは前半（過去分）だけ**である（PLAN 付録 B.3・F-63）。後半の「手動で消した分を完了にする」は、対象の `SOURCE_DELETE_PENDING` を手の操作で確実に作れないので、
+  T-41 の単体テスト（`Tests/VDPipelineTests/BacklogPlannerTests.swift` の resolveAbsent 系）で代える。運用中に `SOURCE_DELETE_PENDING` が出たら、`#### 記録` の末尾に記録する
 
 #### 手順
 【利用者が行う】
@@ -538,36 +554,34 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 1. デバイスを挿し、[C-8] にマウントが出て、パネルが「待機中」に戻ったら [C-1]・[C-7]・[C-13] と、前提の「対象になりうる Part の一覧」を取る（前）
 2. パネルの「詳細 → 過去分を削除対象にする」を押す。**プレビュー（件数と、対象外の件数と理由）を書き写す**。対象が消えてよい範囲を超えていたら「やめる」を押して終える
 3. 「削除要求を書く（<n> 件）」を押して実行する。出た 1 行を書き写す
-4. パネルが「待機中」に戻るのを待って [C-1]・[C-7]・[C-13]・[C-14]・[C-12]・[C-6] を取る（後）
-5. `SOURCE_DELETE_PENDING` の Part を調べる: `sqlite3 -header -column "$VD_DB" "SELECT partkey, source_path, error_code FROM recordings WHERE status = 'SOURCE_DELETE_PENDING';"`。
-   **0 行なら 6〜9 は行わない**（落とし穴を見る）
-6. 1 行以上あれば、その中から**1 本だけ**選び、その録音のファイルを `stat -f '%z %m %N' "/Volumes/$DEV/<source_path>"` で記録してから、Finder で削除してゴミ箱を空にする
-7. デバイスを抜いて挿し直し、新しい snapshot を取らせる（[C-8] にマウントが出るまで待つ）
-8. 「詳細 → 手動で消した分を完了にする」を押し、プレビューを書き写す。「完了にする（1 件）」を押して実行し、出た 1 行を書き写す
-9. [C-1]・[C-13]・[C-14]、[C-4] の当該 Part の遷移を取る
+4. パネルが「待機中」に戻るのを待ち、1〜2 分おいてから [C-1]・[C-7]・[C-13]・[C-14]・[C-12]・[C-6] を取る（後）
+5. `SOURCE_DELETE_PENDING` の Part を調べて記録する: `sqlite3 -header -column "$VD_DB" "SELECT partkey, source_path, error_code FROM recordings WHERE status = 'SOURCE_DELETE_PENDING';"`（0 行でよい）
 
 **落とし穴**: 2 のプレビューが 0 件なら**この試験は空振り**（TEST-20）。0 件なら削除 OFF で処理した Part を先に用意する（削除を無効にして 1 本処理し、有効に戻す）。
-5 が 0 行なら「手動で消した分」の半分は空振りである。`SOURCE_DELETE_PENDING` は reaper の拒否（`source_delete_pending … reason=<RV の理由語>`）・期限切れ（`reason=no_result`）・消した後もまだ在った（`reason=still_in_inventory`）でしか生じず、
-手の操作で確実に作る方法は無い。そのときは 5 の出力を記録して判定を `⬜ 未実施` のままにし、運用の中で `SOURCE_DELETE_PENDING` の Part が出たときに 5〜9 を行う。
-**`SOURCE_DELETE_PENDING` でない Part の録音を手で消さない。**そのファイルはこのボタンの対象にならない（`COMPLETED` の Part は `source_deleted_at` が空のまま残り、`RAW_SAVED` の Part は要求が書かれずに Session が削除の段で待ち続ける）。
-6 で消すのは 1 本だけにする。
+**録音を手で消さない。**消したファイルはこの試験の対象にならない（`COMPLETED` の Part は `source_deleted_at` が空のまま残り、`RAW_SAVED` の Part は要求が書かれずに Session が削除の段で待ち続ける）。
+`RAW_SAVED` で詰まったら、「無効にする」を押し、Session が `COMPLETED` になるのを [C-1] で確かめてから（削除の評価のバックオフにより最大 1 時間ほど）、E2E-10 の手順 2 の `ENABLE` で有効に戻す。
+無効にしている間の Session は `source_delete_skipped session_key=… reason=delete_source_audio_disabled` で削除せずに完了する。
 
 #### 期待
 2: 1 行目が `削除要求を書く対象: <n> 件`（**n ≥ 1**。本アプリは削除 OFF の間も Raw ノートを保存・検証するので、voicedock の「`--backlog` は 0 件」と違って 0 件にならない）。
 対象外があれば `対象外: <m> 件` と、理由ごとの `・削除済み: <k> 件`（E2E-10 で消した 2 本を含む）・`・削除の条件を満たさない: <k> 件` が出る。
 3: `<n> 件の削除要求を書きました`。
-4: 対象の元音声だけが消える（[C-7] の前後の差が対象の本数と一致）。[C-13] の対象の行が `COMPLETED`・`delete_request_id` が空・`source_deleted_at` に時刻。
+4: 対象の元音声だけが消える（[C-7] の前後の差が対象の本数と一致し、どれも前提の一覧に在る）。[C-13] の対象の行が `COMPLETED`・`delete_request_id` が空・`source_deleted_at` に時刻。
 [C-14] に `delete_requested` が n 行、`reaper_run exit=0`、`source_deleted` が n 行。[C-12] に `source_delete_rejected` が無い。[C-6] の `queue/delete`・`queue/result` が空。
-8: プレビューが `完了にする対象: 1 件` と `デバイスに無いことを確かめた録音だけを完了にします（削除した記録は付けません）`（ほかの `SOURCE_DELETE_PENDING` があれば `・デバイスにまだ在る: <k> 件`）。
-実行の後に `1 件を完了にしました`。
-9: [C-4] の当該 Part が `SOURCE_DELETE_PENDING` → `SOURCE_DELETING`（detail `resolve_absent`）→ `COMPLETED`（detail `already_absent`）。
-[C-14] に `source_delete_skipped recording_key=… reason=already_absent`。[C-13] に当該 Part が出ない（**`source_deleted_at` は入らない**。消したのはアプリではない。`delete_request_id` も空）。
+5: 行があれば、その Part ごとに [C-14] の `source_delete_pending recording_key=… reason=…` が 1 行以上ある。
+
+後半（手動で消した分）は T-41 の単体テストの期待による: `SOURCE_DELETE_PENDING` → `SOURCE_DELETING`（detail `resolve_absent`）→ `COMPLETED`（detail `already_absent`）、
+`source_delete_skipped recording_key=… reason=already_absent`、**`source_deleted_at` は入らない**。
 
 #### 記録
-2 と 8 のプレビューの全文、3 と 8 の実行の 1 行、前提の「対象になりうる Part の一覧」、[C-1]・[C-7]・[C-13] の前後、[C-14]、[C-12]、[C-6]、5 の出力、6 の `stat`、9 の [C-4] の当該 Part の遷移。
+2 のプレビューの全文、3 の実行の 1 行、前提の「対象になりうる Part の一覧」、[C-1]・[C-7]・[C-13] の前後、[C-14]、[C-12]、[C-6]、5 の出力。
 
 ```text
 ```
+
+**運用中の `SOURCE_DELETE_PENDING`（F-63）**: [C-14] に `source_delete_pending` が出たら、その行（`reason=` は RV の理由語・`no_result`・`still_in_inventory`・`queue_write_failed` のどれか。
+`queue_write_failed` は要求ファイルを書けなかったもので、状態は `SOURCE_DELETE_PENDING` にならない）と、5 のクエリの出力と、[C-4] の当該 Part の遷移を日時つきでここに貼る。
+デバイスにファイルが無いことを確かめられたら、「詳細 → 手動で消した分を完了にする」のプレビューと実行の 1 行も貼る。**そのために録音を手で消さない。**
 
 #### 判定
 ⬜ 未実施
@@ -723,7 +737,7 @@ PLAN 付録 B.3 の E2E-15 の行（取り下げ）。
 
 **落とし穴**: 無効化は「消す能力に近いものから先に止める」順（reaper.conf → reaper の削除 → config → 要求の取り下げ → 再マウント）で、**途中の段が失敗しても残りを続ける**。4 では **5 つとも**を確かめる。
 コピーの途中で押すと走査が見送られ、再マウントの段が失敗しうる（`remount`）。2 のとおり「文字起こし中」になってから押す。
-§5 に進むなら、この試験の後に E2E-10 の手順 2（`ENABLE`）で有効に戻し、デバイスを挿し直す。
+§5・§6 に進むなら、この試験の後に E2E-10 の手順 2（`ENABLE`）で有効に戻し、Finder でデバイスを取り出して挿し直す。
 
 #### 期待
 3: 確認のダイアログも入力欄も出ない（**止めたいときに止められる**）。
@@ -807,6 +821,7 @@ reaper 層のうち R3（ディスクイメージ）の ND は `.diskImage` の�
 ## 5. 三重ロックを全部外して 1 日（G-4 の記録）
 
 削除を有効にしたまま、**普段どおりの 1 日**を流す。voicedock ではこれでしか見つからない欠陥が 5 件あった（単体テストは全部緑のままだった）。
+想定外のファイルが消えたら §3.10 の「止め方」で止める。削除 ON の間はデバイスが読み書き可能でマウントされるので、**抜く前に Finder で取り出す**。
 
 #### 前提
 E2E-10・11・17 と §6 の再実行が PASS。削除を**有効に戻した**状態（E2E-17 で無効化したままにしない。E2E-10 の手順 2 の `ENABLE` で有効にする）。
@@ -846,6 +861,15 @@ Raw が 1 枚・Daily が 1 枚（その日の分）。`FAILED` が 0 件（あ�
 
 削除 OFF で PASS した 9 件を、削除が有効なまま通す。**§3 の手順をそのまま使い、下の「削除 ON での違い」だけを足して見る。**
 
+**止め方（削除 ON の試験すべてに共通。§5・§6 も同じ）**: 想定外のファイルが消えたら、次の順で止める。
+
+1. 直ちにパネルの「元音声の削除」の「無効にする」を押す
+2. Finder でデバイスを取り出す
+3. その時点の [C-7]・[C-6]・[C-12] を取る（[C-7] はデバイスが要る。無効化の後なので、挿し直すと読み取り専用でマウントされる）
+4. 判定を `✗ FAIL` にし、修正チケットを起票する（§0）
+
+- E2E-17 の後なら、E2E-10 の手順 2 の `ENABLE` で有効に戻し、Finder でデバイスを取り出して挿し直してから始める
+- 削除 ON の間はデバイスが読み書き可能でマウントされる。**抜く前に Finder で取り出す**（§3 の手順の「抜く」は「Finder で取り出してから抜く」と読み替える）。急に抜くこと自体が試験である R-02・R-03 だけは例外で、それぞれの節の安全の手順に従う
 - 削除 ON では `device.mountMode` が `rw` なので、[C-8] に `read-only` は出ない。§3 の手順の「[C-8] に `read-only` が出たら」は「[C-8] にマウントが出たら」と読み替える
 - §3 の期待のうち「元音声が残る」「`source_delete_skipped reason=delete_source_audio_disabled`」は削除 OFF のものである。削除 ON では下の表の期待に置き換わる
 - 消えてよいのは各シナリオのために新しく録った録音だけである。前後の [C-7] の差が、そのシナリオで Raw ノートの検証を通った Part のファイルと一致することを毎回確かめる
@@ -889,18 +913,25 @@ Raw / Daily ノートと `## Timeline` は §3.1 の期待のとおり。
 #### 前提
 削除 ON。§3.2 の前提（30 分程度の録音を 3 本）。
 
+**危険**: この試験は、読み書き可能でマウントされたデバイスを取り出さずに急に抜く。**FAT が壊れて、デバイスの録音を失うおそれがある。**次の安全の手順を省かない。
+
+- E2E-10 の手順 1 の退避（`device-backup` と件数の照合）が済んでいること
+- 抜く直前に、デバイスの全ファイルの一覧を取る: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before-r02.txt"`
+- 抜く直前に [C-6] で `queue/delete` が**空**であることを確かめる（空でなければ空になるまで待つ。要求が残ったまま抜かない）
+- 挿し直したら、同じ `find` を `device-all-after-r02.txt` に取り、`comm -23 "$HOME/VoiceDockE2E/device-all-before-r02.txt" "$HOME/VoiceDockE2E/device-all-after-r02.txt"` で**前にあって後に無い行**を出す。
+  出た行が、その間に Raw の検証を通って消えた Part のファイル（[C-13] の `source_deleted_at` が入った行）だけであること
+- 挿し直したときに macOS がディスクの**修復や初期化**を求めたら、押さずに**中断**する（何もせずに取り出す）。続けるかどうかは利用者が判断する
+
 #### 手順
 【利用者が行う】§3.2 の手順を行う。加えて [C-7]・[C-13]・[C-14] を前後で取る。
 
-**落とし穴**: 削除 ON のデバイスは読み書き可能でマウントされている。取り出しの操作をせずに抜くので、抜いたあと挿し直したときに macOS がディスクの検査を求めることがある。
-そのときは [C-7] の前後と、§1 の下準備で退避した全ファイルの一覧を比べ、録音が壊れていないことを確かめてから続ける。
 
 #### 期待
 抜いた時点では 1 本も消えていない（§3.2 の 6 の `diff` が空）。コピー未完了の Part に要求を書かない（抜いた時点までの [C-14] に今回の `delete_requested` が無い）。
 再接続後に再コピーされた分も、Raw の検証を経てから消える。最後の [C-7] の差分が「Raw の検証を通った分」（今回の 3 本）と完全に一致する。
 
 #### 記録
-§3.2 の記録に加えて、[C-7] の前後、[C-13]、[C-14]。
+§3.2 の記録に加えて、[C-7] の前後、[C-13]、[C-14]、抜く直前の [C-6]、`comm -23` の出力。
 
 ```text
 ```
@@ -913,6 +944,15 @@ Raw / Daily ノートと `## Timeline` は §3.1 の期待のとおり。
 #### 前提
 削除 ON。§3.3 の前提（数分の録音を 1 本）。
 
+**危険**: この試験は、読み書き可能でマウントされたデバイスを取り出さずに急に抜く。**FAT が壊れて、デバイスの録音を失うおそれがある。**次の安全の手順を省かない。
+
+- E2E-10 の手順 1 の退避（`device-backup` と件数の照合）が済んでいること
+- 抜く直前に、デバイスの全ファイルの一覧を取る: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before-r03.txt"`
+- 抜く直前に [C-6] で `queue/delete` が**空**であることを確かめる（空でなければ空になるまで待つ。要求が残ったまま抜かない）
+- 挿し直したら、同じ `find` を `device-all-after-r03.txt` に取り、`comm -23 "$HOME/VoiceDockE2E/device-all-before-r03.txt" "$HOME/VoiceDockE2E/device-all-after-r03.txt"` で**前にあって後に無い行**を出す。
+  出た行が、その間に Raw の検証を通って消えた Part のファイル（[C-13] の `source_deleted_at` が入った行）だけであること
+- 挿し直したときに macOS がディスクの**修復や初期化**を求めたら、押さずに**中断**する（何もせずに取り出す）。続けるかどうかは利用者が判断する
+
 #### 手順
 【利用者が行う】§3.3 の手順を行う。加えて [C-7]・[C-13]・[C-14] を前後で取る。
 挿し直す前（§3.3 の 5）に `sqlite3 -header -column "$VD_DB" "SELECT session_key, status, delete_attempts FROM sessions ORDER BY updated_at DESC LIMIT 3;"` を取り、数分おいてもう一度取る。
@@ -923,7 +963,7 @@ Raw / Daily ノートと `## Timeline` は §3.1 の期待のとおり。
 挿し直した後: 今回の 1 本が消え、Part と Session が `COMPLETED` になる。
 
 #### 記録
-§3.3 の記録に加えて、挿し直す前の 2 回の `delete_attempts`、[C-7] の前後、[C-13]、[C-14]。
+§3.3 の記録に加えて、挿し直す前の 2 回の `delete_attempts`、[C-7] の前後、[C-13]、[C-14]、抜く直前の [C-6]、`comm -23` の出力。
 
 ```text
 ```
@@ -958,7 +998,7 @@ Vault が使えない間は 1 本も消えない（5 の [C-7] が前と一致�
 削除 ON。§3.5 の前提に加えて、1 分程度の録音を 1 本だけ新しく録っておく（要求を書く機会を作る）。
 
 #### 手順
-【利用者が行う】§3.5 の手順を行う。1 回目の挿入ではパネルが「待機中」に戻るまで待つ（新しい 1 本が消える）。加えて [C-7]・[C-13]・[C-14] を前後で取る。
+【利用者が行う】§3.5 の手順を行う。**各回、抜く前に Finder でデバイスを取り出す**。1 回目の挿入ではパネルが「待機中」に戻るまで待つ（新しい 1 本が消える）。加えて [C-7]・[C-13]・[C-14] を前後で取る。
 後に次の 2 つを取る:
 `cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep delete_requested | grep -o 'request_id=[^ ]*' | sort | uniq -d` と
 `grep -c 'reason=replayed' "$VD_HOME/logs/reaper.log"`。
@@ -1006,18 +1046,22 @@ Vault が使えない間は 1 本も消えない（5 の [C-7] が前と一致�
 【利用者が行う】
 
 1. §3.7 の手順を行う。加えて [C-7]・[C-13]・[C-14] を前後で取る
-2. デバイスを挿したまま、「元音声の削除」の入力欄に `ENABLE` を打って「無音・重複も消す」を押す
-3. 2 分待って [C-7]・[C-13]・[C-14] を取る
-4. **元に戻す**: 「無効にする」を押し、E2E-10 の手順 2 の `ENABLE` で有効にし直し、デバイスを挿し直す。[C-11] を取り、「無音・重複も消す」の入力欄とボタンがまた出ていることを確かめる
+2. **押す前に、消える範囲を確かめる。過去の無音・重複も消える**（根拠 B は、デバイスに今在る `SKIPPED` の Part を全部対象にする。E2E-07・E2E-10 の無音の録音や、§1 の下準備で取り込んだ録音の重複も含む）。
+   次の一覧を取り、ここに載った録音が消えてよいことを利用者が確かめる。消えてよくない録音があれば 3 を行わない:
+   `sqlite3 -header -column "$VD_DB" "SELECT partkey, source_path, error_code FROM recordings WHERE status='SKIPPED' AND source_deleted_at IS NULL;"`
+3. デバイスを挿したまま、「元音声の削除」の入力欄に `ENABLE` を打って「無音・重複も消す」を押す
+4. 2 分待って [C-7]・[C-13]・[C-14] を取る
+5. **元に戻す**: 「無効にする」を押し、E2E-10 の手順 2 の `ENABLE` で有効にし直し、Finder でデバイスを取り出して挿し直す。[C-11] を取り、「無音・重複も消す」の入力欄とボタンがまた出ていることを確かめる
 
 #### 期待
 1: 普通の 1 本だけが消え、無音の 1 本は残る（`SKIPPED` のまま、`delete_request_id` も `source_deleted_at` も空）。
-2〜3: [C-14] に `deletion_enabled reason=skipped_source`、続いて無音の Part の `recording_key` の `delete_requested` と `source_deleted` が出る。
-無音の 1 本が消え、その Part は `SKIPPED` のまま `source_deleted_at` に時刻が入る。
-4: 根拠 B を戻す操作は「無効にする」だけである（無効化が `deleteSkippedSource` も false にする）。有効にし直した後の [C-11] は E2E-10 の 3 と同じ 3 行になる。
+3〜4: [C-14] に `deletion_enabled reason=skipped_source`、続いて消えた Part ごとに `delete_requested` と `source_deleted` が出る。
+消えるのは 2 の一覧のうち、`error_code` が `NO_SPEECH_DETECTED` か `DUPLICATE_CONTENT` で、デバイスに今在る録音である（`DUPLICATE_CONTENT` は双子の Part の Raw ノートの検証も要る。上限は 2 の一覧の本数）。
+[C-7] の前後の差がその本数と一致し、どれも 2 の一覧に在る。消えた Part は `SKIPPED` のまま `source_deleted_at` に時刻が入る。今回の無音の 1 本もその中に在る。
+5: 根拠 B を戻す操作は「無効にする」だけである（無効化が `deleteSkippedSource` も false にする）。有効にし直した後の [C-11] は E2E-10 の 3 と同じ 3 行になる。
 
 #### 記録
-§3.7 の記録に加えて、1 と 3 の [C-7]・[C-13]・[C-14]、4 の [C-11]。
+§3.7 の記録に加えて、2 の一覧と利用者が確かめたこと、1 と 4 の [C-7]・[C-13]・[C-14]、5 の [C-11]。
 
 ```text
 ```
