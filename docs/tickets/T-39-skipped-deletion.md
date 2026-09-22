@@ -196,7 +196,7 @@ struct SkippedSettler {
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `activatedKeepsTheCheckedKinds` | 有効にした種類は .cv・.dr・.nd を含む（外すと集合の一致の検査が黙って止まる。T-39） | なし | `SpecCoverage.activated.isSuperset(of: [.cv, .dr, .nd])` |
+| `activatedKeepsTheCheckedKinds` | 有効にした種類は .cv・.dr・.nd・.rv を含む（外すと集合の一致の検査が黙って止まる。T-39・issue #87） | なし | `SpecCoverage.activated.isSuperset(of: [.cv, .dr, .nd, .rv])`（issue #87 で `.rv` を足した） |
 
 ## 7. 破壊による証明
 
