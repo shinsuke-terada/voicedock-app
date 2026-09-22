@@ -480,7 +480,7 @@ struct EnablerBench {
 | 7 | 段 2 の失敗で巻き戻さない | `enableRollsBackWhenTheConfCannotBeWritten` |
 | 8 | 段 3 の失敗で巻き戻さない | `enableRollsBackWhenTheConfigIsRejected`、`enableRestoresTheOldConfOnRollback` |
 | 9 | `rollback` の `reaperExisted` の分岐を消して常に消す | `enableKeepsAnExistingReaperOnRollback` |
-| 10 | `enable` の書き込み順を「reaper.conf → 複製 → config」にする | `enableRollsBackWhenTheConfCannotBeWritten`（reaper が置かれていない状態で段 2 が失敗し、巻き戻しの対象が変わる。落ちなければ、段 2 の失敗時に reaper が無いことを確かめる行を足す） |
+| 10 | `enable` の書き込み順を「reaper.conf → 複製 → config」にする | `enableRollsBackWhenTheSignatureFails`（先に書いた reaper.conf が複製の失敗で残り、「reaper.conf 無し」が落ちる。`enableRollsBackWhenTheConfCannotBeWritten` は reaper がまだ置かれていないので落ちない。実装で確かめた） |
 | 11 | `enableSkippedDeletion` の手順 3 を消す | `enableSkippedRequiresDeletionEnabled`（CV-43 が受け止めるので、違反の中身が `.config([])` から `.config([CV-43])` に変わる。PR に両方を貼る） |
 | 12 | `disable` の段 3 で `reaperConfObservation` を渡さない（今の値で検証する） | `disableIsNotBlockedByItsOwnCV30`（**F-37 の回帰**） |
 | 13 | `disable` の段の順を「config → reaper.conf」にする | 落ちない（最終状態は同じ）。**「消す能力に近いものから先に止める」は順序の規約なので、`disable` の本体に段の順を書いたコメントとレビュー項目で守る。PR に書く** |
@@ -490,7 +490,7 @@ struct EnablerBench {
 | 17 | `withdrawAllRequests` が結果（`queue/result`）も消す | `disableWithdrawsEveryRequest` |
 | 18 | `reconcileLock1` が config.json も書く | `reconcileTurnsTheConfOff`（config.json が変わらないことの検査） |
 | 19 | `reconcileLock1` の `volumesRoot` を `Contract.volumesRoot` に固定する | `reconcileKeepsTheVolumesRoot`、`enableKeepsTheVolumesRootOfTheOldConf` |
-| 20 | `Bootstrap` の `setLock1Reconciler` を `load()` の後に動かす | `cv30IsReconciledOnLoad`（テスト側で同じ順に組むので、`loadWithoutAReconcilerIsAConfigError` が対照になる） |
+| 20 | `Bootstrap` の `setLock1Reconciler` を `load()` の後に動かす | 落ちない（`Bootstrap.build()` は本番の <HOME> を使うのでテストが無い。実装で確かめた）。順序の効き目は `cv30IsReconciledOnLoad`（挿してから読む）と `loadWithoutAReconcilerIsAConfigError`（挿さずに読む）の対で示し、`Bootstrap` の順はレビュー項目として PR に書く |
 | 21 | `DeletionPanelState` の `showsTrash` を `display.readiness == .configured` にする | `trashIsShownWhileEitherSideIsEnabled`、`trashIsShownEvenWhenTheDeviceIsAbsent` |
 | 22 | `notices` の 2 つの順を入れ替える | `bothNoticesAppearInOrder` |
 | 23 | `LockDisplay` の行 2 に文言を直書きに戻す | 落ちない（値は同じ）。**PT の対象外なので、`DeletionStrings.reaperUpdateNotice` を 1 文字変えると `updateNoticeOnVersionMismatch` の「行 2 の末尾が同じ文言で終わる」が落ちることを PR に貼る** |
