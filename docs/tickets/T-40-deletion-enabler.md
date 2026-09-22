@@ -1,5 +1,9 @@
 # T-40 VDPipeline: 削除の有効化・無効化・ロック 1 の修復と常時表示
 
+> （F-65 で有効化の UI を長押しに変えた。2026-09-23、利用者の決定）「`ENABLE` の入力欄」をやめ、赤いボタンを 3 秒長押しさせる（`HoldToConfirmButton`。§4.7b）。
+> `DeletionEnabler.enable(confirmation:)` と完全一致の判定はそのまま残し、UI は長押しの完了で定数 `DeletionStrings.confirmationWord` を渡す（`AppModel.enableDeletion()`・`enableSkippedDeletion()` は引数を持たない。§4.5）。
+> `.notConfirmed` の文言は「赤いボタンを 3 秒長押ししてください」。「元音声の削除」は主画面の行から開く別の画面になった（T-30 §4.13）。以下の本文は F-65 に合わせて直した。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-40 |
@@ -12,7 +16,7 @@
 ## 1. 目的
 
 三重ロックを**まとめて**外し、**まとめて**掛け直す 1 か所を作る（PLAN §8.9.8）。
-`ENABLE` の入力を求める有効化は全段が成功するか 1 つも変えないかのどちらかにし、無効化は確認を求めず消す能力に近いものから順に止める。
+赤いボタンの 3 秒の長押し（`DeletionEnabler` は確認語 `ENABLE` の完全一致）を求める有効化は全段が成功するか 1 つも変えないかのどちらかにし、無効化は確認を求めず消す能力に近いものから順に止める。
 起動時に片方だけ有効な状態を無効側へ揃える `reconcileLock1()`（PLAN §6.1。CV-30 の自動修復）を `ConfigStore` に挿す。
 パネルに出す 3 行のロック表示と注意書き、メニューバーの `trash` の表示条件を値として決め、T-30 の `AppModel` が読めるようにする。
 
@@ -38,7 +42,8 @@
 | `Sources/VoiceDockApp/AppSnapshot.swift`（変更） | `deletionEnabled` を `deletion: DeletionPanelState?` に置き換える（T-30 の「T-40 が lockDisplay を足す」） |
 | `Sources/VoiceDockApp/IconState.swift`（変更） | `trash` を出す条件を `DeletionPanelState.showsTrash` から取る |
 | `Sources/VoiceDockApp/Strings.swift`（変更） | 「元音声の削除」の節のボタン・無効化の失敗・`EnableError` の文言（§4.5 の表） |
-| `Sources/VoiceDockApp/Panel/DeletionSection.swift`（変更） | 「元音声の削除」の節の中身（T-30 が「T-40 が中身を書く」とした。§4.7） |
+| `Sources/VoiceDockApp/Panel/DeletionSection.swift`（変更） | 「元音声の削除」の節の中身（T-30 が「T-40 が中身を書く」とした。§4.7。F-65 で別の画面の中身に） |
+| `Sources/VoiceDockApp/Panel/HoldToConfirmButton.swift` | （F-65 で追加）長押しで確かめる赤いボタン `HoldToConfirmButton`（internal）。§4.7b |
 | `Tests/VoiceDockAppTests/FakeServices.swift`（変更） | `AppServices` に足した 3 つの口の偽物 |
 | `Tests/VoiceDockAppTests/AppModelTests.swift`（変更） | `deletionEnabled` を `deletion` に、`AppContext` に `enabler` を渡す |
 | `Tests/VDPipelineTests/EnablerBench.swift` | テストの舞台（`DeletionScene` ＋ 本物の `ConfigStore`） |
@@ -48,6 +53,7 @@
 | `Tests/VDPipelineTests/DisableStopsDeletionTests.swift` | E2E-17 に対応する単体 |
 | `Tests/VoiceDockAppTests/DeletionTextsTests.swift` | 節の文言と `EnableError` の文言の逐語 |
 | `Tests/VoiceDockAppTests/AppModelDeletionTests.swift` | `AppModel` の 3 つの口（押したら `services` が呼ばれる・結果が画面の値になる） |
+| `Tests/VoiceDockAppTests/HoldToConfirmButtonTests.swift` | （F-65 で追加）長押しの時間の計算（§6.9） |
 | `Tests/PolicyTests/BootstrapOrderTests.swift` | `Bootstrap.build()` で修復口が最初の `config.load()` より前にあることのトークン検査 |
 | `Tests/PolicyTests/ReaperInstallOrderTests.swift` | `installReaper` の本体が fsync → 署名検証 → chmod → rename の順で、書き込みの `open(` に `O_NOFOLLOW` があることのトークン検査 |
 
@@ -341,10 +347,11 @@ _ = await configStore.load()      // 修復口を挿した後に読む
 extension AppModel {
     /// パネルとメニューバーが読む値。tick / 走査 / 操作のたびに作り直す
     var deletion: DeletionPanelState? { get }
-    /// 「元音声の削除を有効にする」。confirmation はテキストフィールドの入力そのまま
-    func enableDeletion(confirmation: String) async -> Result<Void, EnableError>
-    /// 「無音・重複も消す」
-    func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError>
+    /// 「元音声の削除を有効にする」。赤いボタンの 3 秒の長押しが完了したときだけ呼ぶ（F-65）。
+    /// services には定数 DeletionStrings.confirmationWord を渡す（完全一致の判定は DeletionEnabler。安全の二重化）
+    func enableDeletion() async -> Result<Void, EnableError>
+    /// 「無音・重複も消す」（同じ長押し。同じく定数を渡す）
+    func enableSkippedDeletion() async -> Result<Void, EnableError>
     /// 「削除を無効にする」（確認なし）。失敗した段の名前をパネルに出す
     func disableDeletion() async -> [String]
 }
@@ -373,7 +380,7 @@ extension AppModel {
 | ボタン（根拠 B） | `無音・重複も消す` |
 | ボタン（無効化） | `無効にする` |
 | 無効化の失敗 `disableFailed(stages)` | `無効にできなかった段: ` ＋ 段の名前を `, ` でつないだもの |
-| `.notConfirmed` | `有効にできませんでした: ENABLE と入力してください` |
+| `.notConfirmed` | `有効にできませんでした: 赤いボタンを 3 秒長押ししてください`（F-65。秒数は `HoldToConfirmButton.holdDuration` から作る） |
 | `.install(m)` | `有効にできませんでした: 削除モジュールを置けません（m）` |
 | `.signature` | `有効にできませんでした: 削除モジュールの署名を確かめられません` |
 | `.reaperConfWrite(m)` | `有効にできませんでした: reaper.conf を書けません（m）` |
@@ -430,16 +437,54 @@ struct EnablerBench {
 
 - `/Volumes` には触れない（`DeletionScene` の約束のまま）
 
-### 4.7 `Panel/DeletionSection.swift`（T-30 のファイル。PLAN §8.9.8・§8.12 の 7）
+### 4.7 `Panel/DeletionSection.swift`（T-30 のファイル。PLAN §8.9.8・§8.12 の 7。F-65 で「元音声の削除」の画面の中身）
 
-`model.deletion` が nil で `model.showsDisableButton` も偽なら何も出さない。設定エラー中で消す能力が残っていれば「無効にする」と失敗の表示だけを出す。そうでなければ `SectionBox(title: Strings.sectionDeletion)` に、この順で:
-1. `deletion.lines`（3 行。等幅）と `deletion.notices`
-2. `model.deletionNotice`（`deletion.notices` に同じ文言が無いときだけ）
+主画面には「› 元音声の削除  有効／無効」の行（T-30 §4.13 の `PanelRow`）を、`DeletionSection.isAvailable(model)`（`model.deletion != nil || model.showsDisableButton`）のときだけ出す。押すと `model.show(.deletion)` で別の画面になり、`SubScreen(title: Strings.sectionDeletion)` の中にこの順で出す:
+1. カード（見出しは `deletion.showsTrash` なら `Strings.deletionOn`、でなければ `Strings.deletionOff`）に `deletion.lines`（3 行。等幅）と `deletion.notices`
+2. 同じカードに `model.deletionNotice`（`deletion.notices` に同じ文言が無いときだけ）
 3. `deletion.showsTrash` が真なら:
-   - `showsSkippedToggle` が真で `skippedEnabled` が偽なら、`ENABLE` の入力欄（プレースホルダは `DeletionStrings.confirmationWord`）と `Strings.buttonEnableSkippedDeletion`。押したら入力をそのまま `enableSkippedDeletion(confirmation:)` に渡す
-4. 偽なら（有効化の前）: `DeletionStrings.confirmVerified`・`DeletionStrings.confirmIrreversible`、診断が済んでいれば `Diagnostics.summary(結果)`、済んでいなければ `Strings.buttonRunDiagnostics`。`ENABLE` の入力欄と `Strings.buttonEnableDeletion`。押したら入力をそのまま `enableDeletion(confirmation:)` に渡す（**完全一致のときだけ押せる形にはしない**。判定は `DeletionEnabler`）
-5. `model.showsDisableButton` が真なら `Strings.buttonDisableDeletion`（**確認を出さない**）→ `disableDeletion()`
+   - `showsSkippedToggle` が真で `skippedEnabled` が偽なら、カードに `Strings.holdToEnableHint` と `HoldToConfirmButton(title: Strings.buttonEnableSkippedDeletion, disabled: model.deletionBusy)`。長押しが完了したら `enableSkippedDeletion()`
+4. 偽なら（有効化の前）: カードに `DeletionStrings.confirmVerified`・`DeletionStrings.confirmIrreversible`、診断が済んでいれば `Diagnostics.summary(結果)`、済んでいなければ `Strings.buttonRunDiagnostics`。続けて `Strings.holdToEnableHint` と `HoldToConfirmButton(title: Strings.buttonEnableDeletion, disabled: model.deletionBusy)`。長押しが完了したら `enableDeletion()`（**クリック 1 回・途中で離した長押しでは呼ばない**。確認語の判定は `DeletionEnabler`）
+5. `model.showsDisableButton` が真なら `Strings.buttonDisableDeletion`（**確認を出さない。1 クリック**。`.disabled(model.deletionBusy)`）→ `disableDeletion()`
 6. `model.enableError` があれば `Strings.enableFailed(_:)`、`model.disableFailedStages` が空でなければ `Strings.disableFailed(_:)`（赤）
+7. `model.deletion` が nil で `showsDisableButton` も偽のときに画面が開いていれば `Strings.deletionUnavailable` だけ
+
+設定エラー中で消す能力が残っていれば（`deletion == nil` かつ `showsDisableButton`）、5 と 6 だけを出す（PLAN §8.9.8 の常時表示）。
+
+### 4.7b `Panel/HoldToConfirmButton.swift`（F-65。PLAN §8.9.8 の 2）
+
+```swift
+struct HoldToConfirmButton: View {
+    nonisolated static let holdDuration: Double = 3.0   // 押し続ける秒数
+    static let tickMilliseconds = 16                     // 押している間の進捗の更新の間隔
+    let title: String
+    let disabled: Bool
+    let onConfirm: @MainActor () -> Void
+
+    struct Progress: Equatable { let fraction: Double; let complete: Bool }
+    /// 経過時間 → 進捗。純関数。fraction は 0〜1 に丸め、complete は elapsed >= duration。duration が 0 以下なら完了扱い
+    nonisolated static func progress(elapsed: Double, duration: Double = holdDuration) -> Progress
+
+    /// 押し始めの時刻と、完了を知らせたか。完了の知らせは 1 回の押下につき 1 回だけ
+    struct Tracker: Equatable {
+        let duration: Double
+        private(set) var startedAt: Double?
+        private(set) var fired: Bool
+        init(duration: Double = HoldToConfirmButton.holdDuration)
+        var isHolding: Bool { get }
+        mutating func press(at t: Double)      // 押している間の 2 回目は無視（押し始めを動かさない）
+        mutating func release()                // 途中でも完了後でも最初に戻す
+        func progress(at t: Double) -> Progress // 押していなければ 0
+        mutating func tick(at t: Double) -> Bool // 完了に達した最初の 1 回だけ true
+    }
+}
+```
+
+- 見た目: 赤いカプセル（押せないときは灰色）に、白い進捗のリングと題。押している間の題は `Strings.holdKeepPressing`
+- `DragGesture(minimumDistance: 0)` の `onChanged` で押し始め、`onEnded` で離す。押し始めで `Tracker.press(at:)` し、`tickMilliseconds` ごとに `progress(at:)` でリングを描き直し、`tick(at:)` が true になったら `onConfirm()` を 1 回呼んで更新を止める
+- 時刻は `SystemClock().uptime()`（単調な時計。`@State` に持ち、ビューの寿命の間は起点を動かさない。PT-09 に触れない）
+- 離した・`disabled` が真になった・画面から消えたら、途中でも `Tracker.release()` してリングを 0 に戻す（何もしない）
+- 同じ押下は、完了した後や押せなくなった後に離さないまま数え直さない（`awaitingRelease`。離すまで押し直しと見なさない）
 
 ビューそのものはテストしない。文言は §6.5、口は §6.6 で守る。
 
@@ -559,9 +604,9 @@ struct EnablerBench {
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `enablePassesTheInputAndShowsTheReinsertNotice` | 有効化は入力をそのまま services に渡し、成功したら挿し直しの案内を出す | `enableDeletion(confirmation: " enable ")` | `fake.enableConfirmations == [" enable "]`、`deletionNotice == DeletionStrings.reinsertNotice` の逐語、`enableError == nil`、`read` が 1 回 |
+| `enablePassesTheConstantWordAndShowsTheReinsertNotice` | 長押しの完了で呼ぶ有効化は定数の確認語 ENABLE を services に渡し、成功したら挿し直しの案内を出す（F-65） | `enableDeletion()` | `fake.enableConfirmations == ["ENABLE"]`、`skippedConfirmations == []`、`deletionNotice == DeletionStrings.reinsertNotice` の逐語、`enableError == nil`、`read` が 1 回 |
 | `enableFailureIsKept` | 有効化の失敗は enableError に残り、案内は出さない | `setEnableResult(.failure(.notConfirmed))` | `enableError == .notConfirmed`、`deletionNotice == nil` |
-| `enableSkippedPassesTheInput` | 根拠 B は入力をそのまま services に渡す | `setEnableResult(.failure(.config([])))` → `enableSkippedDeletion("ENABLE")` | `skippedConfirmations == ["ENABLE"]`、`enableConfirmations == []`、`enableError == .config([])` |
+| `enableSkippedPassesTheConstantWord` | 根拠 B も長押しの完了で定数の確認語 ENABLE を services に渡す（F-65） | `setEnableResult(.failure(.config([])))` → `enableSkippedDeletion()` | `skippedConfirmations == ["ENABLE"]`、`enableConfirmations == []`、`enableError == .config([])` |
 | `disableCallsServicesOnceAndKeepsTheStages` | 無効化は確認なしで services を 1 回呼び、失敗した段をそのまま持つ | `setDisableResult(["reaper_conf", "remount"])`、先に有効化 | `disableCount == 1`、戻り値と `disableFailedStages` が同じ 2 語、`deletionNotice == nil` |
 | `disableWithNoFailures` | TEST-28 無効化がすべて成功すれば段の表示は空 | 既定 | `[]` |
 | `deletionAndTrashFollowTheSnapshot` | deletion は観測の写しのまま、trash は DeletionPanelState.showsTrash に従う | (app false, conf enabled) → (app false, conf missing) | `deletion` が写しのまま、`showsTrash` が true → false |
@@ -570,6 +615,21 @@ struct EnablerBench {
 | `failedDisableKeepsTheButton` | 無効化に失敗した段がある間は「無効にする」を出し続ける | (app false, conf disabled)、`setDisableResult(["remove_reaper"])` | `showsTrash == false`、`showsDisableButton == true` |
 | `busyWhileOperating` | 操作の実行中は deletionBusy が立ち、終われば下りる | `setHoldDisable(true)` | 実行中 true、`releaseDisable()` の後 false |
 | `reinsertNoticeClearsOnWritableDevice` | 挿し直しの案内は、読み書きできるデバイスを観測したら消える | 読み取り専用の観測で有効化 → 読み書きできる観測に替えて `refresh()` | 案内が出て、替えた後に nil |
+
+### 6.9 `Tests/VoiceDockAppTests/HoldToConfirmButtonTests.swift`（`@Suite("HoldToConfirmButton")`。F-65。ビューは作らない）
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `holdDurationIsThreeSeconds` | 押し続ける時間は 3 秒（PLAN §8.9.8 の 2） | — | `holdDuration == 3.0` |
+| `progressFollowsElapsedTime` | 経過時間 → 進捗と完了（0 秒・1.5 秒・2.99 秒・3.0 秒・それより後） | 0・1.5・3.0・4.5（パラメタ化） | (0, 偽)・(0.5, 偽)・(1, 真)・(1, 真) |
+| `almostThereIsNotComplete` | 2.99 秒ではまだ完了しない（リングはほぼ満ちている） | 2.99 | `complete == false`、`0.99 < fraction < 1` |
+| `zeroAndNegativeElapsedAreNotComplete` | TEST-28 押した瞬間（0 秒）と負の経過は完了せず、進捗は 0 | 0・-1 | どちらも (0, 偽) |
+| `idleTrackerNeverFires` | 押していなければ進捗は 0 で、完了を知らせない | `Tracker()` | `isHolding == false`、`progress(at: 100)` が (0, 偽)、`tick(at: 100) == false` |
+| `firesExactlyOnce` | 3 秒押し続けたら完了を 1 回だけ知らせる（押したままの次の tick では知らせない） | `press(at: 10)` → `tick` を 10・11.5・12.99・13.0・13.016・20 | 13.0 だけ true。`progress(at: 20)` が (1, 真) |
+| `releasingEarlyCancels` | 途中で離すと何もしない（離した後の tick も、時間が過ぎても知らせない） | `press(at: 10)` → `tick(at: 11.5)` → `release()` → `tick(at: 14)` | すべて false、11.5 の進捗は (0.5, 偽)、離した後は (0, 偽) |
+| `pressingAgainStartsOver` | 押し直すと 0 から数え直す（離す前の時間を足さない） | 10 に押して 12 で離し、20 に押す | `tick(at: 21) == false`、`tick(at: 23) == true` |
+| `secondPressWhileHoldingIsIgnored` | 押している間の 2 回目の press は押し始めの時刻を動かさない | `press(at: 10)`・`press(at: 12)` | `tick(at: 13) == true` |
+| `eachPressFiresOnce` | 完了して離した後、もう一度 3 秒押せばもう一度知らせる（1 回の押下につき 1 回） | 0 に押して 3 で完了 → 離す → 10 に押す | `tick(at: 12) == false`、`tick(at: 13) == true`、`tick(at: 14) == false` |
 
 ### 6.7 `Tests/PolicyTests/BootstrapOrderTests.swift`（`@Suite("起動の順（T-40）")`）
 
@@ -612,10 +672,10 @@ struct EnablerBench {
 | 20 | `Bootstrap` の `setLock1Reconciler` を `load()` の後に動かす | `reconcilerIsInstalledBeforeTheFirstLoad`（§6.7 のトークン検査。`Bootstrap.build()` は本番の <HOME> を使うので動かすテストは無い）。順序の効き目は `cv30IsReconciledOnLoad`（挿してから読む）と `loadWithoutAReconcilerIsAConfigError`（挿さずに読む）の対で示す。PR のレビュー項目にも書く |
 | 21 | `DeletionPanelState` の `showsTrash` を `display.readiness == .configured` にする | `trashIsShownWhileEitherSideIsEnabled`、`trashIsShownEvenWhenTheDeviceIsAbsent` |
 | 22 | `notices` の 2 つの順を入れ替える | `bothNoticesAppearInOrder` |
-| 24 | `AppModel.enableDeletion` の成功で `deletionNotice` を入れない | `enablePassesTheInputAndShowsTheReinsertNotice` |
-| 25 | `AppModel.enableDeletion` が入力の前後の空白を削ってから渡す | `enablePassesTheInputAndShowsTheReinsertNotice`（`" enable "` がそのまま渡ることの検査） |
+| 24 | `AppModel.enableDeletion` の成功で `deletionNotice` を入れない | `enablePassesTheConstantWordAndShowsTheReinsertNotice` |
+| 25 | `AppModel.enableDeletion` が定数の代わりに空文字を渡す（F-65） | `enablePassesTheConstantWordAndShowsTheReinsertNotice`（`["ENABLE"]` が渡ることの検査） |
 | 26 | `AppModel.disableDeletion` が段の名前を持たない | `disableCallsServicesOnceAndKeepsTheStages` |
-| 27 | `AppModel.enableSkippedDeletion` が `services.enableDeletion` を呼ぶ | `enableSkippedPassesTheInput` |
+| 27 | `AppModel.enableSkippedDeletion` が `services.enableDeletion` を呼ぶ | `enableSkippedPassesTheConstantWord` |
 | 28 | `Strings.enableFailureReason` の `.signature` の文言を変える | `enableFailureTextsAreVerbatim` |
 | 29 | `AppModel.showsTrash` を `deletion != nil` にする | `deletionAndTrashFollowTheSnapshot` |
 | 30 | `serially` を外して本体を直接呼ぶ（直列化しない） | `disableDuringEnableWins` |
@@ -628,11 +688,15 @@ struct EnablerBench {
 | 37 | `disable` で `scanNow` を段 4 の前に動かす | `disableScansLast` |
 | 38 | `hasRemainingCapability` が reaper の有無を見ない | `reaperKeepsTheCapability` |
 | 39 | `EnablerBench` の組み合わせの検査を外す | `benchRefusesRealReaperWithoutTheSceneVolumesRoot` |
+| 40 | （F-65）`HoldToConfirmButton.holdDuration` を 0 にする | `holdDurationIsThreeSeconds`、`progressFollowsElapsedTime`（0 秒で完了になる）、`zeroAndNegativeElapsedAreNotComplete` |
+| 41 | （F-65）`Tracker.tick` の `!fired` の条件を外す（完了の知らせを 2 回以上出す） | `firesExactlyOnce`、`eachPressFiresOnce` |
+| 42 | （F-65）`Tracker.release` で `startedAt` を消さない | `releasingEarlyCancels` |
 | 23 | `LockDisplay` の行 2 に文言を直書きに戻す | 落ちない（値は同じ）。**PT の対象外なので、`DeletionStrings.reaperUpdateNotice` を 1 文字変えると `updateNoticeOnVersionMismatch` の「行 2 の末尾が同じ文言で終わる」が落ちることを PR に貼る** |
 
 ## 8. 受け入れ条件
 
 - [ ] `enable` は `ENABLE` の完全一致でしか通らず、どの段で失敗しても 3 つとも元のまま（all-or-nothing）
+- [ ] （F-65）パネルの有効化と根拠 B は赤いボタンの 3 秒の長押しが完了したときだけ呼ばれ、定数の確認語を渡す。クリック 1 回・途中で離した長押しでは呼ばれない（`HoldToConfirmButtonTests`）
 - [ ] 書き込み順が PLAN §8.9.8 の 3 のとおり（複製 → reaper.conf → config）で、複製の中の順が §8.9.3 の 6 のとおり（tmp → fsync → 署名検証 → chmod 0755 → rename）
 - [ ] `disable` は確認を求めず、PLAN §8.9.8 の順で進み、途中で失敗しても残りを続け、失敗した段の名前を順に返す
 - [ ] `disable` が自分の CV-30 に阻まれない（F-37 の回帰テストが通る）

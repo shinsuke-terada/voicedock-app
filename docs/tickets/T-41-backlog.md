@@ -301,6 +301,7 @@ func dismissBacklog()
 - ボタンは `working` の間は無効（二重に入れない）
 
 `DetailsSection`（T-32）の末尾に `BacklogControls(model: model)` を 1 つ置く（見出しは T-32 の節の中に入れる。新しい画面を作らない。D-7）。
+F-65 で「詳細・診断」は popover の中の別の画面になり、`BacklogControls` はその画面の「後追い」（`Strings.sectionBacklog`）のカードの中に置く（ボタンは `.bordered`・`.small`）。
 
 ## 5. ログ（このチケットが出すもの）
 

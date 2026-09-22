@@ -275,7 +275,8 @@
 | `Strings.swift` | 文言 |
 | `LoginItem.swift` | `SMAppService.mainApp` の包み |
 | `UIState.swift` | `ui-state.json` の読み書き |
-| `Panel/*.swift` | SwiftUI のビュー（`PanelView`、`StatusSection`、`AttentionSection`、`OnboardingSection`、`VaultSection`、`ModelsSection`、`GeneralSection`、`DeletionSection`、`DetailsSection`） |
+| `Panel/*.swift` | SwiftUI のビュー（`PanelView`、`StatusSection`、`AttentionSection`、`OnboardingSection`、`VaultSection`、`ModelsSection`、`GeneralSection`、`DeletionSection`、`DetailsSection`）。F-65 で足した部品: `PanelStyle`（`SectionBox` のカード）、`SubScreen`（popover の中の別の画面の枠。「‹ 戻る」。スクロールはここだけ）、`PanelRow`（別の画面へ移る 1 行）、`HoldToConfirmButton`（3 秒の長押しで確かめる赤いボタン。`holdDuration`・`progress(elapsed:duration:)`・`Tracker`。作り手 T-40） |
+| `PanelScreen.swift` | （F-65）`enum PanelScreen { main, attention, deletion, details, settings }`。`AppModel.screen` と `AppModel.show(_:)`（`AppModel+Navigation.swift`。作り手 T-30） |
 
 ---
 

@@ -180,7 +180,7 @@ VoiceDock.app（常駐・非サンドボックス・Hardened Runtime）
 | ffmpeg / ffprobe | AVFoundation | |
 | Docker Model Runner | `llama-server` | OpenAI 互換 `chat/completions` を維持 |
 | `make status` / `doctor` | パネルの状態表示 / 「診断を実行」 | |
-| `make enable-deletion` | パネルの有効化フロー（`ENABLE` 入力） | |
+| `make enable-deletion` | パネルの有効化フロー（赤いボタンの 3 秒長押し。F-65） | |
 | `cleanup --backlog` / `--resolve-absent` | パネルの「過去分を削除対象にする」「手動で消した分を完了にする」（どちらもプレビュー付き） | |
 
 **廃止するもの（Docker 由来）:** VirtioFS 回避、`/Users` 配下要件、compose、named volume、bind mount の inode 問題、
@@ -1854,12 +1854,12 @@ expireDeleteRequests:   // 毎 tick
 
 **有効化**（`DeletionEnabler.enable(confirmation:)`。すべて成功するか、1 つも変えないか）:
 1. 事前確認を表示する: 「1 日以上の運用で Raw ノートが正しく作られていることを確かめましたか」「消した録音は戻りません」と、最新の診断結果
-2. **`ENABLE` を入力させる**（`confirmation == "ENABLE"` の完全一致。`y` やチェックボックスでは通らない。GUI のチェックボックス 1 つは摩擦そのものを消す）
+2. **赤いボタンを 3 秒長押しさせる**（クリック 1 回やチェックボックスでは通らない。押している間はリングが満ち、途中で離すと取り消し。GUI のチェックボックス 1 つは摩擦そのものを消す。UI は長押しの完了で `confirmation` に定数 `"ENABLE"`（`DeletionStrings.confirmationWord`）を渡し、`DeletionEnabler` は `confirmation == "ENABLE"` の完全一致で確かめる（安全の二重化）。F-65）
 3. 複製（§8.9.3 の 6）→ `bin/reaper.conf` を `DELETE_SOURCE_AUDIO=true` で書く → `config.json` の `cleanup.deleteSourceAudio = true`・`device.mountMode = rw` を書く（いずれも `AtomicFile`）
 4. どれかが失敗したら、書いたものを全部元に戻す（元の reaper.conf・config.json の内容を控えておき書き戻す。新しく置いた reaper は消す）
 5. 「読み書きできるようになるのはデバイスを挿し直した後です」と表示する。`deletion_enabled`
 
-**根拠 B（無音・重複も消す）**は別の操作（`enableSkippedDeletion(confirmation:)`）。削除が有効なときだけ出し、同じく `ENABLE` の入力で `cleanup.deleteSkippedSource = true` にする。
+**根拠 B（無音・重複も消す）**は別の操作（`enableSkippedDeletion(confirmation:)`）。削除が有効なときだけ出し、同じく赤いボタンの 3 秒長押し（`confirmation` は定数 `"ENABLE"`）で `cleanup.deleteSkippedSource = true` にする。
 
 **無効化**（`DeletionEnabler.disable()`）: **確認を求めない**（止めたいときに止められること）。この順で（**消す能力に近いものから先に止める**）、途中で失敗しても残りを続ける:
 reaper.conf を false（reaper 側のロック 1 を先に掛ける）→ `bin/voicedock-reaper` を削除 → config を `ConfigStore.update(_, reaperConfObservation: false)` で `deleteSourceAudio = false`・`deleteSkippedSource = false`・`mountMode = ro` に →
@@ -1941,7 +1941,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 
 ### 8.11 診断（DR）と沈黙の検出
 
-**診断**（パネル「詳細 → 診断を実行」。**何も書き換えない**。OPS-14。`VDPipeline/Diagnostics/`）
+**診断**（パネル「詳細・診断 → 診断を実行」。**何も書き換えない**。OPS-14。`VDPipeline/Diagnostics/`）
 
 - 結果は 4 値: `ok`（✓）/ `notice`（!）/ `fail`（✗）/ `skip`（-）（voicedock doctor.py:45-57）。サマリは「合格 <n>・失敗 <n>・注意 <n>」（skip は数えない）
 - 実行規則（voicedock doctor.py:617-656）: 下の表の順に実行する。**「致命」の検査が fail を出したら、以降の検査は実行せず skip（「先行する致命的な検査が失敗」）**。
@@ -1988,11 +1988,12 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 
 - **要対応にしないもの**: FAILED の Part / Session（次の接続で必ず再評価される。状態の詳細に件数と「次の接続で再試行」を出す「注意」）、ログイン項目（「はじめに」で選んだ後は出さない）
 
-### 8.12 UI（D-7: メニューバーのアイコン → 設定パネル。これ以外の画面を作らない）
+### 8.12 UI（D-7: メニューバーのアイコン → 設定パネル。これ以外の画面を作らない。パネルの中の画面の切り替えは可。F-65）
 
 **構成**: `NSApplication` の `.accessory`（`Info.plist` の `LSUIElement = YES`。Dock に出ない）。`NSStatusItem` ＋ `NSPopover`（`behavior = .transient`）で
 SwiftUI の `PanelView` をホストする。`MenuBarExtra` は使わない（プログラムから開けないため。初回起動時に自動で開きたい）。
-パネルを開くとき `NSApp.activate()`（入力欄にフォーカスを渡すため）。
+パネルを開くとき `NSApp.activate()`（パネルの操作に最初のクリックから反応させるため）。
+popover の高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の高さを持たない。F-65）
 
 **アイコン**（SF Symbols、テンプレート画像。`IconState` を AppModel が計算する）:
 
@@ -2004,19 +2005,19 @@ SwiftUI の `PanelView` をホストする。`MenuBarExtra` は使わない（�
 | 要対応あり（上の 3 つより優先） | `exclamationmark.triangle` |
 | 削除が有効（上記に**並べて**常時表示） | `trash` |
 
-**パネル**（幅 380pt、縦スクロール。上から）:
+**パネル**（幅 380pt 前後、カード型。**主画面はスクロールしない**。長い中身（7・8、要対応の多数、6 の完了後）は popover の中の**別の画面**に切り替え、見出しに「‹ 戻る」を置く。別の画面の中身が長いときだけ、その画面の中でスクロールする。閉じたら次は主画面から開く。F-65。上から）:
 
 1. **状態**: 1 行の文言（例「待機中」「DJIMIC3 から取り込み中 3/12 — コピーが終われば抜いて大丈夫です」「文字起こし中 07:12 の録音」「要約中 2026-08-29」）、
    最終接続、未処理（合計時間と件数）、デバイスの空き容量
-2. **要対応**（ある時だけ）: §8.11 の項目ごとに説明と操作ボタン（「再試行」= requeue(.manual)、「システム設定を開く」、「Vault を選び直す」など）
+2. **要対応**（ある時だけ。状態の直下のカード）: §8.11 の項目ごとに説明と操作ボタン（「再試行」= requeue(.manual)、「システム設定を開く」、「Vault を選び直す」など）。主画面には先頭の 2 件と「ほか n 件 ›」（押すと全件の画面）
 3. **はじめに**（未完了の項目がある間だけ最上部に出す）: ① Vault を選ぶ ② Whisper モデルを入手 ③ LLM を選んで入手 ④ ログイン時に起動（オン／「今はしない」のどちらかを選べば完了）
    ⑤ デバイス名が `NO NAME` なら改名の案内（**アプリは改名しない**。デバイスに書かない。Finder か ディスクユーティリティで行う手順を表示。DEV-10）
    - ④の「今はしない」は `<HOME>/ui-state.json`（`HomeLayout.uiState`。§2.3）（`{"schema": 1, "loginItemDecided": true}`。`AtomicFile`）に記録する（UserDefaults を使わない。PR-03）
-4. **保存先（Vault）**: パスと「変更…」（`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）
-5. **モデル**: Whisper（状態・入手）、LLM（カタログから選ぶ `Picker`。メモリ不足のものは選べない理由付き、「ファイルから読み込む…」、進捗バー、キャンセル）
-6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）
-7. **元音声の削除**: §8.9.8 のロック表示・有効化（`ENABLE` 入力欄）・無効化・無音と重複の削除
-8. **詳細**（折りたたみ）: 状態の詳細（下記）、診断を実行・LLM の疎通確認、過去分の削除・手動で消した分（§8.9.9）、ログと設定ファイルを Finder で表示、設定を読み直す、版
+4. **保存先（Vault）**: フォルダ名の 1 行（押すと「変更…」。`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）
+5. **モデル**: 1 モデル 1 行。Whisper（状態・入手）、LLM（カタログから選ぶ `Picker` を `Menu` の中に。メモリ不足のものは選べない理由付き、「ファイルから読み込む…」も `Menu` の中、進捗バー、キャンセル）
+6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）。「はじめに」の④が未完了の間は「はじめに」のカードに、完了後は状態の見出しの ⚙ から開く「設定」の画面に置く
+7. **元音声の削除**（主画面は「› 元音声の削除  有効／無効」の行。押すと別の画面）: §8.9.8 のロック表示・事前確認・有効化（赤いボタンの 3 秒長押し）・無効化（確認なしの 1 クリック）・無音と重複の削除（同じ長押し）
+8. **詳細・診断**（主画面は行。押すと別の画面。状態の詳細はこの画面にいる間だけ読む）: 状態の詳細（下記）、診断を実行・LLM の疎通確認、過去分の削除・手動で消した分（§8.9.9）、ログと設定ファイルを Finder で表示、設定を読み直す、版
 9. **終了**ボタン
 
 **状態の詳細**（voicedock `status.py` 相当。DB が無ければ全 0。DB を作らない）:
@@ -2499,7 +2500,7 @@ cmake --build build --config Release --target llama-server -j       # → build/
 | T-37 | reaper 実行ファイル（RV-00〜13） | voicedock-reaper | ND（reaper 層）と正の対照、`.diskImage` |
 | T-38 | 要求の書き込み・Session の削除段・reaper の起動と署名検証・結果の回収・期限切れ・staging 後始末 | | 往復テスト（本物の reaper）、古い試行、同じ周回で再要求しない、未接続は待つ |
 | T-39 | 根拠 B（settleSkippedDeletions） | | ND-33〜35 |
-| T-40 | 有効化・無効化フロー（DeletionEnabler）と常時表示 | | all-or-nothing、失敗時の巻き戻し、`ENABLE` 以外で通らない、無効化は確認なし |
+| T-40 | 有効化・無効化フロー（DeletionEnabler）と常時表示 | | all-or-nothing、失敗時の巻き戻し、`ENABLE` 以外で通らない（UI は 3 秒の長押し。F-65）、無効化は確認なし |
 | T-41 | 後追い（過去分・手動で消した分） | | プレビュー、対象 1 件以上で試す |
 | T-42 | 実機 E2E（削除 ON）: E2E-10, 11, 17 と、E2E-01〜09 を削除 ON で再実行 | docs/E2E.md | **ゲート（12.4）** |
 | **Phase 9: v1.0** ||||
@@ -2553,7 +2554,7 @@ v1.0 を出す前に**すべて**を満たす:
 | RK-28 | 取り込み後にボリュームを改名すると、それ以前の録音が削除対象から永久に外れる | 使い始める前の改名を「はじめに」で案内。検査は置けない（消えない側なので事故ではない） |
 | RK-29 | ロック 2-A を「同梱・複製」にしたことで弱まった部分（§8.9.3 の注記） | PT-11、RV-00、ND-26 / ND-40 |
 | RK-30 | 利用者が編集した frontmatter を Obsidian が書き換える（引用符が外れる等） | 読み取りは Yams（YAML として読む）。書き出しは自前 |
-| RK-31 | 30 分ちょうどで 0 文字の NO_SPEECH（whisper の取りこぼし）を根拠 B で消しうる | 根拠 B の既定は false、有効化は別の `ENABLE` 入力。transcript の JSON は残る |
+| RK-31 | 30 分ちょうどで 0 文字の NO_SPEECH（whisper の取りこぼし）を根拠 B で消しうる | 根拠 B の既定は false、有効化は別の 3 秒の長押し。transcript の JSON は残る |
 | RK-32 | 利用者が `timeZone` を変えると、DB の時刻文字列のオフセットが混ざり、文字列比較（`MIN(started_at)` など）と日付の境界がずれる | 受容（voicedock と同じ）。README に「使い始めた後にタイムゾーンを変えない」と書く。変えたときの挙動は既存行を書き換えない |
 | RK-33 | CI のセルフホストランナー（開発機）が止まっていると CI が進まない | 開発機の再起動後に `~/actions-runner/svc.sh status` を確かめる（§10.8） |
 | RK-34 | whisper.cpp は不明な引数・読めない音声でも終了コード 0 を返すことがある | 成功の判定を「終了 0 かつ JSON が在って読める」にした（§8.4） |
@@ -3112,3 +3113,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-62 | 事 | §11.3 | （2026-09-22 に利用者が決定）dmg の作成を `hdiutil create -srcfolder`（内部でイメージを既定の場所に attach しうる）から、空の HFS+ イメージを `hdiutil attach -nobrowse -mountpoint` で `dist/` の中にだけマウントして `ditto` で書き、detach して `convert -format UDZO` する方式に変えた。マウントを伴わない `makehybrid -hfs` は全ファイルに `com.apple.FinderInfo` を付けて `.app` の署名が `codesign --strict` で落ち、`-udf` は `/Applications` への symlink が壊れるので却下した |
 | F-63 | 事 | 付録 B.3 | （2026-09-22 に利用者が決定）E2E-11 の後半「手動で消した分の完了」を実機の試験から外し、T-41 の単体テスト（`BacklogPlannerTests` の resolveAbsent 系）で代えた。対象の `SOURCE_DELETE_PENDING` は reaper の拒否・期限切れ（`no_result`）・`still_in_inventory` でしか生じず、要求を書いてから reaper が動くまでが同じ tick の中にあるので、手の操作で確実に作れない。運用中に `SOURCE_DELETE_PENDING` が出たら docs/E2E.md §3.11 に記録する。E2E-11 は前半（過去分を削除対象にする）が PASS なら PASS とし、削除のゲート（§12.4 の 2）もそれで満たす |
 | F-64 | 誤 | §8.9.2・§8.9.5・§8.9.9・付録 A.2 | （2026-09-22 に利用者が承認）削除が有効（`.configured`・`.writable`）なのに RAW_SAVED の Part の元ファイルがデバイスから消えていると、事前確認（`preIdentityCheck`）が永久に偽で要求が書かれず、削除段が `requested == 0` のまま `delete_attempts += 1` を繰り返して Session が COMPLETED にならなかった（「手動で消した分を完了にする」は SOURCE_DELETE_PENDING だけが対象で救えず、抜け道は削除の無効化だけ。CR-15・DEL-15/16 に反する）→ `requestDeletions` が、新鮮で**その Part の取り込み（updated_at）より後の** snapshot でデバイスが接続中で列挙でき relpath が一覧に無い RAW_SAVED の Part を、要求を書かずに RAW_SAVED→COMPLETED（detail `already_absent`、`source_delete_skipped recording_key=… reason=already_absent`）にする。`source_deleted_at` は入れない。未接続・列挙できない・snapshot が古い・取り込み前の snapshot のときは従来どおり待つ（一覧は深さの上限の外と読めないディレクトリを含まないので、そこでは消し損ねうるが録音は失われない）。遷移とログの語は既存のもの（A.2・A.4 の語は増やさない）。根拠 B（SKIPPED）は Session の完了を待たせず、不在の Part は要求の対象から外れるので同じ詰まりは無い |
+| F-65 | 事 | §2.2・§8.9.8・§8.12・§12.3・§14 | （2026-09-23 に利用者が決定）パネルをカード型に作り直し、**主画面をスクロールなしで収める**。長い中身（元音声の削除・詳細と診断・要対応の多数・一般）は popover の中の別の画面に切り替え（「‹ 戻る」。窓は増やさない。D-7）、高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の 640pt をやめた。主画面に ScrollView を置かないので 1pt に潰れない。PR #100）。削除の有効化と根拠 B の「`ENABLE` を入力させる」を「赤いボタンを 3 秒長押しさせる」に変えた（クリック 1 回・チェックボックスでは通らない。途中で離すと取り消し。押している間はリングが満ちる）。UI は長押しの完了で `confirmation` に定数 `"ENABLE"` を渡し、`DeletionEnabler.enable(confirmation:)` の完全一致の判定は残す（安全の二重化）。`EnableError.notConfirmed` の文言は「赤いボタンを 3 秒長押ししてください」。無効化は確認なしの 1 クリックのまま。docs/E2E.md の E2E-10・E2E-17・§3.7（根拠 B）の手順を長押しに直した |

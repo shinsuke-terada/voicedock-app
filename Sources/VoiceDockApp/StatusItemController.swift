@@ -5,8 +5,6 @@ import SwiftUI
 /// メニューバーの項目とパネル（PLAN §8.12）。
 @MainActor
 final class StatusItemController: NSObject, NSPopoverDelegate {
-    static let panelWidth: CGFloat = 380
-
     private let item: NSStatusItem
     private let popover: NSPopover
     private let model: AppModel
@@ -19,9 +17,11 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover = NSPopover()
         popover.behavior = .transient
         popover.animates = false
-        popover.contentViewController = NSHostingController(rootView: PanelView(model: model))
-        // 高さは PanelView が固定する（PanelStyle.maxHeight）。1 にすると ScrollView が潰れて開けない
-        popover.contentSize = NSSize(width: Self.panelWidth, height: PanelStyle.maxHeight)
+        let hosting = NSHostingController(rootView: PanelView(model: model))
+        // 高さは中身に合わせる（F-65）。SwiftUI の理想の大きさを preferredContentSize に写し、popover がそれに追従する。
+        // 主画面に ScrollView は無く、別の画面の ScrollView は中身を測った高さを持つので、1pt に潰れない（PR #100）
+        hosting.sizingOptions = .preferredContentSize
+        popover.contentViewController = hosting
         super.init()
         popover.delegate = self
         item.button?.target = self
@@ -37,7 +37,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         guard let button = item.button else { return }
         model.panelDidOpen()
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-        // 入力欄にフォーカスを渡すため（PLAN §8.12）
+        // パネルの操作（Menu・トグル・長押し）に最初のクリックから反応させるため（PLAN §8.12）
         NSApp.activate()
     }
 

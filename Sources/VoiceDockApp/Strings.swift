@@ -143,7 +143,7 @@ enum Strings {
     }
     static func enableFailureReason(_ e: EnableError) -> String {
         switch e {
-        case .notConfirmed: "ENABLE と入力してください"
+        case .notConfirmed: "赤いボタンを " + holdSeconds + " 秒長押ししてください"
         case .install(let m): "削除モジュールを置けません（" + m + "）"
         case .signature: "削除モジュールの署名を確かめられません"
         case .reaperConfWrite(let m): "reaper.conf を書けません（" + m + "）"
@@ -153,6 +153,30 @@ enum Strings {
         case .rollback(let stages): "元に戻せなかった段があります（" + stages.joined(separator: ", ") + "）"
         }
     }
+
+    // F-65: 長押しの有効化（PLAN §8.9.8 の 2）。秒数は HoldToConfirmButton.holdDuration から作る（CR-06）
+    static let holdSeconds = String(Int(HoldToConfirmButton.holdDuration))
+    static let holdToEnableHint = "赤いボタンを " + holdSeconds + " 秒長押しすると有効になります。途中で離すと取り消します"
+    static let holdKeepPressing = "そのまま押し続けてください…"
+    static let deletionUnavailable = "設定を読み込めていないため、いまは操作できません"
+
+    // F-65: カード型のパネルと、popover の中の画面（PLAN §8.12）
+    static let buttonBack = "戻る"
+    static let screenSettings = "設定"
+    static let rowDeletion = "元音声の削除"
+    static let rowDetails = "詳細・診断"
+    static let sectionDiagnostics = "診断"
+    static let sectionBacklog = "後追い"
+    static let deletionOn = "有効"
+    static let deletionOff = "無効"
+    static func attentionMore(_ count: Int) -> String { "ほか " + String(count) + " 件" }
+    /// 「はじめに」の見出しの右（完了した数 / 見えている数）
+    static func onboardingProgress(done: Int, total: Int) -> String { String(done) + "/" + String(total) }
+    /// 状態の見出しの 2 行目
+    static func statusDetailLine(lastConnected: String, backlog: String) -> String {
+        labelLastConnected + " " + lastConnected + " · " + backlog
+    }
+    static func deviceFreeLine(_ value: String) -> String { labelDeviceFree + " " + value }
 
     // T-32: 要対応と詳細（PLAN §8.12 の 2 と 8）
     static let buttonRunDiagnostics = "診断を実行"

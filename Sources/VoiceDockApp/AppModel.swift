@@ -54,9 +54,11 @@ final class AppModel {
     @ObservationIgnored var probeGeneration = 0
     /// 「詳細」を開いているか（開いている間だけ状態の詳細を読む）
     var detailsExpanded = false
-    /// 要対応の「モデルの節を開く」（節を目立たせるだけ。新しい画面を作らない。D-7）
+    /// パネルの中の今の画面（F-65。書くのは AppModel+Navigation の show と panelDidClose だけ）
+    var screen: PanelScreen = .main
+    /// 要対応の「モデルの節を開く」（主画面に戻してモデルのカードを目立たせる。F-65）
     var modelsHighlighted = false
-    /// 要対応の「有効化フローを開く」（T-40 が使う）
+    /// 要対応の「有効化フローを開く」（「元音声の削除」の画面へ移す。F-65）
     var deletionHighlighted = false
     // T-40（書くのは下の extension だけ）
     /// 有効化が成功した後に出す案内（PLAN §8.9.8 の 5）
@@ -214,6 +216,12 @@ final class AppModel {
         // 閉じた後に届いた DR-09 の返事は捨てる（receiveProbe が .running のときだけ受け取る）
         probe = .idle
         probeGeneration += 1
+        // 次に開いたときは主画面から（F-65）。「詳細・診断」を出たので状態の詳細も捨てる
+        screen = .main
+        if detailsExpanded {
+            detailsExpanded = false
+            setStatusReport(nil)
+        }
     }
 
     func requeueManual() async {
@@ -263,11 +271,12 @@ extension AppModel {
     /// 「無効にする」を出すか: 消える可能性がある間（trash と同じ）と、前回の無効化に失敗した段がある間
     var showsDisableButton: Bool { showsTrash || !disableFailedStages.isEmpty }
 
-    /// 「元音声の削除を有効にする」。confirmation はテキストフィールドの入力そのまま（判定は DeletionEnabler）
-    func enableDeletion(confirmation: String) async -> Result<Void, EnableError> {
+    /// 「元音声の削除を有効にする」。赤いボタンの 3 秒の長押しが完了したときだけ呼ぶ（HoldToConfirmButton。F-65）。
+    /// 確認語は定数 `DeletionStrings.confirmationWord` を渡し、完全一致の判定は DeletionEnabler が行う（安全の二重化）
+    func enableDeletion() async -> Result<Void, EnableError> {
         deletionBusy = true
         defer { deletionBusy = false }
-        let r = await services.enableDeletion(confirmation: confirmation)
+        let r = await services.enableDeletion(confirmation: DeletionStrings.confirmationWord)
         switch r {
         case .success:
             enableError = nil
@@ -280,11 +289,11 @@ extension AppModel {
         return r
     }
 
-    /// 「無音・重複も消す」
-    func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError> {
+    /// 「無音・重複も消す」。有効化と同じく長押しの完了で呼び、定数の確認語を渡す（F-65）
+    func enableSkippedDeletion() async -> Result<Void, EnableError> {
         deletionBusy = true
         defer { deletionBusy = false }
-        let r = await services.enableSkippedDeletion(confirmation: confirmation)
+        let r = await services.enableSkippedDeletion(confirmation: DeletionStrings.confirmationWord)
         switch r {
         case .success: enableError = nil
         case .failure(let e): enableError = e

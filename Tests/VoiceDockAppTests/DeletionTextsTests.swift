@@ -30,7 +30,7 @@ struct DeletionTextsTests {
     @Test(
         "EnableError の各ケースの文言は逐語（T-40 §4.5 の表）",
         arguments: [
-            (EnableError.notConfirmed, "有効にできませんでした: ENABLE と入力してください"),
+            (EnableError.notConfirmed, "有効にできませんでした: 赤いボタンを 3 秒長押ししてください"),
             (EnableError.install("X"), "有効にできませんでした: 削除モジュールを置けません（X）"),
             (EnableError.signature, "有効にできませんでした: 削除モジュールの署名を確かめられません"),
             (EnableError.reaperConfWrite("X"), "有効にできませんでした: reaper.conf を書けません（X）"),

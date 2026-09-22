@@ -1,4 +1,4 @@
-// AppModel の「元音声の削除」の口（T-40 §4.5）。ビューは作らない。押したら services に渡り、結果が画面の値になる。
+// AppModel の「元音声の削除」の口（T-40 §4.5・F-65）。ビューは作らない。押したら services に渡り、結果が画面の値になる。
 import Foundation
 import TestSupport
 import Testing
@@ -37,12 +37,13 @@ struct AppModelDeletionTests {
             sleeper: RecordingSleeper(), now: fixed, quit: {})
     }
 
-    @Test("有効化は入力をそのまま services に渡し、成功したら挿し直しの案内を出す")
-    func enablePassesTheInputAndShowsTheReinsertNotice() async {
+    @Test("長押しの完了で呼ぶ有効化は定数の確認語 ENABLE を services に渡し、成功したら挿し直しの案内を出す（F-65）")
+    func enablePassesTheConstantWordAndShowsTheReinsertNotice() async {
         let fake = FakeServices(Self.present())
         let model = Self.makeModel(fake)
-        let r = await model.enableDeletion(confirmation: " enable ")
-        #expect(fake.enableConfirmations == [" enable "])
+        let r = await model.enableDeletion()
+        #expect(fake.enableConfirmations == ["ENABLE"])
+        #expect(fake.skippedConfirmations == [])
         guard case .success = r else {
             Issue.record("成功しなかった")
             return
@@ -58,17 +59,17 @@ struct AppModelDeletionTests {
         let fake = FakeServices(Self.present())
         fake.setEnableResult(.failure(.notConfirmed))
         let model = Self.makeModel(fake)
-        _ = await model.enableDeletion(confirmation: "y")
+        _ = await model.enableDeletion()
         #expect(model.enableError == .notConfirmed)
         #expect(model.deletionNotice == nil)
     }
 
-    @Test("根拠 B は入力をそのまま services に渡す")
-    func enableSkippedPassesTheInput() async {
+    @Test("根拠 B も長押しの完了で定数の確認語 ENABLE を services に渡す（F-65）")
+    func enableSkippedPassesTheConstantWord() async {
         let fake = FakeServices(Self.present())
         fake.setEnableResult(.failure(.config([])))
         let model = Self.makeModel(fake)
-        _ = await model.enableSkippedDeletion(confirmation: "ENABLE")
+        _ = await model.enableSkippedDeletion()
         #expect(fake.skippedConfirmations == ["ENABLE"])
         #expect(fake.enableConfirmations == [])
         #expect(model.enableError == .config([]))
@@ -79,7 +80,7 @@ struct AppModelDeletionTests {
         let fake = FakeServices(Self.present())
         fake.setDisableResult(["reaper_conf", "remount"])
         let model = Self.makeModel(fake)
-        _ = await model.enableDeletion(confirmation: "ENABLE")
+        _ = await model.enableDeletion()
         let failed = await model.disableDeletion()
         #expect(fake.disableCount == 1)
         #expect(failed == ["reaper_conf", "remount"])
@@ -173,7 +174,7 @@ struct AppModelDeletionTests {
         s.device = Self.device(readOnly: true)
         let fake = FakeServices(s)
         let model = Self.makeModel(fake)
-        _ = await model.enableDeletion(confirmation: "ENABLE")
+        _ = await model.enableDeletion()
         #expect(model.deletionNotice == "読み書きできるようになるのはデバイスを挿し直した後です")
         s.device = Self.device(readOnly: false)
         fake.set(s)

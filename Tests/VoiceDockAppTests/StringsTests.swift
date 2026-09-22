@@ -55,6 +55,23 @@ struct StringsTests {
         ("iconDescription.processing", Strings.iconDescription(.processing), "処理中"),
         ("iconDescription.attention", Strings.iconDescription(.attention), "要対応"),
         ("iconTrashDescription", Strings.iconTrashDescription, "元音声の削除が有効です"),
+        // F-65: 長押しの有効化とカード型のパネル（T-30 §4.12 の F-65 の表）
+        ("holdSeconds", Strings.holdSeconds, "3"),
+        ("holdToEnableHint", Strings.holdToEnableHint, "赤いボタンを 3 秒長押しすると有効になります。途中で離すと取り消します"),
+        ("holdKeepPressing", Strings.holdKeepPressing, "そのまま押し続けてください…"),
+        ("deletionUnavailable", Strings.deletionUnavailable, "設定を読み込めていないため、いまは操作できません"),
+        ("buttonBack", Strings.buttonBack, "戻る"),
+        ("screenSettings", Strings.screenSettings, "設定"),
+        ("rowDeletion", Strings.rowDeletion, "元音声の削除"),
+        ("rowDetails", Strings.rowDetails, "詳細・診断"),
+        ("sectionDiagnostics", Strings.sectionDiagnostics, "診断"),
+        ("sectionBacklog", Strings.sectionBacklog, "後追い"),
+        ("deletionOn", Strings.deletionOn, "有効"),
+        ("deletionOff", Strings.deletionOff, "無効"),
+        ("attentionMore", Strings.attentionMore(3), "ほか 3 件"),
+        ("onboardingProgress", Strings.onboardingProgress(done: 2, total: 4), "2/4"),
+        ("statusDetailLine", Strings.statusDetailLine(lastConnected: "A", backlog: "B"), "最終接続 A · B"),
+        ("deviceFreeLine", Strings.deviceFreeLine("DJIMIC3 4.2 GiB"), "デバイスの空き容量 DJIMIC3 4.2 GiB"),
     ]
 
     @Test("文言は §4.12 の表と逐語で一致する", arguments: table.map(\.0))
