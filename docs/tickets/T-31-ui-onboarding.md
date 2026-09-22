@@ -116,6 +116,11 @@ T-30 §4.0 の全体の規則を適用する。**このチケットのコード�
 
 ### 4.3 `UIState.swift`
 
+> （F-70・issue #105。2026-09-23、利用者の承認）`UIState` に `var lastConnectedAt: Instant? = nil`（パネルの最終接続。JSON の鍵 `lastConnectedAt` は epoch ミリ秒の整数で、nil なら書かない）を足した。`schema` は 1 のまま。
+> 読むときは `init(from:)`（extension に置いて memberwise の init を残す）で `schema`・`loginItemDecided` を従来どおり必須とし、`lastConnectedAt` は無い・型が違う・0 以下のときにそれだけを nil にする（「今はしない」を失わない）。
+> 同じファイルに純関数の `enum LastConnected { saveIntervalSeconds = 60; resolve(device:carried:persisted:); valueToSave(current:connected:written:) }` を置いた（使い手は T-30 の `LiveServices.read` と `AppModel.refresh`）。
+> PLAN §8.12 の鍵の表（SPEC S23）に `lastConnectedAt`（整数。値の列は「任意。」で始まる）を足した。`savedFileHasOnlyTwoKeys` は `savedFileHasOnlySpecKeys` に改め（§5.1 の表）、`lastConnectedRoundTrip`・`fileWithoutLastConnectedLoads`・`brokenLastConnectedKeepsLoginItemDecided` を足した。下のコードは T-31 の実装時の形の記録。
+
 ```swift
 // パネルの記憶（PLAN §2.3 / §8.12 の 3-④）。UserDefaults を使わない（PR-03）。<HOME>/ui-state.json だけに書く。
 import Foundation
@@ -496,7 +501,10 @@ extension SystemLoginItem {
 | `brokenJSONGivesDefaults` / 「壊れた JSON は既定」 | `"{"` を書く | 既定 |
 | `futureSchemaGivesDefaults` / 「将来の schema は解釈しない」 | `{"schema": 2, "loginItemDecided": true}` | 既定（`loginItemDecided == false`） |
 | `unknownKeysAreIgnored` / 「未知のキーは無視する」 | `{"schema":1,"loginItemDecided":true,"x":1}` | `loginItemDecided == true` |
-| `savedFileHasOnlyTwoKeys` / 「書くのは SPEC S23 の 2 キーだけ（型も表のとおり）」 | `save` の後に JSON を読む | 鍵集合が SPEC S23 の鍵（`["loginItemDecided", "schema"]`）、`schema` は整数・`loginItemDecided` は真偽、S23 の `schema` の値が `UIState.currentSchema`（#18 で SPEC との照合に替えた） |
+| `savedFileHasOnlySpecKeys` / 「書くのは SPEC S23 の鍵だけ（型も表のとおり。任意の lastConnectedAt は値があるときだけ）」 | `lastConnectedAt` なしで `save` → JSON を読む。ありで `save` → JSON を読む | S23 の鍵が `["schema", "loginItemDecided", "lastConnectedAt"]`。なしのときは任意でない鍵（`["loginItemDecided", "schema"]`）だけ、ありのときは S23 の鍵すべて。`schema`・`lastConnectedAt` は整数・`loginItemDecided` は真偽、S23 の `schema` の値が `UIState.currentSchema`（#18 で SPEC との照合に替えた。F-70 で旧 `savedFileHasOnlyTwoKeys` を改めた） |
+| `lastConnectedRoundTrip` / 「最終接続は epoch ミリ秒の整数で書き、読み戻せる（F-70）」 | `lastConnectedAt = 1_787_955_153_000` で `save` → `load` | 鍵 `lastConnectedAt` の値が `1787955153000`、読み戻した値が等しい |
+| `fileWithoutLastConnectedLoads` / 「F-70 より前のファイル（最終接続のキーが無い）も読める」 | `{"schema":1,"loginItemDecided":true}` | `loginItemDecided == true`、`lastConnectedAt == nil` |
+| `brokenLastConnectedKeepsLoginItemDecided` / 「最終接続の値が壊れていても（0 以下も）「今はしない」は失わない」 | `lastConnectedAt` が文字列・小数・`null`・オブジェクト・真偽・`0`・`-1`・`Int64.min` | どれも `loginItemDecided == true`、`lastConnectedAt == nil` |
 | `saveFailureReturnsFalse` / 「書けなければ false」 | 読み取り専用のディレクトリ（`chmod 0o500`） | `save == false`（投げない） |
 
 ### 5.2 `OnboardingTests.swift`（`@Suite("Onboarding")`）
@@ -639,7 +647,7 @@ extension SystemLoginItem {
 `docs/SPEC.md` に足す:
 
 1. `## S22. はじめに（オンボーディング）` — `| # | 項目 | 完了の条件 |` の 3 列で ①〜⑤ を写す。`OnboardingTests` が SPEC から読んで `OnboardingStep.allCases` と件数・順を突き合わせる
-2. `## S23. ui-state.json` — 鍵と型の表（`schema: 整数（1）`、`loginItemDecided: 真偽`）。`UIStateTests` が `savedFileHasOnlyTwoKeys` で突き合わせる
+2. `## S23. ui-state.json` — 鍵と型の表（`schema: 整数（1）`、`loginItemDecided: 真偽`。F-70 で `lastConnectedAt: 整数（epoch ミリ秒。任意）` が加わった）。`UIStateTests` が `savedFileHasOnlySpecKeys`（F-70 より前は `savedFileHasOnlyTwoKeys`）で突き合わせる
 
 **実装の注記（T-31 の実装時）**: この節は T-31 の PR では実装していない。`docs/SPEC.md` は `tools/spec/make-spec.py` が PLAN から作る（手で直さない）もので、見出しの登録・`SpecDocument` の読み手はどれも T-05 の持ち物で §3 に無い。T-30 の S20 / S21 と同じく issue #18（SPEC 同期の拡張）に回す。当面は `OnboardingTests.orderIsTheSpecOrder` が 5 項目の順と題を、`UIStateTests.savedFileHasOnlyTwoKeys` が鍵を固定値で照合する
 → **SPEC 同期は #18 で足した**（PLAN F-68）: PLAN §8.12 に `| # | 項目 | OnboardingStep | 完了の条件 |`（項目はパネルの文言。`OnboardingStep` の列を足した）と `| 鍵 | 型 | 値 |` の表を置き、SPEC の `S22. はじめに`・`S23. ui-state.json` に写した。`orderIsTheSpecOrder` と `savedFileHasOnlyTwoKeys` を SPEC との照合に替えた（§5.1・§5.2）

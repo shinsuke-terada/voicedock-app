@@ -262,10 +262,8 @@ struct AppModelTests {
         #expect(model.backlogLine == "未処理なし")
     }
 
-    @Test("DB が無ければ未処理は全 0（LiveServices は DB を作らない）")
-    func bootWithoutDatabaseShowsZero() async throws {
-        let tmp = try TempDirectory()
-        defer { tmp.remove() }
+    /// TempDirectory の HomeLayout で AppContext を組んだ LiveServices（どれも start しない。取り込みは偽物と一時ディレクトリの volumesRoot）
+    static func liveServices(_ tmp: TempDirectory) throws -> (services: LiveServices, layout: HomeLayout) {
         let layout = HomeLayout(root: tmp.url.appendingPathComponent("home", isDirectory: true))
         let clock = FixedClock(now: Self.fixed)
         let zone = ZonedTime(fixedOffsetSeconds: 0)
@@ -322,7 +320,15 @@ struct AppModelTests {
             models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
             physicalMemoryBytes: 16 * 1024 * 1024 * 1024)
-        let services = LiveServices(context: context)
+        return (LiveServices(context: context), layout)
+    }
+
+    @Test("DB が無ければ未処理は全 0（LiveServices は DB を作らない）")
+    func bootWithoutDatabaseShowsZero() async throws {
+        let tmp = try TempDirectory()
+        defer { tmp.remove() }
+        let (services, layout) = try Self.liveServices(tmp)
+        let catalog = TestCatalogs.minimal
 
         let s = await services.read(lastConnectedAt: nil)
 
@@ -337,6 +343,25 @@ struct AppModelTests {
             sleeper: RecordingSleeper(), now: Self.fixed, quit: {})
         await model.refresh()
         #expect(model.backlogLine == "未処理なし")
+    }
+
+    @Test("再起動: LiveServices は起動直後の read で ui-state.json の最終接続を使う（F-70）")
+    func liveReadRestoresLastConnected() async throws {
+        let tmp = try TempDirectory()
+        defer { tmp.remove() }
+        let (services, layout) = try Self.liveServices(tmp)
+        let t = Instant(epochMillis: 1_787_955_153_000)
+        try FileManager.default.createDirectory(at: layout.root, withIntermediateDirectories: true)
+        #expect(UIStateStore(url: layout.uiState).save(UIState(schema: 1, loginItemDecided: true, lastConnectedAt: t)))
+
+        let s = await services.read(lastConnectedAt: nil)
+
+        #expect(s.device == nil)
+        #expect(s.uiState.lastConnectedAt == t)
+        #expect(s.lastConnectedAt == t)
+        // メモリに前回の値があればそちらを使う（起動中はファイルを待たない）
+        let later = t.adding(seconds: 30)
+        #expect(await services.read(lastConnectedAt: later).lastConnectedAt == later)
     }
 }
 
