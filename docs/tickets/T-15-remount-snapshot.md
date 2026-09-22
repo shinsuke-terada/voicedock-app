@@ -1,6 +1,9 @@
 # T-15 VDDevice: 再マウント・snapshot・IngestService の走査
 
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）走査の手順 1（共存ガード）・`IngestState.coexistenceBlocked`・`coexistence_blocked` は外した。以下の本文の共存ガードの記述は記録として残す。
+>
+> （F-67・issue #97。2026-09-23）`listing.complete` は、項目の `lstat` が `ENOENT` 以外で失敗したときも偽になった（T-14 の注記）。偽のデバイスを `devices` に載せず `unavailable` に `not_listable`（`errno: nil`）で載せる手順は変えない。
+> 取り込みはその回も続け、前回の snapshot の一覧は持ち越さない（一時的な失敗は次の走査で戻る。そのデバイスが唯一の接続なら `connectEpoch` が 1 増える）。テストは `IngestServiceTests` の「lstat が EACCES で失敗した項目があれば…」ほか 2 本。
 
 | 項目 | 値 |
 |---|---|

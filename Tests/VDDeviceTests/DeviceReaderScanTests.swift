@@ -1,6 +1,7 @@
 // DeviceReader の走査・stat・原本を開く（T-14 §5.1）。FakeVolume の一時ディレクトリだけを見る（/Volumes に触れない）。
 import Darwin
 import Foundation
+import Synchronization
 import TestSupport
 import Testing
 
@@ -215,6 +216,126 @@ struct DeviceReaderScanTests {
             volumeRoot: Self.root(fake), relpath: Self.orig120950,
             expected: FileStat(size: 100, mtime: FakeVolume.oldMtime))
         #expect(Self.failure(result) == .readError(ENOENT))
+    }
+
+    // MARK: - lstat の失敗と一覧の完全さ（#97・PLAN 付録 F の F-67）
+
+    /// lstat の失敗の注入。試みたパスを残し、enabled が偽の間は注入しない（一時的な失敗の再現）
+    final class LstatProbe: Sendable {
+        private let state = Mutex((calls: [String](), enabled: true))
+
+        var calls: [String] { state.withLock { $0.calls } }
+
+        func setEnabled(_ value: Bool) { state.withLock { $0.enabled = value } }
+
+        /// 試みたパスを残し、注入が有効かを返す
+        func record(_ path: String) -> Bool {
+            state.withLock { value in
+                value.calls.append(path)
+                return value.enabled
+            }
+        }
+    }
+
+    /// relpath（ボリュームのルートから）で終わるパスの lstat だけを errno で失敗させ、ほかは本物の lstat を呼ぶ
+    static func injectingReader(failing: [String: Int32], probe: LstatProbe = LstatProbe()) -> DeviceReader {
+        DeviceReader(lstat: { path, st in
+            if probe.record(path) {
+                for (rel, code) in failing where path.hasSuffix("/" + rel) { return code }
+            }
+            return Darwin.lstat(path, &st) == 0 ? 0 : errno
+        })
+    }
+
+    @Test("lstat が ENOENT 以外で失敗した項目があれば complete は偽", arguments: [EACCES, EIO, EPERM])
+    func lstatFailureMakesIncomplete(code: Int32) throws {
+        let tmp = try TempDirectory()
+        let fake = try FakeVolume(in: tmp)
+        try fake.addFile(Self.orig120950, mtime: FakeVolume.oldMtime)
+        try fake.addFile(Self.orig163444, mtime: FakeVolume.oldMtime)
+        let listing = Self.injectingReader(failing: [Self.orig163444: code])
+            .scan(volumeRoot: Self.root(fake), maxDepth: 3)
+        #expect(listing.complete == false)
+        #expect(listing.relpaths == [Self.orig120950])
+    }
+
+    @Test("フォルダの lstat が失敗しても complete は偽（降りられない）")
+    func folderLstatFailureMakesIncomplete() throws {
+        let tmp = try TempDirectory()
+        let fake = try FakeVolume(in: tmp)
+        try fake.addFile(Self.orig120950, mtime: FakeVolume.oldMtime)
+        try fake.addFile(Self.orig163444, mtime: FakeVolume.oldMtime)
+        let listing = Self.injectingReader(failing: ["TX_MIC001_20260912_163444": EIO])
+            .scan(volumeRoot: Self.root(fake), maxDepth: 3)
+        #expect(listing.complete == false)
+        #expect(listing.relpaths == [Self.orig120950])
+    }
+
+    @Test("読めるが辿れないフォルダ（r--）は、中の項目の lstat が EACCES になり complete は偽")
+    func searchDeniedFolderMakesIncomplete() throws {
+        let tmp = try TempDirectory()
+        let fake = try FakeVolume(in: tmp)
+        try fake.addFile(Self.orig120950, mtime: FakeVolume.oldMtime)
+        try fake.addFile(Self.orig163444, mtime: FakeVolume.oldMtime)
+        // opendir / readdir は r だけで通り、lstat は x が無いので EACCES（本物の lstat。注入しない）
+        let folder = fake.url("TX_MIC001_20260912_163444").path(percentEncoded: false)
+        #expect(chmod(folder, 0o444) == 0)
+        defer { _ = chmod(folder, 0o755) }
+        let listing = DeviceReader().scan(volumeRoot: Self.root(fake), maxDepth: 3)
+        #expect(listing.complete == false)
+        #expect(listing.relpaths == [Self.orig120950])
+    }
+
+    @Test("列挙から lstat までの間に消えた（ENOENT）項目は飛ばし、complete は真のまま")
+    func vanishedEntryIsSkipped() throws {
+        let tmp = try TempDirectory()
+        let fake = try FakeVolume(in: tmp)
+        try fake.addFile(Self.orig120950, mtime: FakeVolume.oldMtime)
+        try fake.addFile(Self.orig163444, mtime: FakeVolume.oldMtime)
+        let listing = Self.injectingReader(failing: [Self.orig163444: ENOENT])
+            .scan(volumeRoot: Self.root(fake), maxDepth: 3)
+        #expect(listing.complete == true)
+        #expect(listing.relpaths == [Self.orig120950])
+        #expect(listing.origCandidates == [Self.orig120950])
+    }
+
+    @Test("深さの上限の外は列挙も lstat もせず、complete に影響しない")
+    func beyondDepthDoesNotAffectCompleteness() throws {
+        let tmp = try TempDirectory()
+        let fake = try FakeVolume(in: tmp)
+        try fake.addFile(Self.orig120950, mtime: FakeVolume.oldMtime)
+        let beyond = "a/b/c/TX00_MIC001_20260912_130000_orig.wav"
+        try fake.addFile(beyond, mtime: FakeVolume.oldMtime)
+        // 上限ちょうどの階層のフォルダ c は列挙できない（chmod 000）。中の lstat も失敗させる
+        let limit = fake.url("a/b/c").path(percentEncoded: false)
+        #expect(chmod(limit, 0o000) == 0)
+        defer { _ = chmod(limit, 0o755) }
+        let probe = LstatProbe()
+        let listing = Self.injectingReader(failing: [beyond: EIO], probe: probe)
+            .scan(volumeRoot: Self.root(fake), maxDepth: 3)
+        #expect(listing.complete == true)
+        #expect(listing.relpaths == [Self.orig120950])
+        #expect(!probe.calls.contains { $0.hasSuffix("/" + beyond) })
+    }
+
+    @Test("録音 0 件・項目 0 件のデバイスは、lstat が全部失敗する注入でも空で complete")
+    func emptyVolumeWithFailingLstatIsComplete() throws {
+        let tmp = try TempDirectory()
+        let fake = try FakeVolume(in: tmp)
+        // `.` で始まる名前だけ（lstat の前に捨てるので、見える項目は 0 件）
+        try fake.addFile(".Spotlight-V100/dummy", data: Data([0x00]), mtime: FakeVolume.oldMtime)
+        try fake.addFile("._TX00_MIC001_20260912_120950_orig.wav", data: Data([0x00]), mtime: FakeVolume.oldMtime)
+        let probe = LstatProbe()
+        let reader = DeviceReader(lstat: { path, _ in
+            _ = probe.record(path)
+            return EIO
+        })
+        let listing = reader.scan(volumeRoot: Self.root(fake), maxDepth: 3)
+        #expect(listing.relpaths.isEmpty)
+        #expect(listing.origCandidates.isEmpty)
+        #expect(listing.unparsable.isEmpty)
+        #expect(listing.complete == true)
+        #expect(probe.calls.isEmpty)
     }
 
     static func failure(_ result: Result<DeviceFileHandle, CopyError>) -> CopyError? {
