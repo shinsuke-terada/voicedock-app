@@ -24,7 +24,7 @@ struct ReaperQueueTests {
             "\(files)")
     }
 
-    /// 手で組む要求の JSON（RV-02b・RV-03 の形を壊すため）。既定は通る要求と同じ中身
+    /// 手で組む要求の JSON（RV-02（02b）・RV-03 の形を壊すため）。既定は通る要求と同じ中身
     static func json(
         _ bench: ReaperBench, schema: String = "1", requestID: String = "\"" + ReaperBench.requestID + "\"",
         size: String? = nil, mtime: String? = nil, targets: String? = nil, dropSessionKey: Bool = false,
@@ -110,13 +110,44 @@ struct ReaperQueueTests {
         #expect(!FileManager.default.fileExists(atPath: evil.path(percentEncoded: false)))
     }
 
-    @Test("RV-02b request_id が文字列でなければ rejected/ へ")
+    @Test("RV-02 request_id が文字列でなければ rejected/ へ（02b）")
     func rv02bNonStringRequestIDGoesToRejected() throws {
         let bench = try ReaperBench()
         let name = Self.id + ".json"
         try bench.writeRawRequest(fileName: name, Self.json(bench, requestID: "1"))
         let run = try bench.run()
         Self.expectRejected(bench, run, name: name)
+    }
+
+    @Test("RV-02 ファイル名が <request_id>.json の形でなければ rejected/ へ（02a）")
+    func rv02aMalformedFileNameGoesToRejected() throws {
+        let bench = try ReaperBench()
+        // 乱数部が 5 桁（正しくは 6 桁）。中の request_id は stem と同じにして 02b が代わりに弾かないようにする（TEST-19）
+        let stem = "20260912T090000Z-a5d046dce76cfedc-a1b2c"
+        let name = stem + ".json"
+        try bench.writeRequest(requestID: stem, fileName: name)
+        let run = try bench.run()
+        Self.expectRejected(bench, run, name: name)
+    }
+
+    @Test("RV-02 JSON の request_id がファイル名の stem と違えば rejected/ へ（02b）")
+    func rv02bInnerRequestIDMismatchGoesToRejected() throws {
+        let bench = try ReaperBench()
+        // 中の request_id も形としては正しい（乱数部だけ違う）。形ではなく一致を見ていることを確かめる
+        let name = try bench.writeRequest(
+            requestID: "20260912T090000Z-a5d046dce76cfedc-ffffff", fileName: Self.id + ".json")
+        let run = try bench.run()
+        Self.expectRejected(bench, run, name: name)
+    }
+
+    @Test("RV-02 ファイル名と中の request_id が一致すれば not_a_mount_point まで進む（対照）")
+    func rv02MatchingNameProceeds() throws {
+        let bench = try ReaperBench()
+        try bench.writeRequest()
+        let run = try bench.run()
+        #expect(run.exitCode == 0)
+        #expect(bench.rejected() == [])
+        #expect(try bench.result(Self.id).detail == "not_a_mount_point")
     }
 
     @Test(".json で終わらない名前は rejected/ へ")
@@ -320,6 +351,27 @@ struct ReaperQueueTests {
         #expect(try bench.result(Self.id).detail == "partkey_mismatch")
         #expect(bench.requests() == [])
         #expect(bench.sourceExists())
+    }
+
+    @Test("RV-05 device_id/relpath が partkey と違えば partkey_mismatch、原本は残る")
+    func rv05PartkeyMismatchKeepsTheSource() throws {
+        let bench = try ReaperBench()
+        // relpath は同じフォルダの別名。device_id + "/" + relpath とだけ食い違う
+        let partkey = "VDT0037/TX_MIC001_20260912_090000/TX00_MIC001_20260912_090001_orig.wav"
+        try bench.writeRequest(partkey: partkey)
+        let run = try bench.run()
+        #expect(run.exitCode == 0)
+        #expect(bench.results() == [Self.id + ".json"])
+        let result = try bench.result(Self.id)
+        #expect(result.status == .sourceIdentityMismatch)
+        #expect(result.detail == "partkey_mismatch")
+        #expect(result.deviceID == "VDT0037")
+        #expect(result.partkey == partkey)
+        #expect(bench.processedLines() == [Self.id])
+        #expect(bench.requests() == [])
+        #expect(bench.sourceExists())
+        #expect(try bench.actualStat().size == Int64(ReaperBench.content.count))
+        #expect(Self.logged(bench, "WARN  source_delete_rejected request_id=\(Self.id) reason=partkey_mismatch"))
     }
 
     @Test("RV-06 デバイスが無ければ要求を残す")

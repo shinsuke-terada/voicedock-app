@@ -40,8 +40,8 @@ struct SpecCoverageTests {
         }
     }
 
-    @Test("有効にした種類は .cv・.dr・.nd を含む（外すと集合の一致の検査が黙って止まる。T-39）")
+    @Test("有効にした種類は .cv・.dr・.nd・.rv を含む（外すと集合の一致の検査が黙って止まる。T-39・issue #87）")
     func activatedKeepsTheCheckedKinds() {
-        #expect(SpecCoverage.activated.isSuperset(of: [.cv, .dr, .nd]))
+        #expect(SpecCoverage.activated.isSuperset(of: [.cv, .dr, .nd, .rv]))
     }
 }
