@@ -4,10 +4,6 @@
 /// まだ ConfigEffect のテストが無いキー → 書く予定のチケット。空になったら網羅完了（T-43 の受け入れ条件）。
 enum ConfigEffectPending {
     static let owners: [String: String] = [
-        "device.snapshotMaxAgeSeconds": "T-38",
-        "cleanup.deleteSourceAudio": "T-38",
-        "cleanup.deleteEvaluationBackoffSeconds": "T-38",
-        "cleanup.deleteResultTimeoutSeconds": "T-38",
-        "cleanup.deleteSkippedSource": "T-39",
+        "cleanup.deleteSkippedSource": "T-39"
     ]
 }

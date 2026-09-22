@@ -100,4 +100,36 @@ struct ReaperRunnerTests {
             : ProcessResult(termination: .timedOut, stdoutTail: Data("0.1.0\n".utf8), stderrTail: Data())
         #expect(await Self.runner(layout, results: [result]).runVersion() == nil)
     }
+
+    // MARK: - run()（T-38 §6.8）
+
+    @Test("起動は bin/voicedock-reaper --home <HOME> だけ")
+    func runArgvIsExact() async throws {
+        let tmp = try TempDirectory()
+        let layout = try Self.layout(tmp)
+        let scripted = ScriptedProcessRunner(results: [ScriptedProcessRunner.exited(0)])
+        let outcome = await ReaperRunner(layout: layout, runner: scripted, verifier: FakeSignatureVerifier()).run()
+        #expect(outcome == .finished(ScriptedProcessRunner.exited(0)))
+        #expect(
+            await scripted.recorded == [
+                ProcessSpec(
+                    executable: layout.reaperExecutable,
+                    arguments: ["--home", layout.root.path(percentEncoded: false)],
+                    environment: ProcessEnvironment.standard)
+            ])
+        #expect(await scripted.recordedTimeouts == [.seconds(120)])
+    }
+
+    @Test("署名が不正なら起動しない")
+    func runRefusesInvalidSignature() async throws {
+        let tmp = try TempDirectory()
+        let layout = try Self.layout(tmp)
+        let scripted = ScriptedProcessRunner(results: [ScriptedProcessRunner.exited(0)])
+        let outcome = await ReaperRunner(
+            layout: layout, runner: scripted, verifier: FakeSignatureVerifier(valid: false)
+        )
+        .run()
+        #expect(outcome == .notLaunched(reason: "signature"))
+        #expect(await scripted.recorded == [])
+    }
 }

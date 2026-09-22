@@ -62,3 +62,23 @@ public struct ReaperRunner: Sendable {
         await runVersion() == AppVersion.string + "\n"
     }
 }
+
+public enum ReaperRunOutcome: Equatable, Sendable {
+    /// DeletionReason.signature
+    case notLaunched(reason: String)
+    case finished(ProcessResult)
+}
+
+extension ReaperRunner {
+    public static let runTimeout: Duration = .seconds(120)
+
+    /// 起動の直前に署名を検証し（ND-41 の 2 層目）、<HOME>/bin/voicedock-reaper --home <HOME> を起動して終わりを待つ。パスを引数に取らない（§8.9.3 の 1）
+    /// 版は runReaperIfNeeded の直前の readiness(useCache: false) が確かめる（子プロセスを 2 回起動しない）
+    public func run() async -> ReaperRunOutcome {
+        guard signatureIsValid() else { return .notLaunched(reason: DeletionReason.signature) }
+        let spec = ProcessSpec(
+            executable: layout.reaperExecutable, arguments: ["--home", layout.root.path(percentEncoded: false)],
+            environment: ProcessEnvironment.standard)
+        return .finished(await runner.run(spec, timeout: Self.runTimeout))
+    }
+}

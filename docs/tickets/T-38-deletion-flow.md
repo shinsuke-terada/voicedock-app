@@ -40,6 +40,7 @@ Worker の tick の空の段（T-18）と、Raw の直後・SAVED の直後の�
 | `Sources/VDPipeline/ResultCollector.swift` | `ResultCollector`（internal。`collectDeleteResults`・`pend`・`runReaperIfNeeded`） |
 | `Sources/VDPipeline/RequestExpirer.swift` | `RequestExpirer`（internal。`expireDeleteRequests`） |
 | `Sources/VDPipeline/ReaperRunner.swift`（変更） | `run()`・`runTimeout`・`ReaperRunOutcome` を足す |
+| `Sources/VDPipeline/DeletionReason.swift`（変更） | `busy` を足す（PLAN §8.9.6「4 は busy」・付録 A.4 の `reaper_failed reason=…\|busy`。§4.7 の `logRun`） |
 | `Sources/VDPipeline/TickContext.swift`（変更） | `let pendedPartkeys = PendedPartkeys()` を足す |
 | `Sources/VDPipeline/Worker.swift`（変更） | 状態 `var reaperScanGeneration: UInt64 = 0` を足す |
 | `Sources/VDPipeline/Worker+DeletionStages.swift`（本体） | 段 collectDeleteResults・expireDeleteRequests・evaluateDeletions・runReaperIfNeeded（settleSkippedDeletions は T-39） |
@@ -60,6 +61,7 @@ Worker の tick の空の段（T-18）と、Raw の直後・SAVED の直後の�
 | `Tests/VDPipelineTests/DeletionStagesWiringTests.swift` | Worker の tick を回す（TEST-06） |
 | `Tests/VDPipelineTests/DeletionRoundTripTests.swift` | 本物の reaper × FAT32 のディスクイメージ（`.diskImage`） |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | 4 キーを消す（§6.11） |
+| `Tests/VDPipelineTests/PipelineIntegrationTests.swift`（変更） | T-29 §6.6 の期待を直す（§6.12。SAVED の直後の削除段が動くので、削除が無効なら Part は COMPLETED、Session は SAVED→CLEANUP→COMPLETED まで進む） |
 
 ## 4. 仕様
 
@@ -373,12 +375,13 @@ return next
 | `result.termination` | `reaper_run`（INFO） | `reaper_failed`（WARNING） |
 |---|---|---|
 | `.exited(0)` | `exit=0` | 出さない |
-| `.exited(n)` | `exit=n` | `reason=exit_<n>`（4 は busy） |
+| `.exited(4)` | `exit=4` | `reason=busy`（`DeletionReason.busy`。reaper が reaper.lock を取れなかった。PLAN §8.9.6「4 は busy」・付録 A.4） |
+| `.exited(n)`（0・4 以外） | `exit=n` | `reason=exit_<n>`（`DeletionReason.exit(n)`） |
 | `.signaled(s)` | `exit=<128 + s>` | `reason=exit_<128 + s>` |
 | `.spawnFailed` | `exit=127` | `reason=exit_127` |
 | `.timedOut` | `exit=null` | `reason=timeout` |
 
-（signaled・spawnFailed の写し方は PLAN に無い。§11 の提案 6）
+（signaled・spawnFailed・timedOut の写し方は PLAN 付録 A.4 に在る。4 と 127 は `ResultCollector` の `static let busyExitCode: Int32 = 4`・`spawnFailedExitCode: Int32 = 127`（internal）に置き、ほかに書かない。CR-06）
 
 ### 4.8 `RequestExpirer.swift`（PLAN §8.9.7。voicedock pipeline.py:1004-1038）
 
@@ -514,6 +517,7 @@ extension DeletionScene {
 ```swift
 // DeletionScene から削除の段の依存を作る（T-38）。DeletionDependencies は internal なので test ターゲットごとに置く。
 import TestSupport
+import VDContract
 import VDCore
 @testable import VDPipeline
 
@@ -542,7 +546,7 @@ extension DeletionScene {
 | `source_delete_pending` | WARNING | `recording_key`, `reason=queue_write_failed`, `error_code=DELETE_QUEUE_FAILED` | RequestWriter |
 | `disk_space_low` | WARNING | `session_key`, `reason=staging_unlink_failed` | finishCleanup |
 | `reaper_run` | INFO | `exit` | runReaperIfNeeded |
-| `reaper_failed` | WARNING | `reason`（`exit_<n>`・`timeout`・`signature`） | runReaperIfNeeded（`version_mismatch` と検証の `signature` は T-36 の LockEvaluator） |
+| `reaper_failed` | WARNING | `reason`（`exit_<n>`・`busy`・`timeout`・`signature`） | runReaperIfNeeded（`version_mismatch` と検証の `signature` は T-36 の LockEvaluator） |
 
 ## 6. テスト
 
@@ -658,9 +662,9 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `launchesAndCollectsAfterTheScan` | 要求と書き込み可能なデバイスがあれば起動し、走査の後に回収する | reaper の結果 `.exited(0)`、`ingest.script([.publish(消えた後の走査)])`、DELETED の結果を先に置く、`runReaperIfNeeded(reaperScanGeneration: 0)` | 戻り値 2、`runner.recorded[1]` が `executable == layout.reaperExecutable`・`arguments == ["--home", p(layout.root)]`・`environment == ProcessEnvironment.standard`、`recordedTimeouts[1] == .seconds(120)`、`reaper_run exit=0`、`scanNowCalls == 1`、Part COMPLETED |
 | `noRequestsNoLaunch` | 要求が無ければ起動しない | 要求ファイルを消す | `runner.recorded == []`、`scanNowCalls == 0`、戻り値は引数のまま |
 | `noWritableDeviceNoLaunch` | 書き込み可能なデバイスが無ければ起動しない（パラメータ化: readOnly true・nil・0 台・snapshot nil） | | `runner.recorded == []` |
-| `readinessIsVerifiedWithoutCache` | 起動の直前は署名と版を検証し直す | 先に `locks.readiness(config:)` を 1 回（キャッシュを作る）→ runReaperIfNeeded | 署名検証の回数が 1 増え、`--version` が 2 回記録された後に `--home` の起動 |
+| `readinessIsVerifiedWithoutCache` | 起動の直前は署名と版を検証し直す | runner の台本を `[version(), version(), .exited(0)]` にする。先に `locks.readiness(config:)` を 1 回（キャッシュを作る）→ runReaperIfNeeded | 署名検証の回数が 2 増え（起動の直前の `readiness(useCache: false)` と `ReaperRunner.run` の 2 層）、記録が `--version`・`--version`・`--home` の順 |
 | `disabledReadinessNoLaunch` | 準備が崩れていれば起動しない | `removeReaperConf()` | `--home` の起動が無い |
-| `nonZeroExitIsLogged` | 0 以外は reaper_failed exit_<n>（パラメータ化: 4・2・3） | `.exited(n)` | `reaper_run exit=<n>`、`reaper_failed reason=exit_<n>`、scanNow は呼ぶ |
+| `nonZeroExitIsLogged` | 0 以外は reaper_failed exit_<n>（4 は busy。パラメータ化: 4・2・3） | `.exited(n)` | `reaper_run exit=<n>`、`reaper_failed reason=exit_<n>`（4 は `reason=busy`）、scanNow は呼ぶ |
 | `timeoutIsLogged` | タイムアウトは reason=timeout | `.timedOut` | `reaper_run exit=null`、`reaper_failed reason=timeout` |
 | `signalAndSpawnFailureAreLogged` | シグナルは 128+s、起動失敗は 127（パラメータ化） | `.signaled(9)` / `.spawnFailed(errno: 2)` | `exit=137`・`reason=exit_137` / `exit=127`・`reason=exit_127` |
 | `skippedScanWaitsForTheNextScan` | 走査が見送られたら「今の generation + 1」を待つ | `ingest.script([.skip])`、snapshot の generation 5（rw、ファイル無し）、DELETED の結果 | 戻り値 6、結果が残る、SOURCE_DELETING のまま |
@@ -720,6 +724,17 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 ### 6.11 `ConfigEffectPending.swift`（PolicyTests。T-09 §9）
 
 `device.snapshotMaxAgeSeconds`・`cleanup.deleteSourceAudio`・`cleanup.deleteEvaluationBackoffSeconds`・`cleanup.deleteResultTimeoutSeconds` の 4 行を消す（CE テストは §6.3・§6.4・§6.7）。
+
+### 6.12 `PipelineIntegrationTests.swift`（T-29 §6.6 の期待を直す）
+
+本チケットで SAVED の直後の口（`SessionSteps.deleteSourcesIfSafe`）が中身を持つので、既定の設定（削除無効）では PLAN §8.9.5 のとおり
+`source_delete_skipped session_key=DJIMIC3:20260829 reason=delete_source_audio_disabled` → Part RAW_SAVED→COMPLETED → Session SAVED→CLEANUP→COMPLETED まで進む。3 本の期待をこれに合わせる（テストを足さない）:
+
+| 関数名 | 直す期待 |
+|---|---|
+| `oneTickFromBWFToVerifiedDaily` | Part COMPLETED（events の to の列の末尾に `COMPLETED`）、Session COMPLETED（events の to の列の末尾に `CLEANUP`・`COMPLETED`）、ログに上の `source_delete_skipped` |
+| `secondPartReopensAndRewrites` | 1 tick 目の後の Session は COMPLETED。2 tick 目の後は Part A・B とも COMPLETED、Session COMPLETED、足された events の to が `MERGING`〜`SAVED`・`CLEANUP`・`COMPLETED`（COMPLETED の Session も再オープンできる。`SessionStates.reopenable`） |
+| `missingVaultPausesThenResumes` | 2 回目の tick の後は Part COMPLETED、Session COMPLETED |
 
 ## 7. 破壊による証明
 
@@ -783,4 +798,6 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 3. `TickContext` に `let pendedPartkeys = PendedPartkeys()`、`Worker` に `var reaperScanGeneration: UInt64 = 0`
 4. §15 に `ScriptedIngest`（作り手 T-38、使う T-39・T-41）と `DeletionScene.installRealReaper()`（T-38）を足す。`ReaperBinary.url() throws -> URL`（T-37）をこの名前で使う（T-37 と名前が違えば T-37 に合わせてここを直す）
 5. T-18 §4.13 の「Raw の直後の削除評価の呼び出しは T-29 が足す」と T-29 の口（`requestDeletionsAfterRawNote`）・T-22 の口（`deleteSourcesIfSafe`）は本チケットが本体を書く、で整合している
-6. PLAN 付録 A.4 の `reaper_run exit=<n>` / `reaper_failed reason=exit_<n>` に、シグナルで終わった場合（`exit=128+s`）と起動に失敗した場合（`exit=127`）、タイムアウト（`exit=null`）の写し方を足す（本チケットはこの形で実装する）
+6. （PLAN に反映済み）PLAN 付録 A.4 の `reaper_run exit=<n>` / `reaper_failed reason=exit_<n>` に、シグナルで終わった場合（`exit=128+s`）と起動に失敗した場合（`exit=127`）、タイムアウト（`exit=null`）の写し方が在る。本チケットはこの形で実装した
+7. PLAN §8.9.6「0 以外なら reaper_failed reason=exit_<n>（4 は busy。タイムアウトは reason=timeout）」は、付録 A.4 の列挙に `busy` が在ることから「4 のときは `reason=busy`」と読んで実装した（`DeletionReason.busy`）。「`exit_4` が busy を意味する」の読みなら A.4 の `busy` を消す。どちらの読みかを PLAN の本文に明記したい
+8. 00-api-map §16 の「`DeleteQueue.withdrawAllRequests`（T-40）は public」は、本チケットの `DeleteQueue` が internal なので、T-40 で型ごと public にするか、別の public の入口を置くかを決める必要がある
