@@ -17,7 +17,7 @@ struct LLMProbeCheckTests {
             layout: w.layout, paths: w.paths, store: w.store, config: w.configStore, ingest: w.ingest,
             runner: ProcessRunner(), llama: w.llm, chatTransportFactory: { _, _ in chat }, clock: clock,
             sleeper: w.sleeper, log: w.log, license: AlwaysAllowLicenseGate(), catalog: TestCatalogs.minimal,
-            physicalMemoryBytes: w.physicalMemoryBytes)
+            physicalMemoryBytes: w.physicalMemoryBytes, locks: w.locks, volumeOpener: FakeVolumeOpener())
         guard let config = await w.configStore.current() else { throw PipelineFixtureError.noConfig }
         return TickContext(
             deps: deps, config: config, zone: Worker.zone(for: config), snapshot: nil, pauses: PauseBook(log: w.log),

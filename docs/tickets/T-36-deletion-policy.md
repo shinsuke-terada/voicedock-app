@@ -4,7 +4,7 @@
 |---|---|
 | ID | T-36 |
 | Phase | 8（削除） |
-| 前提 | T-29（Raw ノートの工程。`RawNote`・`NoteVerifier`・`VaultCheck` を工程が使う形）、T-07（`TargetIdentity`・`VolumeOpener`・`FakeVolumeOpener`）。間接に T-10（`SafeUnlink`・`FixedClock`・`CapturingLogSink`）、T-11（`Store`）、T-12（`ProcessRunning`）、T-13（`ScriptedProcessRunner`）、T-15（`DeviceSnapshot`）、T-18（`WorkerDependencies`・`PipelineWorld`・`FakeIngest`）、T-26 / T-28（`Frontmatter`・`NoteVerifier`）、T-30（`Bootstrap`） |
+| 前提 | T-29（Raw ノートの工程。`RawNote`・`NoteVerifier`・`VaultCheck` を工程が使う形）、T-07（`TargetIdentity`・`VolumeOpener`・`SystemVolumeOpener`・`FakeVolumeOpener`）、T-30（`Bootstrap` を差し替える）、T-32（`LockObserving`・`DisabledLockObserver`・`LockDisplay` に準拠する）。間接に T-10（`SafeUnlink`・`FixedClock`・`CapturingLogSink`）、T-11（`Store`）、T-12（`ProcessRunning`）、T-13（`ScriptedProcessRunner`）、T-15（`DeviceSnapshot`）、T-18（`WorkerDependencies`・`PipelineWorld`・`FakeIngest`）、T-26 / T-28（`Frontmatter`・`NoteVerifier`）、T-30（`Bootstrap`） |
 | 見積もり | Sources 約 650 行、Tests 約 1,300 行（TestSupport の `DeletionScene` を含む） |
 | 後続 | T-38（要求・削除段・回収）、T-39（根拠 B）、T-40（有効化と常時表示・DR-14）、T-41（後追い） |
 
@@ -49,6 +49,9 @@ PLAN §8.9.1 の削除の必要十分条件を**式の形のまま** Swift に�
 | `Tests/TestSupport/StorePaths.swift` | 遷移表の辺だけで Part / Session を任意の状態へ進める・`source_path` の直接書き換え |
 | `Tests/TestSupport/DeletionScene.swift` | 三重ロックを全部外した削除評価の舞台（T-38・T-39・T-41 も使う） |
 | `Tests/VDPipelineTests/PipelineFixtures.swift`（変更） | `PipelineWorld` に `locks` を持たせ、`deps` に `locks`・`volumeOpener` を渡す |
+| `Tests/VDPipelineTests/LLMProbeCheckTests.swift`（変更） | `WorkerDependencies(…)` を直接作っている所の末尾に `locks: w.locks, volumeOpener: FakeVolumeOpener()` を足すだけ（§4.8 で init の引数が増えるため） |
+| `Tests/VoiceDockAppTests/AppModelTests.swift`（変更） | `WorkerDependencies(…)` を直接作っている所の末尾に `locks: LockEvaluator(layout:, verifier: FakeSignatureVerifier(), runner: ScriptedProcessRunner(results: []), log:)`・`volumeOpener: FakeVolumeOpener()` を足すだけ（同上） |
+| `Tests/NoDeleteTests/TargetMarker.swift`（削除） | T-01 の目印。このモジュールに最初の実ファイル（`DeletionPolicyNDTests.swift`）を足すので消す（STATUS「実装で分かった共通の約束」） |
 | `Tests/NoDeleteTests/DeletionPolicyNDTests.swift` | 層 A の ND（§6.1） |
 | `Tests/VDPipelineTests/DeletionPolicyTests.swift` | 項ごとの単体（§6.2） |
 | `Tests/VDPipelineTests/DeletionSceneTests.swift` | 舞台そのもののテスト（TEST-05） |
@@ -136,19 +139,23 @@ public struct CodeSignatureVerifier: SignatureVerifier {
     public init(requirement: String) { self.requirement = requirement }
     public func verify(url: URL) -> Bool {
         var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &code) == errSecSuccess, let code else { return false }
+        guard SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &code) == errSecSuccess, let code else {
+            return false
+        }
         var compiled: SecRequirement?
         guard SecRequirementCreateWithString(requirement as CFString, SecCSFlags(), &compiled) == errSecSuccess,
             let compiled
         else { return false }
-        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), compiled) == errSecSuccess
+        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), compiled)
+            == errSecSuccess
     }
 }
 
 public enum ReaperSignature {
     /// `anchor apple generic and identifier "<bundleID>.reaper" and certificate leaf[subject.OU] = "<teamID>"`（PLAN §8.9.3。定数はこの 1 つ）
     public static func requirement(bundleID: String, teamID: String) -> String {
-        "anchor apple generic and identifier \"" + bundleID + ".reaper\" and certificate leaf[subject.OU] = \"" + teamID + "\""
+        "anchor apple generic and identifier \"" + bundleID + ".reaper\" and certificate leaf[subject.OU] = \""
+            + teamID + "\""
     }
     /// 本番の要件（AppIdentity から）。Bootstrap が CodeSignatureVerifier に渡す
     public static var production: String { requirement(bundleID: AppIdentity.bundleID, teamID: AppIdentity.teamID) }
@@ -156,6 +163,7 @@ public enum ReaperSignature {
 ```
 
 - `SecCSFlags` の書き方は §2 の確認どおり。`kSecCSCheckAllArchitectures` を `Int` に変換しない
+- 折り返しは `swift format` の 120 桁に合わせたもの（トークンは同じ）
 - OSStatus の値は記録しない（検証の結果は真偽だけ。理由は `reaper_failed reason=signature` の 1 語）
 
 ### 4.4 `ReaperRunner.swift`（検証の部分。PT-11 の許可場所）
@@ -482,7 +490,7 @@ T-30（Phase 7）の Bootstrap は本チケットの型を 1 つも使わない�
    （`DiagnosticsDependencies` と `AppContext.locks` は `any LockObserving` を取るので、ここ 1 行の差し替えで両方が本物になる）
 2. ConfigStore の `observeReaperConf: { .missing }` を `observeReaperConf: { await locks.observeReaperConf() }` に替える（T-18 §10）
 3. `WorkerDependencies(…)` の末尾に `locks: locks, volumeOpener: SystemVolumeOpener()` を足す（T-30・T-32 はこの 2 つを渡していない。§4.8 の並び。T-18 の並びの後ろ）
-4. `SystemVolumeOpener` は本チケット（T-38 が使う `VolumeOpener` の本番実装）。T-30 は使わない
+4. `SystemVolumeOpener` は T-07 が `VDContract/TargetIdentity.swift` に作ってある（`VolumeOpener` の本番実装。T-38 も使う）。T-30 は使わない
 - os.Logger の subsystem が文字列で書かれていれば `AppIdentity.bundleID` に替える
 
 ### 4.10 TestSupport
@@ -529,7 +537,10 @@ import GRDB
 import VDCore
 @testable import VDStore
 
-public struct StorePathError: Error, CustomStringConvertible { public let description: String }
+public struct StorePathError: Error, CustomStringConvertible {
+    public let description: String
+    init(_ description: String)   // TestSupport の中だけで投げる（公開しない）
+}
 
 public enum StorePaths {
     /// DISCOVERED から status までの経路（最初の DISCOVERED を含まない）

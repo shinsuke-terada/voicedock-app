@@ -22,12 +22,16 @@ public struct WorkerDependencies: Sendable {
     public let catalog: ModelCatalog
     /// ProcessInfo.processInfo.physicalMemory（Bootstrap が注入。ガードのテストで差し替える）
     public let physicalMemoryBytes: UInt64
+    /// 三重ロックの評価と reaper の検証・起動（T-36。reaper は locks.reaper。別のフィールドに持たない）
+    public let locks: LockEvaluator
+    /// 事前確認のボリュームを開く（本番 SystemVolumeOpener）
+    public let volumeOpener: any VolumeOpener
 
     public init(
         layout: HomeLayout, paths: AppPaths, store: Store, config: ConfigStore, ingest: any IngestPort,
         runner: any ProcessRunning, llama: any LLMServerControl, chatTransportFactory: @escaping ChatTransportFactory,
         clock: any AppClock, sleeper: any Sleeper, log: AppLog, license: any LicenseGate, catalog: ModelCatalog,
-        physicalMemoryBytes: UInt64
+        physicalMemoryBytes: UInt64, locks: LockEvaluator, volumeOpener: any VolumeOpener
     ) {
         self.layout = layout
         self.paths = paths
@@ -43,5 +47,7 @@ public struct WorkerDependencies: Sendable {
         self.license = license
         self.catalog = catalog
         self.physicalMemoryBytes = physicalMemoryBytes
+        self.locks = locks
+        self.volumeOpener = volumeOpener
     }
 }
