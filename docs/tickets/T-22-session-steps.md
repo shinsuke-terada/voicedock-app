@@ -498,7 +498,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | `llmFailureIsFailed` / 「LLM の失敗は ANALYZING→FAILED」（:477, :510） | chat `[.failure(StageFailure(.llmUnavailable, "URLError -1004"))]` | FAILED(LLM_UNAVAILABLE)、message `URLError -1004`、ログ `llm_failed session_key=… error_code=LLM_UNAVAILABLE detail="URLError -1004"`、analysis.json も .source.json も無い |
 | `invalidJSONIsFailed` / 「直らない JSON は LLM_INVALID_JSON」 | chat 2 回とも `{"title":"t"}` | FAILED(LLM_INVALID_JSON)、message `- summary: Field required` |
 | `serverStartFailureIsFailed` / 「起動の失敗は LLM_UNAVAILABLE」 | `FakeLLMServer(failure: StageFailure(.llmUnavailable, "server_start_failed: no_port"))` | FAILED、message `server_start_failed: no_port`、chat 0 回 |
-| `analysisWriteFailureLeavesNoFingerprint` / 「解析を書けなければ LLM_FAILED で指紋は書かない」（:727） | `layout.analysis` を 0o555 に | FAILED(LLM_FAILED)、message が `AtomicFileError: ` で始まる、.source.json が無い |
+| `analysisWriteFailureLeavesNoFingerprint` / 「解析を書けなければ LLM_FAILED で指紋は書かない」（:727） | analysis.json の位置にディレクトリを置く（`layout.analysis` を 0o555 にすると同じディレクトリの .source.json も書けず、「.source.json を先に書く」壊し方が見えない） | FAILED(LLM_FAILED)、message が `AtomicFileError: ` で始まる、.source.json が無い |
 | `sourceWriteFailureIsLLMFailed` / 「指紋を書けなければ LLM_FAILED」 | `.source.json` の位置にディレクトリを置く | FAILED(LLM_FAILED)、次の `ensureAnalysis`（FAILED→ANALYZING に戻した後）で chat がもう一度呼ばれる |
 | `trimmedIsLogged` / 「切り詰めを記録する」 | ANALYSIS の tags を 20 個に | ログ `analysis_trimmed session_key=… fields="tags: 20 -> 15"` |
 | `reopenedSessionIsReanalyzed` / 「再オープン後は再解析」（:754） | chat は `ANALYSIS` を 2 回。1 回処理して ANALYZED → SAVED に強制 → 09:30 開始の RAW_SAVED の Part を足し（1 チャンクに収める。`staleAnalysisFromAnalyzed` と同じ理由）`reopenSession` → `process` | chat 2 回目が呼ばれる |

@@ -285,9 +285,9 @@ struct SessionAnalysisTests {
     @Test("解析を書けなければ LLM_FAILED で指紋は書かない")
     func analysisWriteFailureLeavesNoFingerprint() async throws {
         let w = try await Self.world(status: .ready)
-        let dir = w.layout.analysis.path(percentEncoded: false)
-        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir)
-        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir) }
+        // analysis.json の位置にディレクトリを置く（layout.analysis を 0o555 にすると同じディレクトリの .source.json も
+        // 書けなくなり、.source.json を先に書く壊れ方が見えない）
+        try FileManager.default.createDirectory(at: Self.analysisURL(w), withIntermediateDirectories: false)
         _ = try await Self.process(w)
         let s = try w.session()
         #expect(s.status == .failed)
