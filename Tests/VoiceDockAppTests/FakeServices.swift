@@ -89,7 +89,7 @@ final class FakeServices: AppServices {
     func setUpdateViolations(_ v: [ConfigViolation]?) { state.withLock { $0.updateViolations = v } }
     /// updateConfig に渡された変更を既定の設定に当てた結果（呼ばれた順）
     var updatedConfigs: [AppConfig] { state.withLock { $0.updatedConfigs } }
-    /// download が結果を返す前に progress へ流す値と、その結果。hold なら releaseDownload まで返さない
+    /// download が結果を返す前に progress へ流す値と、その結果。hold なら次の 1 回を releaseDownload まで返さない
     func setDownload(progress: [(Int64, Int64)], result: Result<URL, ModelError>, hold: Bool = false) {
         state.withLock {
             $0.downloadProgress = progress
@@ -140,7 +140,10 @@ final class FakeServices: AppServices {
         let (events, hold) = state.withLock {
             $0.downloadEntries.append((kind, entry))
             $0.progressSinks.append(progress)
-            return ($0.downloadProgress, $0.holdDownload)
+            let hold = $0.holdDownload
+            // 止めるのは最初の 1 回だけ（二重起動の番人が外れてもテストが止まらない）
+            $0.holdDownload = false
+            return ($0.downloadProgress, hold)
         }
         for (received, total) in events { progress(received, total) }
         if hold {
