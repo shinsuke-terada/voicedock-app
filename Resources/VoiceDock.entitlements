@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- VoiceDock.app のエンタイトルメント（PLAN §11.3）。Hardened Runtime だけを使い、サンドボックスも例外も足さない。
+     ここに何かを足す PR は、なぜ要るかを PR 本文に書く（TCC とロック 2-B の前提が変わる）。 -->
+<plist version="1.0">
+<dict/>
+</plist>

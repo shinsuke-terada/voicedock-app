@@ -5,7 +5,7 @@
 | ID | T-42 |
 | 題 | 削除 ON の E2E-10・11・17、E2E-01〜09 の再実行、削除のゲート（PLAN §12.4）、三重ロックを外して 1 日 |
 | Phase | 8 |
-| 前提 | T-36（ロックの評価）、T-37（reaper）、T-38（要求・回収）、T-39（根拠 B）、T-40（有効化・無効化）、T-41（後追い）、T-35（`docs/E2E.md` の書式と文書テスト）、T-34（`make release`） |
+| 前提 | T-36（ロックの評価）、T-37（reaper）、T-38（要求・回収）、T-39（根拠 B）、T-40（有効化・無効化）、T-41（後追い）、T-35（`docs/E2E.md` の書式と文書テスト）、T-34（`make app` / `make release`） |
 | 見積もり | `docs/E2E.md` への追記 約 400 行（文書）＋ `Tests/PolicyTests/RunbookGateTests.swift` 約 150 行 |
 
 ## 1. 目的
@@ -31,8 +31,8 @@ PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して
   試験を始める前に **[C-7] の一覧を保存し、消えてよいファイルの範囲を利用者が明示的に決める**
 - **`diskutil` を手で打たない。**読み取り専用への再マウントはアプリ（IngestService）が行う
 - reaper を**手で起動しない**（ND-40 の確認を除く。その確認は「何も消えないこと」を見るもの）
-- 削除 ON の試験は **`make release` で Developer ID 署名・公証した `.app`** で行う（`ReaperSignature.requirement` が Developer ID を要求するため。
-  Apple Development 署名では `.disabled(reaper_invalid)` になり、**この Phase の試験が全部空振りする**）
+- 削除 ON の試験は、`make app`（Apple Development 署名）の `.app` でも `make release`（Developer ID 署名・公証）の `.app` でも行える。`ReaperSignature.requirement`（PLAN §8.9.3）は
+  識別子と Team ID（`certificate leaf[subject.OU]`）で束縛しており、証明書の種類は問わない（T-34 で確かめた）。**ad-hoc 署名（`--sign -`）の `.app` では `.disabled(reaper_invalid)` になり、この Phase の試験が全部空振りする**
 
 ## 4. 作るもの
 
@@ -64,7 +64,7 @@ PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して
 |---|---|
 | 題 | `削除 ON で通し` |
 | 削除 | ON |
-| 前提 | **`make release` の `.app`**。削除 OFF の 15 件が PASS 済み。**無音の録音 1 本**と普通の録音 2 本を新しく録る。[C-7]・[C-15] を保存する |
+| 前提 | **`make app` か `make release` の `.app`**（ad-hoc 署名でないもの）。削除 OFF の 15 件が PASS 済み。**無音の録音 1 本**と普通の録音 2 本を新しく録る。[C-7]・[C-15] を保存する |
 | 手順 | ① [C-7]・[C-15]・[C-11]・[C-16]・[C-1] を取る（前）<br>② パネルの「元音声の削除」で有効化する。**事前確認の文言と、入力欄に `ENABLE` を打つところ**を記録する。`y` や `enable`（小文字）では通らないことも 1 回試す<br>③ [C-11]・[C-16]・[C-14] を取る（`deletion_enabled` が出ている。**「挿し直した後に読み書きできる」旨の表示**を書き写す）<br>④ 挿す（**有効化してから初めての接続**）<br>⑤ [C-8] で**読み書き可能で**マウントされていることを確かめる<br>⑥ 完走を待つ<br>⑦ [C-1]・[C-13]・[C-14]・[C-12]・[C-6]・[C-7]・[C-15]・[C-9]・[C-11] を取る（後） |
 | 期待 | ③ ロック 1 = アプリ有効・reaper.conf 有効、ロック 2-A = 導入済み（署名 OK・版が `VERSION` と一致）、ロック 2-B = 設定 rw・観測は**まだ読み取り専用**（挿し直す前）<br>⑤ 挿し直した後は観測が「読み書き可能」<br>⑦ **Raw ノートの検証を通った Part の元音声だけが消える**（[C-7] の前後の差が、その Part のファイルだけ）。`delete_requested` → `reaper_run exit=0` → `source_deleted` の順にログが出る。`queue/delete` と `queue/result` が**空**に戻る（[C-6]）。`recordings.source_deleted_at` が入る（[C-13]）。**空き容量が戻る**（[C-15] の前後）。**無音の Part は消えない**（`source_delete_skipped reason=…`。根拠 B は既定 false）。Daily / Raw ノートは削除 OFF のときと同じ形 |
 | 記録 | ② の事前確認の文言と `ENABLE` 以外が弾かれた表示、③ と ⑦ の [C-11]、[C-7] の前後の `diff`（**消えたファイルだけが差分**）、[C-15] の前後、[C-13]、[C-14]、[C-12]、[C-6] |

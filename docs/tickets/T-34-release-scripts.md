@@ -5,7 +5,7 @@
 | ID | T-34 |
 | 題 | `.app` の組み立て・署名・公証・dmg（`make app` / `make release`） |
 | Phase | 7 |
-| 前提 | T-30（`VoiceDockApp` の実行ファイルと `Resources/AppIcon.icns`）、T-03（`Vendor/build/bin/*` と `check-linkage.sh`）、T-01（`Makefile`・`identity.env`・`VERSION`・`voicedock-reaper` の仮置き） |
+| 前提 | T-30（`VoiceDockApp` の実行ファイル）、T-03（`Vendor/build/bin/*` と `check-linkage.sh`）、T-01（`Makefile`・`identity.env`・`VERSION`・`voicedock-reaper` の仮置き） |
 
 > **T-37（reaper の中身）は前提にしない。**`swift build --product voicedock-reaper` は T-01 の仮置きの `main.swift` でも通るので、
 > Phase 7 の時点で `.app` を組み立てて署名できる。**中身が空の reaper が入った `.app` で削除は起きない**（ロック 2-A は `<HOME>/bin/` に複製されるまで掛かったまま）。
@@ -40,10 +40,11 @@
 | `scripts/release.sh` | 下記の全文（実行権 0755） |
 | `scripts/verify-bundle.sh` | 下記の全文（実行権 0755） |
 | `Tests/PolicyTests/ReleaseBundleTests.swift` | 下記の全文 |
+| `Resources/AppIcon.icns` | 仮アイコン（利用者の決定 2026-09-22）。SF Symbol の `waveform` を青紫のグラデーションの角丸に白で描いた 1024×1024 の PNG から `sips` と `iconutil` で作ったもの。差し替えは §4.10 の手順 |
 
 `.gitignore` は**変更しない**（T-01 が `# .app と dmg（T-34）` の注釈つきで `dist/` を入れてある。`distIsIgnored` がそれを確かめる）。
 
-**作らないもの**: `Resources/AppIcon.icns`（T-30）。無い場合の作り方は §4.10 に【利用者が行う】手順として書く。
+`Resources/AppIcon.icns` は仮アイコン（利用者の決定 2026-09-22）。作り手は T-30 から T-34 に移した。差し替えは §4.10 の手順。
 
 ## 4. 仕様
 
@@ -69,7 +70,7 @@
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- VoiceDock.app の Info.plist の雛形（PLAN §11.1）。@BUNDLE_ID@ / @VERSION@ / @BUILD@ を scripts/make-app.sh が置き換える。 -->
+<!-- VoiceDock.app の Info.plist の雛形（PLAN §11.1）。3 つの記号（BUNDLE_ID・VERSION・BUILD を @ で囲んだもの）を scripts/make-app.sh が置き換える。 -->
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -110,6 +111,7 @@
 - `LSUIElement` は `<true/>`（`<string>YES</string>` でも同じ意味だが、`plutil` が真偽値に正規化するため最初から真偽値で書く）
 - 3 つのフォルダの説明は**同じ 1 文**（別々のダイアログに出るので 3 つとも要る）。文言は PLAN §11.1 の逐語
 - `CFBundleVersion`（= `@BUILD@`）は `git rev-list --count HEAD`。単調増加であればよく、表示はされない
+- 注釈に記号そのもの（`@BUNDLE_ID@` など）を書かない。書くと各記号が 2 回現れて `infoPlistTemplateUsesPlaceholders` が落ち、`sed` が注釈の中まで実際の値に置き換える
 
 ### 4.3 `Resources/VoiceDock.entitlements`（全文）
 
@@ -156,7 +158,7 @@ Contents/_CodeSignature/CodeResources
 ```
 
 - `Contents/_CodeSignature/CodeResources` は `codesign` が作る。**署名の後に**照合する
-- プロンプトの 4 本は `Resources/prompts/` の中身と一致すること（テスト `bundleManifestListsEveryPromptFile` が照合する。プロンプトを増やす PR はこの一覧も直す）
+- プロンプトの 4 本は `Resources/prompts/` の中身と一致すること（テスト `manifestListsEveryPromptFile` が照合する。プロンプトを増やす PR はこの一覧も直す）
 - `.DS_Store`・`*.dSYM`・`Contents/PkgInfo`・`Contents/Frameworks` は**入れない**（一覧に無いので落ちる）
 
 ### 4.6 `scripts/make-app.sh`（全文）
@@ -196,7 +198,7 @@ bin="$(swift build --package-path "$root" -c "$conf" --arch arm64 --show-bin-pat
 for tool in whisper-cli llama-server; do
   [ -x "$root/Vendor/build/bin/$tool" ] || { echo "ERROR: Vendor/build/bin/$tool がありません（make vendor を先に実行してください）" >&2; exit 1; }
 done
-[ -f "$root/Resources/AppIcon.icns" ] || { echo "ERROR: Resources/AppIcon.icns がありません（T-30）" >&2; exit 1; }
+[ -f "$root/Resources/AppIcon.icns" ] || { echo "ERROR: Resources/AppIcon.icns がありません（作り方は T-34 §4.10）" >&2; exit 1; }
 
 # 3. 組み立て（毎回まっさらから作る）
 app="$root/dist/VoiceDock.app"
@@ -268,7 +270,7 @@ else
   timestamp="--timestamp=none"   # 開発では署名のたびにタイムスタンプ局へ出ない（TCC の許可は Team ID で決まる）
 fi
 
-# macOS の /bin/bash は 3.2 なので mapfile を使わない
+# macOS の /bin/bash は 3.2 なので、候補は配列にせず改行区切りの文字列で扱う
 identity="${VOICEDOCK_SIGN_IDENTITY:-}"
 if [ -z "$identity" ]; then
   candidates="$(security find-identity -v -p codesigning | sed -n "s/^ *[0-9]*) [0-9A-F]* \"\($prefix: .*\)\"\$/\1/p")"
@@ -304,13 +306,23 @@ codesign --force --options runtime $timestamp --sign "$identity" \
   "$target"
 
 codesign --verify --deep --strict --verbose=2 "$target"
-echo "OK: $target を署名しました"
+
+# 開発でも配布でも、署名した証明書の Team ID が identity.env と同じであること（TCC の許可と reaper の要件文字列が Team ID で決まる）
+for signed in "$target" "$target/Contents/Helpers/voicedock-reaper"; do
+  info="$(codesign -dvvv "$signed" 2>&1 || true)"
+  if ! grep -qxF "TeamIdentifier=$TEAM_ID" <<<"$info"; then
+    echo "ERROR: ${signed} の TeamIdentifier が ${TEAM_ID} でありません（identity.env と別のチームの証明書で署名しました）" >&2
+    exit 1
+  fi
+done
+echo "OK: $target を署名しました（TeamIdentifier=${TEAM_ID}）"
 ```
 
 - **reaper だけ `--identifier` を明示する**（PLAN §3.1。`ReaperSignature.requirement` の `identifier "<BUNDLE_ID>.reaper"` が通るため）。
   本体にも明示するのは、`CFBundleIdentifier` と食い違ったまま気づかない事故を防ぐため
 - `$timestamp` は意図的に**引用しない**（`--timestamp` と `--timestamp=none` の 1 語を渡す。空文字列を渡さないので語の分割は起きない）
 - 開発でも `--options runtime` を付ける（本番と同じ制約で動かす。ad-hoc にしない。DR-17）
+- 署名の後に、本体と reaper の `TeamIdentifier` が `identity.env` の `TEAM_ID` と同じことを確かめる（開発でも配布でも。Apple Development の証明書が別のチームのものだと、TCC の許可と reaper の要件文字列（Team ID で束縛）が合わない）。`codesign -dvvv | grep -q` と繋がず、いったん変数に受けてから `<<<` で渡す（`grep -q` が先に終わると `pipefail` で偽になる）
 
 ### 4.8 `scripts/notarize.sh`（全文）
 
@@ -330,6 +342,7 @@ target="$1"
 if [ "${target##*.}" = "app" ]; then
   upload="$root/dist/$(basename "$target" .app)-notarize.zip"
   rm -f "$upload"
+  trap 'rm -f "$upload"' EXIT   # 公証用の zip は送ったら要らない（.app の側を staple する）
   ditto -c -k --keepParent "$target" "$upload"
 else
   upload="$target"
@@ -357,6 +370,7 @@ echo "OK: $target を公証・staple しました（submission ${submission}）"
 - `--wait` を必ず付ける（待たずに次へ進むと staple が「まだ通っていない」で失敗する）
 - 通らなかったときは `notarytool log` を**そのまま**標準エラーへ出す（何が弾かれたかが分かる唯一の情報）
 - `.app` を包む zip は `ditto -c -k --keepParent`（PLAN §11.3。`zip(1)` は拡張属性と symlink を落とす）
+- zip は `trap` で消す（`.app` の場合だけ。dmg はそれ自体を送るので消さない）
 
 #### キーチェーンプロファイルの作り方【利用者が行う】
 
@@ -376,7 +390,7 @@ xcrun notarytool store-credentials VOICEDOCK_NOTARY \
 
 ```bash
 #!/bin/bash
-# 配布用の dmg を作る（PLAN §11.3 の 3）。
+# 配布用の dmg を作る（PLAN §11.3 の 3）。作業用のイメージは dist/ の中にだけマウントする（既定のマウント先には何もマウントしない）。
 # 使い方: scripts/make-dmg.sh <VoiceDock.app>
 set -euo pipefail
 
@@ -390,22 +404,71 @@ version="$(tr -d '[:space:]' < "$root/VERSION")"
 dmg="$root/dist/VoiceDock-$version.dmg"
 rm -f "$dmg"
 
+mkdir -p "$root/dist"
 stage="$(mktemp -d "$root/dist/.dmg-stage.XXXXXX")"
-trap 'rm -rf "$stage"' EXIT
-ditto "$app" "$stage/VoiceDock.app"
-ln -s /Applications "$stage/Applications"
+rw="$stage/VoiceDock-rw.dmg"
+mnt="$stage/mnt"
+mkdir "$mnt"
+mnt_real="$(cd "$mnt" && pwd -P)"
+dev=""
 
-hdiutil create -volname VoiceDock -srcfolder "$stage" -format UDZO -fs HFS+ -ov "$dmg"
+# 途中で失敗しても、マウントを残さず一時ファイルを消す
+cleanup() {
+  if [ -n "$dev" ]; then
+    hdiutil detach "$dev" -quiet || hdiutil detach "$dev" -force -quiet || true
+  fi
+  rm -rf "$stage"
+}
+trap cleanup EXIT
+
+# 1. 空の HFS+ イメージ（.app の大きさに 2 割と 16 MB の余裕を足す）。フォルダから直に作る方式は使わない（F-62）
+app_kb="$(du -sk "$app" | awk '{ print $1 }')"
+size_mb=$((app_kb * 12 / 10 / 1024 + 16))
+hdiutil create -size "${size_mb}m" -fs HFS+ -volname VoiceDock -type UDIF -layout NONE "$rw"
+
+# 2. dist/ の中にだけマウントする。attach の出力でマウント先が指定どおりであることを確かめる
+out="$(hdiutil attach -nobrowse -noautoopen -noverify -mountpoint "$mnt" "$rw")"
+dev="$(awk 'NR == 1 { print $1 }' <<<"$out")"
+got="$(awk -F'\t' 'NF >= 3 { m = $NF; sub(/^[ ]+/, "", m); sub(/[ ]+$/, "", m); if (m != "") print m }' <<<"$out" | head -n 1)"
+if [ "$got" != "$mnt_real" ]; then
+  echo "ERROR: 作業用のイメージが指定と違う場所にマウントされました（${got:-<不明>}）。すぐに外します" >&2
+  exit 1
+fi
+echo "OK: 作業用のイメージを ${mnt_real} にマウントしました（${dev}）"
+
+# 3. 中身。ditto は署名と拡張属性を保つ
+ditto "$app" "$mnt/VoiceDock.app"
+ln -s /Applications "$mnt/Applications"
+
+# 4. 外す
+hdiutil detach "$dev" -quiet
+dev=""
+
+# 5. 圧縮して配布用にする
+hdiutil convert "$rw" -format UDZO -o "$dmg"
 echo "OK: $dmg"
 ```
 
-- ボリューム名は `VoiceDock`。**実機の DJI Mic 3（`DJIMIC3`）とは別の名前**なので、作成中に一時的にマウントされても実機と衝突しない
-- `-ov` で作り直す。`dist/` の外に一時ディレクトリを作らない（`trap` で必ず消す）
+- **作業用のイメージは `/Volumes` の外（`dist/` の中）にだけマウントする**（利用者の決定 2026-09-22。PLAN §11.3・F-62）。手順:
+  1. `hdiutil create -size <.app の大きさ × 1.2 + 16 MB> -fs HFS+ -volname VoiceDock -type UDIF -layout NONE` で空のイメージを作る（`-srcfolder` は使わない）
+  2. `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <dist/.dmg-stage.*/mnt>`。attach の出力の最後の列（マウント先）が、指定したパスの `pwd -P` と一致することを確かめる。違えば即座に detach して失敗させる
+  3. `ditto` で `.app` を入れ（署名と拡張属性を保つ）、`/Applications` への symlink を置く
+  4. `hdiutil detach` → `hdiutil convert -format UDZO -o VoiceDock-<ver>.dmg`
+  5. `trap` で必ず detach し（失敗したら `-force`）、一時フォルダを消す。途中で失敗してもマウントを残さない（破壊 24）
+- テスト `makeDmgMountsOnlyOutsideVolumes` が「`hdiutil attach` の行はすべて `-nobrowse` と `-mountpoint` を伴い、`/Volumes`・`-srcfolder`・`makehybrid` が無い」ことを見る
+- ボリューム名は `VoiceDock`。実機の DJI Mic 3（`DJIMIC3`）とは別の名前
+- 既存の dmg は `rm -f` で消してから作る。一時フォルダ・作業用のイメージ・マウント先は `dist/` の中に作る
+- **却下した方式**（2026-09-22 の実測）:
+  - `hdiutil create -srcfolder`: 内部でイメージを既定の場所（`/Volumes` の下）に attach しうる
+  - `hdiutil makehybrid -hfs`（マウントを伴わない）: 元に無い `com.apple.FinderInfo`（`00…00 FF FF FF FF 00…`）を**すべてのファイルに付ける**。
+    そのため dmg の中の `.app` と、そこから `ditto` / `cp -R` で取り出した `.app` が `codesign --verify --deep --strict` で
+    `resource fork, Finder information, or similar detritus not allowed`（`Disallowed xattr com.apple.FinderInfo`）になる（Gatekeeper も同じ理由で拒む恐れがある）
+  - `hdiutil makehybrid -udf`: 署名は壊さないが、`/Applications` への symlink が壊れる（`readlink` が `Unknown error: 10000`）
 - 背景画像・アイコン配置はしない（v1 は `/Applications` への symlink だけ）
 
-### 4.10 `Resources/AppIcon.icns` が無いとき【利用者が行う】
+### 4.10 `Resources/AppIcon.icns`（仮アイコン）の差し替え【利用者が行う】
 
-T-30 が置く。手元で急ぎ作るなら、1024×1024 の PNG から:
+いまのアイコンは仮アイコン（利用者の決定 2026-09-22）。差し替えるときは、1024×1024 の PNG（`icon-1024.png`）から次の手順で作り、`Resources/AppIcon.icns` を置き換える PR を出す:
 
 ```bash
 mkdir -p /tmp/AppIcon.iconset
@@ -438,6 +501,8 @@ dmg="${2:-}"
 
 # shellcheck source=../identity.env
 source "$root/identity.env"
+: "${BUNDLE_ID:?identity.env に BUNDLE_ID がありません}"
+: "${TEAM_ID:?identity.env に TEAM_ID がありません}"
 version="$(tr -d '[:space:]' < "$root/VERSION")"
 
 status=0
@@ -445,7 +510,7 @@ ok()   { echo "  OK   $1"; }
 ng()   { echo "  NG   $1" >&2; status=1; }
 step() { echo "== $1"; }
 
-# V-1 中身の一覧が Resources/bundle-manifest.txt と完全一致
+# V-1 中身の一覧が Resources/bundle-manifest.txt と完全一致（ディレクトリは一覧の各行の親から導き、空のディレクトリも見つける）
 step "V-1 バンドルの中身"
 expected="$(grep -v -e '^#' -e '^$' "$root/Resources/bundle-manifest.txt" | LC_ALL=C sort)"
 actual="$(cd "$app" && find . -type f -o -type l | sed 's|^\./||' | LC_ALL=C sort)"
@@ -454,6 +519,14 @@ if [ "$expected" = "$actual" ]; then
 else
   ng "一覧が一致しません"
   diff <(echo "$expected") <(echo "$actual") >&2 || true
+fi
+expected_dirs="$(awk -F/ '{ p = ""; for (i = 1; i < NF; i++) { p = (i == 1) ? $i : p "/" $i; print p } }' <<<"$expected" | LC_ALL=C sort -u)"
+actual_dirs="$(cd "$app" && find . -mindepth 1 -type d | sed 's|^\./||' | LC_ALL=C sort)"
+if [ "$expected_dirs" = "$actual_dirs" ]; then
+  ok "ディレクトリ $(wc -l <<<"$expected_dirs" | tr -d ' ') 個が一致"
+else
+  ng "ディレクトリが一致しません（空のディレクトリか、一覧に無い場所があります）"
+  diff <(echo "$expected_dirs") <(echo "$actual_dirs") >&2 || true
 fi
 
 # V-2 Info.plist の必須キー
@@ -482,7 +555,7 @@ step "V-3 アーキテクチャ"
 machos=("$app/Contents/MacOS/VoiceDock" "$app/Contents/Helpers/voicedock-reaper"
         "$app/Contents/Helpers/whisper-cli" "$app/Contents/Helpers/llama-server")
 for bin in "${machos[@]}"; do
-  arch="$(lipo -archs "$bin")"
+  arch="$(lipo -archs "$bin" 2>/dev/null || echo "<読めない>")"
   [ "$arch" = "arm64" ] && ok "$(basename "$bin") = arm64" || ng "$(basename "$bin") が arm64 単体でない（${arch}）"
 done
 
@@ -501,24 +574,33 @@ codesign --verify --deep --strict --verbose=2 "$app" && ok "署名が有効" || 
 
 # V-6 本体の識別子・Team ID・Hardened Runtime
 step "V-6 本体の署名の中身"
-info="$(codesign -dvvv "$app" 2>&1)"
-grep -qx "Identifier=$BUNDLE_ID" <<<"$info" && ok "Identifier=$BUNDLE_ID" || ng "Identifier が $BUNDLE_ID でない"
-grep -qx "TeamIdentifier=$TEAM_ID" <<<"$info" && ok "TeamIdentifier=$TEAM_ID" || ng "TeamIdentifier が $TEAM_ID でない"
+info="$(codesign -dvvv "$app" 2>&1 || true)"
+grep -qxF "Identifier=$BUNDLE_ID" <<<"$info" && ok "Identifier=$BUNDLE_ID" || ng "Identifier が $BUNDLE_ID でない"
+grep -qxF "TeamIdentifier=$TEAM_ID" <<<"$info" && ok "TeamIdentifier=$TEAM_ID" || ng "TeamIdentifier が $TEAM_ID でない"
 grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\(.*runtime.*\)' <<<"$info" && ok "Hardened Runtime" || ng "Hardened Runtime でない"
 grep -q 'Authority=Developer ID Application' <<<"$info" && ok "Developer ID Application で署名" || ng "Developer ID Application でない"
 
 # V-7 reaper の識別子（PLAN §3.1・§8.9.3）
 step "V-7 reaper の署名"
-rinfo="$(codesign -dvvv "$app/Contents/Helpers/voicedock-reaper" 2>&1)"
-grep -qx "Identifier=$BUNDLE_ID.reaper" <<<"$rinfo" && ok "Identifier=$BUNDLE_ID.reaper" || ng "reaper の Identifier が違う"
-grep -qx "TeamIdentifier=$TEAM_ID" <<<"$rinfo" && ok "TeamIdentifier=$TEAM_ID" || ng "reaper の TeamIdentifier が違う"
+rinfo="$(codesign -dvvv "$app/Contents/Helpers/voicedock-reaper" 2>&1 || true)"
+grep -qxF "Identifier=$BUNDLE_ID.reaper" <<<"$rinfo" && ok "Identifier=$BUNDLE_ID.reaper" || ng "reaper の Identifier が違う"
+grep -qxF "TeamIdentifier=$TEAM_ID" <<<"$rinfo" && ok "TeamIdentifier=$TEAM_ID" || ng "reaper の TeamIdentifier が違う"
 codesign --verify -R "=anchor apple generic and identifier \"$BUNDLE_ID.reaper\" and certificate leaf[subject.OU] = \"$TEAM_ID\"" \
   "$app/Contents/Helpers/voicedock-reaper" && ok "アプリが使う要件文字列を満たす" || ng "要件文字列を満たさない"
 
-# V-8 エンタイトルメント（サンドボックス無し・例外無し）
+# V-8 エンタイトルメント（サンドボックス無し・例外無し）。本体と reaper の両方が空の dict であること
 step "V-8 エンタイトルメント"
-ents="$(codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -convert xml1 -o - - 2>/dev/null || echo '')"
-grep -q 'com.apple.security' <<<"$ents" && ng "エンタイトルメントが空でない: $ents" || ok "エンタイトルメントは空"
+check_entitlements() {
+  local target="$1" name="$2" raw ents
+  if ! raw="$(codesign -d --entitlements - --xml "$target" 2>/dev/null)"; then
+    ng "${name} のエンタイトルメントを読めません"
+    return
+  fi
+  ents="$(plutil -convert json -o - - <<<"$raw" 2>/dev/null || echo "<読めない>")"
+  [ "$ents" = "{}" ] && ok "${name} のエンタイトルメントは空の dict" || ng "${name} のエンタイトルメントが空の dict でない（${ents}）"
+}
+check_entitlements "$app" "本体"
+check_entitlements "$app/Contents/Helpers/voicedock-reaper" "reaper"
 
 # V-9 公証（Gatekeeper の判定）
 step "V-9 spctl と staple"
@@ -543,9 +625,13 @@ exit "$status"
 ```
 
 - **一覧の照合（V-1）は `find` の結果との集合の完全一致**。「余計な実行ファイルが入っていない」を担保する唯一の検査
+- ディレクトリも照合する。一覧の形式（ファイルだけを書く）は変えず、各行の親のパスから期待するディレクトリの集合を導いて `find -type d` と比べる（空のディレクトリ・一覧に無い場所を見つける）
+- V-8 は本体と reaper の両方で、`codesign -d --entitlements` が成功し、その plist を JSON にしたものが `{}`（空の dict）であることを見る（読めないときも NG。`com.apple.security` の語を探すだけでは、ほかの名前空間のエンタイトルメントを見逃す）
+- `Identifier=` と `TeamIdentifier=` の照合は `grep -qxF`（識別子の `.` を正規表現の任意の 1 文字にしない）
 - `--files-only` は `make app`（debug）から呼ぶ。公証していないバンドルに `spctl` を掛けて落とさないため
 - V-7 の要件文字列は `ReaperSignature.requirement(bundleID:teamID:)`（T-36）と**同じ形**。ここを変えたら Swift 側も同じ PR で変える（逆も同じ）
 - `status` を立てて**最後まで全部走らせる**（最初の NG で止めない。1 回の実行で全部の問題が見える）
+- そのため `$(…)` で結果を受ける `lipo -archs`・`codesign -dvvv` には `|| echo "<読めない>"`・`|| true` を付ける（付けないと、ファイルが無い・未署名のときに `set -e` がそこでスクリプトを止める。破壊 19 で reaper を消すと V-3 の `lipo` で止まっていた）
 
 ### 4.12 `scripts/release.sh`（全文）
 
@@ -682,13 +768,14 @@ struct ReleaseBundleTests {
 | 同上 | `manifestListsTheThreeHelpers()` | 許可リストにヘルパー 3 本が在る | `manifest()` | `Contents/Helpers/{whisper-cli,llama-server,voicedock-reaper}` をすべて含み、`Contents/Helpers/` で始まる行がちょうど 3 本 |
 | 同上 | `manifestListsEveryPromptFile()` | 許可リストのプロンプトが Resources/prompts と一致 | `Resources/prompts/` の `.txt` の一覧 | 集合が `Contents/Resources/prompts/<名前>` と完全一致（空でない） |
 | 同上 | `manifestListsTheCodeSignature()` | 許可リストに `_CodeSignature/CodeResources` が在る | `manifest()` | 含む（署名の後に照合するため） |
-| 同上 | `makeAppInstallsEveryManifestEntry(_:)` | 組み立てが許可リストの各ファイルを作る | `manifest()` から `Info.plist` と `_CodeSignature/CodeResources` を除いたもので parametrize | `make-app.sh` の本文に、その行の**最後の要素**（`basename`）か、それを含むループの元（`Resources/prompts/*.txt`）が現れる |
+| 同上 | `makeAppInstallsEveryManifestEntry(_:)` | 組み立てが許可リストの各ファイルを作る | `manifest()` から `Info.plist` と `_CodeSignature/CodeResources` を除いたもので parametrize | `make-app.sh` の本文に `"$app/<その行>"` が現れる。プロンプトはループで入れるので、ループの元 `Resources/prompts/*.txt` と行き先 `"$app/Contents/Resources/prompts/` の両方が現れる |
 | 同上 | `verifyBundleRunsEveryRequiredCheck(_:)` | verify-bundle が PLAN §11.3 の 4 の全項目を行う | 7 つの語で parametrize: `bundle-manifest.txt`・`codesign --verify --deep --strict`・`spctl -a -t exec`・`spctl -a -t open --context context:primary-signature`・`stapler validate`・`check-linkage.sh`・`.reaper` | `verify-bundle.sh` に含まれる |
-| 同上 | `verifyBundleSupportsFilesOnly()` | `--files-only` が在り、make-app が使う | 2 ファイル | `verify-bundle.sh` に `--files-only` が在り、`make-app.sh` が `verify-bundle.sh --files-only` を呼ぶ |
+| 同上 | `verifyBundleSupportsFilesOnly()` | `--files-only` が在り、make-app が使う | 2 ファイル | `verify-bundle.sh` に `--files-only` が在り、`make-app.sh` が `verify-bundle.sh" --files-only` を呼ぶ（パスは `"$root/scripts/verify-bundle.sh"` と引用されるので、引用符の閉じまで含めて探す） |
 | 同上 | `signUsesTheReaperIdentifier()` | reaper だけ `--identifier <BUNDLE_ID>.reaper` で署名する | `sign.sh` | `--identifier "$BUNDLE_ID.reaper"` と `--entitlements "$root/Resources/reaper.entitlements"` を含む |
-| 同上 | `signNeverUsesAdhoc()` | ad-hoc 署名をしない（DR-17） | `sign.sh` | `--sign -` を含まない。`--options runtime` を含む |
+| 同上 | `signNeverUsesAdhoc()` | DR-17 ad-hoc 署名をしない | `sign.sh` | `--sign -` を含まない。`--options runtime` を含む |
+| 同上 | `makeDmgMountsOnlyOutsideVolumes()` | dmg の作業用イメージは /Volumes の外にだけマウントする | `make-dmg.sh` ＋ 判定関数 `mountsOnlyOutsideVolumes(_:)` | `hdiutil attach` の行が 1 つ以上在り、すべて `-nobrowse` と `-mountpoint` を含む。本文に `/Volumes`・`-srcfolder`・`makehybrid` が無い。`hdiutil convert` を含む（陽性対照: 空文字・`-mountpoint` の無い attach・`/Volumes/X` へのマウント・`-srcfolder` は偽） |
 | 同上 | `notarizeWaitsAndUsesTheProfile()` | 公証はプロファイルを使い `--wait` する | `notarize.sh` | `VOICEDOCK_NOTARY`・`--keychain-profile`・`--wait`・`stapler staple`・`ditto -c -k --keepParent` を含む |
-| 同上 | `releaseRunsTheStepsInOrder()` | release.sh の段の順（PLAN §11.3） | `release.sh` | `make-app.sh` → `notarize.sh` → `make-dmg.sh` → `sign.sh developerid` → `notarize.sh` → `verify-bundle.sh` の順に最初の出現位置が単調増加 |
+| 同上 | `releaseRunsTheStepsInOrder()` | release.sh の段の順（PLAN §11.3） | `release.sh` | `make-app.sh` → `notarize.sh` → `make-dmg.sh` → `sign.sh" developerid` → `notarize.sh` → `verify-bundle.sh` の順に現れる（各語は直前の語の出現より後ろから探す。`notarize.sh` が 2 回あるため「最初の出現位置」では 2 回目を区別できない。`sign.sh` は `"$root/scripts/sign.sh" developerid` と引用されるので引用符の閉じまで含めて探す） |
 | 同上 | `makefileUsesTheseScripts()` | Makefile の app / release がこのスクリプトを呼ぶ | `Makefile` | `scripts/make-app.sh debug` と `scripts/release.sh` を含む |
 | 同上 | `distIsIgnored()` | `dist/` はコミットしない | `.gitignore` | `dist/` の行が在る |
 | 同上 | `theChecksWouldCatchABrokenScript()` | **陽性対照**: 検査自体が効く | 文字列を直に渡すヘルパー | `#!/bin/sh\n` は `everyScriptIsStrictBash` の判定関数で偽、`set -e` だけでも偽、`#!/bin/bash\nset -euo pipefail` で真 |
@@ -705,7 +792,7 @@ struct ReleaseBundleTests {
 
 | # | 壊し方 | 落ちるべきテスト |
 |---|---|---|
-| 1 | `Resources/bundle-manifest.txt` から `Contents/Helpers/voicedock-reaper` を消す | `manifestListsTheThreeHelpers`、`makeAppInstallsEveryManifestEntry` |
+| 1 | `Resources/bundle-manifest.txt` から `Contents/Helpers/voicedock-reaper` を消す | `manifestListsTheThreeHelpers`（`makeAppInstallsEveryManifestEntry` は許可リストの行で parametrize するので、行を消すとその場合が無くなるだけで落ちない） |
 | 2 | `Resources/bundle-manifest.txt` に `Contents/Resources/prompts/extra_ja.txt` を足す | `manifestListsEveryPromptFile` |
 | 3 | `Resources/bundle-manifest.txt` の 2 行を入れ替える | `manifestIsSortedAndUnique` |
 | 4 | `Resources/Info.plist.template` の `LSUIElement` を消す | `infoPlistTemplateHasEveryRequiredKey("LSUIElement")`、`infoPlistTemplateHasTheFixedValues` |
@@ -716,12 +803,14 @@ struct ReleaseBundleTests {
 | 9 | `scripts/sign.sh` の `--options runtime` を 3 か所とも消す | `signNeverUsesAdhoc` |
 | 10 | `scripts/verify-bundle.sh` の `spctl -a -t open --context context:primary-signature` の行を消す | `verifyBundleRunsEveryRequiredCheck("spctl -a -t open --context context:primary-signature")` |
 | 11 | `scripts/verify-bundle.sh` の V-1（manifest の照合）を消す | `verifyBundleRunsEveryRequiredCheck("bundle-manifest.txt")` |
-| 12 | `scripts/release.sh` の `make-dmg.sh` と `sign.sh developerid` の順を入れ替える | `releaseRunsTheStepsInOrder` |
+| 12 | `scripts/release.sh` の `make-dmg.sh` の行と `sign.sh" developerid` の行の順を入れ替える | `releaseRunsTheStepsInOrder` |
 | 13 | `scripts/notarize.sh` の `--wait` を消す | `notarizeWaitsAndUsesTheProfile` |
-| 14 | `scripts/make-dmg.sh` に `/Volumes/VoiceDock` の行を足す | `noScriptMentionsVolumes("scripts/make-dmg.sh")` |
+| 14 | `scripts/make-dmg.sh` に `/Volumes/VoiceDock` の行を足す | `noScriptMentionsVolumes("scripts/make-dmg.sh")`、`makeDmgMountsOnlyOutsideVolumes` |
 | 15 | `scripts/make-app.sh` の 1 行目を `#!/bin/sh` にする | `everyScriptIsStrictBash("scripts/make-app.sh")` |
 | 16 | `scripts/make-app.sh` の `source "$root/identity.env"` を消して値を直書きする | `scriptsThatNeedTheIdentitySourceIt`、`scriptsDoNotHardcodeTheIdentifiers` |
 | 17 | `scripts/sign.sh` の証明書の絞り込みを `mapfile -t found < …` に戻す | `noScriptUsesBash4Features("scripts/sign.sh", "mapfile")` |
+| 17a | `scripts/make-dmg.sh` の `hdiutil attach` から `-mountpoint "$mnt"` を消す | `makeDmgMountsOnlyOutsideVolumes` |
+| 17b | `scripts/make-app.sh` の `"$app/Contents/MacOS/VoiceDock"` を `"$app/Contents/MacOS/VoiceDockApp"` にする | `makeAppInstallsEveryManifestEntry("Contents/MacOS/VoiceDock")` |
 
 **手元で 1 回だけ行う破壊（出力を PR に貼る）**:
 
@@ -730,6 +819,11 @@ struct ReleaseBundleTests {
 | 18 | `make app` の後に `touch dist/VoiceDock.app/Contents/Resources/extra.txt` → `scripts/verify-bundle.sh --files-only dist/VoiceDock.app` | V-1 が NG。`diff` に `extra.txt` が出て終了コード 1 |
 | 19 | `make app` の後に `rm dist/VoiceDock.app/Contents/Helpers/voicedock-reaper` → 同上 | V-1 が NG。終了コード 1 |
 | 20 | `codesign --force --sign - dist/VoiceDock.app` で ad-hoc に署名 → `scripts/verify-bundle.sh dist/VoiceDock.app` | V-6 の TeamIdentifier と Authority が NG |
+| 21 | `mkdir dist/VoiceDock.app/Contents/Frameworks`（空）→ `scripts/verify-bundle.sh --files-only dist/VoiceDock.app` | V-1 のディレクトリの照合が NG。`diff` に `Contents/Frameworks`、終了コード 1 |
+| 22 | `mv Resources/AppIcon.icns` で一時的に退避 → `scripts/make-app.sh debug` | `ERROR: Resources/AppIcon.icns がありません（作り方は T-34 §4.10）` で終了コード 1。`dist/VoiceDock.app` を作り始めない |
+| 23 | `make-dmg.sh` の前後と実行中に `ls /Volumes` と `mount` を取る | `/Volumes` は前後と実行中で同じ。実行中に増える `mount` の行は `dist/.dmg-stage.*/mnt` の 1 行だけで、終わった後は前と同じ |
+| 24 | 読めないファイルを含む `.app` を渡して `ditto` で失敗させる | 終了コード 1。`mount` に作業用のイメージが残らず、`dist/.dmg-stage.*` も残らない |
+| 25 | 作った dmg を `-readonly -mountpoint` でスクラッチに attach する | 中の `.app` と、`ditto` で取り出した `.app` が `codesign --verify --deep --strict` で rc=0。`Applications -> /Applications` |
 
 ## 7. 受け入れ条件
 
@@ -750,13 +844,13 @@ struct ReleaseBundleTests {
 ## 9. マージ後にやること
 
 - T-35 の E2E は `make app` で作った `.app` を使う（`/Applications` に置くのは T-44 のリリース後でよい）
-- T-42 の削除 ON の E2E は、**`make release` で署名・公証した `.app`** で行う（reaper の署名検証（§8.9.3 の 4）が Developer ID の要件文字列を要求するため。Apple Development 署名では `.disabled(reaper_invalid)` になる）
+- T-42 の削除 ON の E2E は、`make app`（Apple Development 署名）の `.app` でも `make release`（Developer ID 署名・公証）の `.app` でも行える。reaper の署名検証（PLAN §8.9.3）の要件文字列は `anchor apple generic` と識別子と Team ID（`certificate leaf[subject.OU]`）で束縛しており、証明書の種類は問わない（T-34 の実装時に、Apple Development 署名の reaper が `verify-bundle.sh` の V-7 で要件文字列を満たすことを確かめた）。ad-hoc 署名だけは満たさず `.disabled(reaper_invalid)` になる
 - T-44 が `scripts/release.sh` をそのまま使って v1.0 を出す
 
 ## 10. API 地図への変更提案
 
-1. §16（地図に行の無い公開 API の索引）に「**`Resources/bundle-manifest.txt`（T-34）= バンドルに入ってよいファイルの唯一の出所**。`AppPaths`（T-10）が組み立てる `Contents/Resources` と `Contents/Helpers` のパスは、この一覧の行と対応する」を足す
+1. （一部反映済み）§16 の「資源」の行に `Resources/bundle-manifest.txt`（T-34）は既に在る。残りの提案は「`AppPaths`（T-10）が組み立てる `Contents/Resources` と `Contents/Helpers` のパスは、この一覧の行と対応する」の一文を足すことだけ
 2. §15（TestSupport の部品の作り手）に足すものは無い（`ReleaseBundleTests` は `PackageRoot` だけを使う）
-3. **`Resources/AppIcon.icns` の作り手を決めたい**。地図にも T-30 の予定にも記述が無い。T-30（UI）が作る前提で T-34 を書いたが、T-30 が作らないなら T-34 に移す（§4.10 に手順は書いてある）
-4. PLAN §11.3 の 1 は「reaper は `--identifier <BUNDLE_ID>.reaper`」としか書いていないが、**本体にも `--identifier <BUNDLE_ID>` を明示する**ことにした（`CFBundleIdentifier` と署名の識別子が食い違ったまま気づかない事故を防ぐ）。PLAN への追記を提案する
-5. PLAN §11.1 の Info.plist の必須キーに `CFBundleIconFile`（= `AppIcon`）と `CFBundleDevelopmentRegion`（= `ja`）が無い。アイコンが出ないので追記を提案する
+3. （反映済み・利用者の決定 2026-09-22）`Resources/AppIcon.icns` の作り手を T-30 から T-34 に移し、仮アイコンを置いた。地図 §16 の「資源」の行も同じ PR で「T-34（仮アイコン。利用者の決定）」に直した
+4. （反映済み）本体にも `--identifier <BUNDLE_ID>` を明示すること。PLAN §11.3 の 1 に既に書いてある
+5. （反映済み）Info.plist の必須キーの `CFBundleIconFile`（= `AppIcon`）と `CFBundleDevelopmentRegion`（= `ja`）。PLAN §11.1 に既に書いてある
