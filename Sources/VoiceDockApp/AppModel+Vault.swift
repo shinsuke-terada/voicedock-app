@@ -9,7 +9,10 @@ extension AppModel {
             chooser.chooseFolder(message: Strings.chooseVaultMessage, prompt: Strings.chooseVaultPrompt)
         }
         guard let url = picked else { return }
-        let path = url.path(percentEncoded: false)
+        // ディレクトリの URL は末尾に / が付く。設定と文言には付けない（ルートの "/" は残す）
+        var trimmed = url.path(percentEncoded: false)
+        while trimmed.count > 1 && trimmed.hasSuffix("/") { trimmed.removeLast() }
+        let path = trimmed
         let marker = snapshot.vaultMarker
         let status = VaultCheck.evaluate(path: path, marker: marker)
         // .available でなければ拒否し、設定を書かない（PLAN §8.12 の 4）

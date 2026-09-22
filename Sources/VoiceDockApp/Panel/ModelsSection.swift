@@ -26,6 +26,8 @@ struct ModelsSection: View {
                     set: { id in Task { await model.selectLLM(id) } })
             ) {
                 if s.llmModelID == nil { Text(Strings.llmNotSelected).tag("") }
+                // 設定の ID が一覧に無い（verified でない・カタログから消えた）ときも選択を表せる行を置く
+                if let id = s.llmModelID, !s.llmChoices.contains(where: { $0.id == id }) { Text(id).tag(id) }
                 // 選べないものも一覧から消さない（理由を同じ行に出す。PLAN §8.10）
                 ForEach(s.llmChoices) { choice in
                     Text(choiceLabel(choice)).tag(choice.id).disabled(!choice.selectable)

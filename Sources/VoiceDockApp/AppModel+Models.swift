@@ -4,17 +4,29 @@ import VDCore
 import VDModels
 
 extension AppModel {
-    /// 1 件ダウンロードする（二重に始めない）。進捗は downloads[slot] に写す。
+    /// 1 件ダウンロードする（進行中なら始めない。失敗の後はもう一度始められる）。進捗は downloads[slot] に写す。
+    /// 開始時の世代を覚え、世代が変わった（やめた・入手し直した）後の結果と進捗は書かない。
     func fetchModel(_ slot: ModelSlot) async {
-        guard downloads[slot] == nil || downloads[slot] == .idle else { return }
+        guard !isBusy(slot) else { return }
         guard let (kind, entry) = entryFor(slot) else { return }
+        let generation = (downloadGenerations[slot] ?? 0) + 1
+        downloadGenerations[slot] = generation
         downloads[slot] = .running(received: 0, total: entry.bytes)
         modelError = nil
-        let r = await services.download(kind: kind, entry: entry) { received, total in
-            Task { @MainActor in self.progress(slot, received, total) }
+        // やめた直後の入手し直し: 前の download が ModelManager から抜けるまで待つ（抜ける前に呼ぶと内部の「実行中」が返る）
+        if let previous = downloadTasks[slot] { _ = await previous.value }
+        guard downloadGenerations[slot] == generation else { return }
+        let services = self.services
+        let task = Task {
+            await services.download(kind: kind, entry: entry) { received, total in
+                Task { @MainActor in self.progress(slot, generation, received, total) }
+            }
         }
-        // 取り消した後（.running でない）は結果を書かない（.failure(.cancelled) を .failed にしない）
-        if case .running = downloads[slot] {
+        downloadTasks[slot] = task
+        let r = await task.value
+        if downloadTasks[slot] == task { downloadTasks[slot] = nil }
+        // 世代が変わった後（やめた・入手し直した）は結果を書かない（.failure(.cancelled) を .failed にしない）
+        if downloadGenerations[slot] == generation, case .running = downloads[slot] {
             switch r {
             case .success:
                 downloads[slot] = .idle
@@ -26,10 +38,11 @@ extension AppModel {
         await refresh()
     }
 
-    /// 先に .idle にしてから取り消す（遅れた進捗と結果を捨てるため）。
+    /// 先に .idle にして世代を進めてから取り消す（遅れた進捗と結果を捨てるため）。
     func cancelModel(_ slot: ModelSlot) async {
         guard case .running = downloads[slot], let (_, entry) = entryFor(slot) else { return }
         downloads[slot] = .idle
+        downloadGenerations[slot] = (downloadGenerations[slot] ?? 0) + 1
         await services.cancelDownload(id: entry.id)
     }
 
@@ -39,13 +52,17 @@ extension AppModel {
         let r = await services.updateConfig { $0.llm.modelID = id }
         switch r {
         case .failure(let v): modelError = Strings.configRejected(v)
-        case .success: modelError = nil
+        case .success:
+            modelError = nil
+            modelNotice = nil
         }
         await refresh()
     }
 
     /// 利用者が選んだ .gguf を取り込み、custom:<sha256> を設定に書く（PLAN §8.10「ファイルから読み込む」）。
     func importLLMFromFile() async {
+        // 取り込み中はもう一度読み込まない
+        guard !isBusy(.customImport) else { return }
         let picked = presentModal {
             fileChooser.chooseFile(
                 message: Strings.chooseGGUFMessage, prompt: Strings.chooseGGUFPrompt, allowedExtensions: ["gguf"])
@@ -60,22 +77,36 @@ extension AppModel {
             return
         case .success(let got):
             downloads[.customImport] = .idle
-            // CV-42 が custom:<64 桁> を通す
-            _ = await services.updateConfig { $0.llm.modelID = got.id }
+            // CV-42 が custom:<64 桁> を通す。弾かれたら捨てずに出す
+            if case .failure(let v) = await services.updateConfig({ $0.llm.modelID = got.id }) {
+                modelError = Strings.configRejected(v)
+                await refresh()
+                return
+            }
+            modelError = nil
             // メモリの確認は警告だけ（PLAN §8.10）
             modelNotice = Strings.customModelUnsupported
             await refresh()
         }
     }
 
-    /// 進捗の通知。取り消した後の遅れた通知は捨てる。
-    func progress(_ slot: ModelSlot, _ received: Int64, _ total: Int64) {
-        guard case .running = downloads[slot] else { return }
+    /// 進行中（ダウンロード中・取り込み中）か
+    private func isBusy(_ slot: ModelSlot) -> Bool {
+        switch downloads[slot] {
+        case .running, .importing: true
+        case .idle, .failed, nil: false
+        }
+    }
+
+    /// 進捗の通知。世代が違う（やめた後・前の入手の）通知と、値が小さくなる通知（Task の実行順の入れ替わり）は捨てる。
+    private func progress(_ slot: ModelSlot, _ generation: Int, _ received: Int64, _ total: Int64) {
+        guard downloadGenerations[slot] == generation, case .running(let shown, _) = downloads[slot] else { return }
+        guard received >= shown else { return }
         downloads[slot] = .running(received: received, total: total)
     }
 
     /// 枠 → 入手する項目。custom は入手できないので nil。
-    func entryFor(_ slot: ModelSlot) -> (ModelKind, ModelEntry)? {
+    private func entryFor(_ slot: ModelSlot) -> (ModelKind, ModelEntry)? {
         switch slot {
         case .whisper: snapshot.whisperEntry.map { (.whisper, $0) }
         case .vad: snapshot.vadEntry.map { (.vad, $0) }

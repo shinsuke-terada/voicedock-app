@@ -102,6 +102,31 @@ struct AppModelVaultTests {
         #expect(model.vaultError == nil)
     }
 
+    @Test("フォルダの URL の末尾の / を設定に書かない")
+    func directoryURLIsStoredWithoutTrailingSlash() async throws {
+        let tmp = try TempDirectory()
+        defer { tmp.remove() }
+        let path = try Self.makeVault(tmp, withMarker: true)
+        let fake = FakeServices(Self.present())
+        // NSOpenPanel が返すのと同じ、ディレクトリの URL（path に末尾の / が付く）
+        let picked = URL(fileURLWithPath: path, isDirectory: true)
+        let model = Self.makeModel(fake, chooser: FakeFolderChooser(picked))
+        await model.chooseVault()
+        #expect(fake.updatedConfigs.first?.vault.path == path)
+        #expect(path.hasSuffix("/Vault"))
+    }
+
+    @Test("フォルダの URL でも文言に末尾の / を付けない")
+    func directoryURLErrorHasNoTrailingSlash() async throws {
+        let tmp = try TempDirectory()
+        defer { tmp.remove() }
+        let path = try Self.makeVault(tmp, withMarker: false)
+        let fake = FakeServices(Self.present())
+        let model = Self.makeModel(fake, chooser: FakeFolderChooser(URL(fileURLWithPath: path, isDirectory: true)))
+        await model.chooseVault()
+        #expect(model.vaultError == path + " に .obsidian/ がありません（Vault が未マウントか、別の場所を指しています）")
+    }
+
     @Test("選んだら走査を促す")
     func scansAfterChoosing() async throws {
         let tmp = try TempDirectory()

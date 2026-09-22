@@ -60,7 +60,10 @@ private final class ExtensionFilter: NSObject, NSOpenSavePanelDelegate {
         self.extensions = Set(extensions.map { $0.lowercased() })
     }
 
+    /// フォルダ（パッケージでないもの）は入れるように有効にする。パッケージはファイルとして扱い、拡張子で決める。
     func panel(_ sender: Any, shouldEnable url: URL) -> Bool {
-        url.hasDirectoryPath || extensions.contains(url.pathExtension.lowercased())
+        guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isPackageKey]) else { return false }
+        if values.isDirectory == true && values.isPackage != true { return true }
+        return extensions.contains(url.pathExtension.lowercased())
     }
 }

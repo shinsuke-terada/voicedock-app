@@ -140,6 +140,80 @@ struct AppModelModelsTests {
         #expect(fake.readCount == before + 1)
     }
 
+    @Test("失敗の後にもう一度入手できる")
+    func fetchCanBeRetriedAfterFailure() async {
+        let fake = FakeServices(Self.present())
+        fake.setDownloadResults([.failure(.network), .success(URL(fileURLWithPath: "/tmp/m"))])
+        let model = Self.makeModel(fake)
+        await model.refresh()
+        await model.fetchModel(.whisper)
+        #expect(model.downloads[.whisper] == .failed("ネットワークに接続できません"))
+        await model.fetchModel(.whisper)
+        #expect(fake.downloadCount == 2)
+        #expect(model.downloads[.whisper] == .idle)
+        #expect(model.modelError == nil)
+    }
+
+    @Test("やめて直後に入手し直しても内部の文字列が出ない")
+    func refetchRightAfterCancelShowsNoInternalText() async {
+        let fake = FakeServices(Self.present())
+        // 1 本目はやめられて cancelled、2 本目は成功
+        fake.setDownload(progress: [], result: .success(URL(fileURLWithPath: "/tmp/m")), holds: 1)
+        fake.setDownloadResults([.failure(.cancelled), .success(URL(fileURLWithPath: "/tmp/m"))])
+        let model = Self.makeModel(fake)
+        await model.refresh()
+        let first = Task { await model.fetchModel(.whisper) }
+        #expect(await Self.waitUntil { fake.heldDownloads == 1 })
+        await model.cancelModel(.whisper)
+        // 1 本目がまだ返っていない（ModelManager に残っている）うちに入手し直す
+        let second = Task { await model.fetchModel(.whisper) }
+        #expect(await Self.waitUntil { model.downloads[.whisper] == .running(received: 0, total: 1) })
+        for _ in 0..<50 { await Task.yield() }
+        fake.releaseDownload()
+        await first.value
+        await second.value
+        #expect(model.modelError == nil)
+        #expect(model.downloads[.whisper] == .idle)
+        #expect(fake.downloadCount == 2)
+    }
+
+    @Test("古い progress が新しい枠に混ざらない")
+    func staleProgressDoesNotLeakIntoNewDownload() async {
+        let fake = FakeServices(Self.present())
+        fake.setDownload(progress: [], result: .success(URL(fileURLWithPath: "/tmp/m")), holds: 2)
+        fake.setDownloadResults([.failure(.cancelled), .success(URL(fileURLWithPath: "/tmp/m"))])
+        let model = Self.makeModel(fake)
+        await model.refresh()
+        let first = Task { await model.fetchModel(.whisper) }
+        #expect(await Self.waitUntil { fake.heldDownloads == 1 })
+        await model.cancelModel(.whisper)
+        fake.releaseDownload()
+        await first.value
+        let second = Task { await model.fetchModel(.whisper) }
+        #expect(await Self.waitUntil { fake.heldDownloads == 1 })
+        // 1 本目の download に渡された progress から遅れて届く
+        fake.emitProgress(9, 10, index: 0)
+        for _ in 0..<50 { await Task.yield() }
+        #expect(model.downloads[.whisper] == .running(received: 0, total: 1))
+        fake.releaseDownload()
+        await second.value
+        #expect(model.downloads[.whisper] == .idle)
+    }
+
+    @Test("進捗は小さくならない")
+    func progressNeverGoesBackwards() async {
+        let fake = FakeServices(Self.present())
+        fake.setDownload(progress: [(5, 10), (3, 10)], result: .success(URL(fileURLWithPath: "/tmp/m")), hold: true)
+        let model = Self.makeModel(fake)
+        await model.refresh()
+        let task = Task { await model.fetchModel(.whisper) }
+        #expect(await Self.waitUntil { fake.heldDownloads == 1 })
+        for _ in 0..<50 { await Task.yield() }
+        #expect(model.downloads[.whisper] == .running(received: 5, total: 10))
+        fake.releaseDownload()
+        await task.value
+    }
+
     @Test("選ぶと設定に書く")
     func selectLLMWritesConfig() async throws {
         var s = Self.present()
@@ -187,6 +261,37 @@ struct AppModelModelsTests {
         #expect(fake.updatedConfigs.last?.llm.modelID == Self.customID)
         #expect(model.modelNotice == "動作保証外のモデルです")
         #expect(model.downloads[.customImport] == .idle)
+    }
+
+    @Test("読み込んだ ID が設定に弾かれたら文言を出す")
+    func importRejectedByConfigShowsMessage() async {
+        let fake = FakeServices(Self.present())
+        fake.setImport(.success((id: Self.customID, url: URL(fileURLWithPath: "/tmp/voicedock-t31/custom.gguf"))))
+        fake.setUpdateViolations([
+            ConfigViolation(rule: "CV-42", code: .configInvalidValue, keyPath: "llm.modelID", message: "x")
+        ])
+        let model = Self.makeModel(fake, fileChooser: FakeFileChooser(URL(fileURLWithPath: "/tmp/x.gguf")))
+        await model.refresh()
+        await model.importLLMFromFile()
+        #expect(model.modelError?.hasPrefix("設定に書けませんでした: ") == true)
+        #expect(model.modelNotice == nil)
+    }
+
+    @Test("注意書きは選び直すか閉じると消える")
+    func noticeIsClearedBySelectingOrClosing() async {
+        var s = Self.present()
+        s.llmChoices = [Self.choice("test-llm", selectable: true)]
+        let fake = FakeServices(s)
+        fake.setImport(.success((id: Self.customID, url: URL(fileURLWithPath: "/tmp/voicedock-t31/custom.gguf"))))
+        let model = Self.makeModel(fake, fileChooser: FakeFileChooser(URL(fileURLWithPath: "/tmp/x.gguf")))
+        await model.refresh()
+        await model.importLLMFromFile()
+        #expect(model.modelNotice == "動作保証外のモデルです")
+        await model.selectLLM("test-llm")
+        #expect(model.modelNotice == nil)
+        await model.importLLMFromFile()
+        model.panelDidClose()
+        #expect(model.modelNotice == nil)
     }
 
     @Test("読み込みの失敗")

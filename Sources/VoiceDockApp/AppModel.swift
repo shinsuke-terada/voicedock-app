@@ -5,6 +5,7 @@ import SwiftUI
 import VDContract
 import VDCore
 import VDDevice
+import VDModels
 import VDPipeline
 
 /// Finder で項目を表示する口（テストで差し替える）。
@@ -30,6 +31,10 @@ final class AppModel {
     // T-31（別ファイルの拡張が書くので private(set) にできない。書くのは AppModel+Vault / +Models / +LoginItem だけ）
     /// 進行中のダウンロード・取り込み（画面にだけ在る値）
     var downloads: [ModelSlot: DownloadState] = [:]
+    /// 枠ごとの世代（入手を始める・やめるたびに 1 増やす）。開始時と世代が違う結果・進捗は捨てる
+    @ObservationIgnored var downloadGenerations: [ModelSlot: Int] = [:]
+    /// 枠ごとの、まだ返っていない download（やめた後の入手し直しは、これが ModelManager から抜けるのを待ってから始める）
+    @ObservationIgnored var downloadTasks: [ModelSlot: Task<Result<URL, ModelError>, Never>] = [:]
     /// Vault の選択の失敗（panelDidClose で消す）
     var vaultError: String?
     /// モデルの入手・選択・取り込みの失敗
@@ -166,6 +171,7 @@ final class AppModel {
         // 次に開いたときに古い結果を出さない
         reloadResult = nil
         vaultError = nil
+        modelNotice = nil
     }
 
     func requeueManual() async {

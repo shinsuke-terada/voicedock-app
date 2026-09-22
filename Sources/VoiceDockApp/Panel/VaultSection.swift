@@ -10,7 +10,8 @@ struct VaultSection: View {
         SectionBox(title: Strings.sectionVault) {
             Text(s.vaultPath ?? Strings.vaultNotChosen)
                 .fixedSize(horizontal: false, vertical: true)
-            if s.vault != .available {
+            // 未選択は 1 行目の「まだ選ばれていません」で足りる（赤い行を出さない）
+            if s.vault != .available && s.vault != .notConfigured {
                 Text(s.vault.message(path: s.vaultPath ?? "", marker: s.vaultMarker))
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)

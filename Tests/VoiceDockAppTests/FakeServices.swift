@@ -23,7 +23,11 @@ final class FakeServices: AppServices {
         var updatedConfigs: [AppConfig] = []
         var downloadProgress: [(Int64, Int64)] = []
         var downloadResult: Result<URL, ModelError> = .success(URL(fileURLWithPath: "/tmp/voicedock-t31-model"))
-        var holdDownload = false
+        var holdCount = 0
+        /// 空でなければ download の結果をここから順に取る（尽きたら downloadResult）
+        var resultQueue: [Result<URL, ModelError>] = []
+        /// download の途中の ID（ModelManager と同じく、同じ ID の 2 本目は内部の文字列で断る）
+        var activeIDs: Set<String> = []
         var downloadGates: [AsyncStream<Void>.Continuation] = []
         var downloadEntries: [(ModelKind, ModelEntry)] = []
         var progressSinks: [@Sendable (Int64, Int64) -> Void] = []
@@ -89,14 +93,19 @@ final class FakeServices: AppServices {
     func setUpdateViolations(_ v: [ConfigViolation]?) { state.withLock { $0.updateViolations = v } }
     /// updateConfig に渡された変更を既定の設定に当てた結果（呼ばれた順）
     var updatedConfigs: [AppConfig] { state.withLock { $0.updatedConfigs } }
-    /// download が結果を返す前に progress へ流す値と、その結果。hold なら次の 1 回を releaseDownload まで返さない
-    func setDownload(progress: [(Int64, Int64)], result: Result<URL, ModelError>, hold: Bool = false) {
+    /// download が結果を返す前に progress へ流す値と、その結果。次の holds 回は releaseDownload まで返さない
+    /// （hold: true は holds: 1。止めるのは最初の回だけなので、二重起動の番人が外れてもテストは止まらない）
+    func setDownload(progress: [(Int64, Int64)], result: Result<URL, ModelError>, hold: Bool = false, holds: Int = 0) {
         state.withLock {
             $0.downloadProgress = progress
             $0.downloadResult = result
-            $0.holdDownload = hold
+            $0.holdCount = max(holds, hold ? 1 : 0)
         }
     }
+    /// download の結果を回ごとに決める（尽きたら setDownload の result）
+    func setDownloadResults(_ results: [Result<URL, ModelError>]) { state.withLock { $0.resultQueue = results } }
+    /// ModelManager が同じ ID の 2 本目に返す内部の文字列（VDModels の internal な定数の写し。利用者に出てはいけない）
+    static let alreadyRunning = "already_downloading"
     /// 止めている download を 1 つ返させる
     func releaseDownload() {
         let gates = state.withLock { s -> [AsyncStream<Void>.Continuation] in
@@ -109,10 +118,14 @@ final class FakeServices: AppServices {
     /// 止めている download の数
     var heldDownloads: Int { state.withLock { $0.downloadGates.count } }
     var downloadCount: Int { state.withLock { $0.downloadEntries.count } }
-    /// download に渡された progress（テストから後で流す）
-    func emitProgress(_ received: Int64, _ total: Int64) {
+    /// download に渡された progress（テストから後で流す）。index を渡せばその回の download の progress だけ
+    func emitProgress(_ received: Int64, _ total: Int64, index: Int? = nil) {
         let sinks = state.withLock { $0.progressSinks }
-        for sink in sinks { sink(received, total) }
+        if let index {
+            sinks[index](received, total)
+        } else {
+            for sink in sinks { sink(received, total) }
+        }
     }
     var cancelledIDs: [String] { state.withLock { $0.cancelledIDs } }
     func setImport(_ result: Result<(id: String, url: URL), ModelError>) { state.withLock { $0.importResult = result } }
@@ -137,14 +150,17 @@ final class FakeServices: AppServices {
     func download(
         kind: ModelKind, entry: ModelEntry, progress: @escaping @Sendable (Int64, Int64) -> Void
     ) async -> Result<URL, ModelError> {
-        let (events, hold) = state.withLock {
-            $0.downloadEntries.append((kind, entry))
-            $0.progressSinks.append(progress)
-            let hold = $0.holdDownload
-            // 止めるのは最初の 1 回だけ（二重起動の番人が外れてもテストが止まらない）
-            $0.holdDownload = false
-            return ($0.downloadProgress, hold)
+        let started = state.withLock { s -> (events: [(Int64, Int64)], hold: Bool)? in
+            s.downloadEntries.append((kind, entry))
+            s.progressSinks.append(progress)
+            if s.activeIDs.contains(entry.id) { return nil }
+            s.activeIDs.insert(entry.id)
+            let hold = s.holdCount > 0
+            if hold { s.holdCount -= 1 }
+            return (s.downloadProgress, hold)
         }
+        guard let (events, hold) = started else { return .failure(.io(Self.alreadyRunning)) }
+        defer { _ = state.withLock { $0.activeIDs.remove(entry.id) } }
         for (received, total) in events { progress(received, total) }
         if hold {
             let (gate, continuation) = AsyncStream.makeStream(of: Void.self)
@@ -152,7 +168,7 @@ final class FakeServices: AppServices {
             var it = gate.makeAsyncIterator()
             _ = await it.next()
         }
-        return state.withLock { $0.downloadResult }
+        return state.withLock { $0.resultQueue.isEmpty ? $0.downloadResult : $0.resultQueue.removeFirst() }
     }
 
     func cancelDownload(id: String) async { state.withLock { $0.cancelledIDs.append(id) } }

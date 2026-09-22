@@ -105,8 +105,10 @@ enum Strings {
     static let buttonCancelDownload = "やめる"
     static let modelPresent = "入手済み"
     static let modelAbsent = "未入手"
+    /// total が 0 以下（全体が不明）なら受け取った量だけ
     static func modelProgress(received: Int64, total: Int64) -> String {
-        StatusTexts.gib(received) + " / " + StatusTexts.gib(total)
+        guard total > 0 else { return StatusTexts.gib(received) }
+        return StatusTexts.gib(received) + " / " + StatusTexts.gib(total)
     }
     static let labelWhisperModel = "Whisper モデル"
     static let labelVADModel = "VAD モデル"
