@@ -390,7 +390,7 @@ xcrun notarytool store-credentials VOICEDOCK_NOTARY \
 
 ```bash
 #!/bin/bash
-# 配布用の dmg を作る（PLAN §11.3 の 3）。作成中にイメージをマウントしない（makehybrid → convert）。
+# 配布用の dmg を作る（PLAN §11.3 の 3）。作業用のイメージは dist/ の中にだけマウントする（既定のマウント先には何もマウントしない）。
 # 使い方: scripts/make-dmg.sh <VoiceDock.app>
 set -euo pipefail
 
@@ -406,24 +406,64 @@ rm -f "$dmg"
 
 mkdir -p "$root/dist"
 stage="$(mktemp -d "$root/dist/.dmg-stage.XXXXXX")"
-hybrid="$stage.hybrid.dmg"
-trap 'rm -rf "$stage"; rm -f "$hybrid"' EXIT
-ditto "$app" "$stage/VoiceDock.app"
-ln -s /Applications "$stage/Applications"
+rw="$stage/VoiceDock-rw.dmg"
+mnt="$stage/mnt"
+mkdir "$mnt"
+mnt_real="$(cd "$mnt" && pwd -P)"
+dev=""
 
-hdiutil makehybrid -hfs -hfs-volume-name VoiceDock -o "$hybrid" "$stage"
-hdiutil convert "$hybrid" -format UDZO -o "$dmg"
+# 途中で失敗しても、マウントを残さず一時ファイルを消す
+cleanup() {
+  if [ -n "$dev" ]; then
+    hdiutil detach "$dev" -quiet || hdiutil detach "$dev" -force -quiet || true
+  fi
+  rm -rf "$stage"
+}
+trap cleanup EXIT
+
+# 1. 空の HFS+ イメージ（.app の大きさに 2 割と 16 MB の余裕を足す）。フォルダから直に作る方式は使わない（F-62）
+app_kb="$(du -sk "$app" | awk '{ print $1 }')"
+size_mb=$((app_kb * 12 / 10 / 1024 + 16))
+hdiutil create -size "${size_mb}m" -fs HFS+ -volname VoiceDock -type UDIF -layout NONE "$rw"
+
+# 2. dist/ の中にだけマウントする。attach の出力でマウント先が指定どおりであることを確かめる
+out="$(hdiutil attach -nobrowse -noautoopen -noverify -mountpoint "$mnt" "$rw")"
+dev="$(awk 'NR == 1 { print $1 }' <<<"$out")"
+got="$(awk -F'\t' 'NF >= 3 { m = $NF; sub(/^[ ]+/, "", m); sub(/[ ]+$/, "", m); if (m != "") print m }' <<<"$out" | head -n 1)"
+if [ "$got" != "$mnt_real" ]; then
+  echo "ERROR: 作業用のイメージが指定と違う場所にマウントされました（${got:-<不明>}）。すぐに外します" >&2
+  exit 1
+fi
+echo "OK: 作業用のイメージを ${mnt_real} にマウントしました（${dev}）"
+
+# 3. 中身。ditto は署名と拡張属性を保つ
+ditto "$app" "$mnt/VoiceDock.app"
+ln -s /Applications "$mnt/Applications"
+
+# 4. 外す
+hdiutil detach "$dev" -quiet
+dev=""
+
+# 5. 圧縮して配布用にする
+hdiutil convert "$rw" -format UDZO -o "$dmg"
 echo "OK: $dmg"
 ```
 
-- **作成中にイメージをマウントしない**（利用者の決定 2026-09-22。PLAN §11.3・F-62）。`hdiutil makehybrid -hfs` で一時フォルダから HFS+ のイメージを直に作り、`hdiutil convert -format UDZO` で圧縮する。`hdiutil create -srcfolder` は内部でイメージを `/Volumes` の下に attach するので使わない（テスト `makeDmgNeverMounts` が `-srcfolder` と `hdiutil attach` の不在を見る）
-- ボリューム名は `VoiceDock`（`-hfs-volume-name`）。実機の DJI Mic 3（`DJIMIC3`）とは別の名前
-- 既存の dmg は `rm -f` で消してから作る。一時フォルダと中間のイメージは `dist/` の中に作り、`trap` で必ず消す
-- **未解決（2026-09-22 の実測。利用者の判断待ち）**: `makehybrid -hfs` は、元に無い `com.apple.FinderInfo`（`00…00 FF FF FF FF 00…`）を**すべてのファイルに付ける**。
-  そのため dmg の中の `.app` と、そこから `ditto` / `cp -R` で取り出した `.app` が、`codesign --verify --deep --strict` で
-  `resource fork, Finder information, or similar detritus not allowed`（`Disallowed xattr com.apple.FinderInfo`）になる（Gatekeeper も同じ理由で拒む恐れがある）。
-  `makehybrid -udf` は署名を壊さない（中でも取り出しても `--strict` が通る）が、`/Applications` への symlink が壊れる（`readlink` が `Unknown error: 10000`）。
-  `-hfs-volume-name` 以外のオプションでは変わらなかった。`make release` の前に方式を決める（候補: UDF で symlink を置かない／`/Volumes` の外の `-mountpoint` に attach して書く／dmg をやめて zip）
+- **作業用のイメージは `/Volumes` の外（`dist/` の中）にだけマウントする**（利用者の決定 2026-09-22。PLAN §11.3・F-62）。手順:
+  1. `hdiutil create -size <.app の大きさ × 1.2 + 16 MB> -fs HFS+ -volname VoiceDock -type UDIF -layout NONE` で空のイメージを作る（`-srcfolder` は使わない）
+  2. `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <dist/.dmg-stage.*/mnt>`。attach の出力の最後の列（マウント先）が、指定したパスの `pwd -P` と一致することを確かめる。違えば即座に detach して失敗させる
+  3. `ditto` で `.app` を入れ（署名と拡張属性を保つ）、`/Applications` への symlink を置く
+  4. `hdiutil detach` → `hdiutil convert -format UDZO -o VoiceDock-<ver>.dmg`
+  5. `trap` で必ず detach し（失敗したら `-force`）、一時フォルダを消す。途中で失敗してもマウントを残さない（破壊 24）
+- テスト `makeDmgMountsOnlyOutsideVolumes` が「`hdiutil attach` の行はすべて `-nobrowse` と `-mountpoint` を伴い、`/Volumes`・`-srcfolder`・`makehybrid` が無い」ことを見る
+- ボリューム名は `VoiceDock`。実機の DJI Mic 3（`DJIMIC3`）とは別の名前
+- 既存の dmg は `rm -f` で消してから作る。一時フォルダ・作業用のイメージ・マウント先は `dist/` の中に作る
+- **却下した方式**（2026-09-22 の実測）:
+  - `hdiutil create -srcfolder`: 内部でイメージを既定の場所（`/Volumes` の下）に attach しうる
+  - `hdiutil makehybrid -hfs`（マウントを伴わない）: 元に無い `com.apple.FinderInfo`（`00…00 FF FF FF FF 00…`）を**すべてのファイルに付ける**。
+    そのため dmg の中の `.app` と、そこから `ditto` / `cp -R` で取り出した `.app` が `codesign --verify --deep --strict` で
+    `resource fork, Finder information, or similar detritus not allowed`（`Disallowed xattr com.apple.FinderInfo`）になる（Gatekeeper も同じ理由で拒む恐れがある）
+  - `hdiutil makehybrid -udf`: 署名は壊さないが、`/Applications` への symlink が壊れる（`readlink` が `Unknown error: 10000`）
 - 背景画像・アイコン配置はしない（v1 は `/Applications` への symlink だけ）
 
 ### 4.10 `Resources/AppIcon.icns`（仮アイコン）の差し替え【利用者が行う】
@@ -733,7 +773,7 @@ struct ReleaseBundleTests {
 | 同上 | `verifyBundleSupportsFilesOnly()` | `--files-only` が在り、make-app が使う | 2 ファイル | `verify-bundle.sh` に `--files-only` が在り、`make-app.sh` が `verify-bundle.sh" --files-only` を呼ぶ（パスは `"$root/scripts/verify-bundle.sh"` と引用されるので、引用符の閉じまで含めて探す） |
 | 同上 | `signUsesTheReaperIdentifier()` | reaper だけ `--identifier <BUNDLE_ID>.reaper` で署名する | `sign.sh` | `--identifier "$BUNDLE_ID.reaper"` と `--entitlements "$root/Resources/reaper.entitlements"` を含む |
 | 同上 | `signNeverUsesAdhoc()` | DR-17 ad-hoc 署名をしない | `sign.sh` | `--sign -` を含まない。`--options runtime` を含む |
-| 同上 | `makeDmgNeverMounts()` | dmg の作成でイメージをマウントしない | `make-dmg.sh` | `-srcfolder` と `hdiutil attach` を含まない。`hdiutil makehybrid` と `hdiutil convert` を含む |
+| 同上 | `makeDmgMountsOnlyOutsideVolumes()` | dmg の作業用イメージは /Volumes の外にだけマウントする | `make-dmg.sh` ＋ 判定関数 `mountsOnlyOutsideVolumes(_:)` | `hdiutil attach` の行が 1 つ以上在り、すべて `-nobrowse` と `-mountpoint` を含む。本文に `/Volumes`・`-srcfolder`・`makehybrid` が無い。`hdiutil convert` を含む（陽性対照: 空文字・`-mountpoint` の無い attach・`/Volumes/X` へのマウント・`-srcfolder` は偽） |
 | 同上 | `notarizeWaitsAndUsesTheProfile()` | 公証はプロファイルを使い `--wait` する | `notarize.sh` | `VOICEDOCK_NOTARY`・`--keychain-profile`・`--wait`・`stapler staple`・`ditto -c -k --keepParent` を含む |
 | 同上 | `releaseRunsTheStepsInOrder()` | release.sh の段の順（PLAN §11.3） | `release.sh` | `make-app.sh` → `notarize.sh` → `make-dmg.sh` → `sign.sh" developerid` → `notarize.sh` → `verify-bundle.sh` の順に現れる（各語は直前の語の出現より後ろから探す。`notarize.sh` が 2 回あるため「最初の出現位置」では 2 回目を区別できない。`sign.sh` は `"$root/scripts/sign.sh" developerid` と引用されるので引用符の閉じまで含めて探す） |
 | 同上 | `makefileUsesTheseScripts()` | Makefile の app / release がこのスクリプトを呼ぶ | `Makefile` | `scripts/make-app.sh debug` と `scripts/release.sh` を含む |
@@ -769,7 +809,7 @@ struct ReleaseBundleTests {
 | 15 | `scripts/make-app.sh` の 1 行目を `#!/bin/sh` にする | `everyScriptIsStrictBash("scripts/make-app.sh")` |
 | 16 | `scripts/make-app.sh` の `source "$root/identity.env"` を消して値を直書きする | `scriptsThatNeedTheIdentitySourceIt`、`scriptsDoNotHardcodeTheIdentifiers` |
 | 17 | `scripts/sign.sh` の証明書の絞り込みを `mapfile -t found < …` に戻す | `noScriptUsesBash4Features("scripts/sign.sh", "mapfile")` |
-| 17a | `scripts/make-dmg.sh` を `hdiutil create -volname VoiceDock -srcfolder "$stage" -format UDZO "$dmg"` に戻す | `makeDmgNeverMounts` |
+| 17a | `scripts/make-dmg.sh` の `hdiutil attach` から `-mountpoint "$mnt"` を消す | `makeDmgMountsOnlyOutsideVolumes` |
 | 17b | `scripts/make-app.sh` の `"$app/Contents/MacOS/VoiceDock"` を `"$app/Contents/MacOS/VoiceDockApp"` にする | `makeAppInstallsEveryManifestEntry("Contents/MacOS/VoiceDock")` |
 
 **手元で 1 回だけ行う破壊（出力を PR に貼る）**:
@@ -781,7 +821,9 @@ struct ReleaseBundleTests {
 | 20 | `codesign --force --sign - dist/VoiceDock.app` で ad-hoc に署名 → `scripts/verify-bundle.sh dist/VoiceDock.app` | V-6 の TeamIdentifier と Authority が NG |
 | 21 | `mkdir dist/VoiceDock.app/Contents/Frameworks`（空）→ `scripts/verify-bundle.sh --files-only dist/VoiceDock.app` | V-1 のディレクトリの照合が NG。`diff` に `Contents/Frameworks`、終了コード 1 |
 | 22 | `mv Resources/AppIcon.icns` で一時的に退避 → `scripts/make-app.sh debug` | `ERROR: Resources/AppIcon.icns がありません（作り方は T-34 §4.10）` で終了コード 1。`dist/VoiceDock.app` を作り始めない |
-| 23 | `make-dmg.sh` の前後で `ls /Volumes` を取る | 前後で同じ（作成中にマウントしない） |
+| 23 | `make-dmg.sh` の前後と実行中に `ls /Volumes` と `mount` を取る | `/Volumes` は前後と実行中で同じ。実行中に増える `mount` の行は `dist/.dmg-stage.*/mnt` の 1 行だけで、終わった後は前と同じ |
+| 24 | 読めないファイルを含む `.app` を渡して `ditto` で失敗させる | 終了コード 1。`mount` に作業用のイメージが残らず、`dist/.dmg-stage.*` も残らない |
+| 25 | 作った dmg を `-readonly -mountpoint` でスクラッチに attach する | 中の `.app` と、`ditto` で取り出した `.app` が `codesign --verify --deep --strict` で rc=0。`Applications -> /Applications` |
 
 ## 7. 受け入れ条件
 

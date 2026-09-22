@@ -78,6 +78,16 @@ struct ReleaseBundleTests {
     }
 
     /// `words` が `text` にこの順で現れるか（各語は直前の語より後ろから探す）。
+    /// `hdiutil attach` の行が 1 つ以上在り、すべて `-nobrowse` と `-mountpoint` を伴い、
+    /// 本文に `/Volumes`・`-srcfolder`・`makehybrid` が無いか。
+    static func mountsOnlyOutsideVolumes(_ script: String) -> Bool {
+        let attachLines = script.split(separator: "\n").filter { $0.contains("hdiutil attach") }
+        guard !attachLines.isEmpty else { return false }
+        let everyAttachIsPrivate = attachLines.allSatisfy { $0.contains("-nobrowse") && $0.contains("-mountpoint") }
+        let forbidden = ["/Volumes", "-srcfolder", "makehybrid"]
+        return everyAttachIsPrivate && !forbidden.contains { script.contains($0) }
+    }
+
     static func appearInOrder(_ words: [String], in text: String) -> Bool {
         var searchStart = text.startIndex
         for word in words {
@@ -263,12 +273,10 @@ struct ReleaseBundleTests {
         #expect(sign.contains("--options runtime"))
     }
 
-    @Test("dmg の作成でイメージをマウントしない")
-    func makeDmgNeverMounts() throws {
+    @Test("dmg の作業用イメージは /Volumes の外にだけマウントする")
+    func makeDmgMountsOnlyOutsideVolumes() throws {
         let makeDmg = try Self.text("scripts/make-dmg.sh")
-        #expect(!makeDmg.contains("-srcfolder"))
-        #expect(!makeDmg.contains("hdiutil attach"))
-        #expect(makeDmg.contains("hdiutil makehybrid"))
+        #expect(Self.mountsOnlyOutsideVolumes(makeDmg))
         #expect(makeDmg.contains("hdiutil convert"))
     }
 
@@ -316,5 +324,10 @@ struct ReleaseBundleTests {
         #expect(!Self.appearInOrder(["make-dmg.sh", "sign.sh\" developerid"], in: swapped))
         #expect(Self.appearInOrder(["notarize.sh", "notarize.sh"], in: "notarize.sh a\nnotarize.sh b\n"))
         #expect(!Self.appearInOrder(["notarize.sh", "notarize.sh"], in: "notarize.sh a\n"))
+        #expect(!Self.mountsOnlyOutsideVolumes(""))
+        #expect(!Self.mountsOnlyOutsideVolumes("hdiutil attach -nobrowse \"$rw\"\n"))
+        #expect(!Self.mountsOnlyOutsideVolumes("hdiutil attach -nobrowse -mountpoint \"/Volumes/X\" \"$rw\"\n"))
+        #expect(!Self.mountsOnlyOutsideVolumes("hdiutil create -srcfolder \"$stage\" \"$dmg\"\n"))
+        #expect(Self.mountsOnlyOutsideVolumes("hdiutil attach -nobrowse -mountpoint \"$mnt\" \"$rw\"\n"))
     }
 }
