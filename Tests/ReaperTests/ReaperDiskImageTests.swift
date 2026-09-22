@@ -115,7 +115,10 @@ struct ReaperDiskImageTests {
         let tmp = try TempDirectory()
         let bench = try Self.bench(tmp)
         let folder = bench.deviceRoot.appendingPathComponent(ReaperBench.folder, isDirectory: true)
-        try FileManager.default.removeItem(at: folder)
+        // 舞台は録音のフォルダを作らないことがあるので、在るときだけ消す（make test-disk で判明）
+        if FileManager.default.fileExists(atPath: folder.path(percentEncoded: false)) {
+            try FileManager.default.removeItem(at: folder)
+        }
         try bench.placeSource("REAL/" + ReaperBench.fileName)
         try FileManager.default.createSymbolicLink(
             atPath: folder.path(percentEncoded: false), withDestinationPath: "REAL")
