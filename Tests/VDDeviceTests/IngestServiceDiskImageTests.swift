@@ -40,8 +40,6 @@ struct IngestServiceDiskImageTests {
                 layout: layout, configProvider: { provided }, store: store, inspector: inspector,
                 remounter: DiskutilRemounter(runner: ProcessRunner(), inspector: inspector, useMountPoint: true),
                 mountEvents: FakeMountEventSource(), reader: DeviceReader(),
-                coexistence: CoexistenceGuard(
-                    runner: ScriptedProcessRunner(results: [ScriptedProcessRunner.exited(113)]), uid: 501),
                 clock: clock, sleeper: RecordingSleeper(), zone: zone, log: log,
                 volumesRoot: disk.volumesRoot.path(percentEncoded: false))
             service = IngestService(deps: deps)

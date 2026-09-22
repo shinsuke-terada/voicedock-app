@@ -1,5 +1,7 @@
 # T-14 VDDevice: ファイルの走査・安定性判定・コピー・登録（＋ VDAudio の AudioProbe）
 
+> （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`IngestDependencies` の `coexistence: CoexistenceGuard` は外した。以下の本文の共存ガードの記述は記録として残す。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-14 |

@@ -58,7 +58,6 @@ struct IngestServiceTests {
         var observable = true
         /// 設定すると statfs の値の mountOnName をこのパスにする（外れて親の FS が見えている状態。mountPoints はそのまま）
         var statfsMountOnName: String? = nil
-        var coexistence: Int32 = 113
         var sleeper: (any Sleeper)? = nil
         var populate = true
         var events = FakeMountEventSource()
@@ -117,9 +116,6 @@ struct IngestServiceTests {
             let deps = IngestDependencies(
                 layout: layout, configProvider: { provided }, store: store, inspector: inspector,
                 remounter: remounter, mountEvents: events, reader: DeviceReader(),
-                coexistence: CoexistenceGuard(
-                    runner: ScriptedProcessRunner(results: [ScriptedProcessRunner.exited(options.coexistence)]),
-                    uid: 501),
                 clock: clock, sleeper: options.sleeper ?? recordingSleeper, zone: zone, log: log,
                 volumesRoot: fake.volumesRoot.path(percentEncoded: false))
             service = IngestService(deps: deps)
@@ -393,18 +389,6 @@ struct IngestServiceTests {
         let lock = FileLock.tryAcquire(url: h.layout.reaperLock)
         #expect(lock != nil)
         lock?.release()
-    }
-
-    @Test("voicedock の Helper が登録されていれば何もしない。ログは入ったときだけ")
-    func coexistenceBlocksAndLogsOnce() async throws {
-        var options = Options()
-        options.coexistence = 0
-        let h = try Harness(options)
-        #expect(await h.service.scanNow() == nil)
-        #expect(await h.service.scanNow() == nil)
-        #expect(await h.service.state() == .coexistenceBlocked)
-        #expect(h.lines(containing: "coexistence_blocked").count == 1)
-        #expect(h.inboxFileCount() == 0)
     }
 
     @Test("設定エラー中は走査しない")

@@ -17,7 +17,7 @@ public enum ProcessEnvironment {
     public static let path = "/usr/bin:/bin:/usr/sbin:/sbin"
     /// whisper-cli・llama-server・reaper 用
     public static let standard: [String: String] = ["PATH": path, "LANG": "en_US.UTF-8"]
-    /// diskutil・launchctl 用（出力の文言をロケールに依存させない）
+    /// diskutil 用（出力の文言をロケールに依存させない）
     public static let cLocale: [String: String] = ["PATH": path, "LC_ALL": "C"]
 }
 

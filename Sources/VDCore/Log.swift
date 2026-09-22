@@ -38,7 +38,6 @@ public enum LogEvent: String, CaseIterable, Sendable {
     case copyCompleted = "copy_completed"
     case copyFailed = "copy_failed"
     case remountFailed = "remount_failed"
-    case coexistenceBlocked = "coexistence_blocked"
     case inboxOrphansRemoved = "inbox_orphans_removed"
     case importedKeysAdded = "imported_keys_added"
     case pipelinePaused = "pipeline_paused"

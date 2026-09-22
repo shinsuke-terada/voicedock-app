@@ -46,6 +46,7 @@ python3 docs/porting-notes/check-tickets.py
 | T-25 | マージ済み | PR #4 |
 | T-33 | 取り下げ | 2026-09-22、利用者の決定（voicedock からの乗り換えは考慮しない。PLAN §8.13・F-60）。PR #70 は閉じた。E2E-18 も取り下げ（番号は詰めない） |
 | T-45 | マージ済み | PR #10 |
+| F-61 | PR（fix/F-61-remove-coexistence） | 2026-09-22、利用者の決定（このアプリが完成したら voicedock は動かさないので共存ガードは不要）。`CoexistenceGuard`・`IngestState.coexistenceBlocked`・`coexistence_blocked`・Worker の保留・StatusLine の分岐を外した。DR-13 は打ち消しの行、E2E-15 は取り下げ（番号は詰めない）。診断は 15 件 ＋ DR-09 = 16 件になる |
 
 ### 利用者と決めたこと
 
@@ -54,6 +55,7 @@ python3 docs/porting-notes/check-tickets.py
 - CI は開発機のセルフホストランナー。ディスクイメージのテストは CI で走らせない
 - マージは毎回利用者が行う
 - voicedock からの乗り換えは考慮しない（2026-09-22）。T-33 と E2E-18 を取り下げた（PLAN F-60）。T-11 の `imported_keys` の表と T-14 の除外は空の表として残る
+- voicedock と同時には動かさない（2026-09-22）。共存ガード・DR-13・E2E-15 を取り下げた（PLAN F-61）。T-32・T-35・T-43 のチケットから外し、マージ済みのチケットには注記だけを足した
 
 ### 実装で分かった共通の約束（後続のチケットにも効く）
 

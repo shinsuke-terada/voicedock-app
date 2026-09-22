@@ -1,5 +1,7 @@
 # T-15 VDDevice: 再マウント・snapshot・IngestService の走査
 
+> （F-61 で共存ガードは外した。2026-09-22、利用者の決定）走査の手順 1（共存ガード）・`IngestState.coexistenceBlocked`・`coexistence_blocked` は外した。以下の本文の共存ガードの記述は記録として残す。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-15 |

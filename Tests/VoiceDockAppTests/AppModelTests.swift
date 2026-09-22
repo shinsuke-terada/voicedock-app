@@ -278,7 +278,6 @@ struct AppModelTests {
                 layout: layout, configProvider: { await config.current() }, store: store,
                 inspector: FakeMountInspector(), remounter: FakeRemounter(outcomes: []),
                 mountEvents: FakeMountEventSource(), reader: DeviceReader(),
-                coexistence: CoexistenceGuard(runner: ScriptedProcessRunner(results: []), uid: getuid()),
                 clock: clock, sleeper: RecordingSleeper(), zone: zone, log: log,
                 volumesRoot: volumes.path(percentEncoded: false)))
         let worker = Worker(

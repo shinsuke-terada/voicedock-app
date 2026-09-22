@@ -13,7 +13,6 @@ public struct IngestDependencies: Sendable {
     public let remounter: any Remounter
     public let mountEvents: any MountEventSource
     public let reader: DeviceReader
-    public let coexistence: CoexistenceGuard
     public let clock: any AppClock
     public let sleeper: any Sleeper
     public let zone: ZonedTime
@@ -24,7 +23,7 @@ public struct IngestDependencies: Sendable {
     public init(
         layout: HomeLayout, configProvider: @escaping @Sendable () async -> AppConfig?, store: Store,
         inspector: any MountInspector, remounter: any Remounter, mountEvents: any MountEventSource,
-        reader: DeviceReader, coexistence: CoexistenceGuard, clock: any AppClock,
+        reader: DeviceReader, clock: any AppClock,
         sleeper: any Sleeper, zone: ZonedTime, log: AppLog, volumesRoot: String
     ) {
         self.layout = layout
@@ -34,7 +33,6 @@ public struct IngestDependencies: Sendable {
         self.remounter = remounter
         self.mountEvents = mountEvents
         self.reader = reader
-        self.coexistence = coexistence
         self.clock = clock
         self.sleeper = sleeper
         self.zone = zone

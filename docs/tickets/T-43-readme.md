@@ -16,7 +16,7 @@ T-01 が置いた仮の `README.md` を、**利用者向けの正本**に置き�
 ## 2. 参照
 
 - PLAN §1.1（利用者から見た動き）、§1.2〜§1.5（含める・含めない・優先順位・動作環境）、§2.3（`<HOME>`）、§8.9.1〜§8.9.3・§8.9.8・§8.9.9（削除）、§8.11（診断 DR・要対応）、§8.12（パネル）、§10.8（CI と `.diskImage`）、§11.1（TCC の説明文）、§12.4（削除のゲート）、§14（RK。既知の制約）
-- PLAN §10.3（文書テスト: 「診断は 17 件」などの散文の数字も機械で見る）
+- PLAN §10.3（文書テスト: 「診断は 16 件」などの散文の数字も機械で見る）
 - 先行チケット: T-05（`SpecDocument`・`SpecIDKind`）、T-04（`MarkdownDocument`）、T-01（`README.md` の仮版・`Makefile`・`PackageRoot`）、T-34（`scripts/*`・dmg）、T-35（`docs/E2E.md`）、T-42（`docs/E2E.md` のゲート）、T-32（診断の実装）
 - 移植メモ `docs/porting-notes/V6-doctor-ci-e2e-docs.md` §4.4（`test_readme.py`）
 - voicedock@d3d595e `README.md`（章立ての見本）、`tests/unit/test_readme.py`（件数・参照・版の直書き）
@@ -227,7 +227,7 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 
 | 症状 | 見るところ |
 |---|---|
-| 録音が取り込まれない | 診断の DR-11（デバイスを列挙できるか）と DR-13（ほかの取り込みが動いていないか）、パネルの「要対応」 |
+| 録音が取り込まれない | 診断の DR-11（デバイスを列挙できるか）、パネルの「要対応」 |
 | ノートが書かれない | 診断の DR-10（Vault が使えるか）。Obsidian で Vault を一度開いたか |
 | 文字起こしが始まらない | 診断の DR-04・DR-05・DR-06（whisper とモデル） |
 | 要約が始まらない | 診断の DR-07・DR-08（llama-server とモデル、メモリ）。「LLM の疎通確認」ボタン（DR-09） |
@@ -246,7 +246,7 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 | 三重ロック | `実行側が判断を信用せず **<r> 項目**を独立に再検証します。` | `S8`（RV）の生きた ID の数 `r` |
 | 状態 | `削除禁止テスト **<d> 件**（ND）・実機試験 **<e> 件**（E2E）で守っています。` | `S7`（ND）の生きた ID の数 `d`、`S9`（E2E）の数 `e` |
 
-- **この 3 文はテストが SPEC から組み立てて `contains` で照合する。**実装者は SPEC を数えて書く（PLAN v1.1 の時点では `n=17`・`k=1`・`r=14`・`d=38`・`e=18`。**この数字をチケットから写さず、必ず `docs/SPEC.md` を数える**）
+- **この 3 文はテストが SPEC から組み立てて `contains` で照合する。**実装者は SPEC を数えて書く（PLAN v1.1 の時点では `n=16`（F-61 で DR-13 を取り下げた後）・`k=1`・`r=14`・`d=38`・`e=18`。**この数字をチケットから写さず、必ず `docs/SPEC.md` を数える**）
 
 ### 4.12 `## データの置き場所`
 
@@ -433,7 +433,7 @@ struct DocumentedCounts: Sendable {
 
 | # | 壊し方 | 落ちるべきテスト |
 |---|---|---|
-| 1 | README の「診断は **17 件**…」の 17 を 16 にする | `theDiagnosticsCountMatchesTheSpec` |
+| 1 | README の「診断は **16 件**…」の 16 を 15 にする | `theDiagnosticsCountMatchesTheSpec` |
 | 2 | `docs/SPEC.md` の `S6` から DR-15 の行を消す（`make spec` を回さずに） | `theDiagnosticsCountMatchesTheSpec`（README が古くなる側で落ちる）、T-05 の `specMatchesPlan` |
 | 3 | README の「**14 項目**を独立に再検証」を「12 項目」にする | `theReaperCheckCountMatchesTheSpec` |
 | 4 | README の `**消した録音は戻りません。**` を消す | `everyVerbatimSentenceIsPresent("**消した録音は戻りません。**")` |
@@ -447,7 +447,7 @@ struct DocumentedCounts: Sendable {
 | 12 | README に `docker compose logs` と書く | `theReadmeCarriesNoDockerLeftovers("docker")` |
 | 13 | `## 元音声の削除` と `## 既知の制約` の順を入れ替える | `theHeadingsAreInOrder` |
 | 14 | `### 元に戻す` から「確認は求められません」を消す | `theReadmeTellsYouHowToTurnDeletionOff` |
-| 15 | `DocumentedCounts.load()` の `.dr` を `.cv` に変える | `theDiagnosticsCountMatchesTheSpec`（README の 17 と CV の件数が合わない） |
+| 15 | `DocumentedCounts.load()` の `.dr` を `.cv` に変える | `theDiagnosticsCountMatchesTheSpec`（README の 16 と CV の件数が合わない） |
 | 16 | `Readme.versionLikeNumbers` の正規表現から後読みを外す（`18.6 GB` を拾うようにする） | `theExtractionFindsAVersionNumber` |
 
 ## 7. 受け入れ条件

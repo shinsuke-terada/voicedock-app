@@ -27,10 +27,6 @@ struct StringsTests {
         ("statusMerging", Strings.statusMerging, "文字起こしをまとめています"),
         ("statusAnalyzing", Strings.statusAnalyzing("2026-08-29"), "要約中 2026-08-29"),
         ("statusWritingDailyNote", Strings.statusWritingDailyNote("2026-08-29"), "ノートを書いています 2026-08-29"),
-        (
-            "statusCoexistenceBlocked", Strings.statusCoexistenceBlocked,
-            "取り込みを止めています（voicedock の Helper が登録されています）"
-        ),
         ("statusConfigInvalid", Strings.statusConfigInvalid, "設定にエラーがあります"),
         ("statusPaused", Strings.statusPaused([.license, .whisperMissing]), "停止中: whisper-cli がありません、ライセンス"),
         ("connectedNow", Strings.connectedNow("A、B"), "接続中（A、B）"),

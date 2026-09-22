@@ -226,8 +226,6 @@ enum CopyOutcome: Equatable, Sendable {
 public enum IngestState: Equatable, Sendable {
     case idle
     case scanning
-    /// voicedock の Helper が登録されている（PLAN §8.1 手順 1）
-    case coexistenceBlocked
     /// 設定エラー中（configProvider が nil）
     case disabled
 }
@@ -317,7 +315,7 @@ extension IngestService {
         notifyUpdate()
     }
 
-    /// 1 回の走査（PLAN §8.1 の手順 1〜5）
+    /// 1 回の走査（PLAN §8.1 の手順 2〜5。手順 1 は F-61 で取り下げた）
     func performScan() async {
         startedScans += 1
         let index = startedScans
@@ -331,13 +329,6 @@ extension IngestService {
         }
         guard let config = await deps.configProvider() else {
             setState(.disabled)
-            finishWaiters(upTo: index, nil)
-            return
-        }
-        if await deps.coexistence.isVoicedockHelperLoaded() {
-            // 入ったときだけ 1 回
-            if ingestState != .coexistenceBlocked { deps.log.warning(.coexistenceBlocked) }
-            setState(.coexistenceBlocked)
             finishWaiters(upTo: index, nil)
             return
         }

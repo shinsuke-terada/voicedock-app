@@ -123,15 +123,6 @@ struct WorkerTests {
         #expect(try w.part(pk).status == .discovered)
     }
 
-    @Test("共存ガード中は何もしない")
-    func coexistenceBlockedDoesNothing() async throws {
-        let w = try await PipelineWorld.make()
-        await w.ingest.setState(.coexistenceBlocked)
-        let recorder = StageRecorder()
-        await w.worker { recorder.record($0) }.tick()
-        #expect(recorder.recorded == [])
-    }
-
     @Test("start は復旧 → 閉じる → 孤児 → requeue")
     func startRecoversAndRequeues() async throws {
         let w = try await PipelineWorld.make()
@@ -183,53 +174,42 @@ struct WorkerTests {
         #expect(w.lines("service_started").count == 1)
     }
 
-    /// state() を門で止める取り込み（start の途中で止めておくため）。
-    actor GatedIngest: IngestPort {
-        private var armed = true
-        private var held: CheckedContinuation<Void, Never>?
-
-        var isHolding: Bool { held != nil }
-
-        func release() {
-            armed = false
-            held?.resume()
-            held = nil
-        }
-
-        func latestSnapshot() -> DeviceSnapshot? { nil }
-
-        func state() async -> IngestState {
-            if armed { await withCheckedContinuation { held = $0 } }
-            return .idle
-        }
-
-        func updates() -> AsyncStream<Void> { AsyncStream.makeStream(of: Void.self).stream }
-
-        func scanNow() async -> UInt64? { nil }
-    }
-
     @Test("start の途中に来た 2 回目の start は 1 回目の終わりを待つ（actor の再入）")
     func concurrentStartWaitsForTheFirst() async throws {
         let w = try await PipelineWorld.make()
-        let ingest = GatedIngest()
-        let worker = Self.worker(w, sleeper: SuspendingSleeper(), ingest: ingest)
-        let first = Task { await worker.start() }
-        try await waitUntil("1 回目の start が止まる") { await ingest.isHolding }
-        let startedWhenSecondReturned = Mutex<Bool?>(nil)
-        let sink = w.sink
-        let second = Task {
-            await worker.start()
-            let started = sink.lines.contains { $0.contains(" service_started ") }
-            startedWhenSecondReturned.withLock { $0 = started }
+        let worker = w.worker()
+        // 設定の actor を同期の処理で塞ぎ、先に入った start を最初の await（設定の読み出し）で止めておく。
+        // 観測を渡した update は mutate まで await を挟まないので、mutate の中で待つ間は actor が塞がる
+        // （F-61 で start が取り込みの状態を見なくなったので、門を取り込みから設定へ移した）
+        let gate = DispatchSemaphore(value: 0)
+        defer { gate.signal() }
+        let holding = Mutex(false)
+        let blocker = Task {
+            await w.configStore.update(
+                { _ in
+                    holding.withLock { $0 = true }
+                    // 上限を付ける（協調スレッドが 1 本しか無い環境でデッドロックせず、10 秒でテストが落ちて終わる）
+                    _ = gate.wait(timeout: .now() + .seconds(10))
+                }, reaperConfObservation: .missing)
         }
-        // 正しければ 2 回目は 1 回目を待って戻らない。壊れていればすぐ戻るので、最大 200 ms その機会を与える
-        for _ in 0..<20 where startedWhenSecondReturned.withLock({ $0 }) == nil {
+        try await waitUntil("設定の actor が塞がる") { holding.withLock { $0 } }
+        let sink = w.sink
+        let startedWhenReturned = Mutex<[Bool]>([])
+        let starts = (0..<2).map { _ in
+            Task {
+                await worker.start()
+                let started = sink.lines.contains { $0.contains(" service_started ") }
+                startedWhenReturned.withLock { $0.append(started) }
+            }
+        }
+        // 正しければどちらも先の start の終わりまで戻らない。壊れていれば後の方がすぐ戻るので、最大 200 ms その機会を与える
+        for _ in 0..<20 where startedWhenReturned.withLock({ $0.isEmpty }) {
             try await Task.sleep(for: .milliseconds(10))
         }
-        await ingest.release()
-        await first.value
-        await second.value
-        #expect(startedWhenSecondReturned.withLock { $0 } == true)
+        gate.signal()
+        _ = await blocker.value
+        for start in starts { await start.value }
+        #expect(startedWhenReturned.withLock { $0 } == [true, true])
         #expect(w.lines("service_started").count == 1)
     }
 

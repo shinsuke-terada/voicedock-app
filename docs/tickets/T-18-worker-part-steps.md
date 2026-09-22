@@ -1,5 +1,7 @@
 # T-18 VDPipeline: ConfigStore・Worker の枠・復旧・requeue・工程内リトライ・ガード・Part の変換と文字起こし
 
+> （F-61 で共存ガードは外した。2026-09-22、利用者の決定）Worker の `.coexistenceBlocked` による保留と `coexistenceBlockedDoesNothing` は外した。start が取り込みの `state()` を見なくなったので、`concurrentStartWaitsForTheFirst` の門は設定の actor（観測を渡した `ConfigStore.update` の mutate の中で待つ）へ移した。以下の本文の共存ガードの記述は記録として残す。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-18 |

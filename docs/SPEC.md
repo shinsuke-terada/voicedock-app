@@ -143,7 +143,7 @@ normalize_completed normalize_failed transcription_completed transcription_faile
 raw_note_saved raw_note_failed session_merged session_merge_failed session_empty session_reopened
 llm_completed llm_failed analysis_trimmed obsidian_saved obsidian_failed
 delete_requested source_deleted source_delete_skipped source_delete_pending disk_space_low
-scan_completed volume_skipped file_not_stable copy_completed copy_failed remount_failed coexistence_blocked
+scan_completed volume_skipped file_not_stable copy_completed copy_failed remount_failed
 inbox_orphans_removed imported_keys_added pipeline_paused pipeline_resumed
 llm_server_started llm_server_stopped reaper_run reaper_failed deletion_enabled deletion_disabled
 model_downloaded model_download_failed diagnostics_completed
@@ -232,19 +232,19 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | DR-01 | 1 | 設定が CV をすべて満たす（違反を 1 件 1 行で出す） | fail | ○ |
 | DR-16 | 2 | タイムゾーンが解決できる | fail | ○ |
 | DR-02 | 3 | DB: ファイルが在れば読み取り専用で開き `PRAGMA quick_check` が `ok`、適用済みマイグレーションが最新。無ければ notice「まだ作られていません」（作らない） | fail | ○ |
-| DR-13 | 4 | voicedock の Helper の LaunchAgent が登録されていない（`launchctl print` が 0 以外） | fail |  |
-| DR-03 | 5 | `<HOME>` の空き容量: `SpaceCheck`（設定値を使う）を duration 1800 秒で呼んで `.ok` | notice |  |
-| DR-04 | 6 | whisper-cli が在り、`--help` に VAD の 6 フラグが逐語で在る（VAD 無効なら無くても notice） | fail |  |
-| DR-05 | 7 | Whisper モデルが在り SHA-256 が一致 | fail |  |
-| DR-06 | 8 | VAD モデルが在り SHA-256 が一致。VAD 無効なら notice「無音から幻覚が生成され、13 倍以上遅くなります」（ASR-02） | fail / notice |  |
-| DR-07 | 9 | llama-server が在り、使うフラグがすべて `--help` に在る | fail |  |
-| DR-08 | 10 | LLM モデルが選ばれて在り SHA-256 が一致（custom は ID の SHA と一致するかだけ）、メモリが足りる（custom はメモリの目安が無いので `.ok` とし、詳細に「動作保証外のモデルです」と出す） | fail |  |
-| DR-10 | 11 | Vault: `VaultCheck` が `.available`（`.notReadable(EPERM)` は許可の案内）かつ `access(W_OK)`。**ファイルもフォルダも作らない**（NOTE-16）。「書けない」と「Vault でない」を別の文言で出す | fail |  |
-| DR-11 | 12 | 接続中のデバイスを列挙できる（snapshot の `unavailable` に `not_listable` が無い）。不可なら「システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム」を案内。**デバイス未接続なら skip** | fail |  |
-| DR-12 | 13 | ログイン項目の状態（`SMAppService.mainApp.status`）。`.enabled` 以外は notice | notice |  |
-| DR-15 | 14 | inbox の取り残し（`inboxLeftoverStates` の Part の inbox ファイルが残っている）。件数と合計サイズ。**自動では消さない** | notice |  |
-| DR-17 | 15 | アプリ自身の署名が有効で ad-hoc でない（Team ID を持つ）。ad-hoc なら「ビルドのたびにリムーバブルボリュームの許可が失効します」（voicedock DH-16 相当） | notice |  |
-| DR-14 | 16 | 三重ロックを個別に表示（§8.9.8 の表示。`LockEvaluator` を使い、式を書き直さない）。常に notice | notice | （必ず最後） |
+| ~~DR-13~~ | — | ~~取り下げ（F-61）: voicedock の Helper の LaunchAgent が登録されていない~~ | — |  |
+| DR-03 | 4 | `<HOME>` の空き容量: `SpaceCheck`（設定値を使う）を duration 1800 秒で呼んで `.ok` | notice |  |
+| DR-04 | 5 | whisper-cli が在り、`--help` に VAD の 6 フラグが逐語で在る（VAD 無効なら無くても notice） | fail |  |
+| DR-05 | 6 | Whisper モデルが在り SHA-256 が一致 | fail |  |
+| DR-06 | 7 | VAD モデルが在り SHA-256 が一致。VAD 無効なら notice「無音から幻覚が生成され、13 倍以上遅くなります」（ASR-02） | fail / notice |  |
+| DR-07 | 8 | llama-server が在り、使うフラグがすべて `--help` に在る | fail |  |
+| DR-08 | 9 | LLM モデルが選ばれて在り SHA-256 が一致（custom は ID の SHA と一致するかだけ）、メモリが足りる（custom はメモリの目安が無いので `.ok` とし、詳細に「動作保証外のモデルです」と出す） | fail |  |
+| DR-10 | 10 | Vault: `VaultCheck` が `.available`（`.notReadable(EPERM)` は許可の案内）かつ `access(W_OK)`。**ファイルもフォルダも作らない**（NOTE-16）。「書けない」と「Vault でない」を別の文言で出す | fail |  |
+| DR-11 | 11 | 接続中のデバイスを列挙できる（snapshot の `unavailable` に `not_listable` が無い）。不可なら「システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム」を案内。**デバイス未接続なら skip** | fail |  |
+| DR-12 | 12 | ログイン項目の状態（`SMAppService.mainApp.status`）。`.enabled` 以外は notice | notice |  |
+| DR-15 | 13 | inbox の取り残し（`inboxLeftoverStates` の Part の inbox ファイルが残っている）。件数と合計サイズ。**自動では消さない** | notice |  |
+| DR-17 | 14 | アプリ自身の署名が有効で ad-hoc でない（Team ID を持つ）。ad-hoc なら「ビルドのたびにリムーバブルボリュームの許可が失効します」（voicedock DH-16 相当） | notice |  |
+| DR-14 | 15 | 三重ロックを個別に表示（§8.9.8 の表示。`LockEvaluator` を使い、式を書き直さない）。常に notice | notice | （必ず最後） |
 | DR-09 | 別 | LLM に実リクエスト（別のボタン。Worker の直列ループに 1 件の仕事として入れ、`LlamaServerSupervisor` の単一インスタンスを使う。数十秒かかる）。結果「<model>（<秒 小数 1 桁>s）」 | fail |  |
 
 ## S7. 削除禁止テスト ND（PLAN 付録 B.1）
@@ -340,7 +340,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | E2E-12 | 文字起こし中にアプリを強制終了（`kill -9`）→ 再起動で途中から再開し、**二重処理しない**（前後の件数表） | OFF |
 | E2E-13 | 処理中にスリープ → 復帰後に続行（処理中はアイドルスリープしない） | OFF |
 | E2E-14 | アプリが動いていない間に接続 → 起動後に取り込む | OFF |
-| E2E-15 | voicedock の Helper の LaunchAgent が登録されている → 取り込まない（共存ガード・DR-13） | OFF |
+| E2E-15 | — 取り下げ（F-61） | — |
 | E2E-16 | リムーバブルボリュームの許可を拒否 → パネルに案内が出る。許可後に取り込む | OFF |
 | E2E-17 | 削除を無効化（確認なし）→ 直ちに読み取り専用へ再マウントされ、以後削除されない | ON→OFF |
 | E2E-18 | — 取り下げ（F-60） | — |
