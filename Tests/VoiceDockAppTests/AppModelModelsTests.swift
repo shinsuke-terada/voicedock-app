@@ -66,12 +66,14 @@ struct AppModelModelsTests {
         await model.refresh()
         let task = Task { await model.fetchModel(.whisper) }
         #expect(await Self.waitUntil { fake.heldDownloads == 1 })
-        // 2 回目は止めない（番人が外れていれば download がもう 1 回呼ばれてすぐ返る）
-        await model.fetchModel(.whisper)
-        #expect(fake.downloadCount == 1)
+        // 2 回目は別の Task で押す（番人が外れていると、1 回目の終わりを待ってからもう 1 回 download する）
+        let again = Task { await model.fetchModel(.whisper) }
+        for _ in 0..<50 { await Task.yield() }
         fake.releaseDownload()
         await task.value
+        await again.value
         #expect(fake.downloadCount == 1)
+        #expect(model.downloads[.whisper] == .idle)
     }
 
     @Test("失敗の文言")
