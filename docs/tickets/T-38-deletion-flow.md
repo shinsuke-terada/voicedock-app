@@ -647,7 +647,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `resultForAPartNotWaitingIsDiscarded` | 待っていない Part の結果は捨てる（#160。パラメータ化: ID nil・COMPLETED） | (a) `updateRecording(pk, [.deleteRequestID(nil)])` (b) 要求を書かずに `movePart(pk, to: .completed)` → `updateRecording(pk, [.deleteRequestID(id)])` | 結果が無い、Part の状態は変わらない、`sourceDeletedAt == nil` |
 | `collectedAfterTheReaperRemovedTheRequest` | reaper が要求を消した後でも回収できる（BH-1） | 要求ファイルを消し、DELETED | COMPLETED |
 | `collectionIsNotLimitedToEvaluatedSessions` | 回収は Session で絞らない（COMPLETED の Session の Part も） | `moveSession(to: .completed)`（Part は SOURCE_DELETING のまま）、DELETED | Part COMPLETED |
-| `skippedPartStaysSkippedWhenDeleted` | 根拠 B の DELETED は SKIPPED のまま source_deleted_at を書く | `DeletionScene(status: .skipped, errorCode: .noSpeechDetected)`、`updateRecording(pk, [.deleteRequestID(id)])`、DELETED | SKIPPED、`errorCode == .noSpeechDetected`、`sourceDeletedAt` 在り、ID nil、events が増えない |
+| `skippedPartStaysSkippedWhenDeleted` | 根拠 B の DELETED は SKIPPED のまま source_deleted_at を書く | `DeletionScene(status: .skipped, errorCode: .noSpeechDetected)`、`updateRecording(pk, [.deleteRequestID(id)])`、DELETED | SKIPPED、`errorCode == .noSpeechDetected`、`sourceDeletedAt` 在り、ID nil、events が増えない、結果が無い、`config_warning` が無い |
 | `skippedPartRejectedKeepsItsReason` | 根拠 B の拒否は SKIPPED のまま ID だけ外す | 同上、MISMATCH `size_mismatch` | SKIPPED、`errorCode == .noSpeechDetected`、ID nil、`sourceDeletedAt == nil`、ログ `reason=size_mismatch` |
 | `missingSourcePathIsNotGone` | source_path が無ければ消えたと判定しない | `StorePaths.setSourcePath(store, partkey: pk, nil)`、DELETED | SOURCE_DELETE_PENDING、`reason=still_in_inventory` |
 | `emptyQueueDoesNothing` | 結果が無ければ何もしない（TEST-28） | 結果無し | 状態もログも変わらない |
@@ -703,7 +703,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
 | `tickRequestsDeletionAfterTheRawNote` | 1 tick で Raw の直後に要求を書き、reaper を起動する | `world.worker().tick()` | Part SOURCE_DELETING、要求 1 件、ログに `delete_requested`・`reaper_run exit=0`（スタブの runner の結果）、`world.ingest.scanNowCalls == 1` |
-| `nextTickCollectsTheResult` | 次の tick で結果を回収して完了する | 上の後、DELETED の結果を置き、`setSnapshot(generation: 2, devices: ["DJIMIC3": []])`、tick | Part COMPLETED、`sourceDeletedAt` 在り |
+| `nextTickCollectsTheResult` | 次の tick で結果を回収して完了する | 上の後、要求ファイルを消し（reaper の姿。次の tick で reaper を起動させず、回収を段 collectDeleteResults だけにする）、DELETED の結果を置き、`setSnapshot(generation: 2, devices: ["DJIMIC3": []])`、tick | Part COMPLETED、`sourceDeletedAt` 在り、`--home` の起動は 1 回のまま |
 | `staleSnapshotDoesNotLaunch` | snapshot が古い tick では reaper を起動しない | completedAt = now − 901 秒 | runner の記録に `--home` が無い（Raw の直後の要求も書かない。DEL-20） |
 | `savedHookRunsTheStage` | SAVED の直後の口（SessionSteps.deleteSourcesIfSafe）が削除段を呼ぶ | 既定の設定（削除無効）の world、`addSession(key: "DJIMIC3:20260829", day: "2026-08-29", status: .saved)`・`addPart(partA, status: .rawSaved)`（T-29 の部品）、`SessionSteps(ctx: try await world.context()).deleteSourcesIfSafe("DJIMIC3:20260829")` | Session COMPLETED、Part COMPLETED、`source_delete_skipped session_key=DJIMIC3:20260829 reason=delete_source_audio_disabled` |
 | `scanGenerationStartsAtZero` | 起動直後の reaperScanGeneration は 0（どの generation の走査でも判定できる） | Part を SOURCE_DELETING・ID 付きにして（`world.forcePart` と `updateRecording`）DELETED の結果、snapshot generation 1（ファイル無し）、新しい Worker で tick | COMPLETED |

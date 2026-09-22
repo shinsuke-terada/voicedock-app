@@ -96,10 +96,15 @@ struct DeletionStagesWiringTests {
         let worker = w.worker()
         await worker.tick()
         let id = try #require(try w.part(wired.pk).deleteRequestID)
+        // reaper の姿: 要求を消して結果を書く（次の tick で reaper を起動しないので、回収は段 collectDeleteResults だけ）
+        for name in Self.requests(w) {
+            try FileManager.default.removeItem(at: w.layout.queueDelete.appendingPathComponent(name))
+        }
         try Self.writeDeleted(w, pk: wired.pk, id: id)
         await w.ingest.setSnapshot(
             FakeIngest.snapshot(generation: 2, completedAt: w.clock.now(), devices: ["DJIMIC3": []]))
         await worker.tick()
+        #expect(await Self.homeLaunches(wired.runner) == 1)
         let part = try w.part(wired.pk)
         #expect(part.status == .completed)
         #expect(part.sourceDeletedAt != nil)

@@ -206,6 +206,8 @@ struct ResultCollectorTests {
         #expect(part.sourceDeletedAt != nil)
         #expect(part.deleteRequestID == nil)
         #expect(try Self.events(f.scene).count == eventsBefore)
+        #expect(f.scene.results() == [])
+        #expect(!f.scene.logLines.contains { $0.contains(" config_warning ") })
     }
 
     @Test("根拠 B の拒否は SKIPPED のまま ID だけ外す")
