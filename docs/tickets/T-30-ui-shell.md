@@ -36,7 +36,7 @@
 | `Sources/VoiceDockApp/StatusItemController.swift` | `StatusItemController` |
 | `Sources/VoiceDockApp/StatusIconImage.swift` | `StatusIconImage`（アイコンの合成） |
 | `Sources/VoiceDockApp/IconState.swift` | `IconState` |
-| `Sources/VoiceDockApp/AppSnapshot.swift` | `AppSnapshot`、`BacklogCounts` |
+| `Sources/VoiceDockApp/AppSnapshot.swift` | `AppSnapshot`（`BacklogCounts` は T-32 が VDPipeline の `StatusReport.swift` に移した。T-32 §4.9） |
 | `Sources/VoiceDockApp/AppServices.swift` | `AppServices`（プロトコル）、`LiveServices` |
 | `Sources/VoiceDockApp/AppModel.swift` | `@MainActor @Observable final class AppModel` |
 | `Sources/VoiceDockApp/StatusLine.swift` | `StatusLine`（1 行の文言の計算。純関数） |
@@ -427,12 +427,7 @@ import VDDevice
 import VDNotes
 import VDPipeline
 
-struct BacklogCounts: Equatable, Sendable {
-    var count: Int = 0
-    var seconds: Double = 0
-    var unknownDuration: Int = 0
-    static let empty = BacklogCounts()
-}
+// BacklogCounts（count / seconds / unknownDuration / empty）は VDPipeline の StatusReport.swift（T-32 §4.9 で移した。public）
 
 struct AppSnapshot: Equatable, Sendable {
     var now: Instant

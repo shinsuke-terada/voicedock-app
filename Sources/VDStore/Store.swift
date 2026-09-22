@@ -96,6 +96,9 @@ public final class Store: Sendable {
         self.url = url
     }
 
+    /// `Schema.migrator()` に登録した識別子の並び（DR-02 が最新かどうかを判定する。T-32）
+    public static let migrationIdentifiers: [String] = Schema.migrator().migrations
+
     public var appliedMigrations: [String] {
         get throws { try pool.read { try Schema.migrator().appliedMigrations($0) } }
     }

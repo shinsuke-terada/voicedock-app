@@ -1,4 +1,5 @@
 // AppModel が外の世界に触れる唯一の口（テストは FakeServices で差し替える）。
+import AppKit
 import Foundation
 import VDContract
 import VDCore
@@ -34,7 +35,15 @@ protocol AppServices: Sendable {
     func openSystemSettingsLoginItems()
     /// 「今はしない」などの記録。
     func saveUIState(_ state: UIState) -> Bool
-    // T-32 が enqueue(_ job: WorkerJob) を足す
+    // T-32
+    /// 「診断を実行」（PLAN §8.11。DR-09 を除く 15 件。何も書かない）
+    func runDiagnostics() async -> [DiagnosticResult]
+    /// Worker の直列ループに仕事を入れる（DR-09 など）
+    func enqueue(_ job: WorkerJob) async
+    /// 「状態の詳細」（PLAN §8.12。DB が無ければ全 0。DB を作らない）
+    func statusReport() async -> StatusReport
+    /// 要対応の「システム設定を開く」（ファイルとフォルダの許可）
+    func openSystemSettingsPrivacyFilesAndFolders()
 }
 
 /// 本番の AppServices（Bootstrap が作った AppContext を読むだけ）。
@@ -79,6 +88,17 @@ struct LiveServices: AppServices {
         s.lastConnectedAt = (s.device?.devices.isEmpty == false) ? s.device?.completedAt : lastConnectedAt
         s.renameCandidates = OnboardingEvaluator.renameCandidates(s.device)
         s.worker = await context.worker.status()
+        // T-32: 要対応（ガードの判定は Worker の PauseReason をそのまま読む。CR-06）
+        var attention = AttentionInput(now: s.now)
+        attention.configPresent = s.configPresent
+        attention.violations = s.configViolations
+        attention.ingestActivity = s.ingestActivity
+        attention.snapshot = s.device
+        attention.paused = s.worker.paused
+        attention.vault = s.vault
+        attention.reaper = await context.locks.reaperStatus()
+        attention.snapshotMaxAgeSeconds = config?.device.snapshotMaxAgeSeconds ?? 900
+        s.attention = AttentionEvaluator.items(attention)
         // 開けない・投げたら .empty のまま（DB が無ければ全 0。PLAN §8.12）
         if let ro = ReadOnlyStore.open(url: context.layout.database), let b = try? ro.backlog() {
             s.backlog = BacklogCounts(count: b.count, seconds: b.seconds, unknownDuration: b.unknownDuration)
@@ -118,4 +138,40 @@ struct LiveServices: AppServices {
     func openSystemSettingsLoginItems() { context.loginItem.openSystemSettings() }
 
     func saveUIState(_ state: UIState) -> Bool { context.uiState.save(state) }
+
+    // T-32
+
+    func runDiagnostics() async -> [DiagnosticResult] {
+        await Diagnostics(deps: context.diagnostics).run(loginItemStatus: context.loginItem.status())
+    }
+
+    func enqueue(_ job: WorkerJob) async { await context.worker.enqueue(job) }
+
+    /// 読むだけ（DB は ReadOnlyStore。inbox と staging を走査するので「詳細」を開いたときだけ呼ぶ）
+    func statusReport() async -> StatusReport {
+        let config = await context.config.current()
+        let zone = ZonedTime(timeZone: config.flatMap { TimeZone(identifier: $0.timeZone) } ?? .current)
+        return StatusReporter.build(
+            layout: context.layout, config: config, snapshot: await context.ingest.latestSnapshot(),
+            now: context.clock.now(), zone: zone)
+    }
+
+    /// `x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders`（`!` を使わず URLComponents で作る）
+    func openSystemSettingsPrivacyFilesAndFolders() {
+        guard let url = Self.privacyFilesAndFoldersURL() else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    /// システム設定の「ファイルとフォルダ」の URL（テストが文字列を固定する）
+    static func privacyFilesAndFoldersURL() -> URL? {
+        var components = URLComponents()
+        components.scheme = systemSettingsScheme
+        components.path = securityPane
+        components.query = filesAndFoldersAnchor
+        return components.url
+    }
+
+    static let systemSettingsScheme = "x-apple.systempreferences"
+    static let securityPane = "com.apple.preference.security"
+    static let filesAndFoldersAnchor = "Privacy_FilesAndFolders"
 }

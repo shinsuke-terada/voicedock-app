@@ -95,4 +95,18 @@ public final class ReadOnlyStore: Sendable {
     public func partkeys(statuses: Set<PartStatus>) throws -> [String] {
         try queue.read { db in try Store.partkeys(db, statuses: statuses) }
     }
+
+    /// inbox_path が NULL でない行の値（<HOME> からの相対）。束縛は集合の rawValue を昇順に、並びは partkey 順。
+    /// 空集合なら問い合わせずに `[]`（DR-15 と状態の詳細の取り残し。T-32）
+    public func inboxPaths(statuses: Set<PartStatus>) throws -> [String] {
+        guard !statuses.isEmpty else { return [] }
+        let values = statuses.map(\.rawValue).sorted()
+        return try queue.read { db in
+            try String.fetchAll(
+                db,
+                sql: "SELECT inbox_path FROM recordings WHERE status IN (\(Store.placeholders(values.count))) "
+                    + "AND inbox_path IS NOT NULL ORDER BY partkey",
+                arguments: StatementArguments(values))
+        }
+    }
 }

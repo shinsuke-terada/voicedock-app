@@ -297,9 +297,15 @@ struct AppModelTests {
         let models = ModelManager(
             layout: layout, catalog: catalog, downloader: downloader, cache: ModelVerificationCache(), log: log,
             hashChunkBytes: 1_048_576)
+        let locks = DisabledLockObserver()
+        let diagnostics = DiagnosticsDependencies(
+            layout: layout, paths: paths, catalog: catalog, config: config, ingest: ingest, locks: locks,
+            runner: runner, verificationCache: ModelVerificationCache(), signature: SecAppSignatureReader(),
+            bundleURL: tmp.url, physicalMemoryBytes: 16 * 1024 * 1024 * 1024, clock: clock, log: log)
         let context = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,
-            runner: runner, llama: llama, ingest: ingest, worker: worker, models: models, downloader: downloader,
+            runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
+            models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
             physicalMemoryBytes: 16 * 1024 * 1024 * 1024)
         let services = LiveServices(context: context)

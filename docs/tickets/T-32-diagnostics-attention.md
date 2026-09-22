@@ -41,14 +41,16 @@
 | 変更 `Sources/VDPipeline/StatusTexts.swift` | `writabilityWord(_:)` を足す（T-30 から移した。`DeviceWritability` はこのチケットが作るため。§4.12） |
 | `Sources/VDPipeline/InboxScan.swift` | `InboxCounts`、`InboxScan`（読むだけ。DR-15 と状態の詳細が共有） |
 | `Sources/VDPipeline/AttentionItems.swift` | `AttentionItem`、`AttentionAction`、`AttentionInput`、`AttentionEvaluator` |
-| `Sources/VDPipeline/StatusReport.swift` | `StatusReport`、`StatusReporter` |
+| `Sources/VDPipeline/StatusReport.swift` | `StatusReport`、`StatusReporter`、`BacklogCounts`（T-30 の `AppSnapshot.swift` から移す。§4.9。`StatusReport` が public なので VDPipeline に置く） |
+| 変更 `Sources/VDStore/ReadOnlyStore.swift` | `inboxPaths(statuses:)`（00-api-map §16 の VDStore の行。§10 の 6） |
+| 変更 `Sources/VDStore/Store.swift` | `static let migrationIdentifiers`（00-api-map §16。§10 の 7） |
 | 変更 `Sources/VDPipeline/Worker.swift` | `WorkerJob`、`enqueue(_:)`、`pendingJobs` |
 | 変更 `Sources/VDPipeline/Worker+Jobs.swift` | `stagePendingJobs(_:)`（T-18 の空の段に中身を入れる） |
 | `Sources/VoiceDockApp/AttentionTexts.swift` | 要対応の説明とボタンの文言（逐語） |
 | `Sources/VoiceDockApp/AppModel+Diagnostics.swift` | 診断・LLM の疎通確認・状態の詳細の操作 |
 | `Sources/VoiceDockApp/Panel/AttentionSection.swift` | §8.12 の 2（T-30 の空を置き換え） |
 | `Sources/VoiceDockApp/Panel/DetailsSection.swift` | §8.12 の 8（同上） |
-| 変更 `Sources/VoiceDockApp/AppSnapshot.swift` / `AppServices.swift` / `AppModel.swift` / `Strings.swift` / `Bootstrap.swift` | §4.10（`Bootstrap` は `locks` と `diagnostics` を組み立てる） |
+| 変更 `Sources/VoiceDockApp/AppSnapshot.swift` / `AppServices.swift` / `AppModel.swift` / `Strings.swift` / `Bootstrap.swift` | §4.10（`Bootstrap` は `locks` と `diagnostics` を組み立てる。`AppSnapshot.swift` から `BacklogCounts` を消す） |
 | `Tests/VDPipelineTests/DiagnosticsRunTests.swift` | 実行規則・サマリ・`diagnostics_completed` |
 | `Tests/VDPipelineTests/DiagnosticChecksTests.swift` | DR ごとに ok / notice / fail / skip |
 | `Tests/VDPipelineTests/DiagnosticsNoWriteTests.swift` | 診断が何も書かないこと |
@@ -61,6 +63,9 @@
 | `Tests/VDPipelineTests/WorkerJobsTests.swift` | `enqueue` と `stagePendingJobs` |
 | `Tests/VoiceDockAppTests/AttentionTextsTests.swift` | 文言と操作の対応 |
 | `Tests/VoiceDockAppTests/AppModelDiagnosticsTests.swift` | |
+| 変更 `Tests/VoiceDockAppTests/FakeServices.swift` | `AppServices` に足した 4 つ（§4.10）の偽物と記録 |
+| 変更 `Tests/VoiceDockAppTests/AppModelTests.swift` | `AppContext` の init に `locks` / `diagnostics` を渡す（`bootWithoutDatabaseShowsZero`） |
+| 変更 `Tests/PolicyTests/SpecSync/SpecCoverage.swift` | `activated` に `.dr` を足す（T-05 §4。DR の表示名と SPEC の S6 の集合を一致させる） |
 
 ## 4. 仕様
 
@@ -249,7 +254,7 @@ public struct Diagnostics: Sendable {
 **DR-02 データベース**（fatal）
 1. `let url = ctx.deps.layout.database`。`FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) == false` → `.notice`、details `[DiagnosticTexts.dbNotCreated]`（**作らない**）
 2. `guard let ro = ReadOnlyStore.open(url: url) else { return .fail(details: [DiagnosticTexts.dbUnopenable]) }`
-3. `let qc = (try? ro.quickCheck()) ?? ""`。`qc != "ok"` → `.fail`、details `[DiagnosticTexts.dbQuickCheck(qc)]`
+3. `guard let qc = try? ro.quickCheck() else { return .fail(details: [DiagnosticTexts.dbUnopenable]) }`（投げたら「開けない」。空の結果を quick_check の文言で出さない）。`qc != "ok"` → `.fail`、details `[DiagnosticTexts.dbQuickCheck(qc)]`
 4. `let applied = (try? ro.appliedMigrations()) ?? []`。`applied != Store.migrationIdentifiers` → `.fail`、details `[DiagnosticTexts.dbMigrations(applied: applied.last, expected: Store.migrationIdentifiers.last)]`
 5. `.ok`、details `[DiagnosticTexts.dbOK(applied.last ?? "")]`
 
@@ -383,7 +388,7 @@ enum DiagnosticTexts {
 | `dbNotCreated` | `まだ作られていません` |
 | `dbUnopenable` | `読み取り専用で開けません` |
 | `dbQuickCheck(_:)` | `PRAGMA quick_check が ok ではありません: <s>` |
-| `dbMigrations(applied:expected:)` | `適用済みのマイグレーションが <applied> です（最新は <expected>）` |
+| `dbMigrations(applied:expected:)` | `適用済みのマイグレーションが <applied> です（最新は <expected>）`（nil はどちらも `なし`） |
 | `dbOK(_:)` | `quick_check ok、マイグレーション <last>` |
 | `spaceOK(_:)` | `空き <x.x> GiB`（`StatusTexts.gib`） |
 | `executableMissing(_:)` | `<path> がありません` |
@@ -435,10 +440,11 @@ struct LLMProbeCheck: Sendable {
 
 **手順**:
 1. `let c = ctx.config`。`guard let id = c.llm.modelID else { return fail(DiagnosticTexts.llmNotSelected) }`
-2. モデルの在否とメモリ: **解析のガードと同じ判定関数**を呼ぶ（式を書き直さない）。`ctx.pauses`（前回の tick の結果）は見ず、
-   `LLMReadiness.check(config:layout:catalog:paths:physicalMemoryBytes:) -> PauseReason?`（T-22 のガードの判定を関数にしたもの。§10 の提案 9）を呼び、
-   `PauseReason` が返ったら `.fail`、details `[StatusTexts.pauseWord(r)]`（T-30 §4.10 の 11 語）
-3. `let model = ModelFiles.url(...)`（custom なら `customLLMURL`）
+2. モデルの在否とメモリと llama-server: **解析のガード（T-22 の `LLMGuard`）をそのまま呼ぶ**（式を書き直さない）。`ctx.pauses`（前回の tick の結果）は見ず、書きもしない:
+   使い捨ての `PauseBook`（何も書かない `LogSink` の `AppLog` を渡す。`pipeline_paused` を出さない）を持つ `TickContext` を作って `LLMGuard(ctx:).evaluate()` を呼ぶ。
+   `nil` なら、その `PauseBook.paused`（`PauseReason.allCases` の順）の先頭 `r` で `.fail`、details `[StatusTexts.pauseWord(r)]`（T-30 §4.10 の 11 語）
+   （`LLMReadiness.check` は T-22 が作っていない。`LLMGuard` は VDPipeline の internal で同じモジュールから呼べるので公開 API を足さない。§10 の 16）
+3. `let model = target.model`（`LLMGuard` が返す `LLMTarget`。custom なら `customLLMURL` が入っている）
 4. `let started = ctx.deps.clock.uptime()`
 5. `switch await ctx.deps.llama.ensureRunning(model: model, modelID: id, config: c.llm)`:
    - `.failure(let f)` → `.fail`、details `[f.message]`
@@ -449,7 +455,7 @@ struct LLMProbeCheck: Sendable {
    - `.failure(let f)` → `.fail`、details `[f.message]`
 8. 経過秒 = `(ctx.deps.clock.uptime() - started)` を秒の `Double` にして小数 1 桁
 
-- **llama-server を止めない**（`processReadySessions` の終わりで Worker が止める。T-22）。`LlamaServerSupervisor` の単一インスタンスを使う（PLAN §8.11）
+- **llama-server を止めない**（`processReadySessions` の終わりで Worker が止める。T-22）。`pendingJobs` の段は `processReadySessions` より後なので、DR-09 で起動したサーバは**次の tick の `processReadySessions` の終わりまで残る**。`LlamaServerSupervisor` の単一インスタンスを使う（PLAN §8.11）
 - 応答の中身は見ない（`{"ok": true}` を要求しない。**疎通の確認**であり、JSON の検証は AnalysisCall の仕事）
 
 ---
@@ -491,6 +497,9 @@ extension Worker {
 ```
 
 - **停止要求が来ていても返事は必ず返す**（`.skip` で返す）。返事を返さないと、パネルが「実行中…」のまま固まる
+  - 設定エラー中（`config.current() == nil`）の `tick` は段を回さないので、`guard let config` の else で列を空にし、各仕事に `.fail`（details `[DiagnosticTexts.configMissing]`。`LLMProbeCheck.unavailable`）で返事をする（`static func replyUnavailable(_ job: WorkerJob)`。`replyStopped` と同じ形）
+  - `tick` は `stop.isSet` なら段を回さないので、`stagePendingJobs` の分岐だけでは足りない。`enqueue` は `stop.isSet` なら列に入れずにその場で `.skip` を返し、
+    `requestStop()` は列に残っている仕事にも `.skip` を返して列を空にする（どちらも `static func replyStopped(_ job: WorkerJob)`、返す値は `LLMProbeCheck.stopped` の 1 か所）
 - 仕事は**入れた順に 1 回ずつ**実行される。`pendingJobs` を先に空にしてから回す（実行中に入った仕事は次の tick）
 - この段は snapshot の新鮮さによらず毎 tick 行う（T-18 §4.8 の並び）
 
@@ -511,6 +520,7 @@ public enum AttentionAction: Equatable, Sendable {
     case openSystemSettings    // システム設定を開く
     case openModels            // モデルの節を開く
     case openDeletionFlow      // 有効化フローを開く
+    case runDiagnostics        // 「詳細」を開いて診断を実行する（PLAN §8.11 の toolMissing の操作）
 }
 
 /// PLAN §8.11 の表の 1 行。宣言順 = 表示順。
@@ -566,7 +576,7 @@ public enum AttentionEvaluator {
 | `vaultUnavailable(.notReadable(EPERM))` | `[.chooseVault, .openSystemSettings]` |
 | `vaultUnavailable(その他)` | `[.chooseVault]` |
 | `modelMissing` / `llmNotSelected` / `llmInsufficientMemory` | `[.openModels]` |
-| `toolMissing` | `[]` |
+| `toolMissing` | `[.runDiagnostics]`（PLAN §8.11 の「診断を実行」） |
 | `deviceNotListable` | `[.openSystemSettings]` |
 | `deviceNeedsReplug` / `deviceNameInvalid` | `[]`（手順を表示するだけ） |
 | `ingestSilent` / `diskSpaceLow` / `lockMismatch` | `[]` |
@@ -654,7 +664,7 @@ public struct StatusReport: Equatable, Sendable {
     }
     public let partCounts: [(PartStatus, Int)]        // 表示順。0 件も含む
     public let sessionCounts: [(SessionStatus, Int)]
-    public let backlog: BacklogCounts                  // count / seconds / unknownDuration
+    public let backlog: BacklogCounts                  // count / seconds / unknownDuration（下記。T-30 の AppSnapshot.swift から移す）
     public let failedParts: [FailedPart]               // 最大 20 件
     public let failedTotal: Int
     public let maxAttempts: Int
@@ -679,6 +689,11 @@ public enum StatusReporter {
     public static let sessionNotes: [SessionStatus: String]
 }
 ```
+
+- `BacklogCounts` は T-30 が VoiceDockApp（`AppSnapshot.swift`）に置いた internal の型だが、public の `StatusReport` の欄なので **VDPipeline の `StatusReport.swift` に移して public にする**
+  （`public struct BacklogCounts: Equatable, Sendable { public var count: Int = 0; public var seconds: Double = 0; public var unknownDuration: Int = 0; public init(count:seconds:unknownDuration:)（既定値つき）; public static let empty }`）。パネルの上端（T-30）も同じ型を使う
+- `partCounts` / `sessionCounts` はタプルの配列なので `Equatable` が合成されない。`StatusReport` は `==` を欄ごとに手で書く（タプルは `elementsEqual(_:by:)`）
+- `StatusReport.Device` の init は internal（`StatusReporter` だけが作る）
 
 `partOrder`: `PartStatus.allCases`（宣言順 = 付録 A.1）から `.skipped` と `.failed` を取り除き、末尾に `[.skipped, .failed]` を足す（**手で 12 個を並べない**。状態が増えたら自動で入る）。
 `sessionOrder` = `SessionStatus.allCases`（並べ替えなし）。
@@ -737,6 +752,7 @@ public enum StatusReporter {
     func runDiagnostics() async -> [DiagnosticResult]
     func enqueue(_ job: WorkerJob) async
     func statusReport() async -> StatusReport
+    func openSystemSettingsPrivacyFilesAndFolders()   // NSWorkspace を開く口（テストでシステム設定を開かないため。LiveServices が URLComponents で作って開く）
 ```
 `LiveServices`: `runDiagnostics` = `await Diagnostics(deps: context.diagnostics).run(loginItemStatus: context.loginItem.status())`、
 `enqueue` = `await context.worker.enqueue(job)`、`statusReport` = `StatusReporter.build(layout:config:snapshot:now:zone:)`。
@@ -746,23 +762,31 @@ public enum StatusReporter {
 - 手順 12 の後に `let diagnostics = DiagnosticsDependencies(layout: layout, paths: paths, catalog: catalog, config: config, ingest: ingest, locks: locks, runner: runner, verificationCache: verificationCache, signature: SecAppSignatureReader(), bundleURL: Bundle.main.bundleURL, physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory, clock: clock, log: log.withCategory("pipeline"))` を組み立て、`AppContext` に渡す
 - **`observeReaperConf` は `{ .missing }` のまま**（T-30 §4.2 の 7）。reaper.conf を読むのは T-36 から
 
-`LiveServices.read` に足す（T-30 §4.8 の 6 の後）:
+`LiveServices.read` に足す（T-30 §4.8 の 6 の後。`AttentionInput` の public な init は `init(now:)` だけなので、欄に代入して作る）:
 ```swift
-s.attention = AttentionEvaluator.items(AttentionInput(
-    configPresent: s.configPresent, violations: s.configViolations,
-    ingestActivity: s.ingestActivity, snapshot: s.device,
-    paused: s.worker.paused, vault: s.vault,
-    reaper: await context.locks.reaperStatus(),
-    snapshotMaxAgeSeconds: config?.device.snapshotMaxAgeSeconds ?? 900, now: s.now))
+var attention = AttentionInput(now: s.now)
+attention.configPresent = s.configPresent
+attention.violations = s.configViolations
+attention.ingestActivity = s.ingestActivity
+attention.snapshot = s.device
+attention.paused = s.worker.paused
+attention.vault = s.vault
+attention.reaper = await context.locks.reaperStatus()
+attention.snapshotMaxAgeSeconds = config?.device.snapshotMaxAgeSeconds ?? 900
+s.attention = AttentionEvaluator.items(attention)
 ```
 `AppModel.refresh()` の 4 に `hasAttention = !snapshot.attention.isEmpty` を入れる（T-30 §4.11 が空けた場所）。
 
 `AppModel` に足す:
 ```swift
     enum DiagnosticsPanelState: Equatable { case idle, running, done([DiagnosticResult]) }
-    private(set) var diagnostics: DiagnosticsPanelState = .idle
-    private(set) var probe: DiagnosticsPanelState = .idle   // DR-09（結果は 1 件）
-    private(set) var detailsExpanded = false
+    // 書くのは AppModel+Diagnostics（別ファイルの拡張）なので private(set) にできない（T-31 の欄と同じ）
+    var diagnostics: DiagnosticsPanelState = .idle
+    var probe: DiagnosticsPanelState = .idle   // DR-09（結果は 1 件）
+    var detailsExpanded = false
+    var modelsHighlighted = false
+    var deletionHighlighted = false
+    func setStatusReport(_ report: StatusReport?)   // snapshot は private(set) なので、状態の詳細を差し込む口を AppModel.swift に置く
 
     func runDiagnostics() async
     func runLLMProbe() async
@@ -772,10 +796,16 @@ s.attention = AttentionEvaluator.items(AttentionInput(
 - `runDiagnostics()`: `.running` にして `diagnostics = .done(await services.runDiagnostics())`。**実行中は二重に押せない**
 - `runLLMProbe()`: `probe = .running` → `await services.enqueue(.llmProbe(reply: { r in Task { @MainActor in self.receiveProbe(r) } }))`。
   `receiveProbe`: `guard probe == .running else { return }`（閉じた後の返事は捨てる）→ `probe = .done([r])`
-- `toggleDetails()`: `detailsExpanded.toggle()`。真にしたときだけ `statusReport` を読み直す（**閉じている間は inbox も staging も走査しない**）
+- `toggleDetails()`: `detailsExpanded.toggle()`。真にしたときだけ `statusReport` を読み直す（**閉じている間は inbox も staging も走査しない**）。偽にしたら `setStatusReport(nil)`
+- `refresh()`: `services.read` は `statusReport` を作らないので、`detailsExpanded` の間は前の `snapshot.statusReport` を持ち越す（偽なら nil）
+- `panelDidClose()`: `probe = .idle` にする（閉じた後に届いた DR-09 の返事を `receiveProbe` が捨てる）
 - `perform(_:)`: `.revealConfig` → `revealConfigInFinder()`、`.reloadConfig` → `Task { await reloadConfig() }`、`.chooseVault` → `Task { await chooseVault() }`（T-31）、
   `.openSystemSettings` → `openSystemSettingsPrivacyFilesAndFolders()`（`NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)`。**`URL(string:)` は PT-02 の対象外**（`URLSession` ではない）だが、`!` を使わないよう `URLComponents` で作る）、
-  `.openModels` → `modelsHighlighted = true`（節を目立たせるだけ。新しい画面を作らない。D-7）、`.openDeletionFlow` → `deletionHighlighted = true`（T-40 が使う）
+  `.openModels` → `modelsHighlighted = true`（節を目立たせるだけ。新しい画面を作らない。D-7）、`.openDeletionFlow` → `deletionHighlighted = true`（T-40 が使う）、
+  `.runDiagnostics` → `Task { if !detailsExpanded { await toggleDetails() }; await runDiagnostics() }`（詳細を開いてから診断を実行する）
+- `runLLMProbe()` は押すたびに `probeGeneration`（`@ObservationIgnored var probeGeneration = 0`）を 1 増やし、返事のクロージャに開始時の世代を持たせる。`receiveProbe(_:generation:)` は `probe == .running` かつ世代が同じときだけ受け取る（`panelDidClose()` も世代を 1 増やす。閉じて押し直した後に届いた古い返事を捨てる）
+- `toggleDetails()` は `await services.statusReport()` の後に `guard detailsExpanded` を置く（待っている間に閉じられたら差し込まない）
+- `LiveServices.privacyFilesAndFoldersURL() -> URL?`（static。`URLComponents` で作る）を切り出し、`openSystemSettingsPrivacyFilesAndFolders()` はこれを開く
 
 `AttentionTexts.swift`（VoiceDockApp。逐語）:
 
@@ -800,7 +830,7 @@ s.attention = AttentionEvaluator.items(AttentionInput(
 | `reaperUpdateRequired` | `削除モジュールの更新が必要です` | `「元音声の削除」を開いて有効化をやり直してください` |
 
 ボタンの文言（`AttentionTexts.button(_:)`）: `.revealConfig` → `設定ファイルを Finder で表示`、`.reloadConfig` → `設定を読み直す`、
-`.chooseVault` → `Vault を選び直す`、`.openSystemSettings` → `システム設定を開く`、`.openModels` → `モデルの節を開く`、`.openDeletionFlow` → `有効化フローを開く`。
+`.chooseVault` → `Vault を選び直す`、`.openSystemSettings` → `システム設定を開く`、`.openModels` → `モデルの節を開く`、`.openDeletionFlow` → `有効化フローを開く`、`.runDiagnostics` → `診断を実行`（`Strings.buttonRunDiagnostics` をそのまま使う）。
 
 `AttentionSection`: `snapshot.attention` が空なら `EmptyView()`。そうでなければ `SectionBox(title: Strings.sectionAttention)` に 1 項目 1 ブロック（`title` を太字、`detail`、`actions` のボタン）。
 `DetailsSection`: `DisclosureGroup(Strings.sectionDetails, isExpanded:)`。開いたら
@@ -993,7 +1023,7 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `dr16Fail` | `timeZone = "Nowhere/Nope"` | `.fail` `["タイムゾーン Nowhere/Nope を解決できません"]` |
 | `dr02NoticeWhenMissing` | DB ファイルが無い | `.notice` `["まだ作られていません"]`、**実行後も DB が無い** |
 | `dr02OK` | `Store` で 1 回作った DB | `.ok`、details が `quick_check ok、マイグレーション ` で始まる |
-| `dr02FailOnBadMigrations` | `appliedMigrations` が最新でない DB（`Store` の internal init で古い migrator を使う） | `.fail`、details が `適用済みのマイグレーションが ` で始まる |
+| `dr02FailOnBadMigrations` | `appliedMigrations` が最新でない DB（`Store` の internal init で古い migrator を使う） | `.fail`、details が `適用済みのマイグレーションが ` で始まる（知らない識別子は GRDB の `appliedMigrations` に現れないので `適用済みのマイグレーションが  です（最新は v1_initial）`） |
 | `dr03OK` | 空き容量が十分な一時ディレクトリ | `.ok`、details が `空き ` で始まる |
 | `dr03NoticeWhenStagingOverLimit` | `stagingMaxBytes` を 1 にする | `.notice`、details が `staging 使用量 ` で始まる（§8.3 の文言） |
 | `dr04FailWhenMissing` | `whisper-cli` を置かない | `.fail` `["<path> がありません"]` |
@@ -1002,7 +1032,7 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `dr04NoticeWhenVADDisabled` | フラグ欠け＋`vad.enabled = false` | `.notice` |
 | `dr04FailWhenVADEnabled` | フラグ欠け＋`vad.enabled = true` | `.fail` |
 | `dr05OK` / `dr05FailMissing` / `dr05FailSHA` | モデルを置く / 置かない / 中身を変える | `.ok` / `.fail`（逐語 3 通り） |
-| `dr05UsesTheVerificationCache` | 2 回実行し `ModelVerificationCache` に記録させる | 2 回目はハッシュを計算しない（`FileHasher` を包んだ計数で確かめる） |
+| `dr05UsesTheVerificationCache` | 2 回実行し `ModelVerificationCache` に記録させる。1 回目の後に inode・サイズ・mtime を保ったまま中身だけ変える（`FileHandle(forUpdating:)` で上書きし mtime を戻す） | 2 回目も `.ok`（記録を使いハッシュを計算し直していない。`FileHasher` を差し替える口は作らない） |
 | `dr06NoticeWhenDisabled` | `vad.enabled = false` | `.notice` `["無音から幻覚が生成され、13 倍以上遅くなります"]` |
 | `dr06OK` / `dr06Fail` | VAD 有効でモデル在り / 無し | |
 | `dr07FailWhenMissing` / `dr07FailWhenFlagsMissing` / `dr07OK` | `llama-server` を置く・help を作る | `.fail` / `.fail`（`使えないフラグがあります: `） / `.ok` |
@@ -1030,7 +1060,7 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `diagnosticsChangeNothingInHome` / 「OPS-14 `<HOME>` が 1 バイトも変わらない」 | `<HOME>` に config・DB・inbox・staging・models を用意し、`run()` の前後で全パスの（相対パス・サイズ・mtime）の一覧を取る | 前後で一致 |
+| `diagnosticsChangeNothingInHome` / 「OPS-14 `<HOME>` を書き換えない（-shm の索引を除く）」 | `<HOME>` に config・DB・inbox・staging・models を用意し、`run()` の前後で全パスの（相対パス・サイズ・mtime）の一覧を取る（`voicedock.sqlite-shm`（完全一致）だけは在否とサイズ。§11 の 8。WAL の共有メモリの索引は読み取り専用の接続でも読み手の印を書くので mtime が動く） | 前後で一致 |
 | `diagnosticsChangeNothingInVault` / 「Vault にファイルもフォルダも作らない」 | `.obsidian/` だけの Vault | 同上 |
 | `diagnosticsDoNotCreateTheDatabase` / 「DB を作らない」 | DB 無し | `run()` の後も `voicedock.sqlite` が無い |
 | `diagnosticsDoNotCreateNoteFolders` / 「テンプレートのフォルダを作らない」 | `raw.folderTemplate` が `Daily/Voice/Raw/{yyyymmdd}` | Vault に `Daily/` ができていない |
@@ -1058,8 +1088,9 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `probeRunsAsAJob` | `enqueue(.llmProbe(reply:))` → `tick()` | reply が 1 回、`DR-09` |
 | `jobRunsOnceAcrossTicks` | enqueue → tick → tick | reply が 1 回 |
 | `jobsRunInOrder` | 3 件 enqueue → tick | reply の順が enqueue の順 |
-| `stopRepliesWithSkip` | `requestStop()` の後に enqueue → tick | reply が `.skip` `["終了中のため実行しませんでした"]`（**返事は必ず返る**） |
-| `enqueueWakesTheLoop` | `run()` 中に enqueue | 30 秒待たずに tick が回る（`RecordingSleeper` の記録で確かめる） |
+| `configErrorRepliesWithFail` / 「DR-09 設定エラー中の enqueue → tick は fail で返事をする」 | 設定ファイルを壊して読み直す（`current() == nil`）→ enqueue → tick | reply が `.fail` `["設定が読めていません"]`、列が空、`ensureRunning` は呼ばれない |
+| `stopRepliesWithSkip` | (a) enqueue → `stop` の立った `TickContext` で `stagePendingJobs` を直接呼ぶ、(b) `requestStop()` の後に enqueue → tick、(c) enqueue → `requestStop()`（tick を回さない） | どれも reply が `.skip` `["終了中のため実行しませんでした"]`（**返事は必ず返る**） |
+| `enqueueWakesTheLoop` | `run()` 中に enqueue（sleeper は `SuspendingSleeper`。`RecordingSleeper` は待たないので周期の tick と区別できない） | 30 秒待たずに tick が回り、返事が届く |
 | `noJobsIsCheap` | 仕事 0 件で tick | reply も LLM の呼び出しも無い（TEST-28） |
 
 ### 5.6 `AttentionEvaluatorTests.swift`（`@Suite("AttentionEvaluator")`）
@@ -1073,7 +1104,7 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `vaultEPERMOffersSystemSettings` | `vault = .notReadable(errno: EPERM)` | `actions == [.chooseVault, .openSystemSettings]` |
 | `modelMissingPerKind` | `paused` に 3 つのモデルの理由 | `.modelMissing(.whisper)`・`.modelMissing(.vad)`・`.modelMissing(.llm)` がこの順 |
 | `llmNotSelectedAndMemory` | `paused = [.llmNotSelected, .llmInsufficientMemory]` | 2 件、`actions` はどちらも `[.openModels]` |
-| `toolMissing` | `paused = [.whisperMissing, .llamaServerMissing]` | `.toolMissing(.whisperCLI)`・`.toolMissing(.llamaServer)` |
+| `toolMissing` | `paused = [.whisperMissing, .llamaServerMissing]` | `.toolMissing(.whisperCLI)`・`.toolMissing(.llamaServer)`、`actions` はどちらも `[.runDiagnostics]` |
 | `licenseIsNotAnAttention` | `paused = [.license]` | `[]` |
 | `deviceUnavailableReasonsSplit` | `unavailable = ["B": "not_listable", "A": "mount_name_mismatch", "C": "invalid_device_id"]` | `.deviceNotListable("B")`・`.deviceNeedsReplug("A")`・`.deviceNameInvalid("C")` がこの順（理由ごとに、名前はバイト順） |
 | `unknownUnavailableReasonIsIgnored` | `unavailable = ["X": "no_recordings"]` | `[]` |
@@ -1089,7 +1120,7 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `reaperUpdateRequired` | `reaper = .versionMismatch(found: "0.9.0")` | 含む、`actions == [.openDeletionFlow]` |
 | `reaperValidIsQuiet` | `.valid(version: "1.0.0")` | 含まない |
 | `orderFollowsTheSpecTable` / 「並びは §8.11 の表の順」 | 全部の条件を同時に立てる | `map(\.order)` が昇順で、`configInvalid` が先頭・`reaperUpdateRequired` が末尾 |
-| `failedPartsAreNotAttention` / 「FAILED は要対応にしない」 | FAILED の Part が在る DB（`AttentionInput` に FAILED の情報を渡す口が無いことを型で確かめる） | `AttentionItem` に FAILED を表す case が無い（コンパイル時に保証。テストは `allCases` 相当の列挙で件数 15 を固定） |
+| `failedPartsAreNotAttention` / 「FAILED は要対応にしない」 | FAILED の Part が在る DB（`AttentionInput` に FAILED の情報を渡す口が無いことを型で確かめる） | `AttentionItem` に FAILED を表す case が無い（コンパイル時に保証。テストは `allCases` 相当の列挙で件数 14 を固定。F-61 で `coexistenceBlocked` を外した） |
 
 ### 5.7 `StatusReporterTests.swift`（`@Suite("StatusReporter")`）
 
@@ -1133,7 +1164,7 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 ### 5.9 `AttentionTextsTests.swift` / `AppModelDiagnosticsTests.swift`
 
-`AttentionTextsTests`: 14 の項目すべてについて `title` と `detail` が §4.10 の表と逐語で一致すること、`button(_:)` が 6 つの `AttentionAction` それぞれで逐語一致すること、
+`AttentionTextsTests`: 14 の項目すべてについて `title` と `detail` が §4.10 の表と逐語で一致すること、`button(_:)` が 7 つの `AttentionAction` それぞれで逐語一致すること（`.runDiagnostics` → `診断を実行`）、
 `AttentionItem` の全ケースに `title` が在ること（`switch` の網羅で保証。表の件数 14 を 1 本のテストで固定（F-61 で coexistenceBlocked を外した））。
 
 `AppModelDiagnosticsTests`:
@@ -1144,9 +1175,11 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `runDiagnosticsIsNotStartedTwice` | 実行中にもう一度押す | `runDiagnostics` の呼び出しが 1 回 |
 | `probeGoesThroughTheWorker` | `runLLMProbe()` | `enqueue(.llmProbe)` が 1 回、返事で `probe == .done([r])` |
 | `lateProbeReplyIsDropped` | 返事の前に `panelDidClose()` | `probe == .idle` のまま |
+| `staleProbeReplyIsDropped` | 押す → 閉じる → 押し直す → 1 回目の返事 → 2 回目の返事 | 1 回目の返事では `.running` のまま、2 回目の返事で `.done` |
+| `privacyURLIsFixed` | `LiveServices.privacyFilesAndFoldersURL()` | `x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders` |
 | `detailsLoadsTheReportOnlyWhenOpen` | `toggleDetails()` を 2 回 | `statusReport()` の呼び出しが 1 回（閉じたときは呼ばない） |
 | `attentionSetsTheIcon` | `read` が `attention: [.diskSpaceLow]` を返す | `hasAttention == true`、`iconState == .attention` |
-| `performActionsAreRouted` | 6 つの `AttentionAction` | それぞれ対応する操作が 1 回ずつ呼ばれる |
+| `performActionsAreRouted` | 7 つの `AttentionAction` | それぞれ対応する操作が 1 回ずつ呼ばれる（`.runDiagnostics` は詳細が開き、`runDiagnostics` が 1 回） |
 
 ### 5.10 `LockObservingTests.swift`（`@Suite("LockObserving")`）
 
@@ -1170,12 +1203,12 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 | # | 壊し方（1 か所） | 落ちるべきテスト |
 |---|---|---|
-| 1 | `Diagnostics.checks` の DR-14 を先頭に移す | `orderIsTheSpecOrder`・`alwaysRunsAfterFatalFail` |
-| 2 | DR-03 の `fatal` を真にする | `fatalSetIsTheSpecSet`・`nonFatalFailDoesNotBlock` |
+| 1 | `Diagnostics.checks` の DR-14 を先頭に移す | `orderIsTheSpecOrder`（`alwaysRunsAfterFatalFail` は偽の `checks` を使うので落ちない。実装で確かめた） |
+| 2 | DR-03 の `fatal` を真にする | `fatalSetIsTheSpecSet`（`nonFatalFailDoesNotBlock` は偽の `checks` を使うので落ちない） |
 | 3 | `run` の `blocked` の判定から `check.always` を外す | `alwaysRunsAfterFatalFail` |
 | 4 | `run` の `always` の `ctx.config != nil` を外す | `alwaysSkipsWhenConfigIsNil` |
 | 5 | `counts` が skip を `passed` に数える | `summaryDoesNotCountSkip` |
-| 6 | DR-02 で `ReadOnlyStore.open` の前にファイルの有無を見ない | `dr02NoticeWhenMissing`・`diagnosticsDoNotCreateTheDatabase` |
+| 6 | DR-02 で `ReadOnlyStore.open` の前にファイルの有無を見ない | `dr02NoticeWhenMissing`（`ReadOnlyStore.open` 自身が無いファイルを開かないので `diagnosticsDoNotCreateTheDatabase` は落ちない） |
 | 7 | DR-04 の VAD 無効の分岐を消す（常に fail） | `dr04NoticeWhenVADDisabled` |
 | 8 | DR-05 の SHA の照合を size の照合だけにする | `dr05FailSHA` |
 | 9 | DR-05 が `ModelVerificationCache` を見ない | `dr05UsesTheVerificationCache` |
@@ -1183,25 +1216,28 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | 11 | DR-10 で `access(W_OK)` を見ない | `dr10FailWhenNotWritable` |
 | 12 | DR-11 の「0 台なら skip」を消す | `dr11SkipWhenNoDevice` |
 | 13 | DR-12 を fail にする | `dr12NoticeForEachStatus` |
-| 14 | DR-15 を fail にする／自動で消す | `dr15NoticeWithCountAndBytes`・`diagnosticsChangeNothingInHome` |
+| 14 | DR-15 を fail にする | `dr15NoticeWithCountAndBytes`（「自動で消す」は `Diagnostics/` に削除の API を書くことになり PT-17 が落とす。`diagnosticsChangeNothingInHome` は fail にしただけでは落ちない） |
 | 15 | DR-17 で `teamID == nil` を ok にする | `dr17NoticeForAdhoc` |
-| 16 | DR-14 が `LockDisplay.lines` を使わず自前で 3 行を組み立てる | `dr14AlwaysNotice`（配列の一致） |
-| 17 | `DisabledLockObserver.observe` が `.configured` を返す | `disabledObserverIsAlwaysDisabled`、`dr14AlwaysNotice` |
-| 17 | `stagePendingJobs` が `stop.isSet` のとき返事を返さない | `stopRepliesWithSkip`（時間切れ） |
+| 16 | DR-14 が `LockDisplay.lines` を使わず自前で 3 行を組み立てる（語が 1 つでもずれたもの。完全に同じ文字列の写しは区別できない） | `dr14AlwaysNotice`（配列の一致） |
+| 17a | `DisabledLockObserver.observe` が `.configured` を返す | `disabledObserverIsAlwaysDisabled`（`LockDisplay.lines` は readiness を出さないので `dr14AlwaysNotice` は落ちない） |
+| 17b | `stagePendingJobs` が `stop.isSet` のとき返事を返さない | `stopRepliesWithSkip`（(a) の返事が空） |
 | 18 | `stagePendingJobs` が `pendingJobs` を空にしない | `jobRunsOnceAcrossTicks` |
+| 18a | `tick` の設定エラーの分岐で `replyUnavailable` を呼ばない（列に残す） | `configErrorRepliesWithFail` |
+| 18b | `requestStop` が列を空にしない（残った仕事に返事をしない） | `stopRepliesWithSkip`（(c) の返事が空） |
 | 19 | `LLMProbeCheck` が `llama.stop()` を呼ぶ | `probeDoesNotStopTheServer` |
 | 20 | `isIngestSilent` から `!scanning` を外す | `notSilentWhileScanning` |
 | 21 | `isIngestSilent` から `lastActivityAt` を外す | `notSilentWhileCopying` |
 | 22 | `isIngestSilent` の `>` を `>=` にする | `notSilentAtExactlyMaxAge` |
 | 23 | `AttentionEvaluator` が `paused` ではなく自前でモデルの在否を見る | （検出できない）**`AttentionInput` にファイルの口を持たせないことを型で守る**。§7 のチェックリスト |
+| 23a | `toolMissing` の `actions` を `[]` にする | `toolMissing`（AttentionEvaluatorTests） |
 | 24 | `lockMismatch` の条件に `CV-01` を足す | `noLockMismatchForOtherRules` |
 | 25 | `AttentionEvaluator` が `.license` を出す | `licenseIsNotAnAttention` |
 | 26 | `partOrder` を `PartStatus.allCases` のままにする | `partOrderPutsSkippedBeforeFailed` |
 | 27 | `sessionNotes` に `.failed` の注記を入れる | `sessionFailedHasNoNote` |
 | 28 | `partNotes` に `.skipped: "（無音）"` を足す | `skippedHasNoSilenceNote` |
 | 29 | `failedParts(limit:)` の 20 を 100 にする | `failedPartsCapAt20` |
-| 30 | `FailedPart` に `row.errorCode?.rawValue` を渡す（生の文字列を捨てる） | `failedPartKeepsUnknownCodeString` |
-| 30 | `InboxScan.counts` が取り残しを pending から除かない | `leftoversAreExcludedFromPending`・`inboxSplitsPendingAndLeftover` |
+| 30a | `FailedPart` に `row.errorCode?.rawValue` を渡す（生の文字列を捨てる） | `failedPartKeepsUnknownCodeString` |
+| 30b | `InboxScan.counts` が取り残しを pending から除かない | `leftoversAreExcludedFromPending`・`inboxSplitsPendingAndLeftover` |
 | 31 | `StatusReporter` が DB を `Store` で開く | `allZeroWithoutDatabase`（DB ができる）と PT-17 |
 | 32 | デバイスの行で `readOnly == nil` を `読み書き可能` にする | `deviceLineWordsFollowObservation` |
 | 33 | 0 台を `不明` にする | `deviceLineWhenZeroDevices` |
@@ -1220,7 +1256,10 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 ## 8. SPEC の変更
 
-`docs/SPEC.md` に足す（`make-spec.py` の表に見出しを登録する）:
+**実装で分かったこと**: `docs/SPEC.md` には診断の表が既に `## S6. 診断 DR（PLAN §8.11）` として在る（`make-spec.py` が PLAN から作る。手で直さない）。
+本チケットは SPEC を変えず、`SpecCoverage.activated` に `.dr` を足し（DR の表示名で始まるテストの ID の集合 = S6 の生きた ID の集合。DR-09 を含み DR-13 を含まない）、
+`DiagnosticsRunTests.orderIsTheSpecOrder` が `SpecDocument.ids(.dr)`（DR-09 を除く）と `Diagnostics.checks` の順を突き合わせる。
+下の S24〜S26 は `make-spec.py`（T-05）と PLAN の変更が要るので、本チケットでは行わず §10 の 15 に回した（元の案を残す）:
 
 1. `## S24. 診断（DR）` — PLAN §8.11 の表を `| ID | 順 | 検査 | fail / notice | 致命 |` の 5 列で写す。`DiagnosticsRunTests` が `DR-\d+` の集合・順・`fatal` 列・`always`（DR-14）を `Diagnostics.checks` と突き合わせる。**件数の literal は README の 1 か所だけ**（§10.3）
 2. `## S25. 要対応` — PLAN §8.11 の要対応の表を `| 項目 | 条件 | 操作ボタン |` で写す。`AttentionEvaluatorTests` が case の集合と順を突き合わせる
@@ -1236,7 +1275,7 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 ## 10. API 地図への変更提案
 
 1. §11 の `Diagnostics/` の行を 7 ファイルに分ける: `DiagnosticResult.swift`（`DiagnosticStatus` / `DiagnosticResult`）、`DiagnosticCheck.swift`、`DiagnosticsDependencies.swift`（`DiagnosticsDependencies` / `AppSignatureReading` / `AppSignatureInfo` / `SecAppSignatureReader`）、`Diagnostics.swift`、`DiagnosticChecks.swift`、`DiagnosticTexts.swift`、`LLMProbeCheck.swift`。`Diagnostics.init(deps: DiagnosticsDependencies)` と `summary(_:)` / `counts(_:)` を載せる
-2. §11 の `AttentionItems.swift` を `AttentionItem`（14 ケース。`coexistenceBlocked` は取り下げ。PLAN F-61）・`AttentionAction`（6 ケース）・`AttentionInput`・`AttentionEvaluator.items(_:)` / `isIngestSilent(_:)` にする
+2. §11 の `AttentionItems.swift` を `AttentionItem`（14 ケース。`coexistenceBlocked` は取り下げ。PLAN F-61）・`AttentionAction`（7 ケース。`runDiagnostics` は toolMissing の「診断を実行」）・`AttentionInput`・`AttentionEvaluator.items(_:)` / `isIngestSilent(_:)` にする
 3. §11 の `StatusReport.swift` を §4.9 の形（`StatusReport` / `StatusReport.FailedPart` / `StatusReport.Device` / `StatusReporter.build(layout:config:snapshot:now:zone:)` / `partOrder` / `sessionOrder` / `partNotes` / `sessionNotes`）にする
 4. §11 に `InboxScan.swift`（`InboxCounts` / `InboxScan`。**作り手 T-32**、DR-15 と `StatusReporter` が使う）を足す。`InboxMaintenance.leftovers()` はこれを呼ぶよう T-18 側を直す（同じ数え方を 2 か所に持たない）
 5. （T-30 §4.10 の `StatusTexts.pauseWord(_:)` をそのまま使う。新しい提案は無い）
@@ -1249,6 +1288,13 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 12. （整合修正 H-3）§11 に `LockObserving.swift`（`LockObserving` / `DisabledLockObserver` / `LockObservation` / `LockDisplay` / `ReaperStatus` / `DeletionReadiness` / `DeviceWritability`。**作り手 T-32**、T-36 の `LockEvaluator` が準拠）を足し、`DiagnosticsDependencies.locks` を `any LockObserving` にする → 00-api-map §11 に反映済み。`display(config:snapshot:)` は `LockObserving` の既定実装（§4.11）で、地図の `LockEvaluator` の行の `display` と同じもの
 13. （整合修正）`LockObservation` に `confState: LockDisplay.ConfState` を足し、`LockDisplay` の欄の名前を `reaperConf` から **`confState`** に替える（`LockObserving.swift` は PT-11 の許可場所ではない）。T-40 §4 の `display.reaperConf` もこの名前に直す
 14. （整合修正 M-1）`StatusReport.FailedPart.errorCode` には `RecordingRow.errorCodeRaw`（生の文字列）を渡す（§4.9 の 2）
+15. （実装で分かったこと）§8 の S24〜S26 は SPEC の S6 と重なる。S25（要対応）・S26（状態の詳細）を SPEC に足すなら PLAN の表と `make-spec.py` の変更が要る
+16. （実装で分かったこと）§16 の `LLMReadiness.check`（T-22）は作られていない。DR-09 は VDPipeline の internal の `LLMGuard` を使い捨ての `PauseBook` で呼ぶ（§4.6）。§16 の行を「DR-09 は `LLMGuard` を共有する（公開しない）」に直す
+17. （実装で分かったこと）`BacklogCounts` を VDPipeline（`StatusReport.swift`）の public に移した（§4.9）。§12 の `AppSnapshot.swift` の行から `BacklogCounts` を外し、§11 の `StatusReport.swift` の行に足す
+18. （実装で分かったこと）`AppServices`（VoiceDockApp の internal）に `openSystemSettingsPrivacyFilesAndFolders()` を足した（§4.10）
+19. （実装で分かったこと）`WorkerDependencies.verificationCache`（地図 §11 の並び）は本チケットでは要らない。診断は `DiagnosticsDependencies.verificationCache` に Bootstrap の同じインスタンス（ModelManager と共有）を渡し、DR-09 はガードと同じくサイズでしか在否を見ない。足すのは Worker 側で SHA を見るチケットが出たとき
+20. （レビューで分かったこと）DR-02 は「DB がこのアプリより新しい版で作られた」（適用済みに知らない識別子が在る）を区別できない（GRDB の `appliedMigrations` は登録済みの識別子しか返さない）。`Store` の `hasBeenSuperseded` 相当を `ReadOnlyStore` に足し、専用の文言を出したい（本チケットは公開 API を足さない）
+21. （レビューで分かったこと・CR-06）同じ文言が 2 か所に在る: `DiagnosticTexts.tccFolders` と `AttentionTexts.tccFolders`、`DiagnosticTexts.tccRemovableVolumes` と `AttentionTexts` の `deviceNotListable` の説明、`DiagnosticTexts.notEnoughMemory` と `Strings.notEnoughMemory`、`DiagnosticTexts.customModelUnsupported` と `Strings.customModelUnsupported`。VDPipeline の `StatusTexts` に寄せて両方から参照したい（本チケットではコードを変えない）
 
 ## 11. 仕様の問題（PLAN に直したいこと）
 
@@ -1259,3 +1305,4 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 5. **§8.12 の 2 の例に「再試行」= `requeue(.manual)` とあるが、§8.11 の要対応の表には「再試行」を持つ項目が無い**（FAILED は要対応にしない、と同じ節が書いている）。本チケットは「再試行」を「詳細」の節（FAILED の一覧の下）に置いた。PLAN §8.12 の 2 の例から「再試行」を外すか、置き場所を 8 に直したい
 6. **DR-03 の「`expected(1800 秒) × 2.0 + 2 GiB`」が設定値（`freeSpaceMultiplier` / `freeSpaceMarginBytes`）の既定値を書き写している**。本チケットは `SpaceCheck`（設定値を使う）を呼ぶことにした。PLAN の式を「§8.3 の `SpaceCheck` を duration 1800 秒で呼ぶ」に直したい
 7. **DR-09 の「結果「<model>（<秒 小数 1 桁>s）」」の `<model>` がカタログの `id` か `displayName` か決まっていない**。本チケットは `llm.modelID`（custom も含めてそのまま出る）にした
+8. **OPS-14「1 バイトも変わらない」は `voicedock.sqlite-shm` の mtime について守れない**。WAL の共有メモリの索引は、読み取り専用の接続でも読み手の印（read mark）を書く（SQLite の仕組み。データではない）。テストは `voicedock.sqlite-shm`（完全一致）だけ在否とサイズで比べる。PLAN の OPS-14 に注記したい

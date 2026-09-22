@@ -1,6 +1,7 @@
 // AppServices の偽物（T-30。VoiceDockAppTests の中だけ）。read が返す値を差し替え、呼ばれた操作を記録する。
 import Foundation
 import Synchronization
+import VDContract
 import VDCore
 import VDModels
 import VDPipeline
@@ -41,6 +42,15 @@ final class FakeServices: AppServices {
         var openSettingsCount = 0
         var saveResult = true
         var savedStates: [UIState] = []
+        // T-32
+        var diagnosticsResult: [DiagnosticResult] = []
+        var diagnosticsCount = 0
+        var holdDiagnostics = false
+        var diagnosticsGates: [AsyncStream<Void>.Continuation] = []
+        var jobs: [WorkerJob] = []
+        var report: StatusReport?
+        var statusReportCount = 0
+        var openPrivacyCount = 0
     }
 
     private let state: Mutex<State>
@@ -202,6 +212,60 @@ final class FakeServices: AppServices {
             return $0.saveResult
         }
     }
+
+    // MARK: T-32 の差し替えと記録
+
+    /// runDiagnostics が返す結果。hold なら releaseDiagnostics まで返さない
+    func setDiagnostics(_ results: [DiagnosticResult], hold: Bool = false) {
+        state.withLock {
+            $0.diagnosticsResult = results
+            $0.holdDiagnostics = hold
+        }
+    }
+    func releaseDiagnostics() {
+        let gates = state.withLock { s -> [AsyncStream<Void>.Continuation] in
+            let g = s.diagnosticsGates
+            s.diagnosticsGates = []
+            return g
+        }
+        for g in gates { g.yield(()) }
+    }
+    var diagnosticsCount: Int { state.withLock { $0.diagnosticsCount } }
+    /// enqueue に渡された仕事（入れた順）
+    var jobs: [WorkerJob] { state.withLock { $0.jobs } }
+    func setStatusReport(_ report: StatusReport) { state.withLock { $0.report = report } }
+    var statusReportCount: Int { state.withLock { $0.statusReportCount } }
+    var openPrivacyCount: Int { state.withLock { $0.openPrivacyCount } }
+
+    func runDiagnostics() async -> [DiagnosticResult] {
+        let hold = state.withLock { s -> Bool in
+            s.diagnosticsCount += 1
+            return s.holdDiagnostics
+        }
+        if hold {
+            let (gate, continuation) = AsyncStream.makeStream(of: Void.self)
+            state.withLock { $0.diagnosticsGates.append(continuation) }
+            var it = gate.makeAsyncIterator()
+            _ = await it.next()
+        }
+        return state.withLock { $0.diagnosticsResult }
+    }
+
+    func enqueue(_ job: WorkerJob) async { state.withLock { $0.jobs.append(job) } }
+
+    func statusReport() async -> StatusReport {
+        state.withLock {
+            $0.statusReportCount += 1
+            return $0.report ?? Self.emptyReport
+        }
+    }
+
+    func openSystemSettingsPrivacyFilesAndFolders() { state.withLock { $0.openPrivacyCount += 1 } }
+
+    /// DB も snapshot も無い <HOME> の状態の詳細（存在しないパスを読むだけ。何も作らない）
+    static let emptyReport = StatusReporter.build(
+        layout: HomeLayout(root: URL(fileURLWithPath: "/nonexistent/voicedock-fake-home", isDirectory: true)),
+        config: nil, snapshot: nil, now: Instant(epochMillis: 0), zone: ZonedTime(fixedOffsetSeconds: 0))
 
     func updates() async -> AsyncStream<Void> {
         let (stream, continuation) = AsyncStream.makeStream(of: Void.self)

@@ -60,4 +60,12 @@ struct StatusTextsTests {
             #expect(StatusTexts.pauseWord(reason) == word)
         }
     }
+
+    @Test("#107 / #148 観測の 4 語")
+    func writabilityWords() {
+        #expect(StatusTexts.writabilityWord(.absent) == "デバイス未接続")
+        #expect(StatusTexts.writabilityWord(.unknown) == "不明")
+        #expect(StatusTexts.writabilityWord(.readOnly) == "読み取り専用")
+        #expect(StatusTexts.writabilityWord(.writable) == "読み書き可能")
+    }
 }

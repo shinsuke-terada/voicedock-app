@@ -37,4 +37,14 @@ public enum StatusTexts {
         case .license: "ライセンス"
         }
     }
+
+    /// PLAN §8.9.8 の観測の表示語（#107 / #148）
+    public static func writabilityWord(_ w: DeviceWritability) -> String {
+        switch w {
+        case .absent: "デバイス未接続"
+        case .unknown: "不明"
+        case .readOnly: "読み取り専用"
+        case .writable: "読み書き可能"
+        }
+    }
 }

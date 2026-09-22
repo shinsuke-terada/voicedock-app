@@ -22,7 +22,7 @@ struct NSWorkspaceFinder: FinderOpening {
 final class AppModel {
     /// 観測の写し（refresh で入れ替える。等しければ入れ替えない）
     private(set) var snapshot: AppSnapshot
-    /// 要対応があるか（T-32 が refresh の中で立てる。T-30 では常に false）
+    /// 要対応があるか（refresh の中で snapshot.attention から立てる。T-32）
     private(set) var hasAttention = false
     /// パネルが開いているか（速い更新に切り替える）
     private(set) var isPanelOpen = false
@@ -45,6 +45,19 @@ final class AppModel {
     var loginItemError: String?
     /// ui-state.json に書けなかった
     var uiStateSaveFailed = false
+    // T-32（書くのは AppModel+Diagnostics だけ）
+    /// 診断の実行と結果（画面にだけ在る値）
+    var diagnostics: DiagnosticsPanelState = .idle
+    /// DR-09 の実行と結果（結果は 1 件）
+    var probe: DiagnosticsPanelState = .idle
+    /// DR-09 の世代（押すたび・閉じるたびに 1 増やす）。開始時と世代が違う返事は捨てる
+    @ObservationIgnored var probeGeneration = 0
+    /// 「詳細」を開いているか（開いている間だけ状態の詳細を読む）
+    var detailsExpanded = false
+    /// 要対応の「モデルの節を開く」（節を目立たせるだけ。新しい画面を作らない。D-7）
+    var modelsHighlighted = false
+    /// 要対応の「有効化フローを開く」（T-40 が使う）
+    var deletionHighlighted = false
 
     @ObservationIgnored let services: any AppServices
     /// ModelSlot.llm(id) の項目を引く（T-31）
@@ -149,11 +162,21 @@ final class AppModel {
     }
 
     func refresh() async {
-        let next = await services.read(lastConnectedAt: snapshot.lastConnectedAt)
+        var next = await services.read(lastConnectedAt: snapshot.lastConnectedAt)
+        // 状態の詳細は「詳細」を開いたときだけ作る（read は作らない。開いている間は持ち越す。T-32）
+        next.statusReport = detailsExpanded ? snapshot.statusReport : nil
         let before = (iconState, showsTrash)
         if next != snapshot { snapshot = next }
-        // T-32 がここに hasAttention = !attention.isEmpty を足す
+        let attention = !snapshot.attention.isEmpty
+        if attention != hasAttention { hasAttention = attention }
         if (iconState, showsTrash) != before { iconContinuation?.yield(()) }
+    }
+
+    /// 状態の詳細を差し込む（AppModel+Diagnostics が使う。snapshot を書くのはこのファイルだけ）
+    func setStatusReport(_ report: StatusReport?) {
+        var next = snapshot
+        next.statusReport = report
+        if next != snapshot { snapshot = next }
     }
 
     func panelDidOpen() {
@@ -172,6 +195,9 @@ final class AppModel {
         reloadResult = nil
         vaultError = nil
         modelNotice = nil
+        // 閉じた後に届いた DR-09 の返事は捨てる（receiveProbe が .running のときだけ受け取る）
+        probe = .idle
+        probeGeneration += 1
     }
 
     func requeueManual() async {
@@ -193,8 +219,14 @@ final class AppModel {
 
     func quit() { quitHandler() }
 
-    /// テスト用（@testable）。T-32 が要対応から立てるまで、アイコンの優先順位を試す口。
+    /// テスト用（@testable）。アイコンの優先順位を試す口（次の refresh で snapshot.attention から立て直す）。
     func setAttentionForTesting(_ value: Bool) { hasAttention = value }
+
+    /// 診断・DR-09 の表示の状態
+    enum DiagnosticsPanelState: Equatable {
+        case idle, running
+        case done([DiagnosticResult])
+    }
 
     enum ReloadResult: Equatable {
         case ok

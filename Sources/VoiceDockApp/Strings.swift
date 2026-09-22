@@ -130,6 +130,13 @@ enum Strings {
         "設定に書けませんでした: " + violations.map(\.rendered).joined(separator: "、")
     }
 
+    // T-32: 要対応と詳細（PLAN §8.12 の 2 と 8）
+    static let buttonRunDiagnostics = "診断を実行"
+    static let buttonRunLLMProbe = "LLM の疎通確認"
+    static let diagnosticsRunning = "診断を実行しています…"
+    static let probeRunning = "LLM に問い合わせています…"
+    static let labelStatusDetails = "状態の詳細"
+
     /// PLAN §8.10 の model_download_failed の reason に対応する文言
     static func modelError(_ e: ModelError) -> String {
         switch e {
