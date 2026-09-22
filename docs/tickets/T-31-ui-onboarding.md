@@ -579,7 +579,7 @@ extension SystemLoginItem {
 | # | 壊し方（1 か所） | 落ちるべきテスト |
 |---|---|---|
 | 1 | `UIStateStore.load` の `schema` の判定を消す | `futureSchemaGivesDefaults` |
-| 2 | `UIStateStore.load` が読めないときに投げるようにする | `missingFileGivesDefaults` |
+| 2 | `UIStateStore.load` が読めないときに既定でない値（`loginItemDecided: true`）を返すようにする（`load()` は投げない型なので、投げる代わりに） | `missingFileGivesDefaults` |
 | 3 | `OnboardingEvaluator.items` の ③ と ④ を入れ替える | `orderIsTheSpecOrder` |
 | 4 | ② の条件から `vadPresent` を外す | `whisperDoneNeedsVADWhenEnabled` |
 | 5 | ④ の条件から `uiState.loginItemDecided` を外す | `loginItemDoneWhenDecided` |
