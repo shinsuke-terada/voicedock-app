@@ -98,6 +98,9 @@ struct LiveServices: AppServices {
             s.deletion = DeletionPanelState(
                 display: await context.locks.display(config: c, snapshot: s.device),
                 deleteSkippedSource: c.cleanup.deleteSkippedSource)
+        } else {
+            // 設定エラー中でも、消す能力が残っていれば trash と「無効にする」を出す（PLAN §8.9.8。設定エラーは条件に入らない）
+            s.deletionResidual = await context.enabler.hasRemainingCapability()
         }
         s.worker = await context.worker.status()
         // T-32: 要対応（ガードの判定は Worker の PauseReason をそのまま読む。CR-06）

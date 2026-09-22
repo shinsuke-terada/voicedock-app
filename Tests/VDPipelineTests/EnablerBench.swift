@@ -59,8 +59,11 @@ struct EnablerBench {
         // 8.
         let enabler = DeletionEnabler(
             layout: layout, paths: paths, config: store, verifier: verifier, ingest: ingest, log: scene.log)
-        // 9.
+        // 9. 本物の reaper は舞台の VOLUMES_ROOT（一時ディレクトリ）と組でだけ置く（既定の /Volumes と組み合わせない）
         if realReaper {
+            guard case .valid(let conf) = ReaperConf.observe(at: layout.reaperConf),
+                conf.volumesRoot != Contract.volumesRoot
+            else { throw BenchError("realReaper は舞台の VOLUMES_ROOT を持つ reaper.conf（enabled: true）とだけ組み合わせる") }
             try scene.installRealReaper()
         }
         self.scene = scene
@@ -125,4 +128,10 @@ struct EnablerBench {
 
     /// 期待値: 舞台の volumesRoot の文字列
     var volumesRootPath: String { scene.volumesRoot.path(percentEncoded: false) }
+}
+
+/// 舞台を作れない（組み合わせの誤り）
+struct BenchError: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
 }

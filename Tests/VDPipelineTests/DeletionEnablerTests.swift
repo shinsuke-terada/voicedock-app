@@ -1,5 +1,6 @@
 // DeletionEnabler の有効化・無効化・根拠 B（PLAN §8.9.8。T-40 §6.1）。
 import Foundation
+import Synchronization
 import TestSupport
 import Testing
 import VDContract
@@ -80,7 +81,9 @@ struct DeletionEnablerTests {
         )
     }
 
-    @Test("ENABLE 以外では何も変えない", arguments: ["enable", "ENABLE ", " ENABLE", "Y", "", "ＥＮＡＢＬＥ"])
+    @Test(
+        "ENABLE 以外では何も変えない",
+        arguments: ["enable", "ENABLE ", " ENABLE", "Y", "", "ＥＮＡＢＬＥ", "ENABLE\u{200B}", "ENABLE\n"])
     func enableRequiresTheExactWord(_ word: String) async throws {
         let bench = try await EnablerBench()
         let r = await bench.enabler.enable(confirmation: word)
@@ -310,5 +313,121 @@ struct DeletionEnablerTests {
         defer { try? bench.setPermissions(0o755, at: bench.layout.binDirectory) }
         let failed = await bench.enabler.disable()
         #expect(failed == ["reaper_conf", "remove_reaper"])
+    }
+
+    // MARK: - 段の順（消す能力に近いものから先に止める）
+
+    @Test("無効化は reaper.conf を config より先に止める")
+    func disableReportsConfBeforeConfig() async throws {
+        let bench = try await Self.enabledBench()
+        try bench.makeDirectory(at: AtomicFile.tmpURL(for: bench.layout.reaperConf))
+        try Self.blockConfig(bench)
+        defer { Self.restoreConfig(bench) }
+        let failed = await bench.enabler.disable()
+        #expect(failed == ["reaper_conf", "config"])
+    }
+
+    @Test("無効化は reaper の削除を config より先に行う")
+    func disableReportsRemoveReaperBeforeConfig() async throws {
+        let bench = try await Self.enabledBench()
+        try bench.scene.removeReaper()
+        try bench.makeDirectory(at: bench.layout.reaperExecutable.appendingPathComponent("x", isDirectory: true))
+        try Self.blockConfig(bench)
+        defer { Self.restoreConfig(bench) }
+        let failed = await bench.enabler.disable()
+        #expect(failed == ["remove_reaper", "config"])
+    }
+
+    /// 再マウントを促す時点で見えていた状態
+    struct AtScan: Equatable, Sendable {
+        var confOff = false
+        var reaperGone = false
+        var configOff = false
+        var requestsEmpty = false
+    }
+
+    @Test("無効化の再マウントはほかの段が全部済んでから")
+    func disableScansLast() async throws {
+        let bench = try await Self.enabledBench()
+        let seen = Mutex<AtScan?>(nil)
+        let layout = bench.layout
+        let scene = bench.scene
+        await bench.ingest.setScanner { generation in
+            var at = AtScan()
+            if case .valid(let c) = ReaperConf.observe(at: layout.reaperConf) { at.confOff = !c.deleteSourceAudio }
+            at.reaperGone = !FileManager.default.fileExists(atPath: layout.reaperExecutable.path(percentEncoded: false))
+            let json = (try? String(contentsOf: layout.configFile, encoding: .utf8)) ?? ""
+            at.configOff = json.contains("\"deleteSourceAudio\" : false")
+            at.requestsEmpty = scene.requests().isEmpty
+            seen.withLock { $0 = at }
+            return scene.snapshot(generation: generation)
+        }
+        _ = await bench.enabler.disable()
+        #expect(seen.withLock { $0 } == AtScan(confOff: true, reaperGone: true, configOff: true, requestsEmpty: true))
+    }
+
+    // MARK: - 直列化（actor の再入）
+
+    @Test("有効化の途中で来た無効化は有効化の後に走る（無効化が勝つ）")
+    func disableDuringEnableWins() async throws {
+        let bench = try await EnablerBench()
+        let store = bench.store
+        let gate = DispatchSemaphore(value: 0)
+        let entered = Mutex(false)
+        // ConfigStore を塞ぎ、有効化を最初の await（config.current()）で止める
+        let blocker = Task {
+            await store.update { _ in
+                entered.withLock { $0 = true }
+                gate.wait()
+            }
+        }
+        while !entered.withLock({ $0 }) { try await Task.sleep(for: .milliseconds(5)) }
+        let enabling = Task { await bench.enabler.enable(confirmation: "ENABLE") }
+        try await Task.sleep(for: .milliseconds(200))
+        let disabling = Task { await bench.enabler.disable() }
+        try await Task.sleep(for: .milliseconds(200))
+        gate.signal()
+        _ = await blocker.value
+        let enabled = await enabling.value
+        let failed = await disabling.value
+        #expect(Self.error(enabled) == nil)
+        #expect(failed == [])
+        #expect(bench.reaperConf() == .valid(ReaperConf(deleteSourceAudio: false, volumesRoot: "/Volumes")))
+        #expect(bench.reaperIsInstalled() == false)
+        try await Self.expectOff(bench)
+    }
+
+    // MARK: - 消す能力が残っているか
+
+    @Test("TEST-28 何も無ければ消す能力は残っていない")
+    func noRemainingCapabilityOnAFreshHome() async throws {
+        let bench = try await EnablerBench()
+        #expect(await bench.enabler.hasRemainingCapability() == false)
+    }
+
+    @Test("reaper.conf が有効なら消す能力が残っている")
+    func confKeepsTheCapability() async throws {
+        let bench = try await EnablerBench()
+        try bench.scene.writeReaperConf(deleteSourceAudio: true)
+        #expect(await bench.enabler.hasRemainingCapability() == true)
+    }
+
+    @Test("reaper が在れば消す能力が残っている")
+    func reaperKeepsTheCapability() async throws {
+        let bench = try await EnablerBench()
+        try bench.scene.installReaperStub()
+        #expect(await bench.enabler.hasRemainingCapability() == true)
+    }
+
+    @Test("reaper.conf が無効で reaper が無ければ残っていない")
+    func disabledConfWithoutReaperHasNoCapability() async throws {
+        let bench = try await EnablerBench()
+        try bench.scene.writeReaperConf(deleteSourceAudio: false)
+        #expect(await bench.enabler.hasRemainingCapability() == false)
+    }
+
+    @Test("舞台: 本物の reaper と既定の /Volumes は組み合わせない")
+    func benchRefusesRealReaperWithoutTheSceneVolumesRoot() async {
+        await #expect(throws: BenchError.self) { _ = try await EnablerBench(enabled: false, realReaper: true) }
     }
 }

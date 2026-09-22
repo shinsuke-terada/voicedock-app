@@ -8,8 +8,8 @@ import Testing
 struct BootstrapOrderTests {
     static let path = "VoiceDockApp/Bootstrap.swift"
 
-    /// 違反の説明（無ければ nil）。`func build(` の本体で `setLock1Reconciler(` か `setLock1Reconciler {` が
-    /// 最初の `config.load()` より前にあること。
+    /// 違反の説明（無ければ nil）。`func build(` の本体で `config.setLock1Reconciler`（`(` か `{` が続き、
+    /// その後のクロージャの本体に `reconcileLock1` がある）が最初の `config.load()` より前にあること。
     static func violation(in file: SourceFile) -> String? {
         guard let body = OrderingPolicy.body(of: "build", in: file.tokens) else { return "func build( がありません" }
         var reconciler: Int?
@@ -18,7 +18,10 @@ struct BootstrapOrderTests {
             let token = body[index]
             guard token.kind == .identifier else { continue }
             let next = body[index + 1].text
-            if reconciler == nil && token.text == "setLock1Reconciler" && (next == "(" || next == "{") {
+            if reconciler == nil && token.text == "setLock1Reconciler" && (next == "(" || next == "{")
+                && index >= body.startIndex + 2 && body[index - 1].text == "." && body[index - 2].text == "config"
+                && closureCalls("reconcileLock1", after: index, in: body)
+            {
                 reconciler = index
             }
             if load == nil && token.text == "load" && next == "(" && index >= body.startIndex + 2
@@ -32,6 +35,24 @@ struct BootstrapOrderTests {
         return reconciler < load ? nil : "setLock1Reconciler が config.load() より後"
     }
 
+    /// `index` の後の最初の `{` から釣り合う `}` までに `name` の識別子があるか
+    static func closureCalls(_ name: String, after index: Int, in body: ArraySlice<CodeToken>) -> Bool {
+        guard let open = body[(index + 1)...].firstIndex(where: { $0.kind == .punctuation && $0.text == "{" }) else {
+            return false
+        }
+        var depth = 0
+        for j in open..<body.endIndex {
+            let t = body[j]
+            if t.kind == .punctuation && t.text == "{" { depth += 1 }
+            if t.kind == .punctuation && t.text == "}" {
+                depth -= 1
+                if depth == 0 { return false }
+            }
+            if t.kind == .identifier && t.text == name { return true }
+        }
+        return false
+    }
+
     @Test("修復口を最初の config.load() より前に挿す")
     func reconcilerIsInstalledBeforeTheFirstLoad() throws {
         let files = try SourceTree.load()
@@ -40,18 +61,29 @@ struct BootstrapOrderTests {
     }
 
     @Test(
-        "自己テスト: 順が逆・呼び出しが無い・関数が無いを検出する",
+        "自己テスト: 順が逆・呼び出しが無い・呼び先が違う・reconcileLock1 が無い・関数が無いを検出する",
         arguments: [
             (
-                "func build() async { await config.setLock1Reconciler { true }\n let a = await config.load() }\n",
+                "func build() async { await config.setLock1Reconciler { await e.reconcileLock1() }\n let a = await config.load() }\n",
                 nil as String?
             ),
             (
-                "func build() async { let a = await config.load()\n await config.setLock1Reconciler { true } }\n",
+                "func build() async { let a = await config.load()\n await config.setLock1Reconciler { await e.reconcileLock1() } }\n",
                 "setLock1Reconciler が config.load() より後"
             ),
             ("func build() async { let a = await config.load() }\n", "setLock1Reconciler がありません"),
-            ("func build() async { await config.setLock1Reconciler { true } }\n", "config.load() がありません"),
+            (
+                "func build() async { await config.setLock1Reconciler { await e.reconcileLock1() } }\n",
+                "config.load() がありません"
+            ),
+            (
+                "func build() async { await other.setLock1Reconciler { await e.reconcileLock1() }\n let a = await config.load() }\n",
+                "setLock1Reconciler がありません"
+            ),
+            (
+                "func build() async { await config.setLock1Reconciler { true }\n let a = await config.load() }\n",
+                "setLock1Reconciler がありません"
+            ),
             ("", "func build( がありません"),
         ])
     func selfTest(_ source: String, _ expected: String?) {

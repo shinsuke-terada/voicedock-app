@@ -4,6 +4,7 @@ import TestSupport
 import Testing
 import VDContract
 import VDCore
+import VDDevice
 import VDPipeline
 
 @testable import VoiceDockApp
@@ -107,12 +108,76 @@ struct AppModelDeletionTests {
         #expect(model.showsTrash == false)
     }
 
-    @Test("設定エラー中（deletion が nil）は trash を出さない")
+    @Test("TEST-28 設定エラー中で消す能力も残っていなければ trash も「無効にする」も出さない")
     func noTrashWithoutDeletionState() async {
         let fake = FakeServices(Self.present(deletion: nil))
         let model = Self.makeModel(fake)
         await model.refresh()
         #expect(model.deletion == nil)
         #expect(model.showsTrash == false)
+        #expect(model.showsDisableButton == false)
+    }
+
+    @Test("設定エラー中でも消す能力が残っていれば trash と「無効にする」を出す（PLAN §8.9.8）")
+    func residualCapabilityShowsTrashAndDisable() async {
+        var s = Self.present(deletion: nil)
+        s.configPresent = false
+        s.deletionResidual = true
+        let fake = FakeServices(s)
+        let model = Self.makeModel(fake)
+        await model.refresh()
+        #expect(model.showsTrash == true)
+        #expect(model.showsDisableButton == true)
+    }
+
+    @Test("無効化に失敗した段がある間は「無効にする」を出し続ける")
+    func failedDisableKeepsTheButton() async {
+        let fake = FakeServices(Self.present(deletion: Self.panel(appEnabled: false, conf: .disabled)))
+        fake.setDisableResult(["remove_reaper"])
+        let model = Self.makeModel(fake)
+        _ = await model.disableDeletion()
+        #expect(model.showsTrash == false)
+        #expect(model.showsDisableButton == true)
+    }
+
+    @Test("操作の実行中は deletionBusy が立ち、終われば下りる")
+    func busyWhileOperating() async {
+        let fake = FakeServices(Self.present(deletion: Self.panel(appEnabled: true, conf: .enabled)))
+        fake.setHoldDisable(true)
+        let model = Self.makeModel(fake)
+        #expect(model.deletionBusy == false)
+        let running = Task { await model.disableDeletion() }
+        for _ in 0..<5_000 where fake.disableCount == 0 {
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(model.deletionBusy == true)
+        fake.releaseDisable()
+        _ = await running.value
+        #expect(model.deletionBusy == false)
+    }
+
+    static func device(readOnly: Bool?) -> DeviceSnapshot {
+        DeviceSnapshot(
+            generation: 2, completedAt: fixed, connectEpoch: 1,
+            devices: [
+                "DJIMIC3": DeviceObservation(
+                    deviceID: "DJIMIC3", mountPath: "/tmp/voicedock-t40-mnt/DJIMIC3", deviceNode: "/dev/disk9",
+                    readOnly: readOnly, freeBytes: 1_000, relpaths: [])
+            ], unavailable: [:], notListableErrno: [:])
+    }
+
+    @Test("挿し直しの案内は、読み書きできるデバイスを観測したら消える")
+    func reinsertNoticeClearsOnWritableDevice() async {
+        var s = Self.present(deletion: Self.panel(appEnabled: true, conf: .enabled))
+        s.device = Self.device(readOnly: true)
+        let fake = FakeServices(s)
+        let model = Self.makeModel(fake)
+        _ = await model.enableDeletion(confirmation: "ENABLE")
+        #expect(model.deletionNotice == "読み書きできるようになるのはデバイスを挿し直した後です")
+        s.device = Self.device(readOnly: false)
+        fake.set(s)
+        await model.refresh()
+        #expect(model.deletionNotice == nil)
     }
 }

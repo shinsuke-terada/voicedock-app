@@ -57,6 +57,8 @@ final class FakeServices: AppServices {
         var skippedConfirmations: [String] = []
         var disableResult: [String] = []
         var disableCount = 0
+        var holdDisable = false
+        var disableGates: [AsyncStream<Void>.Continuation] = []
     }
 
     private let state: Mutex<State>
@@ -277,6 +279,16 @@ final class FakeServices: AppServices {
     var enableConfirmations: [String] { state.withLock { $0.enableConfirmations } }
     var skippedConfirmations: [String] { state.withLock { $0.skippedConfirmations } }
     var disableCount: Int { state.withLock { $0.disableCount } }
+    /// disableDeletion を releaseDisable まで返さない
+    func setHoldDisable(_ hold: Bool) { state.withLock { $0.holdDisable = hold } }
+    func releaseDisable() {
+        let gates = state.withLock { s -> [AsyncStream<Void>.Continuation] in
+            let g = s.disableGates
+            s.disableGates = []
+            return g
+        }
+        for g in gates { g.yield(()) }
+    }
 
     func enableDeletion(confirmation: String) async -> Result<Void, EnableError> {
         state.withLock {
@@ -293,10 +305,17 @@ final class FakeServices: AppServices {
     }
 
     func disableDeletion() async -> [String] {
-        state.withLock {
-            $0.disableCount += 1
-            return $0.disableResult
+        let hold = state.withLock { s -> Bool in
+            s.disableCount += 1
+            return s.holdDisable
         }
+        if hold {
+            let (gate, continuation) = AsyncStream.makeStream(of: Void.self)
+            state.withLock { $0.disableGates.append(continuation) }
+            var it = gate.makeAsyncIterator()
+            _ = await it.next()
+        }
+        return state.withLock { $0.disableResult }
     }
 
     /// DB も snapshot も無い <HOME> の状態の詳細（存在しないパスを読むだけ。何も作らない）

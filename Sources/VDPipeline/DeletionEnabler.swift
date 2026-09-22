@@ -40,6 +40,10 @@ public actor DeletionEnabler {
     private let verifier: any SignatureVerifier
     private let ingest: any IngestPort
     private let log: AppLog
+    /// 最後に受け付けた操作（次の操作はこれの終わりを待ってから始める）。
+    /// actor は await の間に別の呼び出しを受け付ける（再入）ので、操作の本体が await で止まっている間に
+    /// 別の操作が割り込まないよう、受け付けた順に 1 本ずつ実行する（有効化の途中で来た無効化は、有効化の後に必ず走る）
+    private var last: Task<Void, Never>?
 
     public init(
         layout: HomeLayout, paths: AppPaths, config: ConfigStore,
@@ -62,8 +66,47 @@ public actor DeletionEnabler {
     /// 根拠 B の有効化のログの reason
     static let skippedScope = "skipped_source"
 
-    /// PLAN §8.9.8 の有効化。すべて成功するか、1 つも変えないか。書き込み順: 複製 → reaper.conf → config
+    /// PLAN §8.9.8 の有効化。すべて成功するか、1 つも変えないか（受け付けた順に 1 本ずつ）
     public func enable(confirmation: String) async -> Result<Void, EnableError> {
+        await serially { await $0.performEnable(confirmation: confirmation) }
+    }
+
+    /// 根拠 B（無音・重複も消す）。削除が有効なときだけ通る（受け付けた順に 1 本ずつ）
+    public func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        await serially { await $0.performEnableSkipped(confirmation: confirmation) }
+    }
+
+    /// PLAN §8.9.8 の無効化。**確認を求めない**。失敗した段の名前を順に返す（空なら全部成功。受け付けた順に 1 本ずつ）
+    public func disable() async -> [String] {
+        await serially { await $0.performDisable() }
+    }
+
+    /// PLAN §6.1。reaper.conf を無効側（DELETE_SOURCE_AUDIO=false）に揃える。揃えたら true（受け付けた順に 1 本ずつ）
+    public func reconcileLock1() async -> Bool {
+        await serially { await $0.performReconcile() }
+    }
+
+    /// 消す能力が残っているか（PLAN §8.9.8 の常時表示を設定エラー中にも出すため）。
+    /// reaper.conf が `DELETE_SOURCE_AUDIO=true` で読めるか、bin/ に reaper の通常ファイルが在れば真
+    public func hasRemainingCapability() -> Bool {
+        if case .valid(let c) = ReaperConf.observe(at: layout.reaperConf), c.deleteSourceAudio { return true }
+        var st = stat()
+        return lstat(p(layout.reaperExecutable), &st) == 0 && (st.st_mode & S_IFMT) == S_IFREG
+    }
+
+    /// 前の操作の終わりを待ってから operation を実行する。last の差し替えは await を挟まずに行う（受け付けた順が保たれる）
+    private func serially<T: Sendable>(_ operation: @escaping @Sendable (DeletionEnabler) async -> T) async -> T {
+        let previous = last
+        let task = Task { [self] () -> T in
+            await previous?.value
+            return await operation(self)
+        }
+        last = Task { _ = await task.value }
+        return await task.value
+    }
+
+    /// 書き込み順: 複製 → reaper.conf → config
+    private func performEnable(confirmation: String) async -> Result<Void, EnableError> {
         // 1.
         guard isConfirmed(confirmation) else { return .failure(.notConfirmed) }
         // 2. 設定エラー中は有効化しない
@@ -104,8 +147,7 @@ public actor DeletionEnabler {
         return .success(())
     }
 
-    /// 根拠 B（無音・重複も消す）。削除が有効なときだけ通る
-    public func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError> {
+    private func performEnableSkipped(confirmation: String) async -> Result<Void, EnableError> {
         // 1.
         guard isConfirmed(confirmation) else { return .failure(.notConfirmed) }
         // 2.
@@ -121,10 +163,9 @@ public actor DeletionEnabler {
         return .success(())
     }
 
-    /// PLAN §8.9.8 の無効化。**確認を求めない**。失敗した段の名前を順に返す（空なら全部成功）。
     /// 段の順は規約（消す能力に近いものから先に止める）: reaper.conf → reaper の削除 → config → 要求の取り下げ → 再マウント。
     /// 途中で失敗しても残りを続ける。
-    public func disable() async -> [String] {
+    private func performDisable() async -> [String] {
         var failed: [String] = []
         let volumesRoot = currentVolumesRoot()
         // 1. reaper.conf を false（reaper 側のロック 1 を先に掛ける）
@@ -165,9 +206,8 @@ public actor DeletionEnabler {
         return failed
     }
 
-    /// PLAN §6.1。reaper.conf を無効側（DELETE_SOURCE_AUDIO=false）に揃える。揃えたら true。
     /// config.json 側は書かない（ConfigStore.load() が真を受けてから書く）。reaper の削除と要求の取り下げもしない。
-    public func reconcileLock1() async -> Bool {
+    private func performReconcile() async -> Bool {
         // 1.
         let volumesRoot = currentVolumesRoot()
         // 2.
