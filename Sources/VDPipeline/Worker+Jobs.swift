@@ -1,13 +1,41 @@
-// tick の段: pendingJobs（パネルが要求した仕事。PLAN §5.4・§8.11）。
+// tick の段: pendingJobs（パネルが要求した仕事。PLAN §5.4・§8.11）と、closeIdleSessions の段の今すぐ要約（F-66）。
 
 extension Worker {
+    /// 今すぐ要約（PLAN §5.4・F-66）。closeIdleSessions の段の終わりで、列から `.summarizeNow` だけを取り出して
+    /// 入れた順に行う（ほかの仕事は列に残り、pendingJobs の段が行う）。要約は同じ tick の processReadySessions が進める。
+    func stageSummarizeNow(_ ctx: TickContext) {
+        var replies: [@Sendable (Result<Int, SummarizeNowFailure>) -> Void] = []
+        var rest: [WorkerJob] = []
+        for job in pendingJobs {
+            if case .summarizeNow(let reply) = job {
+                replies.append(reply)
+            } else {
+                rest.append(job)
+            }
+        }
+        pendingJobs = rest
+        for reply in replies {
+            // 停止要求が来ていても返事は必ず返す（.llmProbe と同じ）
+            if ctx.stop.isSet {
+                reply(.failure(SummarizeNowFailure(message: DiagnosticTexts.probeStopped)))
+                continue
+            }
+            reply(SummarizeNow(ctx: ctx).run())
+        }
+    }
+
     /// 入れた順に 1 回ずつ実行する。先に列を空にしてから回す（実行中に入った仕事は次の tick）。
     /// snapshot の新鮮さによらず毎 tick 行う（T-18 §4.8 の並び）。
+    /// `.summarizeNow` は実行せず、ループの後で列の先頭へ戻す（入れた順を保つ。F-66）。
     func stagePendingJobs(_ ctx: TickContext) async {
         let jobs = pendingJobs
         pendingJobs = []
+        var deferred: [WorkerJob] = []
         for job in jobs {
             switch job {
+            case .summarizeNow:
+                // closeIdleSessions の段より後に入った分。次の tick のその段で行う（同じ tick の要約に間に合わせるため）
+                deferred.append(job)
             case .llmProbe(let reply):
                 // 停止要求が来ていても返事は必ず返す（.skip で返す）
                 if ctx.stop.isSet {
@@ -30,6 +58,13 @@ extension Worker {
                 await BacklogPlanner(deps: DeletionDependencies(ctx: ctx)).handle(action, kind: .resolveAbsent)
             }
         }
+        // ループの途中の await（LLMProbeCheck・BacklogPlanner）の間に停止要求が来たとき。requestStop は列に無い
+        // deferred を知らないので、ここで返さないと返事が永久に返らない（前後どちらの位置の .summarizeNow も）
+        if ctx.stop.isSet {
+            for job in deferred { Self.replyStopped(job) }
+            return
+        }
+        pendingJobs = deferred + pendingJobs
     }
 
     /// 実行せずに `.fail` で返事をする（設定エラー中の tick。PLAN §6.1）。
@@ -37,6 +72,7 @@ extension Worker {
         switch job {
         case .llmProbe(let reply): reply(LLMProbeCheck.unavailable)
         case .backlog(let action), .resolveAbsent(let action): replyFailure(action, DiagnosticTexts.configMissing)
+        case .summarizeNow(let reply): reply(.failure(SummarizeNowFailure(message: DiagnosticTexts.configMissing)))
         }
     }
 
@@ -45,6 +81,7 @@ extension Worker {
         switch job {
         case .llmProbe(let reply): reply(LLMProbeCheck.stopped)
         case .backlog(let action), .resolveAbsent(let action): replyFailure(action, DiagnosticTexts.probeStopped)
+        case .summarizeNow(let reply): reply(.failure(SummarizeNowFailure(message: DiagnosticTexts.probeStopped)))
         }
     }
 

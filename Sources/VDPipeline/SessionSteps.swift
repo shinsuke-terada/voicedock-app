@@ -13,6 +13,9 @@ struct SessionSteps {
     /// 生成は `SessionSteps(ctx:)`（合成された init）。
     let ctx: TickContext
 
+    /// 無通信で閉じたときの events の detail（PLAN §5.6）。
+    static let idleDetail = "idle"
+
     var store: Store { ctx.deps.store }
     var cfg: AppConfig { ctx.config }
     var zone: ZonedTime { ctx.zone }
@@ -61,19 +64,17 @@ struct SessionSteps {
             && (s.recordedSeconds ?? 0) + (part.durationSeconds ?? 0) <= Double(cfg.session.maxDurationSeconds)
     }
 
-    /// 日付が過ぎたか idle が経った OPEN を READY にする（voicedock session.py:276-313）。
+    /// idle が経った OPEN を READY にする（voicedock session.py:276-313 の idle の枝。日付が過去の OPEN も同じ規則）。
+    /// F-66: 日付が変わっただけでは閉じない（voicedock の stale_day の枝は廃止）。閉じる契機は idle と今すぐ要約だけ。
     func closeIdleSessions() throws {
         let now = ctx.deps.clock.now()
-        let today = zone.today(now).dashed
         let idleBefore = now.adding(seconds: -cfg.session.idleCloseSeconds)
         for s in try store.sessions(status: .open) {
-            let staleDay = s.dayDate != today
             // 読めない updated_at は「古い」側。ちょうど idleCloseSeconds 経ったものは閉じる
-            let idle = zone.parseISO(s.updatedAt).map { $0 <= idleBefore } ?? true
-            guard staleDay || idle else { continue }
+            guard zone.parseISO(s.updatedAt).map({ $0 <= idleBefore }) ?? true else { continue }
             do {
                 try store.recordSessionTransition(
-                    sessionKey: s.sessionKey, from: .open, to: .ready, detail: staleDay ? "stale_day" : "idle")
+                    sessionKey: s.sessionKey, from: .open, to: .ready, detail: Self.idleDetail)
             } catch is TransitionConflict {
                 continue
             }

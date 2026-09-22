@@ -177,6 +177,7 @@ for s in try store.sessions(status: .open):                                  // 
       （TransitionConflict は捕まえて次へ）
 ```
 - ちょうど `idleCloseSeconds` 経ったものは閉じる（`<=`）
+- **F-66（2026-09-23）で `staleDay` の枝を廃止した。**閉じるのは idle だけ（detail `idle`。日付が過去の OPEN も同じ）。PLAN §5.6
 
 **`reopenSession(_:)`**（PLAN §5.6。voicedock pipeline.py:551-590 ＋ ★3 辺）:
 1. `cfg.session.allowReopen` が偽 → false
@@ -438,7 +439,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `pastDayBecomesReady` / 「日付が過去の OPEN は stale_day で閉じる」 | 分組 → 時計 +1 日 | READY、detail `stale_day` |
+| `pastDayBecomesReady` / 「日付が過去の OPEN は stale_day で閉じる」 | 分組 → 時計 +1 日 | READY、detail `stale_day`（F-66 で廃止。`dayChangeAloneDoesNotClose`・`pastDayClosesByIdle`・`startClosesIdlePastDay` に置き換えた） |
 | `idleSameDayBecomesReady` / 「当日でも idle 経過で閉じる」 | +1801 秒 | READY、detail `idle` |
 | `exactlyIdleCloses` / 「ちょうど idleCloseSeconds で閉じる」 | +1800 秒 | READY |
 | `recentStaysOpen` / 「idle 未満は OPEN」 | +1799 秒 | OPEN |
