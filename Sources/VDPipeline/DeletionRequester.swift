@@ -40,7 +40,7 @@ struct DeletionRequester {
                 if deps.pended.contains(part.partkey) { continue }
                 // 4a. 新鮮な snapshot で元ファイルが無いと観測できた RAW_SAVED は消す必要が無い（F-64）。要求を書かずに完了へ。
                 //     source_deleted_at は入れない（アプリが消したのではない）。待っても変わらない条件で待たない（CR-15）
-                if part.status == .rawSaved && Self.sourceIsObservedAbsent(part, in: snapshot) {
+                if part.status == .rawSaved && Self.sourceIsObservedAbsent(part, in: snapshot, zone: deps.zone) {
                     do {
                         try deps.store.recordPartTransition(
                             partkey: part.partkey, from: .rawSaved, to: .completed,
@@ -87,12 +87,17 @@ struct DeletionRequester {
         return requested
     }
 
-    /// 元ファイルが無いと観測できた（F-64）: デバイスが snapshot に載り（接続中で一覧が完全）、unavailable に無く、relpath が一覧に無い。
-    /// source_path が無い・空なら偽（「無い」と確かめられない）。未接続・列挙できないときは偽（観測できたときだけ「無い」と言う）。
-    /// 新鮮さは呼び手が確かめる（DEL-20）
-    static func sourceIsObservedAbsent(_ part: RecordingRow, in snapshot: DeviceSnapshot) -> Bool {
+    /// 元ファイルが無いと観測できた（F-64）: デバイスが snapshot に載り（接続中で列挙できた）、unavailable に無く、
+    /// snapshot がその Part の updated_at（RAW_SAVED にした時刻。取り込みより後）より確かに後に完了していて、relpath が一覧に無い。
+    /// source_path が無い・空、updated_at が読めない、未接続・列挙できないときは偽（観測できたときだけ「無い」と言う）。
+    /// updated_at は秒に切り捨てて記録されるので、completedAt ≥ updated_at + 1 秒で「後」とする。新鮮さは呼び手が確かめる（DEL-20）
+    static func sourceIsObservedAbsent(_ part: RecordingRow, in snapshot: DeviceSnapshot, zone: ZonedTime) -> Bool {
         guard snapshot.unavailable[part.deviceID] == nil, let observation = snapshot.devices[part.deviceID],
             let relpath = part.sourcePath, !relpath.isEmpty
+        else { return false }
+        // 取り込む前の走査の snapshot で「無い」と言わない
+        guard let updated = zone.parseISO(part.updatedAt),
+            snapshot.completedAt.epochMillis >= updated.epochMillis + 1000
         else { return false }
         return !observation.relpaths.contains(where: { DeletionPolicy.sameKey($0, relpath) })
     }

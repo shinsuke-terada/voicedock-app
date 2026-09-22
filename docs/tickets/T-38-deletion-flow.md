@@ -221,7 +221,7 @@ struct DeletionRequester {
    2. `part.status == .sourceDeleting || part.status == .completed` なら飛ばす（通常経路は COMPLETED を消しにいかない。二重に要求しない）
    3. `part.deleteRequestID != nil` なら飛ばす（結果待ち）
    4. `deps.pended.contains(part.partkey)` なら飛ばす（同じ周回で再要求しない。DEL-11）
-   4a. （**F-64 で追加**）`part.status == .rawSaved && Self.sourceIsObservedAbsent(part, in: snapshot)` なら、要求を書かずに
+   4a. （**F-64 で追加**）`part.status == .rawSaved && Self.sourceIsObservedAbsent(part, in: snapshot, zone: deps.zone)` なら、要求を書かずに
        `do { try deps.store.recordPartTransition(partkey: part.partkey, from: .rawSaved, to: .completed, detail: DeletionReason.alreadyAbsent) } catch is TransitionConflict { deps.logStatusChanged(recordingKey: part.partkey); continue }`、
        `deps.log.info(.sourceDeleteSkipped, [(.recordingKey, .string(part.partkey)), (.reason, .string(DeletionReason.alreadyAbsent))])`、飛ばす（`source_deleted_at` は入れない）
    5. `DeletionPolicy.canDeleteSource(DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx)` が偽なら飛ばす
@@ -231,9 +231,11 @@ struct DeletionRequester {
    9. `requested += 1`
 5. `return requested`
 
-- `static func sourceIsObservedAbsent(_ part: RecordingRow, in snapshot: DeviceSnapshot) -> Bool`（internal。**F-64 で追加**）:
-  `snapshot.unavailable[part.deviceID] == nil`、`snapshot.devices[part.deviceID]` が在る、`part.sourcePath` が nil でも空でもない、のすべてを満たし、
+- `static func sourceIsObservedAbsent(_ part: RecordingRow, in snapshot: DeviceSnapshot, zone: ZonedTime) -> Bool`（internal。**F-64 で追加**）:
+  `snapshot.unavailable[part.deviceID] == nil`、`snapshot.devices[part.deviceID]` が在る、`part.sourcePath` が nil でも空でもない、
+  `zone.parseISO(part.updatedAt)` が読めて `snapshot.completedAt.epochMillis >= updated.epochMillis + 1000`（取り込み前の snapshot で「無い」と言わない。updated_at は秒に切り捨て）、のすべてを満たし、
   その relpath が `observation.relpaths` に（`DeletionPolicy.sameKey` で）**無い**ときだけ真。新鮮さは手順 1 が確かめる。`readOnly` は見ない（消さないので）。
+  一覧は深さの上限の外と読めないディレクトリを含まない（完全な列挙の保証ではない）。照合はスカラー列の一致で NFC / NFD を正規化しない。どちらも「無い」に見えうるが、完了は消さない側（PLAN §8.9.5）。
   これが無いと、削除が有効なのに元ファイルが消えた RAW_SAVED の Part は事前確認が永久に偽で、削除段が `delete_attempts += 1` を繰り返し Session が完了しなかった（PLAN §8.9.5・F-64）
 - **Session の状態で門前払いしない**（OPEN・READY でも評価する。AY-1）
 - 結果の回収はここでしない（voicedock は先頭で回収していた。本アプリは tick の段で全件を回収する。§8.9.6）
@@ -613,8 +615,9 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `oneSkippedPartDoesNotStopTheRest` | 先の Part を飛ばしても残りを評価する | 08:00 の兄弟を SOURCE_DELETING で足し（`inRawNote: true`、`writeRawNote()`）、既定の Part（09:00）は RAW_SAVED | 1、既定の Part が SOURCE_DELETING |
 | `everyEligiblePartIsRequested` | Session の全 Part を評価する（その Part だけでない） | 10:00 の兄弟を RAW_SAVED で足し `writeRawNote()` | 2、要求 2 件 |
 | `doesNotGateOnSessionStatus` | Session が OPEN でも要求を書く（AY-1） | `DeletionScene(sessionStatus: .open)` | 1 |
-| `listedSourceIsRequested` | F-64 一覧に在る RAW_SAVED は無いと扱わず、要求を書く通常の経路へ進む | 既定 | 1、SOURCE_DELETING、`source_delete_skipped` のログが無い |
+| `listedSourceIsRequested` | F-64 一覧に在る RAW_SAVED は無いと扱わず、要求を書く通常の経路へ進む | 時計を 60 秒進め、`snapshot(relpaths: [DeletionScene.relpath, 上の別の録音])`（取り込みより後の走査） | 1、SOURCE_DELETING、`source_delete_skipped` のログが無い |
 | `absentRawSavedCompletesWithoutRequest` | F-64 一覧に無い RAW_SAVED は要求を書かずに RAW_SAVED→COMPLETED（detail already_absent） | `snapshot(relpaths: ["TX_MIC001_20260912_100000/TX00_MIC001_20260912_100000_orig.wav"])` | 0、`requests() == []`、COMPLETED、`sourceDeletedAt == nil`、`deleteRequestID == nil`、`source_delete_skipped recording_key=<pk> reason=already_absent` |
+| `snapshotBeforeIngestionDoesNotComplete` | F-64 取り込み前の snapshot では完了にしない（updated_at と同じ秒・前の走査。境界: ちょうど 1 秒後なら完了） | 時計を 60 秒進め、`completedAt: now + (−60000 / 0 / 999 / 1000) ミリ秒` | 0、`requests() == []`、RAW_SAVED / RAW_SAVED / RAW_SAVED / COMPLETED |
 | `absentPendingIsLeftForResolveAbsent` | F-64 SOURCE_DELETE_PENDING は一覧に無くても自動で完了にしない（手動で消した分を完了にする の対象。§8.9.9） | `movePart(pk, to: .sourceDeletePending)`、上と同じ snapshot | 0、SOURCE_DELETE_PENDING のまま、`source_delete_skipped` のログが無い |
 | `absentAwaitingResultIsNotCompleted` | F-64 結果待ち（delete_request_id が在る）の RAW_SAVED は一覧に無くても完了にしない | `updateRecording(pk, [.deleteRequestID(…)])`、上と同じ snapshot | 0、RAW_SAVED |
 | `missingSourcePathIsNotAbsent` | F-64 source_path が無い・空なら無いと確かめられないので完了にしない（パラメータ化） | `StorePaths.setSourcePath(store, partkey: pk, nil / "")`、上と同じ snapshot | 0、RAW_SAVED、`source_delete_skipped` のログが無い |
@@ -635,7 +638,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `absentDeviceWaits` | 未接続なら待つ（delete_attempts += 1、遷移しない） | `snapshot(includeDevice: false)` | Session SAVED、`deleteAttempts == 1`、Part RAW_SAVED、`source_delete_skipped` が無い |
 | `observedAbsentSourceCompletes` | F-64 接続中で列挙できた一覧に元ファイルが無い RAW_SAVED は、要求を書かずに完了する（source_deleted_at は入れない） | `snapshot(relpaths: ["TX_MIC001_20260912_100000/TX00_MIC001_20260912_100000_orig.wav"])` | `requests() == []`、Part COMPLETED・`sourceDeletedAt == nil`・`deleteRequestID == nil`、最後の event が `RAW_SAVED→COMPLETED` で detail `already_absent`、`source_delete_skipped recording_key=<pk> reason=already_absent`、Session COMPLETED・`deleteAttempts == 0` |
 | `emptyListingCompletes` | TEST-28 一覧が空（録音 0 件）でも、接続中で列挙できていれば無いと観測できたとして完了する | `snapshot(relpaths: [])` | 上と同じ |
-| `unobservedAbsenceWaits` | F-64 無いと観測できなければ完了にしない（パラメータ化: 未接続・列挙できない・unavailable が観測より優先・snapshot が古い） | 一覧は上と同じで (a) `includeDevice: false` (b) devices 空・`unavailable: [deviceID: "not_listable"]`（IngestService の姿） (c) 観測は在り `unavailable` にも載る (d) `completedAt: now − 901 秒` | Session SAVED・`deleteAttempts == 1`、Part RAW_SAVED・`sourceDeletedAt == nil`、`requests() == []`、`source_delete_skipped` のログが無い |
+| `unobservedAbsenceWaits` | F-64 無いと観測できなければ完了にしない（パラメータ化: 未接続・列挙できない・unavailable が観測より優先・snapshot が古い・取り込み前の snapshot） | 時計を 60 秒進め、一覧は上と同じで (a) `includeDevice: false` (b) devices 空・`unavailable: [deviceID: "not_listable"]`（IngestService の姿） (c) 観測は在り `unavailable` にも載る (d) 取り込みの後の snapshot を作ってから時計を 901 秒進める (e) `completedAt: DeletionScene.now + 999 ミリ秒`（updated_at と同じ秒） | Session SAVED・`deleteAttempts == 1`、Part RAW_SAVED・`sourceDeletedAt == nil`、`requests() == []`、`source_delete_skipped` のログが無い |
 | `rawSavedWithRequestIDDoesNotComplete` | RAW_SAVED で ID を持つ Part が在れば完了させない | `deleteSourceAudio = false`、`updateRecording(pk, [.deleteRequestID("20260912T030000Z-8483e42457304a9d-abcdef")])` | Session SAVED、`deleteAttempts == 1`、Part RAW_SAVED |
 | `cleanupFreesStagingButKeepsFailed` | 完了のとき staging を消し、FAILED の 16 kHz は残す（SM-23） | readOnly true。既定の Part と、10:00 の FAILED(WHISPER_FAILED) の兄弟の両方に `staging/<slug>/audio16k.wav`・`audio16k.wav.tmp`・`whisper.json` を置く | 既定の Part の `staging/<slug>` が無い、兄弟の `audio16k.wav` が在る、Session COMPLETED |
 | `stagingUnlinkFailureStaysInCleanup` | staging を消せなければ CLEANUP のまま、次でやり直す | readOnly true、既定の Part の `audio16k.wav` の位置にディレクトリを作る | Session CLEANUP、`disk_space_low session_key=DJIMIC3:20260912 reason=staging_unlink_failed`（WARNING）。ディレクトリを消してもう一度 → COMPLETED |
@@ -789,15 +792,18 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 30 | PartSteps.requestDeletionsAfterRawNote を `{ 0 }` に戻す | `tickRequestsDeletionAfterTheRawNote` |
 | 31 | `stageCollectDeleteResults` の本体を空に戻す | `nextTickCollectsTheResult` |
 | 32 | `SessionSteps.deleteSourcesIfSafe` の本体を空に戻す | `savedHookRunsTheStage` |
-| 33 | （F-64）requestDeletions の手順 4a を消す（不具合の再現） | `observedAbsentSourceCompletes`、`emptyListingCompletes`、`absentRawSavedCompletesWithoutRequest`、`absentOnReadOnlyDeviceCompletes` |
+| 33 | （F-64）requestDeletions の手順 4a を消す（不具合の再現） | `observedAbsentSourceCompletes`、`emptyListingCompletes`、`absentRawSavedCompletesWithoutRequest`、`absentOnReadOnlyDeviceCompletes`、`snapshotBeforeIngestionDoesNotComplete`(1000) |
 | 34 | （F-64）`sourceIsObservedAbsent` でデバイスが snapshot に無いときに真を返す | `unobservedAbsenceWaits`(未接続)、`absentDeviceWaits` |
 | 35 | （F-64）`sourceIsObservedAbsent` の `unavailable` の確認を消す | `unobservedAbsenceWaits`(unavailable が優先) |
 | 36 | （F-64）手順 1 の freshSnapshot を `ingest.latestSnapshot()` にする（3 と同じ壊し方） | `unobservedAbsenceWaits`(snapshot が古い)、`staleSnapshotWritesNothing` |
-| 37 | （F-64）`sourceIsObservedAbsent` が一覧を見ずに真を返す | `listedSourceIsRequested`、`requestMovesTheSessionToSourceDeleting` ほか要求を書く全テスト |
+| 37 | （F-64）`sourceIsObservedAbsent` が一覧を見ずに真を返す | `listedSourceIsRequested`（ほかのテストの snapshot は updated_at と同じ時刻なので「取り込みより後」で先に偽になり、これだけが落ちる） |
 | 38 | （F-64）手順 4a の `part.status == .rawSaved` を外す | `absentPendingIsLeftForResolveAbsent` |
 | 39 | （F-64）`sourceIsObservedAbsent` の `!relpath.isEmpty` を消す | `missingSourcePathIsNotAbsent`("") |
 | 40 | （F-64）手順 4a で `source_deleted_at` を入れる | `observedAbsentSourceCompletes`、`emptyListingCompletes`、`absentRawSavedCompletesWithoutRequest` |
 | 41 | （F-64）手順 4a の遷移に detail を付けない | `observedAbsentSourceCompletes`、`emptyListingCompletes` |
+| 42 | （F-64）`sourceIsObservedAbsent` の「取り込みより後」の条件を消す | `snapshotBeforeIngestionDoesNotComplete`(−60000・0・999)、`unobservedAbsenceWaits`(取り込み前) |
+| 43 | （F-64）「取り込みより後」の `+ 1000` を消す（秒の切り捨てを考えない） | `snapshotBeforeIngestionDoesNotComplete`(999) |
+| 44 | （F-64）手順 4a を手順 3（`delete_request_id` の飛ばし）より前に移す | `absentAwaitingResultIsNotCompleted` |
 
 ## 8. 受け入れ条件
 

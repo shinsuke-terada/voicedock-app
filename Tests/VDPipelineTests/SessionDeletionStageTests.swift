@@ -166,6 +166,8 @@ struct SessionDeletionStageTests {
     @Test("F-64 接続中で列挙できた一覧に元ファイルが無い RAW_SAVED は、要求を書かずに完了する（source_deleted_at は入れない）")
     func observedAbsentSourceCompletes() async throws {
         let scene = try DeletionScene()
+        // RAW_SAVED にした（updated_at）後の走査
+        scene.clock.advance(seconds: 60)
         await Self.stage(scene, snapshot: scene.snapshot(relpaths: [Self.otherRelpath])).deleteSourcesIfSafe(
             sessionKey: Self.key)
         try Self.expectCompletedAsAbsent(scene)
@@ -174,15 +176,18 @@ struct SessionDeletionStageTests {
     @Test("TEST-28 一覧が空（録音 0 件）でも、接続中で列挙できていれば無いと観測できたとして完了する")
     func emptyListingCompletes() async throws {
         let scene = try DeletionScene()
+        scene.clock.advance(seconds: 60)
         await Self.stage(scene, snapshot: scene.snapshot(relpaths: [])).deleteSourcesIfSafe(sessionKey: Self.key)
         try Self.expectCompletedAsAbsent(scene)
     }
 
     @Test(
-        "F-64 無いと観測できなければ完了にしない（パラメータ化: 未接続・列挙できない・unavailable が観測より優先・snapshot が古い）",
-        arguments: ["未接続", "列挙できない", "unavailable が優先", "snapshot が古い"])
+        "F-64 無いと観測できなければ完了にしない（パラメータ化: 未接続・列挙できない・unavailable が観測より優先・snapshot が古い・取り込み前の snapshot）",
+        arguments: ["未接続", "列挙できない", "unavailable が優先", "snapshot が古い", "取り込み前"])
     func unobservedAbsenceWaits(_ condition: String) async throws {
         let scene = try DeletionScene()
+        // 既定の Part の updated_at は DeletionScene.now。以下の snapshot は（取り込み前を除き）その後の走査
+        scene.clock.advance(seconds: 60)
         let listed = scene.snapshot(relpaths: [Self.otherRelpath])
         let snapshot: DeviceSnapshot
         switch condition {
@@ -197,9 +202,14 @@ struct SessionDeletionStageTests {
             snapshot = DeviceSnapshot(
                 generation: 1, completedAt: scene.clock.now(), connectEpoch: 1, devices: listed.devices,
                 unavailable: [scene.deviceID: "not_listable"], notListableErrno: [:])
+        case "snapshot が古い":
+            // 取り込みの後の走査だが、評価の時点では 901 秒たっている
+            snapshot = scene.snapshot(relpaths: [Self.otherRelpath])
+            scene.clock.advance(seconds: 901)
         default:
+            // updated_at（秒に切り捨て）と同じ秒の中の走査 = RAW_SAVED より前でありうる
             snapshot = scene.snapshot(
-                relpaths: [Self.otherRelpath], completedAt: DeletionScene.now.adding(seconds: -901))
+                relpaths: [Self.otherRelpath], completedAt: DeletionScene.now.adding(milliseconds: 999))
         }
         await Self.stage(scene, snapshot: snapshot).deleteSourcesIfSafe(sessionKey: Self.key)
         let session = try Self.session(scene)

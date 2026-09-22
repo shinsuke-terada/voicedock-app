@@ -231,15 +231,22 @@ struct DeletionRequesterTests {
         #expect(await Self.request(deps) == 1)
     }
 
-    /// 既定の Part とは別の録音だけが一覧に在る snapshot（接続中で列挙できている）
+    static let otherRelpath = "TX_MIC001_20260912_100000/TX00_MIC001_20260912_100000_orig.wav"
+
+    /// 既定の Part とは別の録音だけが一覧に在る snapshot（接続中で列挙できている）。
+    /// 時計を 60 秒進め、Part を RAW_SAVED にした（updated_at = DeletionScene.now）後の走査にする
     static func absentSnapshot(_ scene: DeletionScene) -> DeviceSnapshot {
-        scene.snapshot(relpaths: ["TX_MIC001_20260912_100000/TX00_MIC001_20260912_100000_orig.wav"])
+        scene.clock.advance(seconds: 60)
+        return scene.snapshot(relpaths: [otherRelpath])
     }
 
     @Test("F-64 一覧に在る RAW_SAVED は無いと扱わず、要求を書く通常の経路へ進む")
     func listedSourceIsRequested() async throws {
         let scene = try DeletionScene()
-        let (_, deps) = Self.setUp(scene)
+        // 取り込みより後の走査（ほかの条件はすべて「無い」と言える姿にし、一覧に在ることだけで要求の経路へ進むことを見る）
+        scene.clock.advance(seconds: 60)
+        let (_, deps) = Self.setUp(
+            scene, snapshot: scene.snapshot(relpaths: [DeletionScene.relpath, Self.otherRelpath]))
         #expect(await Self.request(deps) == 1)
         #expect(try Self.part(scene).status == .sourceDeleting)
         #expect(!scene.logLines.contains { $0.contains(" source_delete_skipped ") })
@@ -256,6 +263,20 @@ struct DeletionRequesterTests {
         #expect(part.sourceDeletedAt == nil)
         #expect(part.deleteRequestID == nil)
         #expect(Self.logged(scene, "source_delete_skipped recording_key=" + Self.pk + " reason=already_absent"))
+    }
+
+    @Test(
+        "F-64 取り込み前の snapshot では完了にしない（updated_at と同じ秒・前の走査。境界: ちょうど 1 秒後なら完了）",
+        arguments: [(Int64(-60_000), false), (0, false), (999, false), (1000, true)])
+    func snapshotBeforeIngestionDoesNotComplete(_ offsetMillis: Int64, _ completes: Bool) async throws {
+        let scene = try DeletionScene()
+        scene.clock.advance(seconds: 60)
+        let snapshot = scene.snapshot(
+            relpaths: [Self.otherRelpath], completedAt: DeletionScene.now.adding(milliseconds: offsetMillis))
+        let (_, deps) = Self.setUp(scene, snapshot: snapshot)
+        #expect(await Self.request(deps) == 0)
+        #expect(try Self.part(scene).status == (completes ? .completed : .rawSaved))
+        #expect(scene.requests() == [])
     }
 
     @Test("F-64 SOURCE_DELETE_PENDING は一覧に無くても自動で完了にしない（手動で消した分を完了にする の対象。§8.9.9）")
@@ -290,8 +311,8 @@ struct DeletionRequesterTests {
     @Test("F-64 読み取り専用で接続中でも、無いと観測できれば完了する（消さないので観測値の書き込み可否は問わない）")
     func absentOnReadOnlyDeviceCompletes() async throws {
         let scene = try DeletionScene()
-        let snapshot = scene.snapshot(
-            readOnly: true, relpaths: ["TX_MIC001_20260912_100000/TX00_MIC001_20260912_100000_orig.wav"])
+        scene.clock.advance(seconds: 60)
+        let snapshot = scene.snapshot(readOnly: true, relpaths: [Self.otherRelpath])
         let (_, deps) = Self.setUp(scene, snapshot: snapshot)
         #expect(await Self.request(deps) == 0)
         #expect(try Self.part(scene).status == .completed)
