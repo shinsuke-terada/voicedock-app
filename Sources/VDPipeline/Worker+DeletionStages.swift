@@ -1,4 +1,4 @@
-// 削除の段（PLAN §5.4・§8.9.5〜§8.9.7）。settleSkippedDeletions は T-39。
+// 削除の段（PLAN §5.4・§8.9.5〜§8.9.7）。
 
 extension Worker {
     func stageCollectDeleteResults(_ ctx: TickContext) async {
@@ -25,6 +25,8 @@ extension Worker {
             reaperScanGeneration: current)
     }
 
-    // T-39 が中身を書く（PLAN §8.9.5 根拠 B）。
-    func stageSettleSkippedDeletions(_ ctx: TickContext) async {}
+    /// 根拠 B（PLAN §8.9.5）。evaluateDeletions の後・runReaperIfNeeded の前。snapshot が新鮮な tick だけ
+    func stageSettleSkippedDeletions(_ ctx: TickContext) async {
+        _ = await SkippedSettler(deps: DeletionDependencies(ctx: ctx)).settleSkippedDeletions()
+    }
 }
