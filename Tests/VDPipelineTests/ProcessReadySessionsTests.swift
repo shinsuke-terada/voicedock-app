@@ -143,6 +143,7 @@ struct ProcessReadySessionsTests {
         try await Self.run(w, ctx: try await w.context(stop: flag))
         #expect(await w.llm.stopCount == 1)
         if c == .stopDuringFirst {
+            #expect(try w.session("DJIMIC3:20260912").status == .analyzed)  // 1 件目は最後まで処理した
             #expect(try w.session("DJIMIC3:20260913").status == .ready)
         }
     }

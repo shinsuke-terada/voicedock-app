@@ -109,7 +109,7 @@ struct LLMGuard {
 2. `reasons: [PauseReason] = []`、`model: URL?`
 3. `if let e = ctx.deps.catalog.entry(kind: .llm, id: id)`: `model = ModelFiles.url(kind: .llm, entry: e, layout:)`。
    `!ModelFiles.isPresent(e, kind: .llm, layout:)` → `reasons.append(.llmModelMissing)`。
-   `e.minMemoryGB` が在り `ctx.deps.physicalMemoryBytes < UInt64(gb) * 1_073_741_824` → `reasons.append(.llmInsufficientMemory)`
+   `e.minMemoryGB` が在り、`let (need, overflow) = UInt64(clamping: gb).multipliedReportingOverflow(by: LLMGuard.bytesPerGB /* 1_073_741_824 */)` で `overflow || ctx.deps.physicalMemoryBytes < need` → `reasons.append(.llmInsufficientMemory)`（範囲外の値でトラップしない。溢れたら足りない側。CR-16。T-22 の実装で判明）
 4. そうでなく `if let u = ModelFiles.customLLMURL(id: id, layout:)`: `model = u`。`!FileProbe.isNonEmptyRegularFile(u)` → `.llmModelMissing`。**メモリは確かめない**（カスタムの目安は分からない。警告は選ぶときの UI（T-31）が出す）
 5. どちらでもない（CV-42 で起きない）→ `model = nil`、`.llmModelMissing`
 6. `!FileProbe.isExecutableFile(ctx.deps.paths.llamaServer)` → `.llamaServerMissing`
@@ -600,3 +600,5 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 5. `SessionSteps` の宣言を地図に書く: `groupNewParts() throws`・`closeIdleSessions() throws`・`reopenSession(_:) -> Bool`・`process(sessionKey:) async -> SessionStepResult`・`ensureMerged(_:_:) -> Bool`・`ensureAnalysis(_:_:) async -> Bool`・`ensureDailyNote(_:_:) async -> Bool`（T-29）・`saveTimeline(…)`（T-29）・`deleteSourcesIfSafe(_:) async`（T-38）。`SessionStepResult { stopped, empty, analyzed, saved }`
 6. PLAN §5.6 の「解析の再利用」に「再利用するときも analysis_path と title を書く」を足す（書かないと、解析の書き込みの後・DB 更新の前に落ちた Session が ANALYZED のまま Daily の工程に進めない。voicedock の潜在バグ）
 7. `PyJSON.decode` は地図では `(_ data: Data)`、T-19 §4.9 では `(_ text: String)`。本チケットは地図の `Data` 版を使う
+
+- （実装で追記）VDModels の `ModelManager.meetsMemory`（T-23）は、同じ判定を `UInt64(gb) * 1_073_741_824` のトラップしうる形で持っている。UI（T-31）とガード（T-22）で書き方をそろえるため、`meetsMemory` も飽和演算にすることを提案する（値の上で違いが出るのは溢れる場合だけ）

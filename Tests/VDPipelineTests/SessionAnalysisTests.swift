@@ -370,5 +370,7 @@ struct SessionAnalysisTests {
         #expect(try await Self.ensure(w, ctx: ctx) == false)
         #expect(try w.session().status == .analyzed)
         #expect(ctx.pauses.paused.contains(.llamaServerMissing))
+        #expect(await w.chat.calls.isEmpty)  // ガードで止まれば LLM に触れない
+        #expect(await w.llm.ensureCalls.isEmpty)
     }
 }
