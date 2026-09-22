@@ -51,12 +51,14 @@ Vault の確認は必ず `VaultCheck.evaluate(path: cfg.vault.path, marker: cfg.
 // Vault の中のパスの組み立て（PLAN §2.3「ノートは Vault からの相対」・§5.3・§8.8）。文字列で組み立てない。
 import Foundation
 import VDContract
+import VDNotes     // OutputPathResolver.maxSuffix
 
 enum VaultPaths {
     /// cfg.vault.path のディレクトリの URL（`URL(fileURLWithPath: path, isDirectory: true)`）。
     static func root(_ path: String) -> URL
     /// Vault からの相対 POSIX パス（DB の raw_output_path / output_path とログの path）。
-    /// `url.standardizedFileURL.path` が `vault.standardizedFileURL.path + "/"` で始まればその後ろ、そうでなければ url のパス全体（起きない）。
+    /// `url.standardizedFileURL.path(percentEncoded: false)` が `vault.standardizedFileURL.path(percentEncoded: false)`（末尾に `/` が無ければ足す）で
+    /// スカラー単位で始まればその後ろ、そうでなければ url のパス全体（起きない）。
     static func relative(_ url: URL, vault: URL) -> String
     /// DB の相対パスから URL（`vault.appendingPathComponent(relative)`）。
     static func url(_ relative: String, vault: URL) -> URL
@@ -221,7 +223,7 @@ func stageRefreshVaultIndex(_ ctx: TickContext) async:
   guard wiki.linkTags else { vaultIndex = nil; vaultIndexPath = nil; return }            // linkTags が偽なら作らない
   guard let path = ctx.config.vault.path, VaultCheck.evaluate(path: path, marker: ctx.config.vault.marker).isAvailable else return   // 使えない Vault では作り直さない（前の索引を保つ）
   now = ctx.deps.clock.uptime()                                                        // 単調時計（TIME-06）
-  if let idx = vaultIndex, vaultIndexPath == path, !idx.isStale(ttlSeconds: wiki.vaultIndexCacheSeconds, now: now): return
+  if let idx = vaultIndex, let built = vaultIndexPath, PyText.scalarsEqual(built, path), !idx.isStale(ttlSeconds: wiki.vaultIndexCacheSeconds, now: now): return   // パスの比較はスカラー単位
   vault = VaultPaths.root(path); prefix = VaultIndex.rawFolderPrefix(ctx.config.obsidian.raw.folderTemplate)
   guard let built = try? await BlockingIO.run({ VaultIndex.build(vault: vault, excludePrefixes: [prefix], builtAt: now) }) else return
   vaultIndex = built; vaultIndexPath = path
@@ -262,7 +264,9 @@ extension Recovery {
 
 ### 6.0 `PipelineFixtures.swift` への追加
 
-- `func installVault(marker: Bool = true) throws -> URL`: `tmp.path("vault")` を作り、`marker` なら `.obsidian/` も作る。`update { $0.vault.path = p(vault) }`
+- `var vaultURL: URL`（`tmp.url.appendingPathComponent("vault", isDirectory: true)`）、`var vaultPath: String`（`tmp.url.appendingPathComponent("vault").path(percentEncoded: false)`。末尾の `/` なし）
+- `func installVault(marker: Bool = true) async throws -> URL`（`ConfigStore.update` が async なので async）: `vaultURL` を作り、`marker` なら `.obsidian/` も作る。`update { $0.vault.path = vaultPath }`（`.success` でなければ投げる）
+- `typealias PartSpec = (relpath: String, startedAt: String, seconds: Double)`、`static let vaultSessionKey = "DJIMIC3:20260829"`
 - `static let partA = (relpath: "TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav", startedAt: "2026-08-29T07:12:04+09:00", seconds: 2.0)`
 - `static let partB = (relpath: "TX_MIC001_20260829_074201/TX01_MIC002_20260829_074210_orig.wav", startedAt: "2026-08-29T07:42:10+09:00", seconds: 3.0)`（A と違う長さにして SHA を変える。重複にしない）
 - `static let partC = (relpath: "TX_MIC001_20260829_093000/TX01_MIC002_20260829_093000_orig.wav", startedAt: "2026-08-29T09:30:00+09:00", seconds: 2.0)`
@@ -314,7 +318,7 @@ extension Recovery {
 | `sourcesPointToActualRaw` / 「X-15 Sources は実際の Raw の名前」 | `raw_output_path = "Daily/Voice/Raw/20260829/2026-08-29 raw (2).md"` | `- [[2026-08-29 raw (2)]]` を含む |
 | `tagLinksUseTheIndex` / 「タグのリンクは Vault 索引に在るものだけ」 | `ctx.vaultIndex = VaultIndex(names: [VaultIndex.normalize("VoiceDock")], builtAt: .zero)` と nil | 在れば Links に `- [[VoiceDock]]`、無ければ無い |
 | `excludedPartsAreWarnedAndNotListed` / 「除外 Part は警告行に出て recording_keys に載らない（DN-7）」 | FAILED(WHISPER_FAILED) の Part と SKIPPED(NO_SPEECH_DETECTED) の Part を足す | `voicedock_recording_keys` は A だけ、`voicedock_failed_parts`・`voicedock_skipped_parts` に 1 つずつ、`> ⚠ この日の録音のうち 1 本が…` と `> この日の録音のうち 1 本を除外しました（無音）。…` を含む、検証が通る |
-| `unknownErrorCodeIsShownAsRaw` / 「M-1 未知のエラーコードは生の文字列で警告に出る」 | FAILED の Part の `error_code` を `"FUTURE_CODE_X"`（`ErrorCode` に無い値）に直に書く | `ExcludedPart.errorCode == nil`・`unknownCode == "FUTURE_CODE_X"`、警告行にその文字列が出る（`DailyWarnings.displayName` の既定） |
+| `unknownErrorCodeIsShownAsRaw` / 「M-1 未知のエラーコードは生の文字列で警告に出る」 | **SKIPPED** の Part の `error_code` を `"FUTURE_CODE_X"`（`ErrorCode` に無い値）に直に書く（理由を行に出すのは SKIPPED の警告行だけ。FAILED の行は本数だけ。T-27 `DailyWarnings.lines`） | `ExcludedPart.errorCode == nil`・`unknownCode == "FUTURE_CODE_X"`、警告行 `> ⚠ この日の録音のうち 1 本を除外しました（FUTURE_CODE_X）。自動では再試行されません。デバイスから採り直してください。` が出る（`DailyWarnings.displayName` の既定。未知の理由は操作が要る側） |
 | `ownDailyIsOverwritten` / 「DB の出力パスのノートは上書きする」 | 1 回書いた後、ANALYZED に強制してもう一度 | 同じ output_path、ファイルは 1 つ |
 | `foreignDailyIsNotOverwritten` / 「他人の Daily は上書きしない」 | `2026-08-29 Voice.md` に DB に無い鍵 | ` (2).md` に書かれる |
 
@@ -477,8 +481,30 @@ tags:
 | `unknownCode` に常に nil を渡す | `unknownErrorCodeIsShownAsRaw` |
 | Timeline の読み込みで指紋を見ない | `staleTimelineFallsBack` |
 | rawLinkName に nil を渡す（常に基本名） | `sourcesPointToActualRaw` |
-| LinkPlanner に既定タグ入りの tags を渡す | `oneTickFromBWFToVerifiedDaily`（Links に余分な行） |
+| LinkPlanner に既定タグ入りの tags を渡す | `tagLinksUseTheIndex`（索引に `voicedock` が在るので Links に `[[voicedock]]` が増える。結合テストの索引には `voice` / `voicedock` が無く `#tag` になって本文に出ないので、`oneTickFromBWFToVerifiedDaily` では捕まらない） |
 | Vault 索引の TTL を `>` にする | `staleIndexIsRebuilt` |
+| 索引の除外接頭辞を渡さない | `indexIsBuiltAndExcludesRaw` |
+| 復旧の tmp の候補を `hasPrefix` で集める | `rawTmpCandidates` |
+| saveTimeline の失敗で解析を失敗にする | `timelineWriteFailureIsNotFatal` |
+
+### 結果（2026-09-22。コミット後の清潔な状態で 1 項目ずつ壊し、元のファイルに戻した）
+
+| 壊し方 | 落ちたテスト |
+|---|---|
+| ensureRawNote のガードを消す | `missingMarkerIsAGuard`・`missingVaultPausesThenResumes`・`vaultNotConfiguredIsAGuard`・`stoppedWhenRawFails` |
+| Raw の遷移の後の再確認を消す | `vaultLostAfterTransitionFails`（6.1） |
+| Daily の遷移の後の再確認を消す | `vaultLostAfterTransitionFails`（6.2） |
+| rawParts で transcript の読めない Part も載せる | `membersUseTheSharedFunction`・`noMembersStaysTranscribed` |
+| NoteVerifier に渡す期待 SHA を `""` にする | `writesVerifiedRawNote` ほか Raw を保存する 11 本 |
+| Raw の失敗でほかの TRANSCRIBED の Part も FAILED にする | `onlyTheTriggerFails` |
+| raw_saved の inbox の削除を消す | `ceAudioInboxRetainRawSavedReleases` |
+| 解析 JSON を ANALYZED→WRITING の前に読む | `unreadableAnalysisIsWriteFailed` |
+| Daily の expectedKeys に除外 Part を含める | `excludedPartsAreWarnedAndNotListed`・`unknownErrorCodeIsShownAsRaw` |
+| `unknownCode` に常に nil を渡す | `unknownErrorCodeIsShownAsRaw` |
+| Timeline の読み込みで指紋を見ない | `staleTimelineFallsBack` |
+| rawLinkName に nil を渡す | `sourcesPointToActualRaw` |
+| LinkPlanner に既定タグ入りの tags を渡す | `tagLinksUseTheIndex` |
+| Vault 索引の TTL を `>` にする | `staleIndexIsRebuilt`・`ceVaultIndexCacheSeconds` |
 | 索引の除外接頭辞を渡さない | `indexIsBuiltAndExcludesRaw` |
 | 復旧の tmp の候補を `hasPrefix` で集める | `rawTmpCandidates` |
 | saveTimeline の失敗で解析を失敗にする | `timelineWriteFailureIsNotFatal` |

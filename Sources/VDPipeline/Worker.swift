@@ -3,6 +3,7 @@ import Foundation
 import VDContract
 import VDCore
 import VDDevice
+import VDNotes
 import VDStore
 
 /// 状態機械を 1 本の直列ループで回す（PLAN §5.4）。
@@ -21,7 +22,10 @@ public actor Worker {
     var pendingRequeues: [RequeueReason] = []
     var wakeContinuation: AsyncStream<Void>.Continuation?
     var stoppingLogged = false
-    // T-29 が vaultIndex を、T-32 がジョブの列を足す
+    /// Vault 索引と、それを作った Vault のパス（tick をまたいで持つ。voicedock 変更 BK-3）
+    var vaultIndex: VaultIndex? = nil
+    var vaultIndexPath: String? = nil
+    // T-32 がジョブの列を足す
 
     public init(deps: WorkerDependencies) {
         self.init(deps: deps, assertion: ProcessInfoSleepAssertion(), onStage: nil)

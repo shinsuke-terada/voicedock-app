@@ -24,8 +24,19 @@ public enum NoteFolder {
         guard RelPath.isSafe(relative) else {
             throw NoteFolderError.unsafeRelative
         }
-        let dir = vault.appendingPathComponent(relative, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        // 1 段ずつ作る（withIntermediateDirectories: false）。確認の後に Vault のルートが消えていても、
+        // ルートやその上の階層を作り直さない（最初の段が ENOENT で失敗する）。T-29 のレビューで判明
+        var dir = vault
+        for component in relative.split(separator: "/") {
+            dir = dir.appendingPathComponent(String(component), isDirectory: true)
+            var isDirectory: ObjCBool = false
+            if FileManager.default.fileExists(atPath: dir.path(percentEncoded: false), isDirectory: &isDirectory),
+                isDirectory.boolValue
+            {
+                continue
+            }
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: false)
+        }
         return dir
     }
 }

@@ -473,3 +473,92 @@ extension PipelineWorld {
         }
     }
 }
+
+// MARK: - Vault と Part の部品（T-29 §6.0）
+
+extension PipelineFixtures {
+    /// Part の組（relpath・started_at・長さ）。
+    typealias PartSpec = (relpath: String, startedAt: String, seconds: Double)
+
+    static let partA: PartSpec = (
+        relpath: "TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+        startedAt: "2026-08-29T07:12:04+09:00", seconds: 2.0
+    )
+    /// A と違う長さにして SHA を変える（重複にしない）
+    static let partB: PartSpec = (
+        relpath: "TX_MIC001_20260829_074201/TX01_MIC002_20260829_074210_orig.wav",
+        startedAt: "2026-08-29T07:42:10+09:00", seconds: 3.0
+    )
+    static let partC: PartSpec = (
+        relpath: "TX_MIC001_20260829_093000/TX01_MIC002_20260829_093000_orig.wav",
+        startedAt: "2026-08-29T09:30:00+09:00", seconds: 2.0
+    )
+    /// FakeWhisper の既定と同じ
+    static let whisperSegments = [
+        TranscriptSegment(start: 0.0, end: 3.2, text: "おはようございます。"),
+        TranscriptSegment(start: 5.5, end: 9.0, text: "今日の予定を確認します。"),
+    ]
+    /// Vault のテストの Session の鍵
+    static let vaultSessionKey = "DJIMIC3:20260829"
+}
+
+extension PipelineWorld {
+    /// テストの Vault（TempDirectory の中だけ）。
+    var vaultURL: URL { tmp.url.appendingPathComponent("vault", isDirectory: true) }
+
+    /// vault.path に入れる文字列（末尾の "/" なし）。
+    var vaultPath: String { tmp.url.appendingPathComponent("vault").path(percentEncoded: false) }
+
+    /// tmp の vault を作り、marker なら .obsidian/ も作る。vault.path を設定する。
+    @discardableResult
+    func installVault(marker: Bool = true) async throws -> URL {
+        let vault = vaultURL
+        try FileManager.default.createDirectory(at: vault, withIntermediateDirectories: true)
+        if marker {
+            try FileManager.default.createDirectory(
+                at: vault.appendingPathComponent(".obsidian", isDirectory: true), withIntermediateDirectories: true)
+        }
+        let path = vaultPath
+        let result = await configStore.update { $0.vault.path = path }
+        guard case .success = result else { throw PipelineFixtureError.invalidConfig("\(result)") }
+        return vault
+    }
+
+    /// 行を registerRow と同じ形で入れ（inbox なら BWF も書く）、状態と session_key を強制し、
+    /// Session が在れば集計を更新し、segments が nil でなければ transcript を書く。partkey を返す。
+    @discardableResult
+    func addPart(
+        _ spec: PipelineFixtures.PartSpec, status: PartStatus,
+        sessionKey: String = PipelineFixtures.vaultSessionKey,
+        segments: [TranscriptSegment]? = PipelineFixtures.whisperSegments, inbox: Bool = false
+    ) throws -> String {
+        let folder = RelPath.parent(spec.relpath)
+        let name = URL(fileURLWithPath: spec.relpath).lastPathComponent
+        let pk = try registerRow(folder: folder, name: name, started: spec.startedAt, duration: spec.seconds)
+        if inbox {
+            try BWFWriter.write(
+                to: layout.inboxFile(deviceID: "DJIMIC3", relpath: spec.relpath), seconds: spec.seconds,
+                format: .pcm24, content: .speech)
+        }
+        try forcePart(pk, status: status, sessionKey: sessionKey)
+        if try store.session(sessionKey) != nil {
+            try store.refreshSessionAggregates(sessionKey)
+        }
+        if let segments {
+            try AtomicFile.write(
+                PartTranscriptCodec.encode(
+                    PartTranscript(
+                        partkey: pk, language: "ja", durationSeconds: spec.seconds, startedAt: spec.startedAt,
+                        text: segments.map(\.text).joined(), segments: segments)),
+                to: layout.transcript(slug: KeySlug.of(pk)))
+        }
+        return pk
+    }
+
+    /// Vault の中のファイルを UTF-8 で読む。
+    func noteText(_ relative: String) throws -> String {
+        let data = try Data(contentsOf: vaultURL.appendingPathComponent(relative))
+        guard let text = String(data: data, encoding: .utf8) else { throw PipelineFixtureError.badFixture(relative) }
+        return text
+    }
+}
