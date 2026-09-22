@@ -69,7 +69,7 @@
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- VoiceDock.app の Info.plist の雛形（PLAN §11.1）。@BUNDLE_ID@ / @VERSION@ / @BUILD@ を scripts/make-app.sh が置き換える。 -->
+<!-- VoiceDock.app の Info.plist の雛形（PLAN §11.1）。3 つの記号（BUNDLE_ID・VERSION・BUILD を @ で囲んだもの）を scripts/make-app.sh が置き換える。 -->
 <plist version="1.0">
 <dict>
 	<key>CFBundleDevelopmentRegion</key>
@@ -110,6 +110,7 @@
 - `LSUIElement` は `<true/>`（`<string>YES</string>` でも同じ意味だが、`plutil` が真偽値に正規化するため最初から真偽値で書く）
 - 3 つのフォルダの説明は**同じ 1 文**（別々のダイアログに出るので 3 つとも要る）。文言は PLAN §11.1 の逐語
 - `CFBundleVersion`（= `@BUILD@`）は `git rev-list --count HEAD`。単調増加であればよく、表示はされない
+- 注釈に記号そのもの（`@BUNDLE_ID@` など）を書かない。書くと各記号が 2 回現れて `infoPlistTemplateUsesPlaceholders` が落ち、`sed` が注釈の中まで実際の値に置き換える
 
 ### 4.3 `Resources/VoiceDock.entitlements`（全文）
 
@@ -268,7 +269,7 @@ else
   timestamp="--timestamp=none"   # 開発では署名のたびにタイムスタンプ局へ出ない（TCC の許可は Team ID で決まる）
 fi
 
-# macOS の /bin/bash は 3.2 なので mapfile を使わない
+# macOS の /bin/bash は 3.2 なので、候補は配列にせず改行区切りの文字列で扱う
 identity="${VOICEDOCK_SIGN_IDENTITY:-}"
 if [ -z "$identity" ]; then
   candidates="$(security find-identity -v -p codesigning | sed -n "s/^ *[0-9]*) [0-9A-F]* \"\($prefix: .*\)\"\$/\1/p")"
@@ -684,11 +685,11 @@ struct ReleaseBundleTests {
 | 同上 | `manifestListsTheCodeSignature()` | 許可リストに `_CodeSignature/CodeResources` が在る | `manifest()` | 含む（署名の後に照合するため） |
 | 同上 | `makeAppInstallsEveryManifestEntry(_:)` | 組み立てが許可リストの各ファイルを作る | `manifest()` から `Info.plist` と `_CodeSignature/CodeResources` を除いたもので parametrize | `make-app.sh` の本文に、その行の**最後の要素**（`basename`）か、それを含むループの元（`Resources/prompts/*.txt`）が現れる |
 | 同上 | `verifyBundleRunsEveryRequiredCheck(_:)` | verify-bundle が PLAN §11.3 の 4 の全項目を行う | 7 つの語で parametrize: `bundle-manifest.txt`・`codesign --verify --deep --strict`・`spctl -a -t exec`・`spctl -a -t open --context context:primary-signature`・`stapler validate`・`check-linkage.sh`・`.reaper` | `verify-bundle.sh` に含まれる |
-| 同上 | `verifyBundleSupportsFilesOnly()` | `--files-only` が在り、make-app が使う | 2 ファイル | `verify-bundle.sh` に `--files-only` が在り、`make-app.sh` が `verify-bundle.sh --files-only` を呼ぶ |
+| 同上 | `verifyBundleSupportsFilesOnly()` | `--files-only` が在り、make-app が使う | 2 ファイル | `verify-bundle.sh` に `--files-only` が在り、`make-app.sh` が `verify-bundle.sh" --files-only` を呼ぶ（パスは `"$root/scripts/verify-bundle.sh"` と引用されるので、引用符の閉じまで含めて探す） |
 | 同上 | `signUsesTheReaperIdentifier()` | reaper だけ `--identifier <BUNDLE_ID>.reaper` で署名する | `sign.sh` | `--identifier "$BUNDLE_ID.reaper"` と `--entitlements "$root/Resources/reaper.entitlements"` を含む |
 | 同上 | `signNeverUsesAdhoc()` | ad-hoc 署名をしない（DR-17） | `sign.sh` | `--sign -` を含まない。`--options runtime` を含む |
 | 同上 | `notarizeWaitsAndUsesTheProfile()` | 公証はプロファイルを使い `--wait` する | `notarize.sh` | `VOICEDOCK_NOTARY`・`--keychain-profile`・`--wait`・`stapler staple`・`ditto -c -k --keepParent` を含む |
-| 同上 | `releaseRunsTheStepsInOrder()` | release.sh の段の順（PLAN §11.3） | `release.sh` | `make-app.sh` → `notarize.sh` → `make-dmg.sh` → `sign.sh developerid` → `notarize.sh` → `verify-bundle.sh` の順に最初の出現位置が単調増加 |
+| 同上 | `releaseRunsTheStepsInOrder()` | release.sh の段の順（PLAN §11.3） | `release.sh` | `make-app.sh` → `notarize.sh` → `make-dmg.sh` → `sign.sh" developerid` → `notarize.sh` → `verify-bundle.sh` の順に現れる（各語は直前の語の出現より後ろから探す。`notarize.sh` が 2 回あるため「最初の出現位置」では 2 回目を区別できない。`sign.sh` は `"$root/scripts/sign.sh" developerid` と引用されるので引用符の閉じまで含めて探す） |
 | 同上 | `makefileUsesTheseScripts()` | Makefile の app / release がこのスクリプトを呼ぶ | `Makefile` | `scripts/make-app.sh debug` と `scripts/release.sh` を含む |
 | 同上 | `distIsIgnored()` | `dist/` はコミットしない | `.gitignore` | `dist/` の行が在る |
 | 同上 | `theChecksWouldCatchABrokenScript()` | **陽性対照**: 検査自体が効く | 文字列を直に渡すヘルパー | `#!/bin/sh\n` は `everyScriptIsStrictBash` の判定関数で偽、`set -e` だけでも偽、`#!/bin/bash\nset -euo pipefail` で真 |
@@ -716,7 +717,7 @@ struct ReleaseBundleTests {
 | 9 | `scripts/sign.sh` の `--options runtime` を 3 か所とも消す | `signNeverUsesAdhoc` |
 | 10 | `scripts/verify-bundle.sh` の `spctl -a -t open --context context:primary-signature` の行を消す | `verifyBundleRunsEveryRequiredCheck("spctl -a -t open --context context:primary-signature")` |
 | 11 | `scripts/verify-bundle.sh` の V-1（manifest の照合）を消す | `verifyBundleRunsEveryRequiredCheck("bundle-manifest.txt")` |
-| 12 | `scripts/release.sh` の `make-dmg.sh` と `sign.sh developerid` の順を入れ替える | `releaseRunsTheStepsInOrder` |
+| 12 | `scripts/release.sh` の `make-dmg.sh` の行と `sign.sh" developerid` の行の順を入れ替える | `releaseRunsTheStepsInOrder` |
 | 13 | `scripts/notarize.sh` の `--wait` を消す | `notarizeWaitsAndUsesTheProfile` |
 | 14 | `scripts/make-dmg.sh` に `/Volumes/VoiceDock` の行を足す | `noScriptMentionsVolumes("scripts/make-dmg.sh")` |
 | 15 | `scripts/make-app.sh` の 1 行目を `#!/bin/sh` にする | `everyScriptIsStrictBash("scripts/make-app.sh")` |

@@ -1,0 +1,14 @@
+# VoiceDock.app に入ってよいファイルの全部（PLAN §11.1・§11.3）。行は VoiceDock.app からの相対パス。
+# `#` で始まる行と空行は注釈。並びは辞書順。ここに無いファイルがバンドルに在れば verify-bundle.sh が落ちる。
+Contents/Helpers/llama-server
+Contents/Helpers/voicedock-reaper
+Contents/Helpers/whisper-cli
+Contents/Info.plist
+Contents/MacOS/VoiceDock
+Contents/Resources/AppIcon.icns
+Contents/Resources/ModelCatalog.json
+Contents/Resources/prompts/analyze_ja.txt
+Contents/Resources/prompts/map_ja.txt
+Contents/Resources/prompts/reduce_ja.txt
+Contents/Resources/prompts/repair_json_ja.txt
+Contents/_CodeSignature/CodeResources
