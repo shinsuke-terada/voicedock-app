@@ -1094,7 +1094,15 @@ node = statfs(path).f_mntfromname                         // 例 /dev/disk4（di
 - `lstat` で判定し、**symlink はファイルもディレクトリも無視する**（voicedock はファイルの symlink を辿っていた）。ディレクトリはフォルダ規則を見ずに全部降りる
 - ファイル規則に一致する通常ファイルを relpath の一覧に入れる（`_orig` も denoised も。削除の確認用）。`_orig` だけが取り込みの候補
 - ボリューム直下の録音は取り込むが、親フォルダが規則外なので削除対象にはならない（RV-11 `folder_rule`）
-- **サブディレクトリの列挙に失敗したら**（`complete == false`）、そのデバイスは snapshot の `devices` に入れず `unavailable`（`not_listable`）に載せる（一覧に載らないファイルを「消えた」と誤読させない）
+- **サブディレクトリの列挙（`opendir` / `readdir`。途中の失敗も含む）に失敗したら、または項目の `lstat` が `ENOENT` 以外で失敗したら**（`complete == false`）、そのデバイスは snapshot の `devices` に入れず `unavailable`（`not_listable`）に載せる（一覧に載らないファイルを「消えた」と誤読させない。F-67）。
+  `lstat` の `ENOENT` は列挙から `lstat` までの間に消えた項目なので、無いものとして飛ばす（`complete` は偽にしない）。`notListableErrno` は規則 5（ボリュームのルートの `opendir`）の errno だけで、走査の途中の失敗では載せない（TCC の案内を出さない）
+- **深さの上限の外は観測しない**: 上限の外（`maxScanDepth` を超える階層）は列挙も `lstat` もしないので、そこに在るものは一覧に含まれず、`complete` も偽にしない（F-67）。
+  上限の外の録音は取り込みの候補にならないので Part にならず、削除（`preIdentityCheck` は一覧に relpath が在ることを要る）の対象にも、F-64 の自動完了の対象（Part を持つ RAW_SAVED だけ）にもならない。
+  上限ちょうどの階層のディレクトリがあっても偽にしないのは、偽にすると取り込みの範囲に無いものでデバイスごと `not_listable` になり、削除と F-64 の完了が止まるだけで守るものが無いため。
+  例外は設定で `maxScanDepth` を下げたとき: 以前の深さで取り込んだ Part の元ファイルは一覧に無く見え、RAW_SAVED なら F-64 で完了しうる（消さない側。元ファイルはデバイスに残る）
+- `complete == false` になっても、その回の取り込み（列挙できた範囲の候補の安定性判定とコピー）は続ける。観測に載せないのは snapshot だけで、前回の snapshot の一覧を持ち越さない（古い一覧を今の観測として使わない）。
+  一時的な失敗（抜き差しの途中の `EIO` など）なら、次の走査（契機のたび・最長 `scanIntervalSeconds`）で `devices` に戻る。その間は削除の要求・F-64 の完了・根拠 B が待ち、パネルの「要対応」に「中身を読めません」が出る。
+  そのデバイスが唯一の接続だったなら、戻ったときに `connectEpoch` が 1 増え、接続の立ち上がり（§5.4 契機 2）として FAILED の再評価が 1 回余分に走る（従来のサブディレクトリの列挙の失敗と同じ扱い）
 - 再マウントの途中でデバイスが外れた（マウント点でなくなった）場合は、そのデバイスを観測しない（親の FS を観測しない）
 
 **安定性判定**（voicedock §10.3 の原文どおり）
@@ -1794,8 +1802,9 @@ for part in Session の Part（started_at, partkey 順）:
   **snapshot がその Part の取り込みより後の観測である**（`snapshot.completedAt ≥ updated_at + 1 秒`。updated_at は RAW_SAVED にした時刻で取り込みより後。秒に切り捨てて記録されるので 1 秒足す。読めなければ偽）、
   そしてその relpath が一覧に**無い**。どれかが欠ければ偽（観測できたときだけ「無い」と言う。安全側は「待つ」）。書き込み可否（`readOnly`）は問わない（消さないので）。
   取り込みより後の条件が無いと、Raw の直後（§5.5）に 1 つ前の走査（その Part を取り込む前）の snapshot が経過時間だけで新鮮とされ、挿し直した直後の新しい録音を「無い」と判定しうる。
-  一覧（`DeviceObservation.relpaths`）は完全な列挙を保証しない: 走査の深さの上限（§8.1）の外と、読めないディレクトリ・`lstat` が失敗した項目は観測に含まれない（`complete` が true のままのことがある）。
-  そこに在る元ファイルは「無い」に見えうるが、完了は消さない側なので録音は失われない（消し損ねは「過去分を削除対象にする」では拾えず、デバイスに残る）。
+  `devices` に載った一覧（`DeviceObservation.relpaths`）は、深さの上限（§8.1）の内側では完全な列挙: 読めないディレクトリ（`opendir` / `readdir` の失敗）か `ENOENT` 以外で `lstat` が失敗した項目が 1 つでもあれば `complete == false` になり、そのデバイスは `devices` に載らない（F-67）。
+  含まれないのは、深さの上限の外（取り込みの範囲の外なので Part にならない。ただし `maxScanDepth` を下げる前に取り込んだ Part は例外）と、列挙から `lstat` までの間に消えた項目（`ENOENT`。本当に無い）だけ。
+  前者の例外と下の正規化の違いでは在る元ファイルが「無い」に見えうるが、完了は消さない側なので録音は失われない（消し損ねは「過去分を削除対象にする」では拾えず、デバイスに残る）。
   照合は `sameKey`（Unicode のスカラー列の一致。NFC / NFD の正規化はしない）。`source_path` は同じデバイスの走査の一覧から取った列なので通常は一致するが、正規化の違う名前は「無い」に見えうる（上と同じく消さない側）
   RAW_SAVED だけが対象で、SOURCE_DELETE_PENDING は従来どおり「手動で消した分を完了にする」（§8.9.9）に任せる。`delete_request_id` を持つ Part は結果待ちなので手前で飛ぶ。
   これが無いと、削除が有効（`.configured`・`.writable`）なのに元ファイルが消えている RAW_SAVED の Part は、事前確認が永久に偽で要求が書かれず、
@@ -3129,3 +3138,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-64 | 誤 | §8.9.2・§8.9.5・§8.9.9・付録 A.2 | （2026-09-22 に利用者が承認）削除が有効（`.configured`・`.writable`）なのに RAW_SAVED の Part の元ファイルがデバイスから消えていると、事前確認（`preIdentityCheck`）が永久に偽で要求が書かれず、削除段が `requested == 0` のまま `delete_attempts += 1` を繰り返して Session が COMPLETED にならなかった（「手動で消した分を完了にする」は SOURCE_DELETE_PENDING だけが対象で救えず、抜け道は削除の無効化だけ。CR-15・DEL-15/16 に反する）→ `requestDeletions` が、新鮮で**その Part の取り込み（updated_at）より後の** snapshot でデバイスが接続中で列挙でき relpath が一覧に無い RAW_SAVED の Part を、要求を書かずに RAW_SAVED→COMPLETED（detail `already_absent`、`source_delete_skipped recording_key=… reason=already_absent`）にする。`source_deleted_at` は入れない。未接続・列挙できない・snapshot が古い・取り込み前の snapshot のときは従来どおり待つ（一覧は深さの上限の外と読めないディレクトリを含まないので、そこでは消し損ねうるが録音は失われない）。遷移とログの語は既存のもの（A.2・A.4 の語は増やさない）。根拠 B（SKIPPED）は Session の完了を待たせず、不在の Part は要求の対象から外れるので同じ詰まりは無い |
 | F-65 | 事 | §2.2・§8.9.8・§8.12・§12.3・§14 | （2026-09-23 に利用者が決定）パネルをカード型に作り直し、**主画面をスクロールなしで収める**。長い中身（元音声の削除・詳細と診断・要対応の多数・一般）は popover の中の別の画面に切り替え（「‹ 戻る」。窓は増やさない。D-7）、高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の 640pt をやめた。主画面に ScrollView を置かないので 1pt に潰れない。PR #100）。削除の有効化と根拠 B の「`ENABLE` を入力させる」を「赤いボタンを 3 秒長押しさせる」に変えた（クリック 1 回・チェックボックスでは通らない。途中で離すと取り消し。押している間はリングが満ちる）。UI は長押しの完了で `confirmation` に定数 `"ENABLE"` を渡し、`DeletionEnabler.enable(confirmation:)` の完全一致の判定は残す（安全の二重化）。`EnableError.notConfirmed` の文言は「赤いボタンを 3 秒長押ししてください」。無効化は確認なしの 1 クリックのまま。docs/E2E.md の E2E-10・E2E-17・§3.7（根拠 B）の手順を長押しに直した |
 | F-66 | 欠 | §5.3・§5.4・§5.6・付録 A.2・付録 D | （2026-09-23 に利用者が決定）今すぐ要約を足し、0:00 の自動要約（`stale_day`）を廃止した。Session を閉じる契機は、無通信 `idleCloseSeconds` の `idle`（自動。日付が過去の OPEN も同じ規則で、起動時の `closeIdleSessions` も同じ）と、パネルの今すぐ要約（手動）の 2 つだけ（X-37）。今すぐ要約は `WorkerJob.summarizeNow(reply:)` を `closeIdleSessions` の段の終わりで行い、LLM のガードを積まずに判定して当たれば何も閉じずに失敗、通れば押した時点の OPEN を日付を問わず `OPEN→READY`（detail `summarize_now`）にして閉じた数を返す。要約は同じ tick の `processReadySessions` が進め、その後に届いた同じ日の録音は既存の再オープン（§5.6）で要約し直す。辺・ログのイベント・設定キーは増やさない。パネルのボタンと `AppServices` の口はパネルの作り直しの後に足す |
+| F-67 | 誤 | §8.1・§8.9.5 | （2026-09-23。issue #97。F-64 のレビューで判明）`DeviceReader.scan` は `lstat` の失敗を errno によらず黙って飛ばしていたので、`complete == true` でも一覧が欠けることがあり、F-64 の自動完了（一覧に無い RAW_SAVED を完了にする）の根拠として弱かった → `lstat` が `ENOENT` 以外で失敗した項目があれば `complete = false`（`readdir` の途中の失敗は従来どおり偽）。`ENOENT`（列挙から `lstat` までの間に消えた）は飛ばして偽にしない。深さの上限の外は列挙も `lstat` もせず、偽にもしない（上限の外の録音は Part にならず、削除にも F-64 にも関わらない。`maxScanDepth` を下げる前に取り込んだ Part だけは完了しうるが消さない側）。偽のデバイスは従来どおり `devices` に載せず `unavailable`（`not_listable`）。取り込みは続け、前回の snapshot の一覧は持ち越さない（一時的な失敗は次の走査で戻る）。`notListableErrno` は規則 5 の errno だけ。`DeviceReader` の `lstat` は internal の `init(lstat:)` で差し替えられる（テストが失敗を注入する。公開 API は増やさない）。理由語・ログの語・設定キーは増やさない |

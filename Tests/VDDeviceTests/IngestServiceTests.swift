@@ -61,6 +61,8 @@ struct IngestServiceTests {
         var sleeper: (any Sleeper)? = nil
         var populate = true
         var events = FakeMountEventSource()
+        /// 設定すると DeviceReader() の代わりに使う（lstat の失敗の注入。#97）
+        var reader: DeviceReader? = nil
     }
 
     struct Harness {
@@ -115,7 +117,7 @@ struct IngestServiceTests {
             events = options.events
             let deps = IngestDependencies(
                 layout: layout, configProvider: { provided }, store: store, inspector: inspector,
-                remounter: remounter, mountEvents: events, reader: DeviceReader(),
+                remounter: remounter, mountEvents: events, reader: options.reader ?? DeviceReader(),
                 clock: clock, sleeper: options.sleeper ?? recordingSleeper, zone: zone, log: log,
                 volumesRoot: fake.volumesRoot.path(percentEncoded: false))
             service = IngestService(deps: deps)
@@ -423,6 +425,60 @@ struct IngestServiceTests {
         let snapshot = try #require(await h.service.latestSnapshot())
         #expect(snapshot.devices["DJIMIC3"] == nil)
         #expect(snapshot.unavailable["DJIMIC3"] == "not_listable")
+    }
+
+    // MARK: - lstat の失敗と一覧の完全さ（#97・PLAN 付録 F の F-67）
+
+    static let denoised090000 = "TX_MIC002_20260913_090000/TX01_MIC003_20260913_090000.wav"
+
+    @Test("lstat が EACCES で失敗した項目があればデバイスを観測に載せず unavailable に not_listable。読めた録音は取り込む")
+    func lstatFailureIsNotObservedButIngests() async throws {
+        var options = Options()
+        options.reader = DeviceReaderScanTests.injectingReader(failing: [Self.denoised090000: EACCES])
+        let h = try Harness(options)
+        #expect(await h.service.scanNow() == 1)
+        let snapshot = try #require(await h.service.latestSnapshot())
+        #expect(snapshot.devices["DJIMIC3"] == nil)
+        #expect(snapshot.unavailable["DJIMIC3"] == "not_listable")
+        // lstat の errno はデバイス判定の規則 5（opendir）の errno ではないので載せない（TCC の案内を出さない）
+        #expect(snapshot.notListableErrno["DJIMIC3"] == nil)
+        #expect(h.inboxFileCount() == 2)
+        #expect(h.lines(containing: "volume_skipped name=DJIMIC3 reason=not_listable").count == 1)
+    }
+
+    @Test("列挙の後に消えた（ENOENT）項目は飛ばし、デバイスを観測に載せる")
+    func vanishedEntryIsStillObserved() async throws {
+        var options = Options()
+        options.reader = DeviceReaderScanTests.injectingReader(failing: [Self.denoised090000: ENOENT])
+        let h = try Harness(options)
+        #expect(await h.service.scanNow() == 1)
+        let snapshot = try #require(await h.service.latestSnapshot())
+        #expect(snapshot.unavailable["DJIMIC3"] == nil)
+        #expect(
+            snapshot.devices["DJIMIC3"]?.relpaths == [
+                "TX_MIC001_20260912_120950/TX00_MIC001_20260912_120950_orig.wav",
+                "TX_MIC001_20260912_163444/TX00_MIC001_20260912_163444_orig.wav",
+                "TX_MIC001_20260912_163444/TX00_MIC001_20260912_163444.wav",
+            ])
+    }
+
+    @Test("一時的な lstat の失敗は次の走査で観測に戻り、前回の一覧は持ち越さない")
+    func transientLstatFailureRecoversNextScan() async throws {
+        let probe = DeviceReaderScanTests.LstatProbe()
+        var options = Options()
+        options.reader = DeviceReaderScanTests.injectingReader(failing: [Self.denoised090000: EIO], probe: probe)
+        let h = try Harness(options)
+        #expect(await h.service.scanNow() == 1)
+        let first = try #require(await h.service.latestSnapshot())
+        #expect(first.devices.isEmpty)
+        #expect(first.unavailable == ["DJIMIC3": "not_listable"])
+        #expect(first.connectEpoch == 0)
+        probe.setEnabled(false)
+        #expect(await h.service.scanNow() == 2)
+        let second = try #require(await h.service.latestSnapshot())
+        #expect(second.unavailable.isEmpty)
+        #expect(second.devices["DJIMIC3"]?.relpaths.count == 4)
+        #expect(second.connectEpoch == 1)
     }
 
     @Test("not_listable の errno を snapshot に残す")

@@ -1,6 +1,9 @@
 # T-14 VDDevice: ファイルの走査・安定性判定・コピー・登録（＋ VDAudio の AudioProbe）
 
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`IngestDependencies` の `coexistence: CoexistenceGuard` は外した。以下の本文の共存ガードの記述は記録として残す。
+>
+> （F-67・issue #97 で走査の完全さを直した。2026-09-23）`scan` の `walk` は、項目の `lstat` が `ENOENT` 以外で失敗したら `complete = false` にして飛ばす（`ENOENT` は列挙から `lstat` までの間に消えたので従来どおり黙って飛ばす）。
+> `lstat` は `DeviceReader` の internal の `init(lstat:)` で差し替えられ（`entryKind`・`stat` も同じ呼び出しを使う）、テストが失敗を注入する。深さの上限の外は見ず、`complete` にも数えない。以下の §5 の手順の `entryKind(child)` と「missing: continue」の記述は記録として残す（テストは `DeviceReaderScanTests` の「lstat が ENOENT 以外で失敗した項目があれば complete は偽」ほか 5 本）。
 
 | 項目 | 値 |
 |---|---|

@@ -4,7 +4,20 @@ import Foundation
 import VDContract
 
 public struct DeviceReader: Sendable {
-    public init() {}
+    /// lstat の呼び出し。成功なら 0、失敗なら errno を返す（ENOENT も含む）。
+    /// 本番は `Darwin.lstat` そのもの。テストは `init(lstat:)` で失敗を注入する（#97・F-67。分岐ではなく差し替え。CR-25）
+    typealias LstatCall = @Sendable (_ path: String, _ st: inout Darwin.stat) -> Int32
+
+    let lstatCall: LstatCall
+
+    public init() {
+        lstatCall = { path, st in Darwin.lstat(path, &st) == 0 ? 0 : errno }
+    }
+
+    /// テストが lstat の失敗を注入する口（モジュールの中だけ。00-api-map の公開 API ではない）
+    init(lstat: @escaping LstatCall) {
+        lstatCall = lstat
+    }
 
     /// dir の直下の名前（`.` と `..` を除く。`.` で始まる名前も含めて返す。捨てるのは呼び手）。
     /// 名前は UTF-8 のバイト順に並べる。opendir が失敗したら errno を返す（errno によらず失敗は失敗）
@@ -35,15 +48,21 @@ public struct DeviceReader: Sendable {
         entryKind(path) == .symlink
     }
 
-    /// lstat の種類。symlink を辿らない
+    /// lstat の種類。symlink を辿らない（lstat の失敗は errno によらず missing）
     public func entryKind(_ path: String) -> EntryKind {
+        (try? lstatKind(path).get()) ?? .missing
+    }
+
+    /// lstat の種類と、失敗なら errno（ENOENT も含む）。走査が ENOENT とそれ以外を分けるために使う（#97・F-67）
+    func lstatKind(_ path: String) -> Result<EntryKind, ErrnoError> {
         var st = Darwin.stat()
-        guard lstat(path, &st) == 0 else { return .missing }
+        let code = lstatCall(path, &st)
+        guard code == 0 else { return .failure(ErrnoError(code)) }
         switch st.st_mode & S_IFMT {
-        case S_IFLNK: return .symlink
-        case S_IFDIR: return .directory
-        case S_IFREG: return .regularFile
-        default: return .other
+        case S_IFLNK: return .success(.symlink)
+        case S_IFDIR: return .success(.directory)
+        case S_IFREG: return .success(.regularFile)
+        default: return .success(.other)
         }
     }
 }
@@ -75,7 +94,9 @@ public struct ScanListing: Equatable, Sendable {
     public let origCandidates: [String]
     /// 規則の形には一致するが日時が不正・relpath が不健全（バイト順）
     public let unparsable: [String]
-    /// 走査中に 1 つでも列挙に失敗したら false（その一覧を「消えた」の根拠にしない）
+    /// 走査中に 1 つでも列挙に失敗したら false（その一覧を「消えた」の根拠にしない）。
+    /// 失敗に数えるのは、深さの上限の内側での opendir / readdir の失敗と、ENOENT 以外の lstat の失敗（#97・F-67）。
+    /// ENOENT（列挙から lstat までの間に消えた）は数えない。深さの上限の外は見ないので数えない（取り込みの範囲の外）
     public let complete: Bool
 
     /// 走査そのものが行えなかったとき（モジュールの中だけで使う）
@@ -174,7 +195,7 @@ extension DeviceReader {
     /// lstat の size と mtime。失敗・通常ファイルでない（symlink を含む）なら nil
     public func stat(volumeRoot: String, relpath: String) -> FileStat? {
         var st = Darwin.stat()
-        guard lstat(fullPath(volumeRoot: volumeRoot, relpath: relpath), &st) == 0 else { return nil }
+        guard lstatCall(fullPath(volumeRoot: volumeRoot, relpath: relpath), &st) == 0 else { return nil }
         guard st.st_mode & S_IFMT == S_IFREG else { return nil }
         return FileStat(st)
     }
@@ -209,6 +230,8 @@ extension DeviceReader {
         var complete = true
     }
 
+    /// 深さの上限（remaining < 1）の外は列挙も lstat もしない。そこにあるものは観測に含まれず、complete も偽にしない
+    /// （上限の外の録音は Part にならず、削除の対象にも F-64 の自動完了の対象にもならない。F-67）
     private func walk(dir: String, prefix: [String], remaining: Int, into state: inout ScanState) {
         if remaining < 1 { return }
         guard case .success(let names) = listEntries(of: dir) else {
@@ -222,11 +245,16 @@ extension DeviceReader {
                 .appendingPathComponent(name, isDirectory: false)
                 .path(percentEncoded: false)
             let components = prefix + [name]
-            switch entryKind(child) {
-            case .directory:
+            switch lstatKind(child) {
+            case .failure(let error):
+                // ENOENT は列挙から lstat までの間に消えた（無いのと同じ）。
+                // それ以外は在るかもしれないのに観測できていない（一覧を「消えた」の根拠にさせない。#97・F-67）
+                if error.code != ENOENT { state.complete = false }
+                continue
+            case .success(.directory):
                 // フォルダ規則を見ずに全部降りる
                 walk(dir: child, prefix: components, remaining: remaining - 1, into: &state)
-            case .regularFile:
+            case .success(.regularFile):
                 // NOTES.txt など。黙って無視
                 if !RecordingName.matchesFilePattern(name) { continue }
                 let rel = RelPath.join(components)
@@ -236,7 +264,7 @@ extension DeviceReader {
                 }
                 state.relpaths.insert(rel)
                 if parsed.isOrig { state.orig.append(rel) }
-            case .symlink, .other, .missing:
+            case .success(.symlink), .success(.other), .success(.missing):
                 continue
             }
         }
