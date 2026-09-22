@@ -38,6 +38,7 @@
 | `Sources/VDPipeline/Diagnostics/DiagnosticTexts.swift` | ラベルと文言（逐語） |
 | `Sources/VDPipeline/Diagnostics/LLMProbeCheck.swift` | DR-09 |
 | `Sources/VDPipeline/LockObserving.swift` | `LockObserving`・`DisabledLockObserver`・`LockObservation`・`LockDisplay`・`ReaperStatus`・`DeletionReadiness`・`DeviceWritability`（00-api-map §11。§4.11。**T-36 の `LockEvaluator` がこのプロトコルに準拠する**） |
+| 変更 `Sources/VDPipeline/StatusTexts.swift` | `writabilityWord(_:)` を足す（T-30 から移した。`DeviceWritability` はこのチケットが作るため。§4.12） |
 | `Sources/VDPipeline/InboxScan.swift` | `InboxCounts`、`InboxScan`（読むだけ。DR-15 と状態の詳細が共有） |
 | `Sources/VDPipeline/AttentionItems.swift` | `AttentionItem`、`AttentionAction`、`AttentionInput`、`AttentionEvaluator` |
 | `Sources/VDPipeline/StatusReport.swift` | `StatusReport`、`StatusReporter` |
@@ -56,6 +57,7 @@
 | `Tests/VDPipelineTests/StatusReporterTests.swift` | 状態の詳細の書式 |
 | `Tests/VDPipelineTests/InboxScanTests.swift` | |
 | `Tests/VDPipelineTests/LockObservingTests.swift` | `DisabledLockObserver` と `LockDisplay.lines`（§5.10） |
+| 変更 `Tests/VDPipelineTests/StatusTextsTests.swift` | `writabilityWords`（§5.11） |
 | `Tests/VDPipelineTests/WorkerJobsTests.swift` | `enqueue` と `stagePendingJobs` |
 | `Tests/VoiceDockAppTests/AttentionTextsTests.swift` | 文言と操作の対応 |
 | `Tests/VoiceDockAppTests/AppModelDiagnosticsTests.swift` | |
@@ -950,6 +952,26 @@ public struct DisabledLockObserver: LockObserving {
 - **PT-11**: このファイルは許可場所ではないので、識別子 `reaperConf` を使わない（`confState`）。文字列 `"reaper.conf="` は表示の文言なので当たらない（PLAN §9.4 の照合はトークン単位。コメント・文字列は対象外）
 - T-36 がこのファイルに足すもの（§4.11 は Phase 7 の形）: `DisabledLockObserver.disabledReason` を `DeletionReason.deleteSourceAudioDisabled` に置き換える。**型の定義は動かさない**
 
+### 4.12 `StatusTexts.writabilityWord(_:)`（T-30 から移したもの）
+
+T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `DeviceWritability` が無かったので、型を作るこのチケットが足す（T-30 §4.10 の申し送り）。
+
+```swift
+    /// PLAN §8.9.8 の観測の表示語（#107 / #148）
+    public static func writabilityWord(_ w: DeviceWritability) -> String {
+        switch w {
+        case .absent: "デバイス未接続"
+        case .unknown: "不明"
+        case .readOnly: "読み取り専用"
+        case .writable: "読み書き可能"
+        }
+    }
+```
+
+- **`nil` を「読み書き可能」に丸めない。0 台を観測扱いにしない**（#107 / #148。voicedock `status.py:175-194`）
+- `switch` に `default` を置かない（ケースが増えたらコンパイルで落ちる）
+- §4.9 の `デバイス:` の行と §4.11 の `LockDisplay.lines` の 3 行目の語は、この関数を使う（4 語を 2 か所に書かない。CR-06）
+
 
 ## 5. テスト
 
@@ -1153,6 +1175,12 @@ public struct DisabledLockObserver: LockObserving {
 | `writabilityObservesOnly` | `writability は観測だけを見る` | `readOnly` が `true` / `false` / `nil` / そのデバイスが無い | `.readOnly` / `.writable` / `.unknown` / `.absent` |
 | `devicesAreInByteOrder` | `devices は鍵のバイト順` | 鍵が `b`・`a`・`A` の 3 台 | `["A", "a", "b"]` の順 |
 
+### 5.11 `StatusTextsTests.swift` への追加（`@Suite("StatusTexts")`。T-30 が作ったファイル）
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `writabilityWords` | `#107 / #148 観測の 4 語` | `.absent` / `.unknown` / `.readOnly` / `.writable` | `デバイス未接続` / `不明` / `読み取り専用` / `読み書き可能` |
+
 
 ## 6. 破壊による証明
 
@@ -1193,6 +1221,7 @@ public struct DisabledLockObserver: LockObserving {
 | 31 | `StatusReporter` が DB を `Store` で開く | `allZeroWithoutDatabase`（DB ができる）と PT-17 |
 | 32 | デバイスの行で `readOnly == nil` を `読み書き可能` にする | `deviceLineWordsFollowObservation` |
 | 33 | 0 台を `不明` にする | `deviceLineWhenZeroDevices` |
+| 34 | `writabilityWord` の `.unknown` を `読み書き可能` にする（T-30 の証明 11 を移したもの） | `writabilityWords` |
 
 ## 7. 受け入れ条件
 
