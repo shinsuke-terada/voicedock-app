@@ -1,4 +1,4 @@
-// 削除の段の配線: Worker の tick を回して、Raw の直後・SAVED の直後の口と tick の段が中身を呼ぶこと（PLAN §5.4・§8.9。T-38 §6.9。TEST-06）。
+// 削除の段の配線: Worker の tick を回して、Raw の直後・SAVED の直後の口と tick の段が中身を呼ぶこと（PLAN §5.4・§8.9。T-38 §6.9・T-39 §6.4。TEST-06）。
 // デバイスは <tmp>/Volumes/DJIMIC3（TempDirectory の中だけ）。reaper はスタブで、起動は ScriptedProcessRunner に記録する。
 import Darwin
 import Foundation
@@ -21,9 +21,11 @@ struct DeletionStagesWiringTests {
     }
 
     /// 削除を有効にし、Vault・whisper・Part・デバイス上の原本・スタブの reaper・reaper.conf・新鮮な snapshot を置く。
-    static func makeWorld(snapshotAge: Int = 0) async throws -> Wired {
+    /// deleteSkippedSource が真ならロック B も開ける（T-39 §6.4）。
+    static func makeWorld(snapshotAge: Int = 0, deleteSkippedSource: Bool = false) async throws -> Wired {
         let base = try await PipelineWorld.make {
             $0.cleanup.deleteSourceAudio = true
+            $0.cleanup.deleteSkippedSource = deleteSkippedSource
             $0.device.mountMode = "rw"
         }
         let runner = ScriptedProcessRunner(results: [ScriptedProcessRunner.version()])
@@ -153,5 +155,41 @@ struct DeletionStagesWiringTests {
             FakeIngest.snapshot(generation: 1, completedAt: w.clock.now(), devices: ["DJIMIC3": []]))
         await w.worker().tick()
         #expect(try w.part(wired.pk).status == .completed)
+    }
+
+    /// 無音で SKIPPED にした Part（transcript を置き、OPEN の Session に入れる）で、間引きを越えてから 1 tick 回す（T-39 §6.4）
+    static func tickWithSkippedPart(snapshotAge: Int) async throws -> Wired {
+        let wired = try await Self.makeWorld(snapshotAge: snapshotAge, deleteSkippedSource: true)
+        let w = wired.world
+        try StorePaths.advancePart(w.store, partkey: wired.pk, to: .skipped, errorCode: .noSpeechDetected)
+        try PartTranscriptCodec.encode(
+            PartTranscript(
+                partkey: wired.pk, language: "ja", durationSeconds: 2.0, startedAt: PipelineFixtures.startedAt,
+                text: "", segments: [])
+        ).write(to: w.layout.transcript(slug: KeySlug.of(wired.pk)))
+        try w.addSession(key: "DJIMIC3:20260829", day: "2026-08-29", status: .open)
+        try w.store.updateRecording(wired.pk, [.sessionKey("DJIMIC3:20260829")])
+        w.clock.advance(seconds: 60)
+        await w.worker().tick()
+        return wired
+    }
+
+    @Test("tick の中で根拠 B の要求を書く（settleSkippedDeletions の段の配線）")
+    func tickSettlesSkippedParts() async throws {
+        let wired = try await Self.tickWithSkippedPart(snapshotAge: 0)
+        let w = wired.world
+        #expect(Self.requests(w).count == 1)
+        let part = try w.part(wired.pk)
+        #expect(part.status == .skipped)
+        #expect(part.deleteRequestID != nil)
+        #expect(!w.lines("delete_requested").isEmpty)
+    }
+
+    @Test("snapshot が古い tick では根拠 B の段を行わない")
+    func staleTickDoesNotSettle() async throws {
+        let wired = try await Self.tickWithSkippedPart(snapshotAge: 901)
+        let w = wired.world
+        #expect(Self.requests(w) == [])
+        #expect(try w.part(wired.pk).deleteRequestID == nil)
     }
 }

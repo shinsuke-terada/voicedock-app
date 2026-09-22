@@ -92,7 +92,7 @@ struct SkippedSettler {
 
 ### 4.3 `SpecCoverage.swift`（T-05 のファイルの変更）
 
-`static let activated: Set<SpecIDKind>` に `.nd` を足す（既に在る `.cv`・`.dr`・`.rv` は残す）。コメントの「T-39 が `.nd` を足す」をそのまま残す。
+`static let activated: Set<SpecIDKind>` に `.nd` を足す（既に在る `.cv`・`.dr` は残す。`.rv` は T-05 §4 で T-37 の持ち分とされたが develop に無く、RV-01・02・05 の表示名のテストが無いので、このチケットでは足さない。実装時に確認）。コメントの「T-39 が `.nd` を足す」をそのまま残す。
 
 これで `activatedKindsMatchSpec`（SPEC の ND の集合 = テストの表示名の ND の集合）と `ndLayersAreCovered`（付録 B.1 の層ごとに 1 本以上）が効く。マージの時点の対応（確かめてから有効にする）:
 
