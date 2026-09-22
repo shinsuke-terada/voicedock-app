@@ -68,7 +68,7 @@ public struct ImportedKeysScanner: Sendable {
 5. `files`（Vault からの相対パスのスカラー列の昇順）を順に:
    - `keys = Frontmatter.recordingKeys(ofFile: vault.appendingPathComponent(relative, isDirectory: false))`
      （読めない・UTF-8 でない・frontmatter が無い・配列でない → `[]`。例外を投げない。T-26 §4.5）
-   - 各 `key` を順に: `PartKey.deviceID(of: key) != nil && PartKey.relpath(of: key) != nil` でなければ**捨てる**（壊れた鍵を DB に入れない）。
+   - 各 `key` を順に: `PartKey.deviceID(of: key) != nil`、`PartKey.relpath(of: key) != nil` かつ `RelPath.isSafe(relpath)` でなければ**捨てる**（壊れた鍵を DB に入れない。PLAN §8.13「`<device_id>/<relpath>` で `RelPath.isSafe`」）。
      `seen.insert(key).inserted` が真のときだけ `rows.append((key, relative))`（**先に見つけたノートを `source_note` にする**。走査の順が決まっているので結果は決定的）
 6. `rows` が空なら `0` を返す
 7. `n = try store.insertImportedKeys(rows)`（**DB に行がある partkey と、既に `imported_keys` に在る partkey は入らない**。T-11 の `WHERE NOT EXISTS` と `INSERT OR IGNORE`）
@@ -192,18 +192,18 @@ public let importedKeys: ImportedKeysService
       ("date", .string(day)),
   ]) + "\n# \(day) の記録（voicedock）\n\nこんにちは。\n"
   ```
-- `static let foreignKeyA = "DJIMIC3:TX_MIC001_20260829_060000/TX01_MIC002_20260829_060000_orig.wav"`、`foreignKeyB`（時刻 `061000`）: **アプリの DB に入れない**鍵
+- `static let foreignKeyA = "DJIMIC3/TX_MIC001_20260829_060000/TX01_MIC002_20260829_060000_orig.wav"`、`foreignKeyB`（時刻 `061000`）: **アプリの DB に入れない**鍵（`PipelineFixtures` に置く。partkey の区切りは `/`。PLAN §4.2）
 
 ### 5.1 `ImportedKeysScannerTests.swift`（`@Suite("ImportedKeysScanner")`）
 
-準備（既定）: `world = try await PipelineWorld.make()`、`vault = try world.installVault()`、`scanner = ImportedKeysScanner(store: world.store, log: world.log)`、`cfg = <既定の ObsidianConfig>`。
+準備（既定）: `world = try await PipelineWorld.make()`、`vault = try await world.installVault()`、`scanner = ImportedKeysScanner(store: world.store, log: world.log)`、`cfg = <既定の ObsidianConfig>`。
 呼び方: `try scanner.scan(vault: vault, config: cfg)`。
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `importsKeysFromTheRawFolder` / 「Raw フォルダのノートの鍵を入れる」 | `Daily/Voice/Raw/20260829/2026-08-29 raw.md` に `foreignKeyA` と `foreignKeyB` | 戻り 2、`store.importedKeys() == [A, B]`、`imported_keys_added count=2` が 1 行 |
 | `sourceNoteIsTheVaultRelativePath` / 「source_note は Vault からの相対パス」 | 同上 | `SELECT source_note` が `Daily/Voice/Raw/20260829/2026-08-29 raw.md` |
-| `keysInTheDatabaseAreNotImported` / 「DB に行がある partkey は入れない」 | `addPart(partA, status: .rawSaved)` の鍵をノートに書く | 戻り 0、`importedKeys()` が空、ログに `imported_keys_added` が無い |
+| `keysInTheDatabaseAreNotImported` / 「DB に行がある partkey は入れない」 | `addSession(key: vaultSessionKey, …)` → `addPart(partA, status: .rawSaved)` の鍵をノートに書く | 戻り 0、`importedKeys()` が空、ログに `imported_keys_added` が無い |
 | `existingImportedKeysAreNotOverwritten` / 「既に在る partkey は上書きしない」 | 先に `insertImportedKeys([(A, "old.md")])` → ノートに A | 戻り 0、`source_note` が `old.md` のまま |
 | `outsideTheRawFolderIsIgnored` / 「Raw フォルダの外は見ない」 | `Daily/Voice/Wiki/2026-08-29 Voice.md` に鍵 | 戻り 0 |
 | `nestedFoldersAreScanned` / 「入れ子のフォルダも走る」 | `Daily/Voice/Raw/2026/08/note.md` | 戻り 1 |
@@ -214,7 +214,7 @@ public let importedKeys: ImportedKeysService
 | `unreadableNoteIsSkipped` / 「読めないノートは飛ばして続ける」 | `bad.md`（0o000）と `good.md`（鍵 1 つ） | 戻り 1、例外を投げない。後始末で chmod を戻す |
 | `invalidUTF8IsSkipped` / 「UTF-8 でないノートは飛ばす」 | 不正なバイト列のファイルと正しいノート | 戻り 1 |
 | `brokenFrontmatterIsSkipped` / 「frontmatter が壊れていれば飛ばす」 | `---\n: :\n---\n`・`no frontmatter\n`・鍵が文字列（配列でない）ノート | 戻り 0 |
-| `malformedKeysAreDropped` / 「鍵の形が壊れていれば入れない」 | `voicedock_recording_keys: ["", "x", "DJIMIC3:", ":a.wav", "DJI MIC:../a.wav"]` | 戻り 0、`importedKeys()` が空 |
+| `malformedKeysAreDropped` / 「鍵の形が壊れていれば入れない」 | `voicedock_recording_keys: ["", "x", "DJIMIC3/", "/a.wav", "DJI MIC/../a.wav"]` | 戻り 0、`importedKeys()` が空 |
 | `duplicateKeysAcrossNotesTakeTheFirst` / 「同じ鍵が 2 つのノートに在れば先（昇順）の方」 | `a.md` と `b.md` の両方に A | 戻り 1、`source_note` が `Daily/Voice/Raw/a.md` |
 | `emptyVaultAddsNothing` / 「空の Vault では 0 件（TEST-28）」 | ノートを 1 つも置かない | 戻り 0、ログが空、`imported_keys` が空 |
 | `missingRawFolderAddsNothing` / 「Raw フォルダが無くても落ちない」 | `Daily/Voice/Raw` を作らない | 戻り 0 |
@@ -235,7 +235,7 @@ public let importedKeys: ImportedKeysService
 
 ### 5.3 `MigrationIntegrationTests.swift`（`@Suite("E2E-18 voicedock からの乗り換え", .serialized)`）
 
-準備: `world = try await PipelineWorld.make()`、`vault = try world.installVault()`、
+準備: `world = try await PipelineWorld.make()`、`vault = try await world.installVault()`、
 `try world.writeVaultNote("Daily/Voice/Raw/20260829/2026-08-29 raw.md", world.voicedockRawNote(keys: [foreignKeyA, foreignKeyB]))`、
 `before = Data(contentsOf: <そのノート>)`、`beforeSHA = FileHasher.sha256(before)`、`beforeStat = lstat(...)`。
 `try world.addSession(key: "DJIMIC3:20260829", day: "2026-08-29", status: .ready)`、`pk = try world.addPart(partA, status: .transcribed)`（**同じ日の新しい録音**）。
@@ -291,8 +291,8 @@ public let importedKeys: ImportedKeysService
 1. `ImportedKeysScanner` に `init(store: Store, log: AppLog)` を足す（地図は `scan(vault:config:)` だけで、DB とログの渡し方が無い）
 2. `ImportedKeysService`（actor）と `ImportedKeysScanReason` を 00-api-map §11 に足す（走査そのもの（同期・`throws`）と、契機・Vault の確認・`BlockingIO`（`async`）を分ける。UI（T-31）が呼ぶのは actor の方）
 3. `WorkerDependencies` の末尾に `importedKeys: ImportedKeysService` を足す（起動時の走査。PLAN §8.15 の順で IngestService より前に済ませるため）。末尾に足す順は地図 §11 の表が正（T-18 の並び → `importedKeys` → T-36 の `locks` / `volumeOpener`） → 00-api-map §11 に反映済み（整合修正 M-6）
-4. **仕様の補足**（PLAN §8.13）: 「Raw フォルダの接頭辞」が空になるテンプレート（`{` で始まる）のときは Vault 全体を走ると決めた。§8.13 に 1 行足すことを提案する
-5. **仕様の補足**（PLAN §8.13）: frontmatter の鍵が `PartKey` の形でないものは `imported_keys` に入れないと決めた（壊れた鍵が DB に残ると、IngestService の候補の除外に効いて**取り込まれない録音**が生まれうる）。§8.13 に 1 行足すことを提案する
+4. **仕様の補足**（PLAN §8.13）: 「Raw フォルダの接頭辞」が空になるテンプレート（`{` で始まる）のときは Vault 全体を走ると決めた。§8.13 に 1 行足すことを提案する → PLAN §8.13 に反映済み
+5. **仕様の補足**（PLAN §8.13）: frontmatter の鍵が `PartKey` の形でないものは `imported_keys` に入れないと決めた（壊れた鍵が DB に残ると、IngestService の候補の除外に効いて**取り込まれない録音**が生まれうる）。§8.13 に 1 行足すことを提案する → PLAN §8.13 に反映済み（形は「`<device_id>/<relpath>` で `RelPath.isSafe`」。§4.1 の手順 5 はこれに合わせた）
 
 ## 9. SPEC の変更
 

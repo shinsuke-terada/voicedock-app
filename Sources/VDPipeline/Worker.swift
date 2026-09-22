@@ -67,7 +67,7 @@ public actor Worker {
         await performStart(delayed: false)
     }
 
-    /// 復旧 → 閉じる → inbox の孤児（遅れた start では行わない）→ requeue(.startup)。
+    /// 復旧 → 閉じる → inbox の孤児（遅れた start では行わない）→ requeue(.startup) → 乗り換えの走査。
     func performStart(delayed: Bool) async {
         guard let config = await deps.config.current() else {
             pendingStart = true
@@ -100,6 +100,8 @@ public actor Worker {
             }
         }
         requeueFailed(.startup, ctx)
+        // 乗り換えの走査（PLAN §8.13・§8.15）。戻り値は捨てる（ログは scanner が出す）
+        await deps.importedKeys.scanIfAvailable(.startup)
     }
 
     /// DB の例外で常駐を止めない（1 件の失敗で残りを止めない。DEL-14）。TickContext.warnStore と同じ 1 行。

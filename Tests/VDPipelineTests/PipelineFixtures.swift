@@ -8,6 +8,7 @@ import VDContract
 import VDCore
 import VDDevice
 import VDLLM
+import VDNotes
 import VDProcess
 
 @testable import VDPipeline
@@ -29,6 +30,7 @@ struct PipelineWorld {
     let chat: FakeChatTransport
     let llm: FakeLLMServer
     let physicalMemoryBytes: UInt64
+    let importedKeys: ImportedKeysService
 
     var deps: WorkerDependencies { deps() }
 
@@ -42,7 +44,7 @@ struct PipelineWorld {
             layout: layout, paths: paths, store: store, config: configStore, ingest: ingest ?? self.ingest,
             runner: ProcessRunner(), llama: llm, chatTransportFactory: { _, _ in chat }, clock: clock,
             sleeper: sleeper ?? self.sleeper, log: log, license: license, catalog: TestCatalogs.minimal,
-            physicalMemoryBytes: physicalMemoryBytes)
+            physicalMemoryBytes: physicalMemoryBytes, importedKeys: importedKeys)
     }
 
     /// config を設定して ConfigStore に書き、load する（検証を通らなければテストを落とす）。
@@ -73,7 +75,8 @@ struct PipelineWorld {
         return PipelineWorld(
             tmp: tmp, layout: layout, paths: paths, store: store, configStore: configStore, ingest: FakeIngest(),
             clock: clock, sleeper: RecordingSleeper(), sink: sink, log: log, assertion: RecordingSleepAssertion(),
-            chat: chat, llm: llm, physicalMemoryBytes: physicalMemoryBytes)
+            chat: chat, llm: llm, physicalMemoryBytes: physicalMemoryBytes,
+            importedKeys: ImportedKeysService(store: store, config: configStore, log: log))
     }
 
     /// 今の設定で TickContext を作る（pauses は新しい PauseBook、activity は assertion を使う ActivityBoard）。
@@ -560,5 +563,34 @@ extension PipelineWorld {
         let data = try Data(contentsOf: vaultURL.appendingPathComponent(relative))
         guard let text = String(data: data, encoding: .utf8) else { throw PipelineFixtureError.badFixture(relative) }
         return text
+    }
+}
+
+// MARK: - 乗り換えの部品（T-33 §5.0）
+
+extension PipelineFixtures {
+    /// アプリの DB に入れない鍵（voicedock が書いたノートにだけ在る）
+    static let foreignKeyA = "DJIMIC3/TX_MIC001_20260829_060000/TX01_MIC002_20260829_060000_orig.wav"
+    static let foreignKeyB = "DJIMIC3/TX_MIC001_20260829_061000/TX01_MIC002_20260829_061000_orig.wav"
+}
+
+extension PipelineWorld {
+    /// Vault の中に中間ディレクトリごと作って UTF-8 で書く（末尾に改行を足さない。渡した文字列をそのまま）。
+    func writeVaultNote(_ relative: String, _ text: String) throws {
+        let url = vaultURL.appendingPathComponent(relative, isDirectory: false)
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data(text.utf8).write(to: url)
+    }
+
+    /// voicedock が書いた Raw ノートに見える最小の本文（frontmatter は Frontmatter.render。本文は 1 行）。
+    func voicedockRawNote(sessionKey: String = "DJIMIC3:20260829", keys: [String], day: String = "2026-08-29")
+        -> String
+    {
+        Frontmatter.render([
+            (Frontmatter.keyType, .string(RawNote.noteType)),
+            (Frontmatter.keySessionKey, .string(sessionKey)),
+            (Frontmatter.keyRecordingKeys, .array(keys)),
+            ("date", .string(day)),
+        ]) + "\n# \(day) の記録（voicedock）\n\nこんにちは。\n"
     }
 }

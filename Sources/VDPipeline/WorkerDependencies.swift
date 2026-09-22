@@ -22,12 +22,14 @@ public struct WorkerDependencies: Sendable {
     public let catalog: ModelCatalog
     /// ProcessInfo.processInfo.physicalMemory（Bootstrap が注入。ガードのテストで差し替える）
     public let physicalMemoryBytes: UInt64
+    /// 乗り換えの走査（PLAN §8.13）。起動時に 1 回呼ぶ。
+    public let importedKeys: ImportedKeysService
 
     public init(
         layout: HomeLayout, paths: AppPaths, store: Store, config: ConfigStore, ingest: any IngestPort,
         runner: any ProcessRunning, llama: any LLMServerControl, chatTransportFactory: @escaping ChatTransportFactory,
         clock: any AppClock, sleeper: any Sleeper, log: AppLog, license: any LicenseGate, catalog: ModelCatalog,
-        physicalMemoryBytes: UInt64
+        physicalMemoryBytes: UInt64, importedKeys: ImportedKeysService
     ) {
         self.layout = layout
         self.paths = paths
@@ -43,5 +45,6 @@ public struct WorkerDependencies: Sendable {
         self.license = license
         self.catalog = catalog
         self.physicalMemoryBytes = physicalMemoryBytes
+        self.importedKeys = importedKeys
     }
 }
