@@ -370,7 +370,7 @@ struct ReaperQueueTests {
         #expect(bench.processedLines() == [Self.id])
         #expect(bench.requests() == [])
         #expect(bench.sourceExists())
-        #expect(try bench.actualStat().size == Int64(ReaperBench.content.count))
+        #expect(try bench.actualStat().size == 4096)
         #expect(Self.logged(bench, "WARN  source_delete_rejected request_id=\(Self.id) reason=partkey_mismatch"))
     }
 

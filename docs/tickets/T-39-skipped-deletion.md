@@ -36,7 +36,7 @@
 | `Tests/VDPipelineTests/DeletionStagesWiringTests.swift`（行を足す） | tick の中で根拠 B の要求を書く |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | 1 キーを消す（§6.5） |
 | `Tests/PolicyTests/SkippedSettlerShapeTests.swift` | 「デバイスに在るもの」の絞り込みの形を固定する（§6.6。TEST-30） |
-| `Tests/PolicyTests/SpecSync/SpecCoverageTests.swift`（行を足す） | `activated` が `.cv`・`.dr`・`.nd` を含むこと（§6.7） |
+| `Tests/PolicyTests/SpecSync/SpecCoverageTests.swift`（行を足す） | `activated` が `.cv`・`.dr`・`.nd` を含むこと（§6.7。issue #87 以降は `.rv` も） |
 
 ## 4. 仕様
 
@@ -94,7 +94,7 @@ struct SkippedSettler {
 
 ### 4.3 `SpecCoverage.swift`（T-05 のファイルの変更）
 
-`static let activated: Set<SpecIDKind>` に `.nd` を足す（既に在る `.cv`・`.dr` は残す。`.rv` は T-05 §4 で T-37 の持ち分とされたが develop に無く、RV-01・02・05 の表示名のテストが無いので、このチケットでは足さない。実装時に確認）。コメントは「T-09 が `.cv`、T-32 が `.dr`、T-39 が `.nd` を足した」と「`.rv` は T-37 の積み残し。RV-01・02・05 の ID で始まるテストが無い。別の issue で扱う。」の 2 行にする（事実に合わせる）。
+`static let activated: Set<SpecIDKind>` に `.nd` を足す（既に在る `.cv`・`.dr` は残す。`.rv` は T-05 §4 で T-37 の持ち分とされたが develop に無く、RV-01・02・05 の表示名のテストが無いので、このチケットでは足さない。実装時に確認）。コメントは「T-09 が `.cv`、T-32 が `.dr`、T-39 が `.nd` を足した」と「`.rv` は T-37 の積み残し。RV-01・02・05 の ID で始まるテストが無い。別の issue で扱う。」の 2 行にする（事実に合わせる）。その後 issue #87 で `.rv` を足し、コメントの 2 行目を差し替えた（T-37 §5.5）。
 
 これで `activatedKindsMatchSpec`（SPEC の ND の集合 = テストの表示名の ND の集合）と `ndLayersAreCovered`（付録 B.1 の層ごとに 1 本以上）が効く。マージの時点の対応（確かめてから有効にする）:
 
