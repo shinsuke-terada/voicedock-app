@@ -356,6 +356,8 @@ extension Recovery {
 
 ### 6.6 `PipelineIntegrationTests.swift`（`@Suite("BWF から Daily まで", .serialized)`。**本物の AVFoundation・本物の ProcessRunner と FakeWhisper・FakeChatTransport・FakeLLMServer**）
 
+（注記・T-38: SAVED の直後の削除段が中身を持った後は、既定の設定（削除無効）で Part が COMPLETED、Session が SAVED→CLEANUP→COMPLETED まで進む。下の「期待」の状態は T-38 §6.12 が直した。）
+
 準備: `PipelineWorld.make(chat: FakeChatTransport(responses: [.content(ANALYSIS), .content(ANALYSIS)]))`（時計は 2026-08-30T07:00:12+09:00）、
 `installWhisper()`、`installLLM()`、`installVault()`、`registerPart(relpath: partA.relpath, startedAt: partA.startedAt, seconds: partA.seconds)`。
 

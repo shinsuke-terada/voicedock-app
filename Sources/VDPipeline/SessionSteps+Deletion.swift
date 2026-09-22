@@ -1,6 +1,8 @@
-// Session の削除段（PLAN §8.9.5 deleteSourcesIfSafe。本体は T-38）。
+// Session の削除段（PLAN §8.9.5 deleteSourcesIfSafe）。SAVED の直後に backoff を見ずに 1 回。
 
 extension SessionSteps {
     /// 削除の評価と要求。
-    func deleteSourcesIfSafe(_ key: String) async {}  // T-38 が中身を書く
+    func deleteSourcesIfSafe(_ key: String) async {
+        await SessionDeletionStage(deps: DeletionDependencies(ctx: ctx)).deleteSourcesIfSafe(sessionKey: key)
+    }
 }

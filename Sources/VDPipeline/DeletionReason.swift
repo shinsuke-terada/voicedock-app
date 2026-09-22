@@ -20,6 +20,8 @@ public enum DeletionReason {
     public static let signature = "signature"
     public static let versionMismatch = "version_mismatch"
     public static let timeout = "timeout"
+    /// reaper が reaper.lock を取れず終了コード 4 で終わった（§8.9.6「4 は busy」。T-38）
+    public static let busy = "busy"
     /// "exit_<n>"（10 進）
     public static func exit(_ code: Int32) -> String { "exit_" + String(code) }
     // 後追いの対象外（BacklogPlan の reason。§8.9.9）。IdentityReason の同じ綴りの語とは別の語彙（意味が違う）

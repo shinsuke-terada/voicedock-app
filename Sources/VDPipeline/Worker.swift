@@ -34,6 +34,9 @@ public actor Worker {
     var vaultIndexPath: String? = nil
     /// パネルが要求した仕事（入れた順。stagePendingJobs が毎 tick 空にして回す。PLAN §8.11）
     var pendingJobs: [WorkerJob] = []
+    /// reaper の後に始まった走査の generation（PLAN §8.9.6。起動直後は 0。reaper は実行中ずっと reaper.lock を持つので、
+    /// アプリが落ちて reaper だけが残っていても起動後の最初の走査はその後になる）
+    var reaperScanGeneration: UInt64 = 0
 
     public init(deps: WorkerDependencies) {
         self.init(deps: deps, assertion: ProcessInfoSleepAssertion(), onStage: nil)

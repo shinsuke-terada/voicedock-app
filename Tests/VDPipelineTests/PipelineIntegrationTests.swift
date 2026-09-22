@@ -1,5 +1,6 @@
 // BWF から Daily ノートの検証までの結合テスト（T-29 §6.6）。本物の AVFoundation・本物の ProcessRunner と FakeWhisper・
 // FakeChatTransport・FakeLLMServer。Vault は TempDirectory の中だけ。
+// T-38 以降: 削除は既定で無効なので、SAVED の直後の削除段（PLAN §8.9.5）が Part を COMPLETED、Session を CLEANUP→COMPLETED まで進める。
 import Foundation
 import TestSupport
 import Testing
@@ -59,12 +60,13 @@ struct PipelineIntegrationTests {
         let (w, worker, pk) = try await Self.world()
         await worker.tick()
 
-        // Part A
+        // Part A（SAVED の直後の削除段で RAW_SAVED→COMPLETED。T-38）
         let part = try w.part(pk)
-        #expect(part.status == .rawSaved)
+        #expect(part.status == .completed)
         #expect(
             try w.partEvents(pk).map(\.toStatus) == [
                 "DISCOVERED", "NORMALIZING", "NORMALIZED", "TRANSCRIBING", "TRANSCRIBED", "RAW_WRITING", "RAW_SAVED",
+                "COMPLETED",
             ])
         let partSlug = KeySlug.of(pk)
         #expect(
@@ -72,14 +74,19 @@ struct PipelineIntegrationTests {
         #expect(!PipelineFixtures.exists(w.layout.normalizedAudio(slug: partSlug)))
         #expect(PipelineFixtures.exists(w.layout.transcript(slug: partSlug)))
 
-        // Session
+        // Session（削除が無効なので SAVED→CLEANUP→COMPLETED。T-38）
         let s = try w.session(Self.key)
-        #expect(s.status == .saved)
+        #expect(s.status == .completed)
         let events = try w.sessionEvents(Self.key)
         #expect(
             events.map(\.toStatus) == [
-                "OPEN", "OPEN", "READY", "MERGING", "MERGED", "ANALYZING", "ANALYZED", "WRITING", "SAVED",
+                "OPEN", "OPEN", "READY", "MERGING", "MERGED", "ANALYZING", "ANALYZED", "WRITING", "SAVED", "CLEANUP",
+                "COMPLETED",
             ])
+        #expect(
+            w.sink.lines.contains {
+                $0.hasSuffix(" source_delete_skipped session_key=" + Self.key + " reason=delete_source_audio_disabled")
+            })
         #expect(events.count > 2 && events[1].detail == pk && events[2].detail == "stale_day")
         #expect(s.rawOutputPath == Self.rawRel)
         #expect(s.outputPath == Self.dailyRel)
@@ -124,20 +131,23 @@ struct PipelineIntegrationTests {
     func secondPartReopensAndRewrites() async throws {
         let (w, worker, pkA) = try await Self.world()
         await worker.tick()
-        #expect(try w.session(Self.key).status == .saved)
+        #expect(try w.session(Self.key).status == .completed)
         let before = try w.sessionEvents(Self.key).count
         let b = PipelineFixtures.partB
         let pkB = try w.registerPart(relpath: b.relpath, startedAt: b.startedAt, seconds: b.seconds)
         await worker.tick()
 
-        #expect(try w.part(pkB).status == .rawSaved)
-        #expect(try w.part(pkA).status == .rawSaved)
+        #expect(try w.part(pkB).status == .completed)
+        #expect(try w.part(pkA).status == .completed)
 
         let s = try w.session(Self.key)
-        #expect(s.status == .saved)
+        #expect(s.status == .completed)
         #expect(s.regeneratedCount == 1)
         let added = Array(try w.sessionEvents(Self.key).dropFirst(before))
-        #expect(added.map(\.toStatus) == ["MERGING", "MERGED", "ANALYZING", "ANALYZED", "WRITING", "SAVED"])
+        #expect(
+            added.map(\.toStatus) == [
+                "MERGING", "MERGED", "ANALYZING", "ANALYZED", "WRITING", "SAVED", "CLEANUP", "COMPLETED",
+            ])
         #expect(added.first?.detail == "reopen")
         #expect(!added.contains { $0.detail == "analysis_reused" })
 
@@ -183,8 +193,8 @@ struct PipelineIntegrationTests {
         try FileManager.default.createDirectory(
             at: w.vaultURL.appendingPathComponent(".obsidian", isDirectory: true), withIntermediateDirectories: true)
         await worker.tick()
-        #expect(try w.part(pk).status == .rawSaved)
-        #expect(try w.session(Self.key).status == .saved)
+        #expect(try w.part(pk).status == .completed)
+        #expect(try w.session(Self.key).status == .completed)
         #expect(w.lines("pipeline_resumed").contains { $0.hasSuffix("pipeline_resumed reason=vault_unavailable") })
     }
 }

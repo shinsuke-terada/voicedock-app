@@ -1,18 +1,30 @@
-// tick の段: 削除の 5 段（PLAN §5.4・§8.9。本体は T-38 / T-39）。
+// 削除の段（PLAN §5.4・§8.9.5〜§8.9.7）。settleSkippedDeletions は T-39。
 
 extension Worker {
-    // T-38 が中身を書く（PLAN §8.9.6）。
-    func stageCollectDeleteResults(_ ctx: TickContext) async {}
+    func stageCollectDeleteResults(_ ctx: TickContext) async {
+        await ResultCollector(deps: DeletionDependencies(ctx: ctx)).collectDeleteResults(
+            reaperScanGeneration: reaperScanGeneration)
+    }
 
-    // T-38 が中身を書く（PLAN §8.9.7）。
-    func stageExpireDeleteRequests(_ ctx: TickContext) async {}
+    func stageExpireDeleteRequests(_ ctx: TickContext) async {
+        await RequestExpirer(deps: DeletionDependencies(ctx: ctx)).expireDeleteRequests()
+    }
 
-    // T-38 が中身を書く（PLAN §8.9.5）。
-    func stageEvaluateDeletions(_ ctx: TickContext) async {}
+    /// deleteEvaluated の Session を updated_at, session_key の順に、backoff を過ぎたものだけ（DEL-14）
+    func stageEvaluateDeletions(_ ctx: TickContext) async {
+        let stage = SessionDeletionStage(deps: DeletionDependencies(ctx: ctx))
+        for key in stage.dueSessionKeys() {
+            if ctx.stop.isSet { return }
+            await stage.deleteSourcesIfSafe(sessionKey: key)
+        }
+    }
 
-    // T-39 が中身を書く（PLAN §8.9.1）。
+    func stageRunReaperIfNeeded(_ ctx: TickContext) async {
+        let current = reaperScanGeneration
+        reaperScanGeneration = await ResultCollector(deps: DeletionDependencies(ctx: ctx)).runReaperIfNeeded(
+            reaperScanGeneration: current)
+    }
+
+    // T-39 が中身を書く（PLAN §8.9.5 根拠 B）。
     func stageSettleSkippedDeletions(_ ctx: TickContext) async {}
-
-    // T-38 が中身を書く（PLAN §8.9.6）。
-    func stageRunReaperIfNeeded(_ ctx: TickContext) async {}
 }
