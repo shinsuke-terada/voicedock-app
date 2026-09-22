@@ -22,6 +22,11 @@ struct ModelMemoryTests {
         #expect(!ModelMemory.hasEnough(minMemoryGB: 16, physicalMemoryBytes: 16 * Self.gib - 1))
     }
 
+    @Test("掛け算が溢れる大きさは足りない（trap しない）")
+    func overflowingRequirementIsNotEnough() {
+        #expect(!ModelMemory.hasEnough(minMemoryGB: Int.max, physicalMemoryBytes: UInt64.max))
+    }
+
     @Test("GB は切り捨て")
     func gbTruncates() {
         #expect(ModelMemory.gb(17 * Self.gib - 1) == 16)

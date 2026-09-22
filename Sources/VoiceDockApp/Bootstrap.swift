@@ -138,7 +138,7 @@ enum Bootstrap {
                 coexistence: CoexistenceGuard(runner: runner, uid: getuid()),
                 clock: clock, sleeper: TaskSleeper(), zone: zone,
                 log: log.withCategory("device"), volumesRoot: Contract.volumesRoot))
-        // 12. Worker（verificationCache は 14 のモデルと共有する。WorkerDependencies へは T-32 が足す）
+        // 12. Worker（verificationCache は 14 のモデルと共有する。WorkerDependencies へ足すチケットは未決）
         let verificationCache = ModelVerificationCache()
         let worker = Worker(
             deps: WorkerDependencies(
@@ -162,13 +162,28 @@ enum Bootstrap {
         let models = ModelManager(
             layout: layout, catalog: catalog, downloader: downloader,
             cache: verificationCache, log: log.withCategory("models"), hashChunkBytes: hashChunkBytes)
-        // 15. Worker.start()（復旧）を IngestService.start()（走査）より先に（run() の先頭で start() が走る）
+        // 15. Worker.start()（復旧）を終えてから Worker のループと IngestService.start()（走査）を始める（PLAN §8.15）
         let ctx = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,
             runner: runner, llama: llama, ingest: ingest, worker: worker, models: models, loginItem: SystemLoginItem())
-        ctx.workerTask = Task { await worker.run() }
-        await ingest.start()
+        ctx.workerTask = await startServices(
+            workerStart: { await worker.start() }, workerRun: { await worker.run() },
+            ingestStart: { await ingest.start() })
         // 16.
         return .success(ctx)
+    }
+
+    /// 起動の順（PLAN §8.15）: 復旧（`Worker.start()`）を**待ってから** Worker のループを作り、最後に走査を始める。
+    /// Task の開始順は保証されないので、`run()` の先頭の `start()` には頼らない（2 回目の `start()` は 1 回目の完了を待って即座に戻る）。
+    /// 戻り値は `run()` を回しているタスク（終了で待つ）。
+    static func startServices(
+        workerStart: @escaping @Sendable () async -> Void,
+        workerRun: @escaping @Sendable () async -> Void,
+        ingestStart: @escaping @Sendable () async -> Void
+    ) async -> Task<Void, Never> {
+        await workerStart()
+        let task = Task { await workerRun() }
+        await ingestStart()
+        return task
     }
 }

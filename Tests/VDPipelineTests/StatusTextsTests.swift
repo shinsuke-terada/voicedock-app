@@ -1,7 +1,6 @@
 // StatusTexts（未処理の 1 行・GiB・ガードの理由の語）のテスト（T-30 §5.4）。
 import Testing
-
-@testable import VDPipeline
+import VDPipeline
 
 @Suite("StatusTexts")
 struct StatusTextsTests {

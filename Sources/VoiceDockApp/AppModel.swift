@@ -35,6 +35,8 @@ final class AppModel {
     @ObservationIgnored private let sleeper: any Sleeper
     @ObservationIgnored private var loop: Task<Void, Never>?
     @ObservationIgnored private var updatesLoop: Task<Void, Never>?
+    /// 周期の眠りを途中で起こす（パネルを開いたら 30 秒の眠りを待たずに 1 秒周期へ。Worker.run と同じ形）
+    @ObservationIgnored private var wakeContinuation: AsyncStream<Void>.Continuation?
     @ObservationIgnored private var iconContinuation: AsyncStream<Void>.Continuation?
 
     init(
@@ -75,22 +77,32 @@ final class AppModel {
 
     /// 購読と最初の refresh を始める。アイドル時の CPU を 0 に近く保つ（PLAN §8.15）:
     /// 閉じている間は 30 秒周期＋走査の通知だけ、開いている間だけ 1 秒周期。
+    /// 周期の眠りは wake と競わせる（眠りの途中でパネルを開いたら、すぐ読み直して 1 秒周期に切り替える）。
     func start() {
         guard loop == nil else { return }
         let sleeper = self.sleeper
+        let (wake, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        wakeContinuation = continuation
         loop = Task { @MainActor [weak self] in
             await self?.refresh()
-            let updates = await self?.services.updates()
-            if let updates {
-                // 走査の終わりで 1 回
-                self?.updatesLoop = Task { @MainActor [weak self] in
-                    for await _ in updates { await self?.refresh() }
-                }
+            guard let updates = await self?.services.updates() else { return }
+            // stop() が先に来ていたら購読を作らない（stop の後に updatesLoop を代入しない）
+            guard !Task.isCancelled, self != nil else { return }
+            // 走査の終わりで 1 回
+            self?.updatesLoop = Task { @MainActor [weak self] in
+                for await _ in updates { await self?.refresh() }
             }
+            var waiting = wake.makeAsyncIterator()
             while !Task.isCancelled {
-                try? await sleeper.sleep(
-                    seconds: self?.isPanelOpen == true ? Self.fastIntervalSeconds : Self.slowIntervalSeconds)
-                if Task.isCancelled { break }
+                guard let open = self?.isPanelOpen else { break }
+                let seconds = open ? Self.fastIntervalSeconds : Self.slowIntervalSeconds
+                let timer = Task {
+                    do { try await sleeper.sleep(seconds: seconds) } catch { return }
+                    continuation.yield(())
+                }
+                let woke = await waiting.next() != nil
+                timer.cancel()
+                if !woke || Task.isCancelled { break }
                 await self?.refresh()
             }
         }
@@ -101,6 +113,8 @@ final class AppModel {
         loop = nil
         updatesLoop?.cancel()
         updatesLoop = nil
+        wakeContinuation?.finish()
+        wakeContinuation = nil
         iconContinuation?.finish()
     }
 
@@ -114,8 +128,12 @@ final class AppModel {
 
     func panelDidOpen() {
         isPanelOpen = true
-        // 開いた瞬間に最新にする
-        Task { await refresh() }
+        // 開いた瞬間に最新にする。ループが回っていれば眠りを起こす（読み直して 1 秒周期へ）。回っていなければ 1 回だけ読む
+        if let wake = wakeContinuation {
+            wake.yield(())
+        } else {
+            Task { await refresh() }
+        }
     }
 
     func panelDidClose() {

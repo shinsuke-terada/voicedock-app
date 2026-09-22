@@ -1,8 +1,6 @@
 // 状態の表示に使う整形（PLAN §8.12。voicedock status.py:96-134, 175-194）。
 // パネルの上端（VoiceDockApp）と「状態の詳細」（StatusReporter。T-32）が同じ関数を使う。
 import Foundation
-import VDCore
-import VDDevice
 
 /// 状態の表示に使う整形（PLAN §8.12）。
 public enum StatusTexts {

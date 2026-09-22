@@ -137,6 +137,20 @@ struct AppModelTests {
         model.stop()
     }
 
+    @Test("閉じた 30 秒の眠りの途中で開くと、すぐ読み直して 1 秒の眠りに切り替わる")
+    func panelOpenWakesTheSlowSleep() async {
+        let fake = FakeServices(Self.present())
+        let sleeper = SuspendingRecordingSleeper()
+        let model = Self.makeModel(fake, sleeper: sleeper)
+        model.start()
+        #expect(await Self.waitUntil { sleeper.recorded == [30] })
+        let readsBeforeOpen = fake.readCount
+        model.panelDidOpen()
+        #expect(await Self.waitUntil { sleeper.recorded == [30, 1] })
+        #expect(fake.readCount == readsBeforeOpen + 1)
+        model.stop()
+    }
+
     @Test("閉じたら『読み直しました』を消す")
     func panelCloseClearsReloadResult() async {
         let fake = FakeServices(Self.present())
@@ -300,5 +314,19 @@ struct AppModelTests {
             quit: {})
         await model.refresh()
         #expect(model.backlogLine == "未処理なし")
+    }
+}
+
+/// 待ち秒を記録し、止められるまで戻らない Sleeper（周期の眠りの途中で起こせることを見る）。
+final class SuspendingRecordingSleeper: Sleeper {
+    private let seconds = Mutex<[Int]>([])
+
+    var recorded: [Int] { seconds.withLock { $0 } }
+
+    func sleep(seconds value: Int) async throws {
+        seconds.withLock { $0.append(value) }
+        while true {
+            try await Task.sleep(for: .seconds(3600))
+        }
     }
 }

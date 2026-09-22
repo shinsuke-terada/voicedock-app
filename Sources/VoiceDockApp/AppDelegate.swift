@@ -22,6 +22,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch await Bootstrap.build() {
             case .failure(let f):
                 // 失敗したときは StatusItemController を作らない（アイコンの出ないゾンビにしない）
+                // アクセサリのアプリは前面に出ていないので、先に前面に出してから警告を出す
+                NSApp.activate()
                 let alert = NSAlert()
                 alert.messageText = Strings.bootFailureTitle
                 alert.informativeText = f.message
@@ -31,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return
             case .success(let c):
                 ctx = c
+                // 以降の組み立ての途中で終了が来ても、applicationShouldTerminate が部品を止められるように先に持つ
+                self?.context = ctx
             }
             let model = AppModel(
                 services: LiveServices(context: ctx), openFinder: NSWorkspaceFinder(), layout: ctx.layout,
@@ -39,14 +43,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             model.start()
             // 初回起動だけ自動で開く（PLAN §8.12）
             if await ctx.config.didCreateDefaults() { controller.open() }
-            self?.context = ctx
             self?.model = model
             self?.statusItem = controller
         }
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if terminating { return .terminateNow }
+        // 応答（reply）を待っている間の 2 度目は取り消す（1 度目の後始末が終われば終了する）
+        if terminating { return .terminateCancel }
         terminating = true
         guard let ctx = context else { return .terminateNow }
         Task { @MainActor in
@@ -72,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 /// 本体と timeout の眠りを競わせ、先に終わった方で抜ける。本体が先なら真。
 /// withTaskGroup は抜ける前に子の終わりを待つ（`Task.value` の待ちは取り消しに応じない）ので、構造化しないタスク 2 つで競わせる。
 private func withTimeout(_ timeout: Duration, _ body: @escaping @Sendable () async -> Void) async -> Bool {
-    let (finished, continuation) = AsyncStream.makeStream(of: Bool.self, bufferingPolicy: .bufferingNewest(1))
+    let (finished, continuation) = AsyncStream.makeStream(of: Bool.self, bufferingPolicy: .bufferingOldest(1))
     let work = Task {
         await body()
         continuation.yield(true)
