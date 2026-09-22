@@ -858,6 +858,7 @@ issue #87 で足した 21〜26（同じく層 R1 だけ。コミット後の清�
 **未実施（判断待ち）**: 実装時の `docs/SPEC.md` では **S8 は「reaper の検証 RV（付録 B.2）」、S9 は「実機試験 E2E（付録 B.3）」として既に使われている**ので、上の表の節番号は衝突する。
 また `docs/SPEC.md` と `Tests/TestSupport/Spec/SpecDocument.swift` は §3「作るもの」の表に無く、SPEC は PLAN から `make spec`（`tools/spec/make-spec.py`）で写す物なので、このチケットの PR では変えていない。
 新設するなら節番号（例 S10・S11）と PLAN 側の表の置き場所を決めてから、PLAN → `make spec` → `SpecDocument` の順に別の PR で行う。
+→ **issue #18（SPEC 同期の拡張。PLAN F-68）で検討し、足さなかった**: 終了コードとイベントは PLAN §8.9.4 の散文の 1 行ずつで表が無い。表にしても、実装の側は終了コードが `ReaperMain.run` の中の数値の直書き、イベントが `ReaperLog.Event` の個々の定数で、列挙できる列が無い（`Sources/voicedock-reaper` を変えないと SPEC と突き合わせられない。テストに列を手で持つと、イベントを足しても落ちない）。振る舞いは ReaperTests が終了コードとログの行で見ている。足すなら PLAN §8.9.4 を表にし、reaper に `ReaperLog.Event.all` を足す別の PR で行う（節番号は S14 以降の空き）
 
 ## 9. マージ後にやること
 

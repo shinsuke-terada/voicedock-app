@@ -3,7 +3,7 @@
 > この文書は `docs/PLAN.md` の規範の表の写しで、`tools/spec/make-spec.py` が作る。**手で直さない。**
 > テスト（SPEC 同期）がこの文書を読み、実装の enum・定数・テストの表示名と突き合わせる。
 > 表を変えるときは PLAN を直し、同じ PR で `python3 tools/spec/make-spec.py` を実行する（SpecMatchesPlanTests が食い違いを落とす）。
-> 見出しの `S1.`〜`S9.` はテストが節を探す鍵なので変えない。
+> 見出しの `S1.`〜`S13.`・`S20.`〜`S23.` はテストが節を探す鍵なので変えない。
 
 ## S1. 状態と復旧写像（PLAN 付録 A.1）
 
@@ -347,3 +347,98 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | E2E-16 | リムーバブルボリュームの許可を拒否 → パネルに案内が出る。許可後に取り込む | OFF |
 | E2E-17 | 削除を無効化（確認なし）→ 直ちに読み取り専用へ再マウントされ、以後削除されない | ON→OFF |
 | E2E-18 | — 取り下げ（F-60） | — |
+
+## S10. 名前の正規表現（PLAN §4.1・§4.4）
+
+| 定数 | 正規表現 |
+|---|---|
+| `RecordingName.filePattern` | `^(TX[0-9]{2})_(MIC[0-9]{3})_([0-9]{8})_([0-9]{6})(_orig)?\.(wav\|WAV)$` |
+| `RecordingName.folderPattern` | `^TX_(MIC[0-9]{3})_([0-9]{8})_([0-9]{6})$` |
+
+| 定数 | 正規表現 |
+|---|---|
+| `RequestID.pattern` | `^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}-[0-9a-f]{6}$` |
+
+## S11. whisper-cli の argv（PLAN §8.4）
+
+```text
+<bundle>/Contents/Helpers/whisper-cli -m <HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin -f <HOME>/staging/<slug>/audio16k.wav
+  -l ja -t <threads>
+  --vad --vad-model <HOME>/models/vad/ggml-silero-v5.1.2.bin --vad-threshold 0.5
+  --vad-min-speech-duration-ms 250 --vad-min-silence-duration-ms 1000 --vad-speech-pad-ms 200
+  -oj -of <HOME>/staging/<slug>/whisper -np
+```
+
+## S12. 保存検証 RN / DN（PLAN §8.7）
+
+| # | Raw（RN。voicedock R-n） | Daily（DN。voicedock W-n） |
+|---|---|---|
+| 1 | 通常ファイル（symlink でない）。stat できなければ偽 | 同左 |
+| 2 | size > 0 | 同左 |
+| 3 | UTF-8 として読める | 同左 |
+| 4 | SHA-256 が期待値と一致 | 同左 |
+| 5 | frontmatter が YAML として読め（Yams）、`voicedock_session_key` が文字列として一致 | 先頭が `---\n` で、その後に `^---\s*$` の行がある（`splitFrontmatter` が成功） |
+| 6 | `voicedock_recording_keys`（配列でなければ空集合。要素は文字列化）が期待する鍵を**すべて含む**（包含） | frontmatter が YAML として読め、session_key が一致 |
+| 7 | — | recording_keys が期待する鍵と集合として**完全一致**（RN-6 と混同しない。NOTE-12） |
+| 8 | — | summary の見出し（`sections.summary.heading`）に一致する行 `^<見出しを正規表現用にエスケープ>\s*$` が在り、その次の行から次の `^#{1,6} ` の行の手前までを strip して空でない（NOTE-13） |
+| 9 | — | `\[\[[^\]]+\]\]` が 1 つ以上ある（NOTE-01） |
+
+## S13. Worker の tick の段（PLAN §5.4）
+
+| # | 段 | 上の擬似コードの行 | 条件 |
+|---|---|---|---|
+| 1 | `manualRequeue` | パネルの「再試行」（`requeueFailed(.manual)`。下の契機 3） | 要求があるときだけ |
+| 2 | `groupNewParts` | groupNewParts | — |
+| 3 | `requeueRecopied` | requeueRecopied | — |
+| 4 | `closeIdleSessions` | closeIdleSessions（今すぐ要約を含む） | — |
+| 5 | `processPendingParts` | processPendingParts | — |
+| 6 | `refreshVaultIndex` | refreshVaultIndexIfExpired | — |
+| 7 | `processReadySessions` | processReadySessions | — |
+| 8 | `collectDeleteResults` | collectDeleteResults | — |
+| 9 | `expireDeleteRequests` | expireDeleteRequests | — |
+| 10 | `evaluateDeletions` | evaluateDeletions | snapshot が新鮮 |
+| 11 | `settleSkippedDeletions` | settleSkippedDeletions | snapshot が新鮮 |
+| 12 | `runReaperIfNeeded` | runReaperIfNeeded | snapshot が新鮮 |
+| 13 | `pendingJobs` | pendingDiagnostics（今すぐ要約を除くパネルの仕事） | — |
+| 14 | `requeueOnConnect` | connectEpoch の増加で `requeueFailed(.connect)` | — |
+
+## S20. パネルの節と画面（PLAN §8.12）
+
+| # | 節 | 主画面 | 画面 |
+|---|---|---|---|
+| 1 | 状態 | カード | — |
+| 2 | 要対応 | カード（先頭の 2 件と「ほか n 件 ›」） | `attention` |
+| 3 | はじめに | カード（未完了の項目がある間だけ） | — |
+| 4 | 保存先（Vault） | カード | — |
+| 5 | モデル | カード | — |
+| 6 | 一般 | —（「はじめに」の④が未完了の間は「はじめに」のカードに置く） | `settings` |
+| 7 | 元音声の削除 | 行 | `deletion` |
+| 8 | 詳細・診断 | 行 | `details` |
+| 9 | 終了 | ボタン | — |
+
+## S21. メニューバーのアイコン（PLAN §8.12）
+
+| 状態 | IconState | シンボル |
+|---|---|---|
+| 待機中 | `idle` | `waveform` |
+| 取り込み中 | `ingesting` | `arrow.down.circle` |
+| 文字起こし・要約中 | `processing` | `text.bubble` |
+| 要対応あり（上の 3 つより優先） | `attention` | `exclamationmark.triangle` |
+| 削除が有効（上記に**並べて**常時表示） | — | `trash` |
+
+## S22. はじめに（PLAN §8.12）
+
+| # | 項目 | OnboardingStep | 完了の条件 |
+|---|---|---|---|
+| ① | Vault を選ぶ | `vault` | `VaultCheck` が `.available` |
+| ② | Whisper モデルを入手する | `whisperModel` | Whisper モデルが在り、VAD が有効なら VAD モデルも在る |
+| ③ | LLM を選んで入手する | `llmModel` | LLM が選ばれ、そのモデルが在る |
+| ④ | ログイン時に起動する | `loginItem` | ログイン項目が有効、または「今はしない」を選んだ（`loginItemDecided`） |
+| ⑤ | デバイスの名前を変える | `deviceName` | 完了にしない（改名の要るデバイス（`NO NAME`）が在る間だけ出す。DEV-10） |
+
+## S23. ui-state.json（PLAN §8.12）
+
+| 鍵 | 型 | 値 |
+|---|---|---|
+| `schema` | 整数 | `1` |
+| `loginItemDecided` | 真偽 | 「ログイン時に起動」をオンにしたか「今はしない」を選んだら `true`（既定 `false`） |

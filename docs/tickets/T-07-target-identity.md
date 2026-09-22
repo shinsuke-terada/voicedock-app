@@ -361,6 +361,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 
 `docs/SPEC.md` の付録 B.2 の理由語の列と `IdentityReason.all` を照合するテストは T-05 の SPEC 同期に足す（このチケットでは `reasonsAreVerbatim` で固定値と照合する）。
 → （T-05 の実装で判明）T-05 の設計（PolicyTests は VDContract を import できない、SPEC.md は付録 B.2 を写さない）に収まらなかった。GitHub issue #18 に切り出した
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: 付録 B.2 は既に SPEC の `S8.` に写っているので節は足さず、`SpecDocument.reasonWords()`（S8 の「理由語」の列のバッククォートの語を出現順に。重複は最初の 1 回）を足した。`Tests/VDContractTests/SpecSyncContractTests.swift` の `reasonsMatchSpec`（「理由語が SPEC S8（付録 B.2）の理由語の列と同じ順で同じ」）が `IdentityReason.all` と照合する。`reasonsAreVerbatim` は二重の守りとして残す
 
 ## 10. マージ後にやること
 

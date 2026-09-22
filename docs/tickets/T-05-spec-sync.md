@@ -902,6 +902,8 @@ struct SpecParserTests {
 
 `docs/SPEC.md` を新しく作る（中身は PLAN の表の写し）。
 
+→ （issue #18 で拡張。PLAN F-68）`make-spec.py` に写す範囲 `("table", 見出しの接頭辞)`・`("fence", 言語)` と複数の節から写す形を足し、`S10.`〜`S13.`・`S20.`〜`S23.` を足した。読み取り口は `SpecDocument` の型に extension（`Tests/TestSupport/Spec/SpecDocument+ExtendedSections.swift`）で足した（地図 §15）。`SpecIDKind` は変えていない（RN / DN の網羅は `NoteRuleCoverageTests` が見る）。SPEC と PLAN の一致は `Tests/PolicyTests/SpecSync/SpecExtendedSectionsTests.swift`
+
 ## マージ後にやること
 
 - T-08 で `SpecSyncStatesTests.swift`、T-10 で `SpecSyncLogEventsTests.swift` を §5 の全文で足す

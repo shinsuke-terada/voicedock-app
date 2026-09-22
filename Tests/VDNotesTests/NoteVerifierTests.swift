@@ -60,12 +60,17 @@ struct NoteVerifierTests {
         v.results.map(\.rule)
     }
 
-    @Test("RN と DN の件数")
+    /// 規則の列は SPEC S12（PLAN §8.7 の表）から読む（SPEC 同期は issue #18 で足した。PLAN F-68）
+    @Test("RN と DN の件数（SPEC S12 の表と同じ）")
     func ruleCounts() throws {
+        let spec = try SpecDocument.load()
         let temp = try TempDirectory()
         let url = try place(temp, buildNote())
-        #expect(rules(check(url, .raw)) == Self.rawRules)
-        #expect(rules(check(url, .daily)) == Self.dailyRules)
+        #expect(rules(check(url, .raw)) == (try spec.noteRules(.raw)))
+        #expect(rules(check(url, .daily)) == (try spec.noteRules(.daily)))
+        // 下のテストが使う固定の列も SPEC と同じ
+        #expect(Self.rawRules == (try spec.noteRules(.raw)))
+        #expect(Self.dailyRules == (try spec.noteRules(.daily)))
     }
 
     @Test("正しいノートは全部通る")
@@ -178,7 +183,7 @@ struct NoteVerifierTests {
         #expect(check(other, .raw).failedRules == ["RN-5"])
     }
 
-    @Test("session_key が違う")
+    @Test("RN-5 / DN-6 session_key が違う")
     func sessionKeyMismatch() throws {
         let temp = try TempDirectory()
         let url = try place(temp, buildNote(sessionKey: "DJIMIC3:20260829#2"))
@@ -186,7 +191,7 @@ struct NoteVerifierTests {
         #expect(check(url, .daily).failedRules == ["DN-6"])
     }
 
-    @Test("session_key が無い")
+    @Test("RN-5 / DN-6 session_key が無い")
     func sessionKeyMissing() throws {
         let temp = try TempDirectory()
         let text =
@@ -198,7 +203,7 @@ struct NoteVerifierTests {
         #expect(check(url, .daily).failedRules == ["DN-6"])
     }
 
-    @Test("session_key が文字列でない")
+    @Test("RN-5 / DN-6 session_key が文字列でない")
     func sessionKeyNotString() throws {
         let temp = try TempDirectory()
         let text =
@@ -250,7 +255,7 @@ struct NoteVerifierTests {
         #expect(outcome(check(reordered, .daily), "DN-7") == true)
     }
 
-    @Test("鍵の欄が無い")
+    @Test("RN-6 / DN-7 鍵の欄が無い")
     func keysFieldMissing() throws {
         let temp = try TempDirectory()
         let text =

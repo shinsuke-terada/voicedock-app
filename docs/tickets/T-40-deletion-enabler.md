@@ -720,6 +720,8 @@ struct HoldToConfirmButton: View {
 
 （`DeletionStage` の定数と S10 の並びを照合するテストを T-05 の SPEC 同期に足す。このチケットの PR で `SpecDocument` の鍵に `S10` を足す）
 
+→ **issue #18（SPEC 同期の拡張。PLAN F-68）で検討し、足さなかった**: S10 は #18 で名前の正規表現に使った。段の順は PLAN §8.9.8 の散文（有効化は番号付きの手順、無効化は矢印の 1 文）で表が無く、実装の `DeletionStage` は個々の定数で順の列を持たない（順は `DeletionEnabler` の振る舞いで、そのテストが見ている）。足すなら PLAN §8.9.8 に段の表を置き、`DeletionStage` に `enableOrder` / `disableOrder` を足す別の PR で行う（`Sources/VDPipeline` を変える。節番号は S14 以降の空き）
+
 ## 10. マージ後にやること
 
 - T-41 が同じパネルの「詳細」に後追いの 2 つのボタンを並べる（`DeletionPanelState` に足す）

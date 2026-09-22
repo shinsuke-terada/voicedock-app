@@ -321,7 +321,7 @@
 |---|---|---|
 | `TempDirectory`、`PackageRoot`、`TestEnvironment` | T-01 | すべて（T-02〜T-05・T-25 が T-06 より前に使う） |
 | `Markdown/MarkdownDocument` | T-04 | T-05 以降 |
-| `Spec/SpecDocument`（`codeBlock(heading:language:)` を含む） | T-05 | T-08・T-10・T-17 など SPEC 同期のテスト |
+| `Spec/SpecDocument`（`codeBlock(heading:language:)` を含む）。**issue #18 が extension `Spec/SpecDocument+ExtendedSections.swift` で読み取り口を足した**: `reasonWords()`（S8 の理由語の列）・`namePatterns()`（S10）・`whisperArgv()`（S11）・`noteRules(_:)`（S12。`SpecNoteKind`）・`tickStages()`（S13。`SpecTickStage`）・`panelSections()`（S20。`SpecPanelSection`）・`iconRows()`（S21。`SpecIconRow`）・`onboardingSteps()`（S22。`SpecOnboardingStep`）・`uiStateKeys()`（S23。`SpecJSONKey`）。PLAN F-68 | T-05 | T-08・T-10・T-17 など SPEC 同期のテスト。#18 の分は T-06・T-07（VDContractTests）、T-17（VDTranscribeTests）、T-18（VDPipelineTests）、T-28（VDNotesTests・PolicyTests）、T-30・T-31（VoiceDockAppTests・PolicyTests） |
 | golden 一式（`Golden`、`GoldenCase`、`GoldenJSON`、`GoldenError`、`GoldenAssert`、`UnifiedDiff`） | T-25 | T-45・T-19・T-20・T-26・T-27 |
 | `FakeVolume`（`StandardTree` の定数を含む）、`FakeVolumeOpener`、`DiskImageVolume`（**`/Volumes` の下には決して attach しない**） | T-07 | T-13・T-14・T-15・T-36〜T-38 |
 | `FixedClock`、`SteppingClock`（`now()` と `uptime()` の両方を呼ばれるたびに進める）、`RecordingSleeper`、`CapturingLogSink` | T-10 | すべて |

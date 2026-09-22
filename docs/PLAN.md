@@ -355,11 +355,10 @@ Makefile のターゲット（CI と手元で同じコマンドを使う）:
 ### 4.1 録音の名前規則（voicedock SPEC §5.2 / `device.py:36-45` と一字一句同じ意味）
 
 ```swift
-// ファイル名:  ^(TX[0-9]{2})_(MIC[0-9]{3})_([0-9]{8})_([0-9]{6})(_orig)?\.(wav|WAV)$
-// フォルダ名:  ^TX_(MIC[0-9]{3})_([0-9]{8})_([0-9]{6})$
+// 正規表現は下の表（SPEC S10）を逐語で持つ
 public enum RecordingName {
-    public static let filePattern: String     // 上の 1 行目を逐語で
-    public static let folderPattern: String   // 上の 2 行目を逐語で
+    public static let filePattern: String     // 下の表の 1 行目を逐語で
+    public static let folderPattern: String   // 下の表の 2 行目を逐語で
     public static func parseFile(_ name: String) -> ParsedFile?     // 存在しない日時（2/30 等）は nil
     public static func isFolder(_ name: String) -> Bool
 }
@@ -371,6 +370,13 @@ public struct ParsedFile: Sendable, Equatable {
     public let ext: String             // "wav" / "WAV"
 }
 ```
+
+名前の正規表現（SPEC S10。実装の定数と逐語で一致させる。表の中の `\|` は `|` と読む）:
+
+| 定数 | 正規表現 |
+|---|---|
+| `RecordingName.filePattern` | `^(TX[0-9]{2})_(MIC[0-9]{3})_([0-9]{8})_([0-9]{6})(_orig)?\.(wav\|WAV)$` |
+| `RecordingName.folderPattern` | `^TX_(MIC[0-9]{3})_([0-9]{8})_([0-9]{6})$` |
 
 - **取り込みも削除も `_orig` だけ**（denoised は読まないので消さない。DEL-34）
 - 日付は**ファイル名の時刻**から取る。フォルダ名の日付は最初の録音の時刻で、中身の日付を縛らない（DEV-11）
@@ -422,8 +428,13 @@ public struct ParsedFile: Sendable, Equatable {
 }
 ```
 
-- `request_id` = `<UTC の yyyyMMdd'T'HHmmss'Z'>-<partkey の key_slug>-<乱数 6 hex>`。正規表現 `^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}-[0-9a-f]{6}$`
+- `request_id` = `<UTC の yyyyMMdd'T'HHmmss'Z'>-<partkey の key_slug>-<乱数 6 hex>`。正規表現は下の表（SPEC S10）
   （voicedock は docstring が UTC、実装がシステムのローカル時刻で、しかも `Z` が付かなかった。**UTC・`Z` 付きに統一**）。乱数は `SystemRandomNumberGenerator` から 3 バイト
+
+| 定数 | 正規表現 |
+|---|---|
+| `RequestID.pattern` | `^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}-[0-9a-f]{6}$` |
+
 - 再試行のたびに新しい ID。**DB の `delete_request_id` を先に書き、その後で要求ファイルを置く**
   （voicedock はファイルが先だった。ID が先なら、ファイルの書き込み後に落ちても結果を引ける。§8.9.1 の末尾の「待っている」の定義と組で使う）
 - `targets` はちょうど 1 要素
@@ -620,6 +631,25 @@ tick():   // 待ちは「IngestService からの通知」「パネルからの�
   pendingDiagnostics            // パネルが要求した DR-09（LLM 実リクエスト）をここで 1 件ずつ実行（§8.11）
   if snapshot.connectEpoch > lastSeenConnectEpoch: requeueFailed(.connect); lastSeenConnectEpoch = snapshot.connectEpoch
 ```
+
+tick の段（SPEC S13。「段」の列は `TickStage` の case で、宣言順 = 実行の順。「条件」の列が `snapshot が新鮮` の段が `TickStage.requiresFreshSnapshot`）:
+
+| # | 段 | 上の擬似コードの行 | 条件 |
+|---|---|---|---|
+| 1 | `manualRequeue` | パネルの「再試行」（`requeueFailed(.manual)`。下の契機 3） | 要求があるときだけ |
+| 2 | `groupNewParts` | groupNewParts | — |
+| 3 | `requeueRecopied` | requeueRecopied | — |
+| 4 | `closeIdleSessions` | closeIdleSessions（今すぐ要約を含む） | — |
+| 5 | `processPendingParts` | processPendingParts | — |
+| 6 | `refreshVaultIndex` | refreshVaultIndexIfExpired | — |
+| 7 | `processReadySessions` | processReadySessions | — |
+| 8 | `collectDeleteResults` | collectDeleteResults | — |
+| 9 | `expireDeleteRequests` | expireDeleteRequests | — |
+| 10 | `evaluateDeletions` | evaluateDeletions | snapshot が新鮮 |
+| 11 | `settleSkippedDeletions` | settleSkippedDeletions | snapshot が新鮮 |
+| 12 | `runReaperIfNeeded` | runReaperIfNeeded | snapshot が新鮮 |
+| 13 | `pendingJobs` | pendingDiagnostics（今すぐ要約を除くパネルの仕事） | — |
+| 14 | `requeueOnConnect` | connectEpoch の増加で `requeueFailed(.connect)` | — |
 
 - **今すぐ要約（手動。F-66）:** パネルの要求（`WorkerJob.summarizeNow(reply:)`）は、`closeIdleSessions` の段の終わりで列から取り出して入れた順に行う（ほかの仕事は `pendingDiagnostics` の段のまま）。
   Session を閉じる契機は、無通信の `idle`（自動）とこの今すぐ要約（手動）の 2 つだけ（日付が変わった 0:00 の `stale_day` は F-66 で廃止）。1 件ごとに:
@@ -1246,7 +1276,7 @@ used + expected > stagingMaxBytes  → 「staging 使用量 <used> + 想定 <exp
 
 参照: voicedock `transcribe.py`、`pipeline.ensure_part_transcript`（388-463）、SPEC §10.6、`tests/fixtures/fake_whisper.py`。
 
-argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == false` なら VAD の 6 フラグを 1 つも渡さない）:
+argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == false` なら VAD の 6 フラグを 1 つも渡さない。SPEC S11。先頭の語は実行ファイルで argv に含めない。`<threads>` は下の threads）:
 
 ```text
 <bundle>/Contents/Helpers/whisper-cli -m <HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin -f <HOME>/staging/<slug>/audio16k.wav
@@ -1533,7 +1563,7 @@ linksLines: 値 = [dailyNote（あれば）] + adjacent + tags のうち "[[" �
 読み直して SHA 照合（不一致なら rename しない）→ `rename` → 親ディレクトリを `fsync`（開けない・失敗は無視）→ 保存検証。
 途中で失敗したら tmp を消し、最終ファイルは差し替えない。後片付けの失敗で元の失敗を隠さない（NOTE-14）。実装は `AtomicFile.write(…, verifyReadBack: true)`
 
-**保存検証**（`NoteVerifier`。全部合格してから DB の `*_output_path` / `*_sha256` を書き、その後に RAW_SAVED / SAVED へ遷移。**DB 更新が成功するまで保存済みとみなさない**）
+**保存検証**（SPEC S12。規則の ID は「#」の列の番号に RN- / DN- を付けたもの。— の欄は規則が無い）（`NoteVerifier`。全部合格してから DB の `*_output_path` / `*_sha256` を書き、その後に RAW_SAVED / SAVED へ遷移。**DB 更新が成功するまで保存済みとみなさない**）
 
 | # | Raw（RN。voicedock R-n） | Daily（DN。voicedock W-n） |
 |---|---|---|
@@ -2015,15 +2045,15 @@ SwiftUI の `PanelView` をホストする。`MenuBarExtra` は使わない（�
 パネルを開くとき `NSApp.activate()`（パネルの操作に最初のクリックから反応させるため）。
 popover の高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の高さを持たない。F-65）
 
-**アイコン**（SF Symbols、テンプレート画像。`IconState` を AppModel が計算する）:
+**アイコン**（SF Symbols、テンプレート画像。`IconState` を AppModel が計算する。SPEC S21。「IconState」の列は case、`trash` は case ではなく並べて出す記号）:
 
-| 状態 | シンボル |
-|---|---|
-| 待機中 | `waveform` |
-| 取り込み中 | `arrow.down.circle` |
-| 文字起こし・要約中 | `text.bubble` |
-| 要対応あり（上の 3 つより優先） | `exclamationmark.triangle` |
-| 削除が有効（上記に**並べて**常時表示） | `trash` |
+| 状態 | IconState | シンボル |
+|---|---|---|
+| 待機中 | `idle` | `waveform` |
+| 取り込み中 | `ingesting` | `arrow.down.circle` |
+| 文字起こし・要約中 | `processing` | `text.bubble` |
+| 要対応あり（上の 3 つより優先） | `attention` | `exclamationmark.triangle` |
+| 削除が有効（上記に**並べて**常時表示） | — | `trash` |
 
 **パネル**（幅 380pt 前後、カード型。**主画面はスクロールしない**。長い中身（7・8、要対応の多数、6 の完了後）は popover の中の**別の画面**に切り替え、見出しに「‹ 戻る」を置く。別の画面の中身が長いときだけ、その画面の中でスクロールする。閉じたら次は主画面から開く。F-65。上から）:
 
@@ -2040,6 +2070,37 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
 7. **元音声の削除**（主画面は「› 元音声の削除  有効／無効」の行。押すと別の画面）: §8.9.8 のロック表示・事前確認・有効化（赤いボタンの 3 秒長押し）・無効化（確認なしの 1 クリック）・無音と重複の削除（同じ長押し）
 8. **詳細・診断**（主画面は行。押すと別の画面。状態の詳細はこの画面にいる間だけ読む）: 状態の詳細（下記）、診断を実行・LLM の疎通確認、過去分の削除・手動で消した分（§8.9.9）、ログと設定ファイルを Finder で表示、設定を読み直す、版
 9. **終了**ボタン
+
+節と画面（SPEC S20。「#」は上の番号。「主画面」の列は主画面での出し方（— は主画面に出さない）、「画面」の列は別の画面の `PanelScreen` の case（— は別の画面を持たない））:
+
+| # | 節 | 主画面 | 画面 |
+|---|---|---|---|
+| 1 | 状態 | カード | — |
+| 2 | 要対応 | カード（先頭の 2 件と「ほか n 件 ›」） | `attention` |
+| 3 | はじめに | カード（未完了の項目がある間だけ） | — |
+| 4 | 保存先（Vault） | カード | — |
+| 5 | モデル | カード | — |
+| 6 | 一般 | —（「はじめに」の④が未完了の間は「はじめに」のカードに置く） | `settings` |
+| 7 | 元音声の削除 | 行 | `deletion` |
+| 8 | 詳細・診断 | 行 | `details` |
+| 9 | 終了 | ボタン | — |
+
+「はじめに」の項目（SPEC S22。上の 3 の ①〜⑤ の順。「項目」の列はパネルの文言、「OnboardingStep」の列は case）:
+
+| # | 項目 | OnboardingStep | 完了の条件 |
+|---|---|---|---|
+| ① | Vault を選ぶ | `vault` | `VaultCheck` が `.available` |
+| ② | Whisper モデルを入手する | `whisperModel` | Whisper モデルが在り、VAD が有効なら VAD モデルも在る |
+| ③ | LLM を選んで入手する | `llmModel` | LLM が選ばれ、そのモデルが在る |
+| ④ | ログイン時に起動する | `loginItem` | ログイン項目が有効、または「今はしない」を選んだ（`loginItemDecided`） |
+| ⑤ | デバイスの名前を変える | `deviceName` | 完了にしない（改名の要るデバイス（`NO NAME`）が在る間だけ出す。DEV-10） |
+
+`<HOME>/ui-state.json` の鍵（SPEC S23。この 2 つだけを書く。読むときは `schema` が 1 でなければ既定値）:
+
+| 鍵 | 型 | 値 |
+|---|---|---|
+| `schema` | 整数 | `1` |
+| `loginItemDecided` | 真偽 | 「ログイン時に起動」をオンにしたか「今はしない」を選んだら `true`（既定 `false`） |
 
 **状態の詳細**（voicedock `status.py` 相当。DB が無ければ全 0。DB を作らない）:
 - Part / Session の状態別件数（enum の全値を 0 件も含めて出す。Part の表示順は宣言順だが SKIPPED を FAILED の前に置く）。注記は**エンティティごとの辞書**で持ち、Part の FAILED にだけ「次回接続時に再試行」を付ける
@@ -2254,7 +2315,7 @@ reaper は偽物を作らず本物を起動する。本物は「結果を書い�
 | Worker | **`Worker.tick()` を回す**（`ensure*` を直接呼ぶだけでは配線の欠落が見えない。TEST-06 / TEST-07） | tick の順序、再評価の 4 つの契機、停止、ガード |
 | ND | 削除禁止（付録 B.1） | NoDeleteTests / ReaperTests |
 | PT | 静的検査（§9.4） | PolicyTests |
-| SPEC 同期 | `docs/SPEC.md` の表 ↔ 実装の enum・定数・テストの表示名 | 状態・遷移・復旧写像・エラーコード（宣言順）・CV・ND・RV・DR・ログイベント（登録順） |
+| SPEC 同期 | `docs/SPEC.md` の表 ↔ 実装の enum・定数・テストの表示名 | 状態・遷移・復旧写像・エラーコード（宣言順）・CV・ND・RV・DR・ログイベント（登録順）・理由語（付録 B.2）・名前の正規表現・whisper-cli の argv・RN / DN・tick の段・パネルの節と画面・アイコン・はじめに・ui-state.json（S10〜S13・S20〜S23。F-68） |
 | 文書 | README / E2E.md の件数・手順・番号 | 「診断は 16 件」などの散文の数字も機械で見る（voicedock で古くなった箇所が多数あった） |
 | 実機 | E2E（付録 B.3） | docs/E2E.md に手順・生の出力・判定 |
 
@@ -2265,6 +2326,8 @@ reaper は偽物を作らず本物を起動する。本物は「結果を書い�
 - 遷移表と復旧写像は `text` フェンスの中の `A→B` を辺として読む（`|` 区切り、`★` と括弧の注記は無視）。付録 A.2 はフェンスの直前の段落 `Part:` / `Session:` でエンティティを分け、付録 A.1 の復旧写像のフェンスは行頭の `Part:` / `Session:` で分ける
 - ログイベントは付録 A.4 の `text` フェンスを空白と改行で分け、出現順 = `LogEvent` の宣言順
 - `docs/SPEC.md` が無ければ **skip ではなく fail**
+- S10〜S13・S20〜S23（F-68）は PLAN の該当節の表（S11 だけは §8.4 の最初の `text` フェンス）を 1 つずつ写したもの。照合のテストは実装の型を import できる各モジュールのテストターゲットに置き（PolicyTests は TestSupport にしか依存しない）、`SpecDocument` の読み取り口で SPEC を読む。理由語は付録 B.2 の「理由語」の列のバッククォートの語を出現順に読み、`IdentityReason.all` と一致すること
+- RN / DN は S12 の表の「#」に RN- / DN- を付けた ID（— の欄は無い）の集合と、テストの表示名の先頭の ID（`RN-5 / DN-6 …` のように ` / ` で並べてよい）の集合が一致すること
 - ND・RV・CV・DR は「SPEC の表の ID の集合」と「テストの表示名の先頭の ID の集合」が一致すること。ND は付録 B.1 の「層」の列に書いた層（A / R1 / R2 / R3）ごとに 1 本以上のテストがあること（テストの表示名は `ND-18 [R2] …` のように ID の後に層を角括弧で書く）。DR の表は ID が先頭の列
 
 **不変条件は列挙全体に対して書く**: 例「戻りうる全状態に受け手がいる」「deletableSkipReasons の全理由に根拠の分岐がある」「全エラーコードに RetryPolicy がある」（TEST-08）。
@@ -3140,3 +3203,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-65 | 事 | §2.2・§8.9.8・§8.12・§12.3・§14 | （2026-09-23 に利用者が決定）パネルをカード型に作り直し、**主画面をスクロールなしで収める**。長い中身（元音声の削除・詳細と診断・要対応の多数・一般）は popover の中の別の画面に切り替え（「‹ 戻る」。窓は増やさない。D-7）、高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の 640pt をやめた。主画面に ScrollView を置かないので 1pt に潰れない。PR #100）。削除の有効化と根拠 B の「`ENABLE` を入力させる」を「赤いボタンを 3 秒長押しさせる」に変えた（クリック 1 回・チェックボックスでは通らない。途中で離すと取り消し。押している間はリングが満ちる）。UI は長押しの完了で `confirmation` に定数 `"ENABLE"` を渡し、`DeletionEnabler.enable(confirmation:)` の完全一致の判定は残す（安全の二重化）。`EnableError.notConfirmed` の文言は「赤いボタンを 3 秒長押ししてください」。無効化は確認なしの 1 クリックのまま。docs/E2E.md の E2E-10・E2E-17・§3.7（根拠 B）の手順を長押しに直した |
 | F-66 | 欠 | §5.3・§5.4・§5.6・付録 A.2・付録 D | （2026-09-23 に利用者が決定）今すぐ要約を足し、0:00 の自動要約（`stale_day`）を廃止した。Session を閉じる契機は、無通信 `idleCloseSeconds` の `idle`（自動。日付が過去の OPEN も同じ規則で、起動時の `closeIdleSessions` も同じ）と、パネルの今すぐ要約（手動）の 2 つだけ（X-37）。今すぐ要約は `WorkerJob.summarizeNow(reply:)` を `closeIdleSessions` の段の終わりで行い、LLM のガードを積まずに判定して当たれば何も閉じずに失敗、通れば押した時点の OPEN を日付を問わず `OPEN→READY`（detail `summarize_now`）にして閉じた数を返す。要約は同じ tick の `processReadySessions` が進め、その後に届いた同じ日の録音は既存の再オープン（§5.6）で要約し直す。辺・ログのイベント・設定キーは増やさない。パネルのボタンと `AppServices` の口はパネルの作り直しの後に足す |
 | F-67 | 誤 | §8.1・§8.9.5 | （2026-09-23。issue #97。F-64 のレビューで判明）`DeviceReader.scan` は `lstat` の失敗を errno によらず黙って飛ばしていたので、`complete == true` でも一覧が欠けることがあり、F-64 の自動完了（一覧に無い RAW_SAVED を完了にする）の根拠として弱かった → `lstat` が `ENOENT` 以外で失敗した項目があれば `complete = false`（`readdir` の途中の失敗は従来どおり偽）。`ENOENT`（列挙から `lstat` までの間に消えた）は飛ばして偽にしない。深さの上限の外は列挙も `lstat` もせず、偽にもしない（上限の外の録音は Part にならず、削除にも F-64 にも関わらない。`maxScanDepth` を下げる前に取り込んだ Part だけは完了しうるが消さない側）。偽のデバイスは従来どおり `devices` に載せず `unavailable`（`not_listable`）。取り込みは続け、前回の snapshot の一覧は持ち越さない（一時的な失敗は次の走査で戻る）。`notListableErrno` は規則 5 の errno だけ。`DeviceReader` の `lstat` は internal の `init(lstat:)` で差し替えられる（テストが失敗を注入する。公開 API は増やさない）。理由語・ログの語・設定キーは増やさない |
+| F-68 | 欠 | §4.1・§4.4・§5.4・§8.4・§8.7・§8.12・§10.3 | （2026-09-23。issue #18。利用者が任せた）SPEC 同期を広げた。PLAN に表を置き（§4.1・§4.4 の名前の正規表現、§5.4 の tick の段、§8.12 の節と画面・はじめにの項目・ui-state.json の鍵。§8.12 のアイコンの表には `IconState` の列を足した）、`tools/spec/make-spec.py` が SPEC の S10（名前の正規表現）・S11（whisper-cli の argv。§8.4 の `text` フェンスをそのまま）・S12（保存検証 RN / DN。§8.7 の表）・S13（tick の段）・S20（パネルの節と画面）・S21（アイコン）・S22（はじめに）・S23（ui-state.json）に写す。付録 B.2 の理由語は既存の S8 の列から読む。照合のテストは実装を import できる各モジュールのテストに置き（PolicyTests は TestSupport にしか依存しない。Package.swift は変えない）、`SpecDocument` の読み取り口は extension で足した（00-api-map §15）。RN / DN はテストの表示名の先頭に ` / ` で ID を並べてよい（§10.3）。S20 は F-65 の後のカード型に合わせ、T-30 の案の「チケット」の列をやめて主画面での出し方と `PanelScreen` の case を持つ。要対応（§8.11）・状態の詳細・reaper の終了コードとイベント・削除の有効化と無効化の段は、PLAN が散文か実装に列挙できる列が無いので足していない（T-32・T-37・T-40 に理由を書いた） |

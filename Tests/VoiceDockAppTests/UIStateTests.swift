@@ -63,15 +63,31 @@ struct UIStateTests {
         #expect(UIStateStore(url: url).load().loginItemDecided == true)
     }
 
-    @Test("書くのは 2 キーだけ")
+    /// 鍵と型は SPEC S23（PLAN §8.12 の表）から読む（SPEC 同期は issue #18 で足した。PLAN F-68）
+    @Test("書くのは SPEC S23 の 2 キーだけ（型も表のとおり）")
     func savedFileHasOnlyTwoKeys() throws {
+        let spec = try SpecDocument.load().uiStateKeys()
+        #expect(spec.map(\.key) == ["schema", "loginItemDecided"])
         let tmp = try TempDirectory()
         defer { tmp.remove() }
         let url = Self.file(tmp)
         #expect(UIStateStore(url: url).save(UIState(schema: 1, loginItemDecided: true)))
         let data = try Data(contentsOf: url)
         let object = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-        #expect(object.keys.sorted() == ["loginItemDecided", "schema"])
+        #expect(object.keys.sorted() == spec.map(\.key).sorted())
+        for row in spec {
+            let value = try #require(object[row.key] as? NSNumber, "\(row.key)")
+            // JSONSerialization は真偽を CFBoolean の NSNumber で返す
+            let isBool = CFGetTypeID(value) == CFBooleanGetTypeID()
+            switch row.type {
+            case "整数": #expect(!isBool, "\(row.key) は整数")
+            case "真偽": #expect(isBool, "\(row.key) は真偽")
+            default: Issue.record("\(row.key) の型 \(row.type) を知らない")
+            }
+        }
+        // 値の列がバッククォートの整数なら、その値を書く（schema の 1）
+        let schema = try #require(spec.first { $0.key == "schema" })
+        #expect(schema.value == "`\(UIState.currentSchema)`")
         #expect(data.last == UInt8(ascii: "\n"))
     }
 

@@ -66,6 +66,7 @@ python3 docs/porting-notes/check-tickets.py
 - macOS の `/bin/bash` は 3.2。全角文字の直前の変数は `${var}` と書く（`$var（` は `set -u` で落ちる）
 - チケットの逐語コードが `swift format` で落ちるときは整形に合わせ、チケットも直す
 - T-01 の目印（`ModuleMarker.swift`・`TargetMarker.swift`）は、そのモジュールに最初の実ファイルを足す PR で消す
+- SPEC に節を足すときは、PLAN の該当節に表を置き → `make spec` → `SpecDocument` の extension に読み取り口 → 照合のテストは実装を import できる各モジュールのテストに置く（PolicyTests は TestSupport にしか依存しない）。SPEC と PLAN の一致は `SpecExtendedSectionsTests` に足す（issue #18。PLAN §10.3・F-68）
 
 ## 次にやること
 
