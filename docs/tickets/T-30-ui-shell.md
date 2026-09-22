@@ -386,7 +386,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 **`init(model:)`**:
 1. `item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)`
 2. `popover = NSPopover()`、`popover.behavior = .transient`、`popover.animates = false`、
-   `popover.contentViewController = NSHostingController(rootView: PanelView(model: model))`、`popover.contentSize = NSSize(width: Self.panelWidth, height: 1)`（高さは SwiftUI が決める）
+   `popover.contentViewController = NSHostingController(rootView: PanelView(model: model))`、`popover.contentSize = NSSize(width: Self.panelWidth, height: PanelStyle.maxHeight)`（**実機で修正**: 高さ 1 と `frame(maxHeight:)` の組み合わせでは ScrollView が自分の高さを持たず、popover が 1pt に潰れて開けなかった。高さを固定する）
 3. `super.init()`、`popover.delegate = self`
 4. `item.button?.target = self`、`item.button?.action = #selector(toggle(_:))`、`item.button?.setButtonType(.momentaryChange)`
 5. `applyIcon()` を 1 回呼ぶ
@@ -857,8 +857,7 @@ struct PanelView: View {
             .padding(PanelStyle.padding)
             .frame(width: PanelStyle.width, alignment: .leading)
         }
-        .frame(width: PanelStyle.width)
-        .frame(maxHeight: PanelStyle.maxHeight)
+        .frame(width: PanelStyle.width, height: PanelStyle.maxHeight)
     }
 }
 ```
