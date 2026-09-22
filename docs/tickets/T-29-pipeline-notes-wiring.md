@@ -481,8 +481,30 @@ tags:
 | `unknownCode` に常に nil を渡す | `unknownErrorCodeIsShownAsRaw` |
 | Timeline の読み込みで指紋を見ない | `staleTimelineFallsBack` |
 | rawLinkName に nil を渡す（常に基本名） | `sourcesPointToActualRaw` |
-| LinkPlanner に既定タグ入りの tags を渡す | `oneTickFromBWFToVerifiedDaily`（Links に余分な行） |
+| LinkPlanner に既定タグ入りの tags を渡す | `tagLinksUseTheIndex`（索引に `voicedock` が在るので Links に `[[voicedock]]` が増える。結合テストの索引には `voice` / `voicedock` が無く `#tag` になって本文に出ないので、`oneTickFromBWFToVerifiedDaily` では捕まらない） |
 | Vault 索引の TTL を `>` にする | `staleIndexIsRebuilt` |
+| 索引の除外接頭辞を渡さない | `indexIsBuiltAndExcludesRaw` |
+| 復旧の tmp の候補を `hasPrefix` で集める | `rawTmpCandidates` |
+| saveTimeline の失敗で解析を失敗にする | `timelineWriteFailureIsNotFatal` |
+
+### 結果（2026-09-22。コミット後の清潔な状態で 1 項目ずつ壊し、元のファイルに戻した）
+
+| 壊し方 | 落ちたテスト |
+|---|---|
+| ensureRawNote のガードを消す | `missingMarkerIsAGuard`・`missingVaultPausesThenResumes`・`vaultNotConfiguredIsAGuard`・`stoppedWhenRawFails` |
+| Raw の遷移の後の再確認を消す | `vaultLostAfterTransitionFails`（6.1） |
+| Daily の遷移の後の再確認を消す | `vaultLostAfterTransitionFails`（6.2） |
+| rawParts で transcript の読めない Part も載せる | `membersUseTheSharedFunction`・`noMembersStaysTranscribed` |
+| NoteVerifier に渡す期待 SHA を `""` にする | `writesVerifiedRawNote` ほか Raw を保存する 11 本 |
+| Raw の失敗でほかの TRANSCRIBED の Part も FAILED にする | `onlyTheTriggerFails` |
+| raw_saved の inbox の削除を消す | `ceAudioInboxRetainRawSavedReleases` |
+| 解析 JSON を ANALYZED→WRITING の前に読む | `unreadableAnalysisIsWriteFailed` |
+| Daily の expectedKeys に除外 Part を含める | `excludedPartsAreWarnedAndNotListed`・`unknownErrorCodeIsShownAsRaw` |
+| `unknownCode` に常に nil を渡す | `unknownErrorCodeIsShownAsRaw` |
+| Timeline の読み込みで指紋を見ない | `staleTimelineFallsBack` |
+| rawLinkName に nil を渡す | `sourcesPointToActualRaw` |
+| LinkPlanner に既定タグ入りの tags を渡す | `tagLinksUseTheIndex` |
+| Vault 索引の TTL を `>` にする | `staleIndexIsRebuilt`・`ceVaultIndexCacheSeconds` |
 | 索引の除外接頭辞を渡さない | `indexIsBuiltAndExcludesRaw` |
 | 復旧の tmp の候補を `hasPrefix` で集める | `rawTmpCandidates` |
 | saveTimeline の失敗で解析を失敗にする | `timelineWriteFailureIsNotFatal` |
