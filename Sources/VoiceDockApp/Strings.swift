@@ -180,9 +180,9 @@ enum Strings {
 
     // F-66: 今すぐ要約（PLAN §5.4・§8.12 の 1。状態の見出しの小さなボタン）
     static let buttonSummarizeNow = "今すぐ要約"
-    /// 閉じた Session の数（Session は 1 日 1 つなので「日分」）。0 のときは summarizeNowNothing を使う
-    static func summarizeNowStarted(_ days: Int) -> String { String(days) + " 日分を要約します" }
-    static let summarizeNowNothing = "未要約の録音はありません"
+    /// 閉じた Session の数（Session の数。溢れた分の #2 もあるので「日分」ではなく「件」）。0 のときは summarizeNowNothing を使う
+    static func summarizeNowStarted(_ days: Int) -> String { "要約を始めました（" + String(days) + " 件）" }
+    static let summarizeNowNothing = "新しく要約する録音はありません"
 
     // T-32: 要対応と詳細（PLAN §8.12 の 2 と 8）
     static let buttonRunDiagnostics = "診断を実行"

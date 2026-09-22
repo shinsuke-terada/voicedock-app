@@ -8,7 +8,7 @@ extension AppModel {
         case idle
         /// 返事を待っている（ボタンを押せない）
         case running
-        /// 閉じた Session の数（0 = 未要約の録音が無い）
+        /// 閉じた Session の数（0 = 新しく閉じる Session が無い）
         case succeeded(Int)
         /// 行わなかった理由（SummarizeNowFailure.message のまま）
         case failed(String)

@@ -57,7 +57,20 @@ struct AppModelSummarizeNowTests {
         #expect(model.summarizeNowNotice == nil)
     }
 
-    @Test("成功で n > 0 なら「n 日分を要約します」")
+    @Test("通知を出している間に閉じると idle に戻り、通知は消える")
+    func closingWhileShowingNoticeClearsIt() async throws {
+        let fake = Self.makeFake()
+        let model = Self.makeModel(fake)
+        await model.requestSummarizeNow()
+        let reply = try #require(Self.reply(fake.jobs.first))
+        reply(.success(1))
+        #expect(await Self.waitUntil { model.summarizeNow == .succeeded(1) })
+        model.panelDidClose()
+        #expect(model.summarizeNow == .idle)
+        #expect(model.summarizeNowNotice == nil)
+    }
+
+    @Test("成功で n > 0 なら「要約を始めました（n 件）」")
     func successWithDaysShowsCount() async throws {
         let fake = Self.makeFake()
         let model = Self.makeModel(fake)
@@ -65,10 +78,10 @@ struct AppModelSummarizeNowTests {
         let reply = try #require(Self.reply(fake.jobs.first))
         reply(.success(2))
         #expect(await Self.waitUntil { model.summarizeNow == .succeeded(2) })
-        #expect(model.summarizeNowNotice == "2 日分を要約します")
+        #expect(model.summarizeNowNotice == "要約を始めました（2 件）")
     }
 
-    @Test("成功で 0 なら「未要約の録音はありません」（TEST-28）")
+    @Test("成功で 0 なら「新しく要約する録音はありません」（TEST-28）")
     func successWithZeroShowsNothingToDo() async throws {
         let fake = Self.makeFake()
         let model = Self.makeModel(fake)
@@ -76,7 +89,7 @@ struct AppModelSummarizeNowTests {
         let reply = try #require(Self.reply(fake.jobs.first))
         reply(.success(0))
         #expect(await Self.waitUntil { model.summarizeNow == .succeeded(0) })
-        #expect(model.summarizeNowNotice == "未要約の録音はありません")
+        #expect(model.summarizeNowNotice == "新しく要約する録音はありません")
     }
 
     @Test("失敗なら failure.message をそのまま出す")

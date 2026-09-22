@@ -774,7 +774,7 @@ extension AppModel {
 extension AppModel {
     enum SummarizeNowState: Equatable {
         case idle, running
-        case succeeded(Int)   // 閉じた Session の数（0 = 未要約の録音が無い）
+        case succeeded(Int)   // 閉じた Session の数（0 = 新しく閉じる Session が無い）
         case failed(String)   // SummarizeNowFailure.message のまま
     }
     static let summarizeNowNoticeSeconds = 4
@@ -874,8 +874,8 @@ F-66 で足した文言（今すぐ要約。§4.11c）:
 | 名前 | 文言 |
 |---|---|
 | `buttonSummarizeNow` | `今すぐ要約` |
-| `summarizeNowStarted(_:)` | `<n> 日分を要約します` |
-| `summarizeNowNothing` | `未要約の録音はありません` |
+| `summarizeNowStarted(_:)` | `要約を始めました（<n> 件）` |
+| `summarizeNowNothing` | `新しく要約する録音はありません` |
 
 `PauseReason` の表示語（**`StatusTexts.pauseWord(_:)`（VDPipeline。§4.10）に置く**。VDPipeline 側（要対応・DR-09）も同じ語を使うため。`Strings` に写さない）:
 
@@ -1130,11 +1130,12 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `pressEnqueuesOneJob` / 「押したら enqueue に .summarizeNow が 1 回入り、返事を待つ間は running」 | `requestSummarizeNow()` | 仕事 1 件で `.summarizeNow`、`.running`、通知 nil |
-| `successWithDaysShowsCount` / 「成功で n > 0 なら「n 日分を要約します」」 | reply `.success(2)` | `.succeeded(2)`、`2 日分を要約します` |
-| `successWithZeroShowsNothingToDo` / 「成功で 0 なら「未要約の録音はありません」（TEST-28）」 | reply `.success(0)` | `.succeeded(0)`、`未要約の録音はありません` |
+| `successWithDaysShowsCount` / 「成功で n > 0 なら「要約を始めました（n 件）」」 | reply `.success(2)` | `.succeeded(2)`、`要約を始めました（2 件）` |
+| `successWithZeroShowsNothingToDo` / 「成功で 0 なら「新しく要約する録音はありません」（TEST-28）」 | reply `.success(0)` | `.succeeded(0)`、`新しく要約する録音はありません` |
 | `failureShowsMessageVerbatim` / 「失敗なら failure.message をそのまま出す」 | reply `.failure("LLM が未選択")` | `.failed`、`LLM が未選択` |
 | `pressWhileRunningIsIgnored` / 「実行中は二重に入らない（返事の後はもう一度押せる）」 | 3 回押す → 返事 → もう一度 | 仕事 1 件 → 返事の後は 2 件 |
 | `lateReplyAfterCloseIsDropped` / 「閉じた後に届いた返事は捨てる」 | 押す → `panelDidClose()` → reply | `.idle`、通知 nil |
+| `closingWhileShowingNoticeClearsIt` / 「通知を出している間に閉じると idle に戻り、通知は消える」 | 押す → reply `.success(1)` → `panelDidClose()` | `.idle`、通知 nil |
 | `staleReplyAfterReopenIsDropped` / 「閉じて押し直した後に届いた古い返事は捨て、新しい返事だけを出す」 | 押す → 閉じる → 押す → 古い reply → 新しい reply | 古い返事では `.running` のまま、新しい返事で `.succeeded(0)` |
 | `dismissOnlyClearsTheShownNotice` / 「通知は出したときの状態のままなら消え、別の状態を出していたときの消去は効かない」 | `.running` と別の結果で消す → 同じ結果で消す | 前 2 つは変わらず、最後に `.idle` |
 | `noticeSecondsIsFixed` / 「通知を出しておく目安は 4 秒」 | — | 4 |

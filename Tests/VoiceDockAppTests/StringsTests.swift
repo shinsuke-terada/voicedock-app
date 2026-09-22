@@ -74,9 +74,9 @@ struct StringsTests {
         ("deviceFreeLine", Strings.deviceFreeLine("DJIMIC3 4.2 GiB"), "デバイスの空き容量 DJIMIC3 4.2 GiB"),
         // F-66: 今すぐ要約（T-30 §4.12 の F-66 の表）
         ("buttonSummarizeNow", Strings.buttonSummarizeNow, "今すぐ要約"),
-        ("summarizeNowStarted", Strings.summarizeNowStarted(3), "3 日分を要約します"),
-        ("summarizeNowStarted.1", Strings.summarizeNowStarted(1), "1 日分を要約します"),
-        ("summarizeNowNothing", Strings.summarizeNowNothing, "未要約の録音はありません"),
+        ("summarizeNowStarted", Strings.summarizeNowStarted(3), "要約を始めました（3 件）"),
+        ("summarizeNowStarted.1", Strings.summarizeNowStarted(1), "要約を始めました（1 件）"),
+        ("summarizeNowNothing", Strings.summarizeNowNothing, "新しく要約する録音はありません"),
     ]
 
     @Test("文言は §4.12 の表と逐語で一致する", arguments: table.map(\.0))
