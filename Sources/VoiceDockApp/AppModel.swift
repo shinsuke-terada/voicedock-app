@@ -75,6 +75,12 @@ final class AppModel {
     /// working が実行の返事を待っているか（preview から入ったら真。「実行しています…」を出す）
     private(set) var backlogExecuting = false
 
+    // F-66（書くのは AppModel+SummarizeNow と panelDidClose だけ）
+    /// 「今すぐ要約」の実行と結果（画面にだけ在る値）
+    var summarizeNow: SummarizeNowState = .idle
+    /// 今すぐ要約の世代（押すたび・閉じるたびに 1 増やす）。開始時と世代が違う返事は捨てる（DR-09 と同じ形）
+    @ObservationIgnored var summarizeNowGeneration = 0
+
     @ObservationIgnored let services: any AppServices
     /// ModelSlot.llm(id) の項目を引く（T-31）
     @ObservationIgnored let catalog: ModelCatalog
@@ -216,6 +222,9 @@ final class AppModel {
         // 閉じた後に届いた DR-09 の返事は捨てる（receiveProbe が .running のときだけ受け取る）
         probe = .idle
         probeGeneration += 1
+        // 今すぐ要約も同じ（閉じた後に届いた返事は捨て、次に開いたときに古い通知を出さない。F-66）
+        summarizeNow = .idle
+        summarizeNowGeneration += 1
         // 次に開いたときは主画面から（F-65）。「詳細・診断」を出たので状態の詳細も捨てる
         screen = .main
         if detailsExpanded {

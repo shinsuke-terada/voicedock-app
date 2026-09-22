@@ -72,6 +72,11 @@ struct StringsTests {
         ("onboardingProgress", Strings.onboardingProgress(done: 2, total: 4), "2/4"),
         ("statusDetailLine", Strings.statusDetailLine(lastConnected: "A", backlog: "B"), "最終接続 A · B"),
         ("deviceFreeLine", Strings.deviceFreeLine("DJIMIC3 4.2 GiB"), "デバイスの空き容量 DJIMIC3 4.2 GiB"),
+        // F-66: 今すぐ要約（T-30 §4.12 の F-66 の表）
+        ("buttonSummarizeNow", Strings.buttonSummarizeNow, "今すぐ要約"),
+        ("summarizeNowStarted", Strings.summarizeNowStarted(3), "要約を始めました（3 件）"),
+        ("summarizeNowStarted.1", Strings.summarizeNowStarted(1), "要約を始めました（1 件）"),
+        ("summarizeNowNothing", Strings.summarizeNowNothing, "新しく要約する録音はありません"),
     ]
 
     @Test("文言は §4.12 の表と逐語で一致する", arguments: table.map(\.0))
