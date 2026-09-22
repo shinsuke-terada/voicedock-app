@@ -618,6 +618,7 @@ start():   // 設定エラー中は何もしない（pendingStart を立て、�
 tick():   // 待ちは「IngestService からの通知」「パネルからの要求」「30 秒」の早い方。直列に実行
   if 設定エラー状態: return                                          // §6.1。何もしない
   snapshot = await ingest.latestSnapshot()                            // 起動直後は nil（まだ走査していない）
+  manualRequeue                 // パネルの「再試行」の要求があるときだけ requeueFailed(.manual)（下の契機 3）
   groupNewParts
   requeueRecopied                                                     // 契機 4（下記）
   closeIdleSessions             // idle だけで閉じる（§5.6）。続けて、パネルが要求した「今すぐ要約」（summarizeNow）を行う（下記。F-66）
@@ -636,7 +637,7 @@ tick の段（SPEC S13。「段」の列は `TickStage` の case で、宣言順
 
 | # | 段 | 上の擬似コードの行 | 条件 |
 |---|---|---|---|
-| 1 | `manualRequeue` | パネルの「再試行」（`requeueFailed(.manual)`。下の契機 3） | 要求があるときだけ |
+| 1 | `manualRequeue` | manualRequeue | 要求があるときだけ |
 | 2 | `groupNewParts` | groupNewParts | — |
 | 3 | `requeueRecopied` | requeueRecopied | — |
 | 4 | `closeIdleSessions` | closeIdleSessions（今すぐ要約を含む） | — |
@@ -1563,7 +1564,7 @@ linksLines: 値 = [dailyNote（あれば）] + adjacent + tags のうち "[[" �
 読み直して SHA 照合（不一致なら rename しない）→ `rename` → 親ディレクトリを `fsync`（開けない・失敗は無視）→ 保存検証。
 途中で失敗したら tmp を消し、最終ファイルは差し替えない。後片付けの失敗で元の失敗を隠さない（NOTE-14）。実装は `AtomicFile.write(…, verifyReadBack: true)`
 
-**保存検証**（SPEC S12。規則の ID は「#」の列の番号に RN- / DN- を付けたもの。— の欄は規則が無い）（`NoteVerifier`。全部合格してから DB の `*_output_path` / `*_sha256` を書き、その後に RAW_SAVED / SAVED へ遷移。**DB 更新が成功するまで保存済みとみなさない**）
+**保存検証**（`NoteVerifier`。SPEC S12。規則の ID は「#」の列の番号に RN- / DN- を付けたもの。— の欄は規則が無い。全部合格してから DB の `*_output_path` / `*_sha256` を書き、その後に RAW_SAVED / SAVED へ遷移。**DB 更新が成功するまで保存済みとみなさない**）
 
 | # | Raw（RN。voicedock R-n） | Daily（DN。voicedock W-n） |
 |---|---|---|
@@ -2061,8 +2062,8 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
    最終接続、未処理（合計時間と件数）、デバイスの空き容量
    - その下に小さな「今すぐ要約」ボタン（SF Symbol `sparkles`）。押すと `WorkerJob.summarizeNow(reply:)` を入れ（§5.4）、返事を数秒の短い通知にする（閉じた数 n > 0 なら「要約を始めました（n 件）」、0 なら「新しく要約する録音はありません」、失敗は `SummarizeNowFailure.message` のまま）。返事を待つ間は押せない。DR-09 と同じく世代を持ち、閉じた後の返事は捨てる（F-66）
 2. **要対応**（ある時だけ。状態の直下のカード）: §8.11 の項目ごとに説明と操作ボタン（「再試行」= requeue(.manual)、「システム設定を開く」、「Vault を選び直す」など）。主画面には先頭の 2 件と「ほか n 件 ›」（押すと全件の画面）
-3. **はじめに**（未完了の項目がある間だけ最上部に出す）: ① Vault を選ぶ ② Whisper モデルを入手 ③ LLM を選んで入手 ④ ログイン時に起動（オン／「今はしない」のどちらかを選べば完了）
-   ⑤ デバイス名が `NO NAME` なら改名の案内（**アプリは改名しない**。デバイスに書かない。Finder か ディスクユーティリティで行う手順を表示。DEV-10）
+3. **はじめに**（未完了の項目がある間だけ、状態・要対応の下に出す）: 項目（①〜⑤）と完了の条件は下の「はじめに」の項目の表（SPEC S22）のとおり。
+   ⑤ はデバイス名が `NO NAME` のときの改名の案内（**アプリは改名しない**。デバイスに書かない。Finder か ディスクユーティリティで行う手順を表示。DEV-10）
    - ④の「今はしない」は `<HOME>/ui-state.json`（`HomeLayout.uiState`。§2.3）（`{"schema": 1, "loginItemDecided": true}`。`AtomicFile`）に記録する（UserDefaults を使わない。PR-03）
 4. **保存先（Vault）**: フォルダ名の 1 行（押すと「変更…」。`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）
 5. **モデル**: 1 モデル 1 行。Whisper（状態・入手）、LLM（カタログから選ぶ `Picker` を `Menu` の中に。メモリ不足のものは選べない理由付き、「ファイルから読み込む…」も `Menu` の中、進捗バー、キャンセル）

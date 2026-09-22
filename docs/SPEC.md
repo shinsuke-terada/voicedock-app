@@ -387,7 +387,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 
 | # | 段 | 上の擬似コードの行 | 条件 |
 |---|---|---|---|
-| 1 | `manualRequeue` | パネルの「再試行」（`requeueFailed(.manual)`。下の契機 3） | 要求があるときだけ |
+| 1 | `manualRequeue` | manualRequeue | 要求があるときだけ |
 | 2 | `groupNewParts` | groupNewParts | — |
 | 3 | `requeueRecopied` | requeueRecopied | — |
 | 4 | `closeIdleSessions` | closeIdleSessions（今すぐ要約を含む） | — |

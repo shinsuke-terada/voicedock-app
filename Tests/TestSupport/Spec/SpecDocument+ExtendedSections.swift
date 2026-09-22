@@ -87,7 +87,7 @@ extension SpecDocument {
             switch self {
             case .patterns: ["定数", "正規表現"]
             case .whisperArgv: []
-            case .noteRules: ["#", "Raw（RN。voicedock R-n）", "Daily（DN。voicedock W-n）"]
+            case .noteRules: ["#", "Raw（RN。voicedock R-n）"]
             case .tickStages: ["#", "段"]
             case .panelSections: ["#", "節"]
             case .icons: ["状態", "IconState"]
