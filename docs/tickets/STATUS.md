@@ -46,7 +46,7 @@ python3 docs/porting-notes/check-tickets.py
 | T-25 | マージ済み | PR #4 |
 | T-33 | 取り下げ | 2026-09-22、利用者の決定（voicedock からの乗り換えは考慮しない。PLAN §8.13・F-60）。PR #70 は閉じた。E2E-18 も取り下げ（番号は詰めない） |
 | T-45 | マージ済み | PR #10 |
-| F-61 | 作業中 | 2026-09-22、利用者の決定（このアプリが完成したら voicedock は動かさないので共存ガードは不要）。`CoexistenceGuard`・`IngestState.coexistenceBlocked`・`coexistence_blocked`・Worker の保留・StatusLine の分岐を外した。DR-13 は打ち消しの行、E2E-15 は取り下げ（番号は詰めない）。診断は 15 件 ＋ DR-09 = 16 件になる |
+| F-61 | PR（fix/F-61-remove-coexistence） | 2026-09-22、利用者の決定（このアプリが完成したら voicedock は動かさないので共存ガードは不要）。`CoexistenceGuard`・`IngestState.coexistenceBlocked`・`coexistence_blocked`・Worker の保留・StatusLine の分岐を外した。DR-13 は打ち消しの行、E2E-15 は取り下げ（番号は詰めない）。診断は 15 件 ＋ DR-09 = 16 件になる |
 
 ### 利用者と決めたこと
 

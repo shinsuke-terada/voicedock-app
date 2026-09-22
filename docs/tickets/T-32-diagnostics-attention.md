@@ -1133,8 +1133,8 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 ### 5.9 `AttentionTextsTests.swift` / `AppModelDiagnosticsTests.swift`
 
-`AttentionTextsTests`: 15 の項目すべてについて `title` と `detail` が §4.10 の表と逐語で一致すること、`button(_:)` が 6 つの `AttentionAction` それぞれで逐語一致すること、
-`AttentionItem` の全ケースに `title` が在ること（`switch` の網羅で保証。表の件数 15 を 1 本のテストで固定）。
+`AttentionTextsTests`: 14 の項目すべてについて `title` と `detail` が §4.10 の表と逐語で一致すること、`button(_:)` が 6 つの `AttentionAction` それぞれで逐語一致すること、
+`AttentionItem` の全ケースに `title` が在ること（`switch` の網羅で保証。表の件数 14 を 1 本のテストで固定（F-61 で coexistenceBlocked を外した））。
 
 `AppModelDiagnosticsTests`:
 

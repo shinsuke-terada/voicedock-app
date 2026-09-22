@@ -188,7 +188,8 @@ struct WorkerTests {
             await w.configStore.update(
                 { _ in
                     holding.withLock { $0 = true }
-                    gate.wait()
+                    // 上限を付ける（協調スレッドが 1 本しか無い環境でデッドロックせず、10 秒でテストが落ちて終わる）
+                    _ = gate.wait(timeout: .now() + .seconds(10))
                 }, reaperConfObservation: .missing)
         }
         try await waitUntil("設定の actor が塞がる") { holding.withLock { $0 } }
