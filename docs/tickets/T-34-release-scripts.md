@@ -419,6 +419,11 @@ echo "OK: $dmg"
 - **作成中にイメージをマウントしない**（利用者の決定 2026-09-22。PLAN §11.3・F-62）。`hdiutil makehybrid -hfs` で一時フォルダから HFS+ のイメージを直に作り、`hdiutil convert -format UDZO` で圧縮する。`hdiutil create -srcfolder` は内部でイメージを `/Volumes` の下に attach するので使わない（テスト `makeDmgNeverMounts` が `-srcfolder` と `hdiutil attach` の不在を見る）
 - ボリューム名は `VoiceDock`（`-hfs-volume-name`）。実機の DJI Mic 3（`DJIMIC3`）とは別の名前
 - 既存の dmg は `rm -f` で消してから作る。一時フォルダと中間のイメージは `dist/` の中に作り、`trap` で必ず消す
+- **未解決（2026-09-22 の実測。利用者の判断待ち）**: `makehybrid -hfs` は、元に無い `com.apple.FinderInfo`（`00…00 FF FF FF FF 00…`）を**すべてのファイルに付ける**。
+  そのため dmg の中の `.app` と、そこから `ditto` / `cp -R` で取り出した `.app` が、`codesign --verify --deep --strict` で
+  `resource fork, Finder information, or similar detritus not allowed`（`Disallowed xattr com.apple.FinderInfo`）になる（Gatekeeper も同じ理由で拒む恐れがある）。
+  `makehybrid -udf` は署名を壊さない（中でも取り出しても `--strict` が通る）が、`/Applications` への symlink が壊れる（`readlink` が `Unknown error: 10000`）。
+  `-hfs-volume-name` 以外のオプションでは変わらなかった。`make release` の前に方式を決める（候補: UDF で symlink を置かない／`/Volumes` の外の `-mountpoint` に attach して書く／dmg をやめて zip）
 - 背景画像・アイコン配置はしない（v1 は `/Applications` への symlink だけ）
 
 ### 4.10 `Resources/AppIcon.icns`（仮アイコン）の差し替え【利用者が行う】
