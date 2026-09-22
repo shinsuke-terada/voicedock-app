@@ -1,4 +1,4 @@
-// 「詳細」の節（PLAN §8.12 の 8）。診断・LLM の疎通確認・状態の詳細・設定とログ・版。
+// 「詳細」の節（PLAN §8.12 の 8）。診断・LLM の疎通確認・状態の詳細・設定とログ・版・後追い（T-41）。
 import SwiftUI
 import VDPipeline
 
@@ -33,7 +33,7 @@ struct DetailsSection: View {
                 Button(Strings.buttonRevealLogs) { model.revealLogsInFinder() }
                 Button(Strings.buttonReloadConfig) { Task { await model.reloadConfig() } }
                 Text(model.versionLine).foregroundStyle(.secondary)
-                // T-41 が BacklogControls(model: model) を足す
+                BacklogControls(model: model)
             }
         }
     }

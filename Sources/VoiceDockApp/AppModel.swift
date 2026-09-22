@@ -67,6 +67,11 @@ final class AppModel {
     private(set) var enableError: EnableError?
     /// 削除の操作の実行中（ボタンを押せなくする。二度押し対策）
     private(set) var deletionBusy = false
+    // T-41（書くのは下の extension だけ）
+    /// 後追いの 2 つのボタンの状態（PLAN §8.9.9。画面にだけ在る値）
+    private(set) var backlogState: BacklogPanelState = .idle
+    /// working が実行の返事を待っているか（preview から入ったら真。「実行しています…」を出す）
+    private(set) var backlogExecuting = false
 
     @ObservationIgnored let services: any AppServices
     /// ModelSlot.llm(id) の項目を引く（T-31）
@@ -306,5 +311,71 @@ extension AppModel {
         return snapshot.devices.keys.contains {
             DeviceWritability.observe(deviceID: $0, snapshot: snapshot) == .writable
         }
+    }
+}
+
+/// 後追いの 2 つのボタンの状態（PLAN §8.9.9）。
+enum BacklogPanelState: Equatable {
+    case idle
+    /// 計画・実行の返事を待っている
+    case working(BacklogKind)
+    case preview(BacklogKind, BacklogPlan)
+    case done(BacklogKind, BacklogExecution)
+    case failed(BacklogKind, String)
+}
+
+// T-41: 後追い（PLAN §8.9.9）。仕事は Worker の直列ループに 1 件として入れる
+extension AppModel {
+    /// 1 回目の押下。working にして preview の仕事を入れる（working 中は何もしない）
+    func previewBacklog(_ kind: BacklogKind) {
+        if case .working = backlogState { return }
+        backlogExecuting = false
+        backlogState = .working(kind)
+        // reply は Worker の文脈で呼ばれるので MainActor へ移してから状態を変える
+        let action = BacklogAction.preview(reply: { [weak self] result in
+            Task { @MainActor in self?.receive(kind, result) }
+        })
+        enqueueBacklog(kind, action)
+    }
+
+    /// 2 回目の押下（preview の状態からだけ）。working にして execute の仕事を入れる
+    func executeBacklog(_ kind: BacklogKind) {
+        guard case .preview(let current, _) = backlogState, current == kind else { return }
+        backlogExecuting = true
+        backlogState = .working(kind)
+        let action = BacklogAction.execute(reply: { [weak self] result in
+            Task { @MainActor in self?.receive(kind, result) }
+        })
+        enqueueBacklog(kind, action)
+    }
+
+    /// やめる・閉じる。idle に戻す（返事が来る前なら、届いた返事は捨てる）
+    func dismissBacklog() {
+        backlogState = .idle
+        backlogExecuting = false
+    }
+
+    /// preview の返事（backlogState が .working(kind) のときだけ受け取る）
+    func receive(_ kind: BacklogKind, _ result: Result<BacklogPlan, BacklogFailure>) {
+        guard backlogState == .working(kind) else { return }
+        switch result {
+        case .success(let plan): backlogState = .preview(kind, plan)
+        case .failure(let f): backlogState = .failed(kind, f.message)
+        }
+    }
+
+    /// execute の返事（backlogState が .working(kind) のときだけ受け取る）
+    func receive(_ kind: BacklogKind, _ result: Result<BacklogExecution, BacklogFailure>) {
+        guard backlogState == .working(kind) else { return }
+        switch result {
+        case .success(let execution): backlogState = .done(kind, execution)
+        case .failure(let f): backlogState = .failed(kind, f.message)
+        }
+    }
+
+    private func enqueueBacklog(_ kind: BacklogKind, _ action: BacklogAction) {
+        let services = self.services
+        let job: WorkerJob = kind == .backlog ? .backlog(action) : .resolveAbsent(action)
+        Task { await services.enqueue(job) }
     }
 }

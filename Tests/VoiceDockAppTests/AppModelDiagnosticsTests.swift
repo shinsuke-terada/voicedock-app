@@ -76,6 +76,7 @@ struct AppModelDiagnosticsTests {
         let job = try #require(fake.jobs.first)
         switch job {
         case .llmProbe(let reply): reply(Self.probe)
+        case .backlog, .resolveAbsent: Issue.record("DR-09 の仕事ではない")
         }
         #expect(await Self.waitUntil { model.probe == .done([Self.probe]) })
     }
@@ -91,6 +92,7 @@ struct AppModelDiagnosticsTests {
         let old = try #require(fake.jobs.first)
         switch old {
         case .llmProbe(let reply): reply(Self.probe)
+        case .backlog, .resolveAbsent: Issue.record("DR-09 の仕事ではない")
         }
         for _ in 0..<50 { await Task.yield() }
         #expect(model.probe == .running)
@@ -98,6 +100,7 @@ struct AppModelDiagnosticsTests {
         let newer = DiagnosticResult(id: "DR-09", status: .fail, label: "LLM の疎通", details: ["HTTP 500"])
         switch fresh {
         case .llmProbe(let reply): reply(newer)
+        case .backlog, .resolveAbsent: Issue.record("DR-09 の仕事ではない")
         }
         #expect(await Self.waitUntil { model.probe == .done([newer]) })
     }
@@ -119,6 +122,7 @@ struct AppModelDiagnosticsTests {
         let job = try #require(fake.jobs.first)
         switch job {
         case .llmProbe(let reply): reply(Self.probe)
+        case .backlog, .resolveAbsent: Issue.record("DR-09 の仕事ではない")
         }
         for _ in 0..<50 { await Task.yield() }
         #expect(model.probe == .idle)
