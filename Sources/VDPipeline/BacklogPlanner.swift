@@ -112,77 +112,85 @@ struct BacklogPlanner {
         return BacklogPlan(eligible: eligible, skipped: skipped)
     }
 
-    /// 計画の eligible を 1 件ずつ実行する。実行した数（voicedock backlog.py:135-187）
+    /// 計画の eligible を 1 件ずつ実行する。実行した数（voicedock backlog.py:135-187）。
+    /// DEL-19: 1 件ごとに捕捉して残りを続ける（DeletionRequester と同じ形。途中まで書いた数を失わない）
     func executeBacklog(_ plan: BacklogPlan) async throws -> Int {
         let snapshot = await deps.freshSnapshot()
         let ctx = await deps.context(snapshot: snapshot)
         var done = 0
         for pk in plan.eligible {
-            // 計画の後に状態が変わった（DEL-19）
-            guard let part = try deps.store.recording(pk),
-                part.status == .completed || part.status == .sourceDeletePending,
-                part.deleteRequestID == nil, part.sourceDeletedAt == nil,
-                let key = part.sessionKey, let session = try deps.store.session(key)
-            else {
-                deps.logStatusChanged(recordingKey: pk)
-                continue
-            }
-            let parts = try deps.store.recordings(inSession: key)
-            // 式が偽になった（ログなし。voicedock と同じ）
-            guard
-                DeletionPolicy.canDeleteSource(
-                    DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx)
-            else { continue }
-            // ①ID → ②要求ファイル
-            guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: key) else { continue }
-            // ③ COMPLETED か SOURCE_DELETE_PENDING から
             do {
+                // 計画の後に状態が変わった（DEL-19）
+                guard let part = try deps.store.recording(pk),
+                    part.status == .completed || part.status == .sourceDeletePending,
+                    part.deleteRequestID == nil, part.sourceDeletedAt == nil,
+                    let key = part.sessionKey, let session = try deps.store.session(key)
+                else {
+                    deps.logStatusChanged(recordingKey: pk)
+                    continue
+                }
+                let parts = try deps.store.recordings(inSession: key)
+                // 式が偽になった（ログなし。voicedock と同じ）
+                guard
+                    DeletionPolicy.canDeleteSource(
+                        DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx)
+                else { continue }
+                // ①ID → ②要求ファイル
+                guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: key) else { continue }
+                // ③ COMPLETED か SOURCE_DELETE_PENDING から
                 try deps.store.recordPartTransition(partkey: pk, from: part.status, to: .sourceDeleting)
+                deps.log.info(
+                    .deleteRequested,
+                    [(.requestID, .string(id)), (.recordingKey, .string(pk)), (.sessionKey, .string(key))])
+                done += 1
             } catch is TransitionConflict {
                 deps.logStatusChanged(recordingKey: pk)
                 continue
+            } catch {
+                deps.warn(error)
+                continue
             }
-            deps.log.info(
-                .deleteRequested,
-                [(.requestID, .string(id)), (.recordingKey, .string(pk)), (.sessionKey, .string(key))])
-            done += 1
         }
         return done
     }
 
     /// 手動で消した分を完了にする。実行した数（voicedock backlog.py:188-238）。
-    /// source_deleted_at を入れない（VoiceDock が消したのではない。PLAN §8.9.9）。直通の辺を足さない（付録 A.2 の 2 遷移）
+    /// source_deleted_at を入れない（VoiceDock が消したのではない。PLAN §8.9.9）。直通の辺を足さない（付録 A.2 の 2 遷移）。
+    /// DEL-19: 1 件ごとに捕捉して残りを続ける
     func executeResolveAbsent(_ plan: BacklogPlan) async throws -> Int {
         let snapshot = await deps.freshSnapshot()
         var done = 0
         for pk in plan.eligible {
-            // DEL-19
-            guard let part = try deps.store.recording(pk), part.status == .sourceDeletePending else {
-                deps.logStatusChanged(recordingKey: pk)
-                continue
-            }
-            // 実行の時点で「無い」を確かめ直す（在れば完了にしない）
-            guard let s = snapshot, let obs = s.devices[part.deviceID], let rel = part.sourcePath,
-                !obs.relpaths.contains(where: { DeletionPolicy.sameKey($0, rel) })
-            else { continue }
             do {
+                // DEL-19
+                guard let part = try deps.store.recording(pk), part.status == .sourceDeletePending else {
+                    deps.logStatusChanged(recordingKey: pk)
+                    continue
+                }
+                // 実行の時点で「無い」を確かめ直す（在れば完了にしない）
+                guard let s = snapshot, let obs = s.devices[part.deviceID], let rel = part.sourcePath,
+                    !obs.relpaths.contains(where: { DeletionPolicy.sameKey($0, rel) })
+                else { continue }
                 try deps.store.recordPartTransition(
                     partkey: pk, from: .sourceDeletePending, to: .sourceDeleting,
                     detail: DeletionReason.resolveAbsentDetail)
                 try deps.store.recordPartTransition(
                     partkey: pk, from: .sourceDeleting, to: .completed, detail: DeletionReason.alreadyAbsent)
+                // 対応する試行の無い要求・結果を残さない（#160）
+                _ = DeleteQueue.withdrawRequests(partkey: pk, layout: deps.layout)
+                _ = DeleteQueue.withdrawResults(partkey: pk, layout: deps.layout)
+                try deps.store.updateRecording(pk, [.deleteRequestID(nil)])
+                deps.log.info(
+                    .sourceDeleteSkipped,
+                    [(.recordingKey, .string(pk)), (.reason, .string(DeletionReason.alreadyAbsent))])
+                done += 1
             } catch is TransitionConflict {
                 deps.logStatusChanged(recordingKey: pk)
                 continue
+            } catch {
+                deps.warn(error)
+                continue
             }
-            // 対応する試行の無い要求・結果を残さない（#160）
-            _ = DeleteQueue.withdrawRequests(partkey: pk, layout: deps.layout)
-            _ = DeleteQueue.withdrawResults(partkey: pk, layout: deps.layout)
-            try deps.store.updateRecording(pk, [.deleteRequestID(nil)])
-            deps.log.info(
-                .sourceDeleteSkipped,
-                [(.recordingKey, .string(pk)), (.reason, .string(DeletionReason.alreadyAbsent))])
-            done += 1
         }
         return done
     }

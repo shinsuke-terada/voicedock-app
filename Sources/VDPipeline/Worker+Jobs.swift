@@ -16,8 +16,17 @@ extension Worker {
                 }
                 reply(await LLMProbeCheck(ctx: ctx).run())
             case .backlog(let action):
+                // 停止要求が来ていれば実行せずに失敗で返す（.llmProbe と同じ。PLAN §5.4）
+                if ctx.stop.isSet {
+                    Self.replyStopped(job)
+                    continue
+                }
                 await BacklogPlanner(deps: DeletionDependencies(ctx: ctx)).handle(action, kind: .backlog)
             case .resolveAbsent(let action):
+                if ctx.stop.isSet {
+                    Self.replyStopped(job)
+                    continue
+                }
                 await BacklogPlanner(deps: DeletionDependencies(ctx: ctx)).handle(action, kind: .resolveAbsent)
             }
         }

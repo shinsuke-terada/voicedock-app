@@ -36,6 +36,7 @@
 | `Tests/VDPipelineTests/BacklogPlannerTests.swift` | |
 | `Tests/VDPipelineTests/BacklogJobTests.swift` | Worker の仕事として回す |
 | `Tests/VoiceDockAppTests/BacklogTextsTests.swift` | 文言 |
+| `Tests/VoiceDockAppTests/AppModelBacklogTests.swift` | AppModel の `backlogState` の遷移 |
 | `Tests/VoiceDockAppTests/AppModelDiagnosticsTests.swift`（変更） | `WorkerJob` の `switch` 4 か所に `case .backlog, .resolveAbsent: Issue.record("DR-09 の仕事ではない")` を足す（case が増えて網羅でなくなるため。T-32 のテストの中身は変えない） |
 
 ## 4. 仕様
@@ -118,16 +119,18 @@ return BacklogPlan(eligible, skipped)
 ```text
 snapshot = await deps.freshSnapshot(); ctx = await deps.context(snapshot: snapshot); done = 0
 for pk in plan.eligible:
+  do {                                                                                                          // DEL-19: 1 件ごとに捕捉して残りを続ける（DeletionRequester と同じ形）
     guard let part = store.recording(pk), part.status == .completed || part.status == .sourceDeletePending,
           part.deleteRequestID == nil, part.sourceDeletedAt == nil,
           let key = part.sessionKey, let session = store.session(key) else { deps.logStatusChanged(recordingKey: pk); continue }     // 計画の後に状態が変わった（DEL-19）
     parts = store.recordings(inSession: key)
     guard DeletionPolicy.canDeleteSource(DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx) else continue   // 式が偽になった（ログなし。voicedock と同じ）
     guard let id = RequestWriter(deps).write(part: part, sessionKey: key) else continue                        // ①ID → ②要求ファイル
-    do { recordPartTransition(pk, from: part.status, to: .sourceDeleting) }                                     // ③ COMPLETED か SOURCE_DELETE_PENDING から
-    catch is TransitionConflict { deps.logStatusChanged(recordingKey: pk); continue }
+    recordPartTransition(pk, from: part.status, to: .sourceDeleting)                                            // ③ COMPLETED か SOURCE_DELETE_PENDING から
     log.info(.deleteRequested, [(.requestID, id), (.recordingKey, pk), (.sessionKey, key)])
     done += 1
+  } catch is TransitionConflict { deps.logStatusChanged(recordingKey: pk); continue }
+    catch { deps.warn(error); continue }                                                                        // Store の予期しない例外も 1 件で止めない（途中まで書いた数を失わない）
 return done
 ```
 - 回収は T-38 の全件回収が拾う（Session が COMPLETED でも。voicedock では二度と回収されなかった）
@@ -145,17 +148,18 @@ for part in store.recordings(status: .sourceDeletePending):            // starte
 ```text
 snapshot = await deps.freshSnapshot(); done = 0
 for pk in plan.eligible:
+  do {                                                                                                          // DEL-19: 1 件ごとに捕捉して残りを続ける
     guard let part = store.recording(pk), part.status == .sourceDeletePending else { deps.logStatusChanged(recordingKey: pk); continue }   // DEL-19
     guard let s = snapshot, let obs = s.devices[part.deviceID], let rel = part.sourcePath,
-          !obs.relpaths.contains(where: { sameKey($0, rel) }) else continue          // 実行の時点で「無い」を確かめ直す（在れば完了にしない）
-    do {
-        recordPartTransition(pk, from: .sourceDeletePending, to: .sourceDeleting, detail: DeletionReason.resolveAbsentDetail)
-        recordPartTransition(pk, from: .sourceDeleting, to: .completed, detail: DeletionReason.alreadyAbsent)
-    } catch is TransitionConflict { deps.logStatusChanged(recordingKey: pk); continue }
+          !obs.relpaths.contains(where: { sameKey($0, rel) }) else continue          // 実行の時点で「無い」を確かめ直す（デバイスが消えた・snapshot が古い・在るなら完了にしない）
+    recordPartTransition(pk, from: .sourceDeletePending, to: .sourceDeleting, detail: DeletionReason.resolveAbsentDetail)
+    recordPartTransition(pk, from: .sourceDeleting, to: .completed, detail: DeletionReason.alreadyAbsent)
     DeleteQueue.withdrawRequests(partkey: pk, layout); DeleteQueue.withdrawResults(partkey: pk, layout)      // 対応する試行の無い要求・結果を残さない（#160）
     store.updateRecording(pk, [.deleteRequestID(nil)])
     log.info(.sourceDeleteSkipped, [(.recordingKey, pk), (.reason, DeletionReason.alreadyAbsent)])
     done += 1
+  } catch is TransitionConflict { deps.logStatusChanged(recordingKey: pk); continue }
+    catch { deps.warn(error); continue }
 return done
 ```
 - **`source_deleted_at` を入れない**（VoiceDock が消したのではない。不可逆操作の記録に嘘を混ぜない。PLAN §8.9.9）
@@ -187,8 +191,17 @@ case .execute(let reply):
 `Worker+Jobs.swift` の仕事を 1 件ずつ実行する `switch`（T-32 の `stagePendingJobs`）に足す:
 ```swift
     case .backlog(let action):
+        // 停止要求が来ていれば実行せずに失敗で返す（.llmProbe と同じ。PLAN §5.4）
+        if ctx.stop.isSet {
+            Self.replyStopped(job)
+            continue
+        }
         await BacklogPlanner(deps: DeletionDependencies(ctx: ctx)).handle(action, kind: .backlog)
     case .resolveAbsent(let action):
+        if ctx.stop.isSet {
+            Self.replyStopped(job)
+            continue
+        }
         await BacklogPlanner(deps: DeletionDependencies(ctx: ctx)).handle(action, kind: .resolveAbsent)
 ```
 （pendingJobs の段は snapshot の新鮮さによらず毎 tick 行う。新鮮でなければ計画は not_deletable / device_absent になるだけ）
@@ -275,6 +288,7 @@ func dismissBacklog()
 - `previewBacklog` は `backlogExecuting = false`、`executeBacklog` は `backlogExecuting = true` にしてから `.working(kind)` に入れる。`dismissBacklog` は `false` に戻す
 - `receive`: `.success(plan)` → `.preview(kind, plan)`、`.success(execution)` → `.done(kind, execution)`、`.failure(f)` → `.failed(kind, f.message)`
 - 返事が来る前に `dismissBacklog()` されたら、届いた返事は捨てる（`backlogState` が `.working(kind)` のときだけ受け取る）
+- 世代の番号は持たない。`.working` の間は「やめる」「閉じる」のボタンが出ない（§4.5）ので、返事を待っている間に `dismissBacklog()` が呼ばれて押し直され、古い返事を新しい押下の返事として受け取ることは起きない。将来 `dismissBacklog()` を他から呼ぶ（パネルを閉じたときなど）なら、DR-09 の `probeGeneration` と同じ世代が要る
 
 ### 4.5 `BacklogControls.swift` と `DetailsSection.swift`
 
@@ -319,6 +333,7 @@ func dismissBacklog()
 | `executeRequestsAndTransitions` | 実行は ID → 要求 → COMPLETED→SOURCE_DELETING | `handle(.execute(reply:), kind: .backlog)` | `.success(BacklogExecution(plan: [pk] の計画, done: 1))`、要求 1 件（partkey と DB の ID が一致）、Part SOURCE_DELETING、最後の events が `COMPLETED→SOURCE_DELETING`、`delete_requested` のログ |
 | `executeFromPending` | PENDING からは SOURCE_DELETE_PENDING→SOURCE_DELETING | `planIncludesPendingParts` の舞台で execute | events の最後が `SOURCE_DELETE_PENDING→SOURCE_DELETING` |
 | `statusChangeDuringExecutionContinues` | DEL-19 計画の後に状態が変わった Part は status_changed で飛ばし、残りを続ける | 過去分の舞台に 10:00 の COMPLETED の兄弟（デバイスに在り、Raw に載せ `writeRawNote()`。兄弟の relpath を載せるため ingest を `snapshot()` に差し替える）。`plan = planBacklog()`（2 件）→ `store.recordPartTransition(partkey: pk, from: .completed, to: .sourceDeleting)` → `executeBacklog(plan)` | 戻り値 1、兄弟が SOURCE_DELETING で要求が在る、`source_delete_skipped recording_key=<pk> reason=status_changed`（WARNING） |
+| `storeErrorDuringExecutionContinues` | DEL-19 途中の 1 件で Store が例外を投げても残りを続ける（config_warning rule=store） | 過去分の舞台に、別の日の Session の Part を足し status 列を読めない値（`BROKEN`）にする（`store.pool` に生の SQL）。`executeBacklog(BacklogPlan(eligible: [broken, pk], skipped: []))` | 戻り値 1、pk が SOURCE_DELETING で要求が在る、`config_warning rule=store`（WARNING） |
 | `executedPartsAreCollected` | 後追いで SOURCE_DELETING にした Part も全件回収で完了する（voicedock の欠陥を直した） | execute → DELETED の結果 → ingest を `snapshot(generation: 2, relpaths: [])` → `ResultCollector(deps:).collectDeleteResults(reaperScanGeneration: 2)` | Part COMPLETED、`sourceDeletedAt` 在り（Session は COMPLETED のまま） |
 | `resolveAbsentPlansGoneFiles` | 手動で消した分: 新鮮な snapshot にデバイスが在り relpath が無い PENDING が対象 | 手動で消した分の舞台 | `eligible == [pk]` |
 | `resolveAbsentNeedsTheDevice` | デバイスが無い・snapshot が古い・無いなら device_absent（パラメータ化。未接続を「無い」と判定しない） | `snapshot(includeDevice: false)` / completedAt = now − 901 秒 / nil | `skipped == [(pk, device_absent)]` |
@@ -327,6 +342,8 @@ func dismissBacklog()
 | `resolveAbsentCompletesWithoutDeletionTime` | 実行: 2 遷移で COMPLETED、source_deleted_at を入れず、要求・結果を取り下げ ID を外す | 手動で消した分の舞台、`updateRecording(pk, [.deleteRequestID(id)])`、pk の要求ファイルと結果ファイルを置く、`handle(.execute(reply:), kind: .resolveAbsent)` | `done == 1`、COMPLETED、`sourceDeletedAt == nil`、ID nil、最後の 2 本の events の detail が `resolve_absent`・`already_absent`、`requests() == []`、`results() == []`、`source_delete_skipped recording_key=<pk> reason=already_absent`（INFO） |
 | `resolveAbsentStatusChangeContinues` | DEL-19 手動で消した分も状態が変わった Part を飛ばして続ける | PENDING の兄弟（10:00、デバイスに無い）を足す。`plan = planResolveAbsent()`（2 件）→ `store.recordPartTransition(partkey: pk, from: .sourceDeletePending, to: .sourceDeleting)` → `executeResolveAbsent(plan)` | 戻り値 1、兄弟 COMPLETED、`reason=status_changed` |
 | `resolveAbsentRechecksAbsence` | 実行の時点で在ることが分かれば完了にしない | `plan = planResolveAbsent()`（1 件）→ ingest を `snapshot()`（ファイル在り）→ `executeResolveAbsent(plan)` | 0、PENDING のまま |
+| `resolveAbsentRechecksDeviceAndFreshness` | 実行の時点でデバイスが消えた・snapshot が古くなったなら完了にしない（パラメータ化） | `plan = planResolveAbsent()`（1 件）→ ingest を `snapshot(includeDevice: false)` / `snapshot(relpaths: [], completedAt: now − 901 秒)` → `executeResolveAbsent(plan)` | 0、PENDING のまま |
+| `resolveAbsentStoreErrorContinues` | DEL-19 手動で消した分も途中の 1 件で Store が例外を投げても残りを続ける | 手動で消した分の舞台に `storeErrorDuringExecutionContinues` と同じ壊れた Part。`executeResolveAbsent(BacklogPlan(eligible: [broken, pk], skipped: []))` | 戻り値 1、pk COMPLETED、`config_warning rule=store`（WARNING） |
 | `emptyPendingPlansNothing` | PENDING が無ければ空（TEST-28） | 過去分の舞台 | `planResolveAbsent()` の eligible・skipped が空 |
 
 ### 6.2 `Tests/VDPipelineTests/BacklogJobTests.swift`（`@Suite("後追いの仕事", .serialized)`）
@@ -336,6 +353,20 @@ func dismissBacklog()
 | `workerRunsBacklogPreviewAsAJob` | Worker の直列ループで 1 件の仕事として実行する | `PipelineWorld`（T-18）、`worker.enqueue(.backlog(.preview(reply:)))`（reply を記録）→ `tick()` | reply が 1 回だけ呼ばれ `.success(BacklogPlan(eligible: [], skipped: []))`（COMPLETED の Session が無い） |
 | `workerRunsResolveAbsentAsAJob` | 手動で消した分も同じ | `.resolveAbsent(.preview(reply:))` → tick | 1 回、`.success` |
 | `jobRunsOnceAcrossTicks` | 仕事は 1 回だけ実行される | enqueue → tick → tick | reply が 1 回 |
+| `stopRequestedRepliesWithFailure` | 停止要求が立っていれば後追いを実行せず、失敗で 1 回返事をする（パラメータ化: 過去分・手動で消した分） | enqueue → 停止を立てた `StopFlag` の ctx で `stagePendingJobs` | reply が 1 回、`.failure(BacklogFailure(message: "終了中のため実行しませんでした"))` |
+| `configErrorRepliesWithFailure` | 設定エラー中の tick は後追いに失敗で 1 回返事をする | 設定ファイルを `{` にして load → `.backlog(.preview)` と `.resolveAbsent(.execute)` を enqueue → tick → tick | それぞれ 1 回、`.failure(BacklogFailure(message: "設定が読めていません"))`、`pendingJobs` が空 |
+| `requestStopRepliesWithFailure` | 停止要求の前後に入れた後追いにも失敗で 1 回返事をする | `.backlog(.execute)` を enqueue → `requestStop()` → `.resolveAbsent(.preview)` を enqueue → tick | どちらも 1 回、`.failure(BacklogFailure(message: "終了中のため実行しませんでした"))` |
+
+### 6.4 `Tests/VoiceDockAppTests/AppModelBacklogTests.swift`（`@MainActor @Suite("AppModel+Backlog")`）
+
+`FakeServices`（T-30）の `jobs` に入った仕事の reply を手で呼ぶ。
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `previewExecuteDone` | 過去分: preview → execute → done の順に移り、閉じると idle | `previewBacklog(.backlog)` → 仕事の reply に `.success(plan)` → `executeBacklog(.backlog)` → reply に `.success(execution)` → `dismissBacklog()` | `.working(.backlog)`（`backlogExecuting` 偽）→ `.preview(.backlog, plan)` → `.working(.backlog)`（真）→ `.done(.backlog, execution)` → `.idle`（偽） |
+| `resolveAbsentFailure` | 手動で消した分は resolveAbsent の仕事を入れ、失敗は failed | `previewBacklog(.resolveAbsent)` → reply に `.failure(BacklogFailure(message: "x"))` | 仕事が `.resolveAbsent(.preview)`、`.failed(.resolveAbsent, "x")` |
+| `mismatchedRepliesAreDropped` | kind が違う返事と、閉じた後の返事は捨てる | `previewBacklog(.backlog)` → `receive(.resolveAbsent, …)`（計画・実行）→ `dismissBacklog()` → `receive(.backlog, .success(plan))` | `.working(.backlog)` のまま → `.idle` のまま |
+| `pressesOutsideTheirStateAreIgnored` | working の間の押下と、preview でないときの実行は何もしない（空の状態から。TEST-28） | idle で `executeBacklog(.backlog)` → `previewBacklog(.backlog)` → `previewBacklog(.resolveAbsent)` | idle のまま → `.working(.backlog)`、仕事は 1 件だけ |
 
 ### 6.3 `Tests/VoiceDockAppTests/BacklogTextsTests.swift`（`@Suite("BacklogTexts")`）
 
@@ -368,6 +399,11 @@ func dismissBacklog()
 | 12 | executeResolveAbsent の実行時の確かめ直しを消す | `resolveAbsentRechecksAbsence` |
 | 13 | Worker+Jobs の `.backlog` の case を空にする | `workerRunsBacklogPreviewAsAJob` |
 | 14 | BacklogTexts の理由の並びを入れ替える | `backlogPreviewLines` |
+| 15 | Worker+Jobs の `.backlog` / `.resolveAbsent` の停止要求の確認を消す | `stopRequestedRepliesWithFailure` |
+| 16 | executeBacklog の `catch { deps.warn(error); continue }` を外し、例外を呼び手へ投げる | `storeErrorDuringExecutionContinues` |
+| 17 | executeResolveAbsent の同じ捕捉を外す | `resolveAbsentStoreErrorContinues` |
+| 18 | executeResolveAbsent の確かめ直しから `let obs = s.devices[…]` を外す（デバイスが無くても完了にする） | `resolveAbsentRechecksDeviceAndFreshness` |
+| 19 | executeResolveAbsent の snapshot を `freshSnapshot()` でなく `ingest.latestSnapshot()` にする | `resolveAbsentRechecksDeviceAndFreshness` |
 
 ## 8. 受け入れ条件
 
@@ -394,3 +430,5 @@ func dismissBacklog()
 3. `BacklogAction` の形を確定: `.preview(reply: @Sendable (Result<BacklogPlan, BacklogFailure>) -> Void)`・`.execute(reply: @Sendable (Result<BacklogExecution, BacklogFailure>) -> Void)`。`WorkerJob` の `.backlog` / `.resolveAbsent` の 2 ケースは T-41 が足す（T-32 は `.llmProbe` だけを宣言する）。**これらの型の定義は本チケット（`Sources/VDPipeline/BacklogPlanner.swift`）に置く** → 00-api-map §11 に反映済み（整合修正 M-3）
 4. PLAN §8.9.9 に「結果待ち（`delete_request_id` が在る。復旧で SOURCE_DELETE_PENDING に戻った Part は ID を持ったまま）は `not_deletable`（二重に要求しない）」「`source_path` が無い PENDING は `still_present`（無いと確かめられない）」「実行の時点で計画を立て直す」を足す
 5. 00-api-map §11 の `BacklogFailure` は `public enum BacklogFailure: Error, Equatable, Sendable`（case が書かれていない）だが、本チケットは `public struct BacklogFailure: Error, Equatable, Sendable { public let message: String; public init(message: String) }`（`ErrorText.describe(error)` の 1 行をパネルに出す）。実装は本チケットに合わせた。地図の行を `struct … { message: String }` に直し、`BacklogKind`（`public enum BacklogKind: String, Sendable, Equatable { case backlog, resolveAbsent }`）も同じ行に足す提案（T-41 の実装で発見）
+6. （記録。T-32 の既存の動き。別で扱う）ライセンスで止まった tick（`deps.license.allowsProcessing()` が偽）は `pauses.trip(.license)` で戻り、pendingJobs に返事をしない。後追いも DR-09 も、ライセンスが戻るまでパネルが「対象を調べています…」のままになる。設定エラー中と同じく `replyUnavailable` 相当で返すかは T-32 の側で決める
+7. （記録）実行は計画を立て直す（§4.1 `handle`）ので、プレビューの後に新しく条件を満たした Part があれば、プレビューで見せた件数より多く実行しうる。実行した計画は結果に載せ（`BacklogExecution.plan`）、結果の 1 行は立て直した計画の件数で出す。プレビューの計画に限るかは PLAN §8.9.9 で決める

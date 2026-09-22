@@ -6,9 +6,9 @@ import Testing
 import VDContract
 import VDCore
 import VDDevice
-import VDStore
 
 @testable import VDPipeline
+@testable import VDStore
 
 /// reply を順に覚える（何回呼ばれたかを見る）。
 final class BacklogReplies<Value: Sendable & Equatable>: Sendable {
@@ -61,6 +61,20 @@ struct BacklogPlannerTests {
 
     static func events(_ scene: DeletionScene, _ pk: String) throws -> [EventRow] {
         try scene.store.events(entity: .recording, key: pk)
+    }
+
+    /// 別の日の Session に Part を足し、status 列を読めない値にする（store.recording が StoreError を投げる）。
+    /// pk の Session の Part 一覧には現れないので、残りの Part の処理には響かない
+    static func addBrokenPart(_ scene: DeletionScene) throws -> String {
+        let other = scene.deviceID + ":20260911"
+        try scene.addSession(key: other, dayDate: "2026-09-11")
+        let broken = try scene.addPart(
+            fileName: "TX00_MIC001_20260911_090000_orig.wav", folder: "TX_MIC001_20260911_090000",
+            startedAt: "2026-09-11T09:00:00+09:00", status: .completed, sessionKey: other, inRawNote: false)
+        try scene.store.pool.write {
+            try $0.execute(sql: "UPDATE recordings SET status = ? WHERE partkey = ?", arguments: ["BROKEN", broken])
+        }
+        return broken
     }
 
     static func logged(_ scene: DeletionScene, _ body: String, level: String) -> Bool {
@@ -240,6 +254,19 @@ struct BacklogPlannerTests {
                 f.scene, "source_delete_skipped recording_key=" + f.pk + " reason=status_changed", level: "WARNING"))
     }
 
+    @Test("DEL-19 途中の 1 件で Store が例外を投げても残りを続ける（config_warning rule=store）")
+    func storeErrorDuringExecutionContinues() async throws {
+        let f = try Self.backlogStage()
+        let broken = try Self.addBrokenPart(f.scene)
+        let plan = BacklogPlan(eligible: [broken, f.pk], skipped: [])
+        #expect(try await f.planner.executeBacklog(plan) == 1)
+        let row = try Self.part(f.scene, f.pk)
+        #expect(row.status == .sourceDeleting)
+        let id = try #require(row.deleteRequestID)
+        #expect(f.scene.requests().map(\.lastPathComponent) == [id + ".json"])
+        #expect(f.scene.logLines.contains { $0.contains(" WARNING ") && $0.contains(" config_warning rule=store ") })
+    }
+
     @Test("後追いで SOURCE_DELETING にした Part も全件回収で完了する（voicedock の欠陥を直した）")
     func executedPartsAreCollected() async throws {
         let f = try Self.backlogStage()
@@ -359,6 +386,33 @@ struct BacklogPlannerTests {
         await f.ingest.setSnapshot(f.scene.snapshot())
         #expect(try await f.planner.executeResolveAbsent(plan) == 0)
         #expect(try Self.part(f.scene, f.pk).status == .sourceDeletePending)
+    }
+
+    @Test(
+        "実行の時点でデバイスが消えた・snapshot が古くなったなら完了にしない（パラメータ化）",
+        arguments: ["noDevice", "stale"])
+    func resolveAbsentRechecksDeviceAndFreshness(_ observation: String) async throws {
+        let f = try Self.absentStage()
+        let plan = try await f.planner.planResolveAbsent()
+        #expect(plan.eligible == [f.pk])
+        switch observation {
+        case "noDevice": await f.ingest.setSnapshot(f.scene.snapshot(includeDevice: false))
+        default:
+            await f.ingest.setSnapshot(
+                f.scene.snapshot(relpaths: [], completedAt: DeletionScene.now.adding(seconds: -901)))
+        }
+        #expect(try await f.planner.executeResolveAbsent(plan) == 0)
+        #expect(try Self.part(f.scene, f.pk).status == .sourceDeletePending)
+    }
+
+    @Test("DEL-19 手動で消した分も途中の 1 件で Store が例外を投げても残りを続ける")
+    func resolveAbsentStoreErrorContinues() async throws {
+        let f = try Self.absentStage()
+        let broken = try Self.addBrokenPart(f.scene)
+        let plan = BacklogPlan(eligible: [broken, f.pk], skipped: [])
+        #expect(try await f.planner.executeResolveAbsent(plan) == 1)
+        #expect(try Self.part(f.scene, f.pk).status == .completed)
+        #expect(f.scene.logLines.contains { $0.contains(" WARNING ") && $0.contains(" config_warning rule=store ") })
     }
 
     @Test("PENDING が無ければ空（TEST-28）")
