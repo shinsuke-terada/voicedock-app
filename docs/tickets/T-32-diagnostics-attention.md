@@ -1194,12 +1194,12 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 | # | 壊し方（1 か所） | 落ちるべきテスト |
 |---|---|---|
-| 1 | `Diagnostics.checks` の DR-14 を先頭に移す | `orderIsTheSpecOrder`・`alwaysRunsAfterFatalFail` |
-| 2 | DR-03 の `fatal` を真にする | `fatalSetIsTheSpecSet`・`nonFatalFailDoesNotBlock` |
+| 1 | `Diagnostics.checks` の DR-14 を先頭に移す | `orderIsTheSpecOrder`（`alwaysRunsAfterFatalFail` は偽の `checks` を使うので落ちない。実装で確かめた） |
+| 2 | DR-03 の `fatal` を真にする | `fatalSetIsTheSpecSet`（`nonFatalFailDoesNotBlock` は偽の `checks` を使うので落ちない） |
 | 3 | `run` の `blocked` の判定から `check.always` を外す | `alwaysRunsAfterFatalFail` |
 | 4 | `run` の `always` の `ctx.config != nil` を外す | `alwaysSkipsWhenConfigIsNil` |
 | 5 | `counts` が skip を `passed` に数える | `summaryDoesNotCountSkip` |
-| 6 | DR-02 で `ReadOnlyStore.open` の前にファイルの有無を見ない | `dr02NoticeWhenMissing`・`diagnosticsDoNotCreateTheDatabase` |
+| 6 | DR-02 で `ReadOnlyStore.open` の前にファイルの有無を見ない | `dr02NoticeWhenMissing`（`ReadOnlyStore.open` 自身が無いファイルを開かないので `diagnosticsDoNotCreateTheDatabase` は落ちない） |
 | 7 | DR-04 の VAD 無効の分岐を消す（常に fail） | `dr04NoticeWhenVADDisabled` |
 | 8 | DR-05 の SHA の照合を size の照合だけにする | `dr05FailSHA` |
 | 9 | DR-05 が `ModelVerificationCache` を見ない | `dr05UsesTheVerificationCache` |
@@ -1207,11 +1207,11 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | 11 | DR-10 で `access(W_OK)` を見ない | `dr10FailWhenNotWritable` |
 | 12 | DR-11 の「0 台なら skip」を消す | `dr11SkipWhenNoDevice` |
 | 13 | DR-12 を fail にする | `dr12NoticeForEachStatus` |
-| 14 | DR-15 を fail にする／自動で消す | `dr15NoticeWithCountAndBytes`・`diagnosticsChangeNothingInHome` |
+| 14 | DR-15 を fail にする | `dr15NoticeWithCountAndBytes`（「自動で消す」は `Diagnostics/` に削除の API を書くことになり PT-17 が落とす。`diagnosticsChangeNothingInHome` は fail にしただけでは落ちない） |
 | 15 | DR-17 で `teamID == nil` を ok にする | `dr17NoticeForAdhoc` |
-| 16 | DR-14 が `LockDisplay.lines` を使わず自前で 3 行を組み立てる | `dr14AlwaysNotice`（配列の一致） |
-| 17 | `DisabledLockObserver.observe` が `.configured` を返す | `disabledObserverIsAlwaysDisabled`、`dr14AlwaysNotice` |
-| 17 | `stagePendingJobs` が `stop.isSet` のとき返事を返さない | `stopRepliesWithSkip`（時間切れ） |
+| 16 | DR-14 が `LockDisplay.lines` を使わず自前で 3 行を組み立てる（語が 1 つでもずれたもの。完全に同じ文字列の写しは区別できない） | `dr14AlwaysNotice`（配列の一致） |
+| 17a | `DisabledLockObserver.observe` が `.configured` を返す | `disabledObserverIsAlwaysDisabled`（`LockDisplay.lines` は readiness を出さないので `dr14AlwaysNotice` は落ちない） |
+| 17b | `stagePendingJobs` が `stop.isSet` のとき返事を返さない | `stopRepliesWithSkip`（(a) の返事が空） |
 | 18 | `stagePendingJobs` が `pendingJobs` を空にしない | `jobRunsOnceAcrossTicks` |
 | 19 | `LLMProbeCheck` が `llama.stop()` を呼ぶ | `probeDoesNotStopTheServer` |
 | 20 | `isIngestSilent` から `!scanning` を外す | `notSilentWhileScanning` |
@@ -1224,8 +1224,8 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | 27 | `sessionNotes` に `.failed` の注記を入れる | `sessionFailedHasNoNote` |
 | 28 | `partNotes` に `.skipped: "（無音）"` を足す | `skippedHasNoSilenceNote` |
 | 29 | `failedParts(limit:)` の 20 を 100 にする | `failedPartsCapAt20` |
-| 30 | `FailedPart` に `row.errorCode?.rawValue` を渡す（生の文字列を捨てる） | `failedPartKeepsUnknownCodeString` |
-| 30 | `InboxScan.counts` が取り残しを pending から除かない | `leftoversAreExcludedFromPending`・`inboxSplitsPendingAndLeftover` |
+| 30a | `FailedPart` に `row.errorCode?.rawValue` を渡す（生の文字列を捨てる） | `failedPartKeepsUnknownCodeString` |
+| 30b | `InboxScan.counts` が取り残しを pending から除かない | `leftoversAreExcludedFromPending`・`inboxSplitsPendingAndLeftover` |
 | 31 | `StatusReporter` が DB を `Store` で開く | `allZeroWithoutDatabase`（DB ができる）と PT-17 |
 | 32 | デバイスの行で `readOnly == nil` を `読み書き可能` にする | `deviceLineWordsFollowObservation` |
 | 33 | 0 台を `不明` にする | `deviceLineWhenZeroDevices` |
