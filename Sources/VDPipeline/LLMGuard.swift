@@ -8,6 +8,12 @@ struct LLMTarget: Equatable, Sendable {
     let modelID: String
 }
 
+/// ガードの判定（ctx.pauses に積む前）。blocked の理由は 1 件以上。
+enum LLMGuardVerdict: Equatable, Sendable {
+    case pass(LLMTarget)
+    case blocked([PauseReason])
+}
+
 /// 解析の前のガード。独立した理由はすべて ctx.pauses に積む。
 struct LLMGuard {
     let ctx: TickContext
@@ -17,21 +23,22 @@ struct LLMGuard {
 
     /// ガードを通れば起動に使うモデル。通らなければ理由をすべて ctx.pauses.trip して nil（遷移しない）。
     func evaluate() -> LLMTarget? {
-        let r = inspect()
-        guard r.reasons.isEmpty else {
-            for reason in r.reasons { ctx.pauses.trip(reason) }
+        switch inspect() {
+        case .pass(let target):
+            return target
+        case .blocked(let reasons):
+            for reason in reasons { ctx.pauses.trip(reason) }
             return nil
         }
-        return r.target
     }
 
-    /// ガードの判定だけ（ctx.pauses に積まない）。理由が空のときだけ target が在る。
+    /// ガードの判定だけ（ctx.pauses に積まない）。
     /// evaluate と、今すぐ要約の事前確認（SummarizeNow。PLAN §5.4・F-66）が使う。
-    func inspect() -> (target: LLMTarget?, reasons: [PauseReason]) {
+    func inspect() -> LLMGuardVerdict {
         let layout = ctx.deps.layout
         // 1. 未選択なら以降を見ない
         guard let id = ctx.config.llm.modelID else {
-            return (nil, [.llmNotSelected])
+            return .blocked([.llmNotSelected])
         }
         // 2.
         var reasons: [PauseReason] = []
@@ -64,8 +71,8 @@ struct LLMGuard {
         if !FileProbe.isExecutableFile(ctx.deps.paths.llamaServer) {
             reasons.append(.llamaServerMissing)
         }
-        // 7.
-        guard reasons.isEmpty, let model else { return (nil, reasons) }
-        return (LLMTarget(model: model, modelID: id), [])
+        // 7. model が nil なら 5. で llm_model_missing が入っているので、blocked の理由は空にならない
+        if reasons.isEmpty, let model { return .pass(LLMTarget(model: model, modelID: id)) }
+        return .blocked(reasons)
     }
 }

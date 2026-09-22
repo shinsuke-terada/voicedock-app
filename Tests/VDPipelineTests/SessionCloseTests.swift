@@ -1,4 +1,4 @@
-// OPEN を閉じるテスト（T-22 §6.2。PLAN §5.6。voicedock session.py:276-313）。
+// OPEN を閉じるテスト（T-22 §6.2。PLAN §5.6。voicedock session.py:276-313。F-66 で stale_day を廃止）。
 import Foundation
 import TestSupport
 import Testing
@@ -27,13 +27,33 @@ struct SessionCloseTests {
         try SessionSteps(ctx: try await w.context()).closeIdleSessions()
     }
 
-    @Test("日付が過去の OPEN は stale_day で閉じる")
-    func pastDayBecomesReady() async throws {
-        let w = try await Self.groupedWorld()
-        w.clock.advance(seconds: 86_400)
+    @Test("日付が変わっただけでは閉じない（F-66。idle 前の過去の日の OPEN）")
+    func dayChangeAloneDoesNotClose() async throws {
+        let w = try await Self.groupedWorld { $0.session.idleCloseSeconds = 7200 }
+        // 2026-09-12T23:00 → 2026-09-13T00:00:01（日付は過去、無通信は 3601 秒）
+        w.clock.advance(seconds: 3601)
+        try await Self.close(w)
+        #expect(try w.session(Self.key).status == .open)
+        #expect(!(try w.sessionEvents(Self.key).contains { $0.toStatus == "READY" }))
+    }
+
+    @Test("過去の日の OPEN も無通信 idleCloseSeconds で閉じる（detail idle）")
+    func pastDayClosesByIdle() async throws {
+        let w = try await Self.groupedWorld { $0.session.idleCloseSeconds = 7200 }
+        w.clock.advance(seconds: 7200)
         try await Self.close(w)
         #expect(try w.session(Self.key).status == .ready)
-        #expect(try w.sessionEvents(Self.key).last?.detail == "stale_day")
+        #expect(try w.sessionEvents(Self.key).last?.detail == "idle")
+    }
+
+    @Test("起動時（start）に、無通信を過ぎた過去の OPEN は idle で閉じる")
+    func startClosesIdlePastDay() async throws {
+        let w = try await Self.groupedWorld()
+        // アプリが夜の間止まっていて、翌朝に起動した
+        w.clock.advance(seconds: 36_000)
+        await w.worker().start()
+        #expect(try w.session(Self.key).status == .ready)
+        #expect(try w.sessionEvents(Self.key).last?.detail == "idle")
     }
 
     @Test("当日でも idle 経過で閉じる")

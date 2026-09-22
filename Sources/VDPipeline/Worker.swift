@@ -38,7 +38,8 @@ public actor Worker {
     /// Vault 索引と、それを作った Vault のパス（tick をまたいで持つ。voicedock 変更 BK-3）
     var vaultIndex: VaultIndex? = nil
     var vaultIndexPath: String? = nil
-    /// パネルが要求した仕事（入れた順。stagePendingJobs が毎 tick 空にして回す。PLAN §8.11）
+    /// パネルが要求した仕事（入れた順。PLAN §8.11）。`.summarizeNow` は closeIdleSessions の段の stageSummarizeNow が取り出し、
+    /// ほかは stagePendingJobs が毎 tick 空にして回す（その段に残っていた `.summarizeNow` は列の先頭へ戻す。F-66）
     var pendingJobs: [WorkerJob] = []
     /// reaper の後に始まった走査の generation（PLAN §8.9.6。起動直後は 0。reaper は実行中ずっと reaper.lock を持つので、
     /// アプリが落ちて reaper だけが残っていても起動後の最初の走査はその後になる）
@@ -82,7 +83,7 @@ public actor Worker {
         await performStart(delayed: false)
     }
 
-    /// 復旧 → 閉じる → inbox の孤児（遅れた start では行わない）→ requeue(.startup)。
+    /// 復旧 → 閉じる（idle が経った OPEN。F-66 で stale_day は廃止）→ inbox の孤児（遅れた start では行わない）→ requeue(.startup)。
     func performStart(delayed: Bool) async {
         guard let config = await deps.config.current() else {
             pendingStart = true

@@ -26,14 +26,16 @@ extension Worker {
 
     /// 入れた順に 1 回ずつ実行する。先に列を空にしてから回す（実行中に入った仕事は次の tick）。
     /// snapshot の新鮮さによらず毎 tick 行う（T-18 §4.8 の並び）。
+    /// `.summarizeNow` は実行せず、ループの後で列の先頭へ戻す（入れた順を保つ。F-66）。
     func stagePendingJobs(_ ctx: TickContext) async {
         let jobs = pendingJobs
         pendingJobs = []
+        var deferred: [WorkerJob] = []
         for job in jobs {
             switch job {
             case .summarizeNow:
                 // closeIdleSessions の段より後に入った分。次の tick のその段で行う（同じ tick の要約に間に合わせるため）
-                pendingJobs.append(job)
+                deferred.append(job)
             case .llmProbe(let reply):
                 // 停止要求が来ていても返事は必ず返す（.skip で返す）
                 if ctx.stop.isSet {
@@ -56,6 +58,13 @@ extension Worker {
                 await BacklogPlanner(deps: DeletionDependencies(ctx: ctx)).handle(action, kind: .resolveAbsent)
             }
         }
+        // ループの途中の await（LLMProbeCheck・BacklogPlanner）の間に停止要求が来たとき。requestStop は列に無い
+        // deferred を知らないので、ここで返さないと返事が永久に返らない（前後どちらの位置の .summarizeNow も）
+        if ctx.stop.isSet {
+            for job in deferred { Self.replyStopped(job) }
+            return
+        }
+        pendingJobs = deferred + pendingJobs
     }
 
     /// 実行せずに `.fail` で返事をする（設定エラー中の tick。PLAN §6.1）。

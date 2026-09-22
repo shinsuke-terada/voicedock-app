@@ -28,7 +28,7 @@ extension Worker {
         }
     }
 
-    /// 日付が過ぎたか idle が経った OPEN を閉じ、続けてパネルの今すぐ要約（F-66）を行う（同じ tick で要約まで進める）。
+    /// idle が経った OPEN を閉じ（F-66: 日付では閉じない）、続けてパネルの今すぐ要約（F-66）を行う（同じ tick で要約まで進める）。
     func stageCloseIdleSessions(_ ctx: TickContext) {
         do {
             try SessionSteps(ctx: ctx).closeIdleSessions()

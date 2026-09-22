@@ -414,7 +414,7 @@ var stoppingLogged = false
 2. `log.info(.serviceStarted, [(.version, .string(AppVersion.string)), (.schema, .of((try? deps.store.appliedMigrations)?.last))])`
 3. `zone = Worker.zone(for: config)`、`ctx = makeContext(config, zone, snapshot: nil)`
 4. 復旧: `try Recovery(store: deps.store, layout: deps.layout, log: deps.log, config: config, zone: zone).run()`。投げたら `warnStore(e, rule: "recovery")`
-5. `try SessionSteps(ctx: ctx).closeIdleSessions()`（= PLAN の closeStaleOpenSessions。日付が過去の OPEN は `stale_day` で閉じる。本体は T-22）。投げたら `warnStore(e)`
+5. `try SessionSteps(ctx: ctx).closeIdleSessions()`（= PLAN の closeStaleOpenSessions。日付が過去の OPEN は `stale_day` で閉じる。本体は T-22。F-66 で `stale_day` は廃止し、idle だけで閉じる）。投げたら `warnStore(e)`
 6. `delayed == false` のときだけ inbox の孤児の削除:
    `n = try await BlockingIO.run { try InboxMaintenance(store: s, layout: l, log: g).removeOrphans() }`。`n > 0` なら `log.info(.inboxOrphansRemoved, [(.count, .of(n))])`。投げたら `warnStore(e)`
    - **遅れて行う start（pendingStart）では行わない**: そのときは IngestService が既に動いていて、コピー中の `.partial` と登録前の `_orig.wav` を孤児と見分けられない（次の起動で消える）

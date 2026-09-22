@@ -35,12 +35,12 @@ struct PipelineWorld {
 
     var deps: WorkerDependencies { deps() }
 
-    /// sleeper・license・ingest を差し替えた依存（省略したものは世界のもの）。
+    /// sleeper・license・ingest・chat を差し替えた依存（省略したものは世界のもの）。
     func deps(
         sleeper: (any Sleeper)? = nil, license: any LicenseGate = AlwaysAllowLicenseGate(),
-        ingest: (any IngestPort)? = nil
+        ingest: (any IngestPort)? = nil, chat: (any ChatTransport)? = nil
     ) -> WorkerDependencies {
-        let chat = self.chat
+        let chat: any ChatTransport = chat ?? self.chat
         return WorkerDependencies(
             layout: layout, paths: paths, store: store, config: configStore, ingest: ingest ?? self.ingest,
             runner: ProcessRunner(), llama: llm, chatTransportFactory: { _, _ in chat }, clock: clock,

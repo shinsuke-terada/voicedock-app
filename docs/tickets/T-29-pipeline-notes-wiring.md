@@ -369,7 +369,7 @@ extension Recovery {
 
 **期待 1**:
 - Part A: RAW_SAVED。events の to の列 `[DISCOVERED, NORMALIZING, NORMALIZED, TRANSCRIBING, TRANSCRIBED, RAW_WRITING, RAW_SAVED]`。inbox と `staging/<slug>/audio16k.wav` が無く、`transcripts/parts/<slug>.json` が在る
-- Session `DJIMIC3:20260829`: SAVED。events の to の列 `[OPEN, OPEN, READY, MERGING, MERGED, ANALYZING, ANALYZED, WRITING, SAVED]`（2 つ目の OPEN は detail = Part A の鍵、READY は `stale_day`）。
+- Session `DJIMIC3:20260829`: SAVED。events の to の列 `[OPEN, OPEN, READY, MERGING, MERGED, ANALYZING, ANALYZED, WRITING, SAVED]`（2 つ目の OPEN は detail = Part A の鍵、READY は `stale_day`。F-66 で `stale_day` は廃止し、テストは今すぐ要約を入れて READY を `summarize_now` にした）。
   `raw_output_path == "Daily/Voice/Raw/20260829/2026-08-29 raw.md"`、`output_path == "Daily/Voice/Wiki/20260829/2026-08-29 Voice.md"`、`analysis_path == "analysis/<slug>.json"`、title `開発の一日`、regenerated_count 0
 - Raw の中身 == 期待 R1、Daily の中身 == 期待 D1。`NoteVerifier.verify` を DB の SHA と鍵で呼び直して両方とも `passed`
 - chat: 1 回、system == `prompts.analyze(最終形, custom: "")`、user == `おはようございます。\n今日の予定を確認します。`。`llm.ensureCalls.count == 1`、`llm.stopCount == 1`

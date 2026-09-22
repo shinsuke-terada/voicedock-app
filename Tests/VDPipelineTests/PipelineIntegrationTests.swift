@@ -24,7 +24,8 @@ struct PipelineIntegrationTests {
     static let summaryHeading = "## Summary"
 
     /// 時計は 2026-08-30T07:00:12+09:00。whisper・LLM・Vault を置き、Part A を登録する。
-    static func world(marker: Bool = true) async throws -> (PipelineWorld, Worker, String) {
+    /// summarizeNow なら今すぐ要約を 1 件入れておく（F-66: 日付が変わっただけでは閉じないので、最初の tick で閉じるため）。
+    static func world(marker: Bool = true, summarizeNow: Bool = true) async throws -> (PipelineWorld, Worker, String) {
         let w = try await PipelineWorld.make(
             chat: FakeChatTransport(
                 responses: [.content(PipelineFixtures.analysis), .content(PipelineFixtures.analysis)]))
@@ -35,6 +36,7 @@ struct PipelineIntegrationTests {
         let pk = try w.registerPart(relpath: a.relpath, startedAt: a.startedAt, seconds: a.seconds)
         let worker = w.worker()
         await worker.start()
+        if summarizeNow { await worker.enqueue(.summarizeNow(reply: { _ in })) }
         return (w, worker, pk)
     }
 
@@ -55,7 +57,7 @@ struct PipelineIntegrationTests {
         }
     }
 
-    @Test("1 tick で BWF → 16 kHz → 文字起こし → Raw → 統合 → 解析 → Daily")
+    @Test("今すぐ要約の 1 tick で BWF → 16 kHz → 文字起こし → Raw → 統合 → 解析 → Daily")
     func oneTickFromBWFToVerifiedDaily() async throws {
         let (w, worker, pk) = try await Self.world()
         await worker.tick()
@@ -87,7 +89,7 @@ struct PipelineIntegrationTests {
             w.sink.lines.contains {
                 $0.hasSuffix(" source_delete_skipped session_key=" + Self.key + " reason=delete_source_audio_disabled")
             })
-        #expect(events.count > 2 && events[1].detail == pk && events[2].detail == "stale_day")
+        #expect(events.count > 2 && events[1].detail == pk && events[2].detail == "summarize_now")
         #expect(s.rawOutputPath == Self.rawRel)
         #expect(s.outputPath == Self.dailyRel)
         #expect(s.analysisPath == "analysis/" + Self.slug + ".json")
@@ -179,6 +181,26 @@ struct PipelineIntegrationTests {
         #expect(daily.contains("\n### 07:12–07:42\n"))
         #expect(
             try Self.verify(w, Self.dailyRel, kind: .daily, sha: s.outputSHA256, keys: [Self.partkeyA, Self.partkeyB]))
+    }
+
+    @Test("過去の日の Session は日付では閉じず、無通信 1800 秒で閉じて Daily まで進む")
+    func pastDaySessionClosesByIdleOnly() async throws {
+        let (w, worker, pk) = try await Self.world(summarizeNow: false)
+        await worker.tick()
+        // 2026-08-29 の Session を 2026-08-30 に作った。Part は終端まで進むが Session は OPEN のまま
+        #expect(try w.part(pk).status == .rawSaved)
+        #expect(try w.session(Self.key).status == .open)
+        w.clock.advance(seconds: 1799)
+        await worker.tick()
+        #expect(try w.session(Self.key).status == .open)
+        w.clock.advance(seconds: 1)
+        await worker.tick()
+        let s = try w.session(Self.key)
+        #expect(s.status == .completed)
+        #expect(try w.part(pk).status == .completed)
+        let ready = try #require(try w.sessionEvents(Self.key).first { $0.toStatus == "READY" })
+        #expect(ready.detail == "idle")
+        #expect(try w.noteText(Self.dailyRel).contains("\nparts: 1\n"))
     }
 
     @Test("Vault の目印が無い間は待ち、戻れば続きから進む")
