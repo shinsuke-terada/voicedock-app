@@ -91,7 +91,9 @@ struct LiveServices: AppServices {
         s.ingestState = await context.ingest.state()
         s.ingestActivity = await context.ingest.activity()
         s.device = await context.ingest.latestSnapshot()
-        s.lastConnectedAt = (s.device?.devices.isEmpty == false) ? s.device?.completedAt : lastConnectedAt
+        // 起動直後（メモリに前回の値が無い）は ui-state.json の値を使う（F-70。再起動で「まだありません」に戻さない）
+        s.lastConnectedAt = LastConnected.resolve(
+            device: s.device, carried: lastConnectedAt, persisted: s.uiState.lastConnectedAt)
         s.renameCandidates = OnboardingEvaluator.renameCandidates(s.device)
         // T-40: 3 行の個別表示（式は LockObserving.display の 1 か所。書き直さない）
         if let c = config {

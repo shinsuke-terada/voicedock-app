@@ -16,7 +16,7 @@ struct AppSnapshot: Equatable, Sendable {
     var ingestState: IngestState = .idle
     var ingestActivity: IngestActivity = .idle
     var device: DeviceSnapshot? = nil
-    /// devices が空でない snapshot を最後に見た時刻（AppModel が覚える。起動で忘れる）
+    /// devices が空でない snapshot を最後に見た時刻（AppModel が覚え、ui-state.json に残す。F-70）
     var lastConnectedAt: Instant? = nil
     var worker: WorkerStatus = WorkerStatus(activity: .idle, paused: [])
     /// BacklogCounts は VDPipeline（StatusReport.swift。状態の詳細と同じ型。T-32）

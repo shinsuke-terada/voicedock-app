@@ -80,6 +80,12 @@ final class AppModel {
     var summarizeNow: SummarizeNowState = .idle
     /// 今すぐ要約の世代（押すたび・閉じるたびに 1 増やす）。開始時と世代が違う返事は捨てる（DR-09 と同じ形）
     @ObservationIgnored var summarizeNowGeneration = 0
+    /// この起動で最後に ui-state.json に書こうとした最終接続（F-70。失敗しても同じ値を書き直さない。
+    /// 「今はしない」の記録もこの値を使い、読み直す前の古い値で戻さない）
+    @ObservationIgnored var lastConnectedWritten: Instant?
+    /// この起動で loginItemDecided = true を書いたか（F-70。重なった refresh の古い ui-state で「今はしない」を消さない。
+    /// 書くのは AppModel+LoginItem の markLoginItemDecided だけ）
+    @ObservationIgnored var loginItemDecidedWritten = false
 
     @ObservationIgnored let services: any AppServices
     /// ModelSlot.llm(id) の項目を引く（T-31）
@@ -194,6 +200,27 @@ final class AppModel {
         if (iconState, showsTrash) != before { iconContinuation?.yield(()) }
         // 挿し直しの案内は、読み書きできるデバイスを観測したら消す（PLAN §8.9.8 の 5）
         if deletionNotice != nil, Self.observesWritableDevice(snapshot.device) { deletionNotice = nil }
+        persistLastConnected()
+    }
+
+    /// 最終接続を ui-state.json に残す（F-70。再起動で「まだありません」に戻さない）。
+    /// この起動で最後に書こうとした値（無ければファイルの値）と違うときだけ書く。
+    /// 接続中は観測時刻が 60 秒以上動いたら、切れたら最後の値を 1 回だけ書く（LastConnected.valueToSave）。
+    /// 書けなくても表示は変えない（「今はしない」の uiStateSaveFailed とは別。次の値で書き直す）。
+    private func persistLastConnected() {
+        let written = lastConnectedWritten ?? snapshot.uiState.lastConnectedAt
+        let connected = snapshot.device?.devices.isEmpty == false
+        guard
+            let at = LastConnected.valueToSave(
+                current: snapshot.lastConnectedAt, connected: connected, written: written)
+        else { return }
+        lastConnectedWritten = at
+        var state = snapshot.uiState
+        state.lastConnectedAt = at
+        // refresh が重なり、この read が「今はしない」を書く前のファイルを読んでいても、それを消さない
+        state.loginItemDecided = state.loginItemDecided || loginItemDecidedWritten
+        // 次の read までの間に「今はしない」を書いても、書いた最終接続を古い値で上書きしない
+        if services.saveUIState(state) { snapshot.uiState = state }
     }
 
     /// 状態の詳細を差し込む（AppModel+Diagnostics が使う。snapshot を書くのはこのファイルだけ）

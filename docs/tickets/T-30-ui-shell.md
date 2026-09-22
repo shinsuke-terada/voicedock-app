@@ -5,6 +5,11 @@
 
 > （F-66 の今すぐ要約のボタンを足した。2026-09-23、利用者の決定）状態の見出し（`StatusSection`）の文言の下に、小さな「今すぐ要約」のボタン（SF Symbol `sparkles`）と返事の短い通知を置く。押すと `services.enqueue(.summarizeNow(reply:))`（`WorkerJob.summarizeNow`。PLAN §5.4）。口は `AppModel+SummarizeNow.swift`（§4.11c）、文言は §4.12 の F-66 の表、テストは §5.8、証明は §6 の 26〜28。要約の契機は、最後の録音から `idleCloseSeconds` たった自動の要約と、この手動の要約の 2 つだけ。
 
+> （F-70・issue #105 で最終接続を永続させた。2026-09-23、利用者の承認）「最終接続」はメモリにだけ持っていたので再起動で「まだありません」に戻った。時刻を `<HOME>/ui-state.json` の `lastConnectedAt` に残す（T-31 §4.3 の注記）。
+> `LiveServices.read` の手順 5 は `s.lastConnectedAt = LastConnected.resolve(device: s.device, carried: lastConnectedAt, persisted: s.uiState.lastConnectedAt)`（接続中は snapshot の時刻、無ければメモリの前回の値、それも無ければファイルの値）。
+> 書くのは `AppModel.refresh` の終わりの `persistLastConnected()`（この起動で最後に書こうとした値 `lastConnectedWritten`、無ければファイルの値と違うときだけ。時計が戻った値も書く。接続中は 60 秒以上動いたときだけ、切れたら最後の値を 1 回だけ。`LastConnected.valueToSave`）。refresh が重なっても古い read の値で戻さないよう、`persistLastConnected` は `loginItemDecidedWritten` と OR を取り、`markLoginItemDecided` は `lastConnectedWritten` を使う。表示の文言（`StatusLine.lastConnected`）は変えない。§11 の 2 は F-70 で解決した。
+> テストは `LastConnectedTests`・`AppModelLastConnectedTests`（重なりは `FakeServices.holdNextReads` で read を止めて作る）・`AppModelTests.liveReadRestoresLastConnected`（`bootWithoutDatabaseShowsZero` の組み立ては `AppModelTests.liveServices(_:)` に切り出した）。
+
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`CoexistenceGuard(...)` の注入・`StatusLine` の最優先の分岐・`Strings.statusCoexistenceBlocked`・`coexistenceWinsOverEverything` は外した。以下の本文の共存ガードの記述は記録として残す。
 
 | 項目 | 内容 |
@@ -504,7 +509,7 @@ struct LiveServices: AppServices {
    - `s.timeZone = c.timeZone`、`s.deletionEnabled = c.cleanup.deleteSourceAudio`
    - `s.vaultPath = c.vault.path`、`s.vault = VaultCheck.evaluate(path: c.vault.path, marker: c.vault.marker)`
 4. `s.ingestState = await context.ingest.state()`、`s.ingestActivity = await context.ingest.activity()`、`s.device = await context.ingest.latestSnapshot()`
-5. `s.lastConnectedAt = (s.device?.devices.isEmpty == false) ? s.device?.completedAt : lastConnectedAt`
+5. `s.lastConnectedAt = (s.device?.devices.isEmpty == false) ? s.device?.completedAt : lastConnectedAt`（F-70 で `LastConnected.resolve(device:carried:persisted:)` に替え、メモリに無ければ `ui-state.json` の値を使う。冒頭の注記）
 6. `s.worker = await context.worker.status()`
 7. `if let ro = ReadOnlyStore.open(url: context.layout.database), let b = try? ro.backlog() { s.backlog = BacklogCounts(count: b.count, seconds: b.seconds, unknownDuration: b.unknownDuration) }`（開けない・投げたら `.empty` のまま。**DB が無ければ全 0**。PLAN §8.12）
 8. `return s`
@@ -1236,7 +1241,7 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 ## 11. 仕様の問題（PLAN に直したいこと）
 
 1. **（反映済み）§8.15 の「起動に失敗したとき」**: PLAN §8.15 に既にある。本チケットは「`NSAlert` を 1 枚出して終了する」（パネルを出さない）
-2. **§8.12 の「最終接続」の出どころが決まっていない**: snapshot は最新の 1 つしか持たず、接続の履歴を残す場所が無い。本チケットは「AppModel が `devices` が空でない snapshot を見た時刻を覚える（起動で忘れる）」とした。DB の `recordings.started_at` を使う案もあるが、取り込みが 0 件の接続を拾えない
+2. **（F-70 で解決。`ui-state.json` の `lastConnectedAt`）§8.12 の「最終接続」の出どころが決まっていない**: snapshot は最新の 1 つしか持たず、接続の履歴を残す場所が無い。本チケットは「AppModel が `devices` が空でない snapshot を見た時刻を覚える（起動で忘れる）」とした。DB の `recordings.started_at` を使う案もあるが、取り込みが 0 件の接続を拾えない
 3. **§8.12 の `trash` の「並べて常時表示」の実現手段が決まっていない**: `NSStatusItem` を 2 つにすると他アプリの項目が間に入る。本チケットは 1 枚の画像に合成する方式にした
 4. **§8.15 の「アイドル時の CPU は 0 に近く保つ」と、パネルの 1 行の鮮度の両立**: 本チケットは「パネルが開いている間だけ 1 秒、閉じていれば 30 秒＋走査の通知」とした。PLAN に周期を明記したい
 5. **`requestStop()` で tick を中断したとき `ActivityBoard` が `.idle` に戻らない**（T-18 §4.8）。プロセスが終わるので実害は無いが、「終了の 10 秒」と `.suddenTerminationDisabled` の関係を PLAN §8.15 に 1 行書きたい

@@ -24,9 +24,13 @@ extension AppModel {
     }
 
     /// <HOME>/ui-state.json に loginItemDecided を記録する（書けなければ uiStateSaveFailed）。
+    /// 最終接続はこの起動で最後に書こうとした値を使う（refresh が重なって snapshot が古くても戻さない。F-70）。
     private func markLoginItemDecided() async {
         var st = snapshot.uiState
         st.loginItemDecided = true
-        uiStateSaveFailed = !services.saveUIState(st)
+        st.lastConnectedAt = lastConnectedWritten ?? st.lastConnectedAt
+        let saved = services.saveUIState(st)
+        uiStateSaveFailed = !saved
+        if saved { loginItemDecidedWritten = true }
     }
 }

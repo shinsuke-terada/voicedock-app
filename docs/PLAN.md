@@ -205,7 +205,7 @@ bash 3.2 互換、C ランチャ（ただし「responsible process を保つに�
 ├── state/processed.log              # reaper のリプレイ防止（reaper だけが書く。1 行 1 request_id）
 ├── state/reaper.lock                # reaper の実行中ロック（flock。§2.1）
 ├── run/llama-api-key                # llama-server の起動ごとの API キー（0600。起動のたびに書き直す。§8.5）
-├── ui-state.json                    # パネルの状態（「はじめに」のログイン項目の選択など。§8.12）
+├── ui-state.json                    # パネルの状態（「はじめに」のログイン項目の選択・最終接続。§8.12。F-70）
 ├── bin/voicedock-reaper, bin/reaper.conf   # **既定では存在しない**（ロック 2-A）
 ├── models/whisper/, models/vad/, models/llm/, models/.<file>.resume, models/<kind>/.<file>.part
 └── logs/app.log(.1), logs/reaper.log(.1)
@@ -2060,11 +2060,18 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
 
 1. **状態**: 1 行の文言（例「待機中」「DJIMIC3 から取り込み中 3/12 — コピーが終われば抜いて大丈夫です」「文字起こし中 07:12 の録音」「要約中 2026-08-29」）、
    最終接続、未処理（合計時間と件数）、デバイスの空き容量
+   - **最終接続**（F-70）: デバイスを観測している間は「接続中（<名前>、…）」（名前はバイト順）。観測していなければ、`devices` が空でない snapshot を最後に見た時刻（snapshot の `completedAt`）を「yyyy-MM-dd HH:mm」、一度も見ていなければ「まだありません」。
+     時刻は `<HOME>/ui-state.json` の `lastConnectedAt`（epoch ミリ秒の整数。`AtomicFile`）に残し、**再起動の後も**出す（起動直後の、メモリに値が無い間だけファイルの値を使う）。
+     書くのは AppModel で、この起動で最後に書こうとした値（無ければファイルの値）と**違う**ときだけ（時計が戻って小さくなった値も書く。等しい値は書き直さない）。接続中は観測時刻がその値から 60 秒以上（前後どちらへでも）動いたときだけ、切れたら最後に見た時刻を 1 回だけ書く（走査のたびには書かない）。書けなくても表示は変えず、同じ値を書き直し続けない。
+     refresh が重なって古い `ui-state.json` を読んだ read が後から終わっても、この起動で書いた `loginItemDecided = true` と最終接続を古い値で戻さない（AppModel が書いた値を覚え、書くたびに合わせる）。
+     DB（取り込みの時刻）からは導かない（新しい録音が無かった接続を拾えない）
    - その下に小さな「今すぐ要約」ボタン（SF Symbol `sparkles`）。押すと `WorkerJob.summarizeNow(reply:)` を入れ（§5.4）、返事を数秒の短い通知にする（閉じた数 n > 0 なら「要約を始めました（n 件）」、0 なら「新しく要約する録音はありません」、失敗は `SummarizeNowFailure.message` のまま）。返事を待つ間は押せない。DR-09 と同じく世代を持ち、閉じた後の返事は捨てる（F-66）
 2. **要対応**（ある時だけ。状態の直下のカード）: §8.11 の項目ごとに説明と操作ボタン（「再試行」= requeue(.manual)、「システム設定を開く」、「Vault を選び直す」など）。主画面には先頭の 2 件と「ほか n 件 ›」（押すと全件の画面）
 3. **はじめに**（未完了の項目がある間だけ、状態・要対応の下に出す）: 項目（①〜⑤）と完了の条件は下の「はじめに」の項目の表（SPEC S22）のとおり。
    ⑤ はデバイス名が `NO NAME` のときの改名の案内（**アプリは改名しない**。デバイスに書かない。Finder か ディスクユーティリティで行う手順を表示。DEV-10）
-   - ④の「今はしない」は `<HOME>/ui-state.json`（`HomeLayout.uiState`。§2.3）（`{"schema": 1, "loginItemDecided": true}`。`AtomicFile`）に記録する（UserDefaults を使わない。PR-03）
+   - ④の「今はしない」は `<HOME>/ui-state.json`（`HomeLayout.uiState`。§2.3）（`{"schema": 1, "loginItemDecided": true}`。`AtomicFile`）に記録する（UserDefaults を使わない。PR-03）。
+     同じファイルに 1 の最終接続 `lastConnectedAt`（整数。一度も観測していなければキーを書かない）を持つ（F-70。schema は 1 のまま）。
+     読むときは、無い・壊れた・`schema` が 1 でないファイルは既定、未知のキーは無視、`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にする（「今はしない」を失わない）
 4. **保存先（Vault）**: フォルダ名の 1 行（押すと「変更…」。`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）
 5. **モデル**: 1 モデル 1 行。Whisper（状態・入手）、LLM（カタログから選ぶ `Picker` を `Menu` の中に。メモリ不足のものは選べない理由付き、「ファイルから読み込む…」も `Menu` の中、進捗バー、キャンセル）
 6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）。状態の見出しの ⚙ から開く「設定」の画面に置く（「はじめに」の④が未完了の間は「はじめに」のカードにも置く）
@@ -2096,12 +2103,13 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
 | ④ | ログイン時に起動する | `loginItem` | ログイン項目が有効、または「今はしない」を選んだ（`loginItemDecided`） |
 | ⑤ | デバイスの名前を変える | `deviceName` | 完了にしない（改名の要るデバイス（`NO NAME`）が在る間だけ出す。DEV-10） |
 
-`<HOME>/ui-state.json` の鍵（SPEC S23。この 2 つだけを書く。読むときは `schema` が 1 でなければ既定値）:
+`<HOME>/ui-state.json` の鍵（SPEC S23。この 3 つだけを書き、値の列が「任意」の鍵は値があるときだけ書く。読むときは `schema` が 1 でなければ既定値、未知の鍵は無視、任意の鍵が無い・型が違うときはそれだけを既定にする）:
 
 | 鍵 | 型 | 値 |
 |---|---|---|
 | `schema` | 整数 | `1` |
 | `loginItemDecided` | 真偽 | 「ログイン時に起動」をオンにしたか「今はしない」を選んだら `true`（既定 `false`） |
+| `lastConnectedAt` | 整数 | 任意。デバイスを最後に観測した時刻（epoch ミリ秒。1 の最終接続。一度も観測していなければ書かない。0 以下は無いものとして読む。F-70） |
 
 **状態の詳細**（voicedock `status.py` 相当。DB が無ければ全 0。DB を作らない）:
 - Part / Session の状態別件数（enum の全値を 0 件も含めて出す。Part の表示順は宣言順だが SKIPPED を FAILED の前に置く）。注記は**エンティティごとの辞書**で持ち、Part の FAILED にだけ「次回接続時に再試行」を付ける
@@ -3205,3 +3213,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-66 | 欠 | §5.3・§5.4・§5.6・付録 A.2・付録 D | （2026-09-23 に利用者が決定）今すぐ要約を足し、0:00 の自動要約（`stale_day`）を廃止した。Session を閉じる契機は、無通信 `idleCloseSeconds` の `idle`（自動。日付が過去の OPEN も同じ規則で、起動時の `closeIdleSessions` も同じ）と、パネルの今すぐ要約（手動）の 2 つだけ（X-37）。今すぐ要約は `WorkerJob.summarizeNow(reply:)` を `closeIdleSessions` の段の終わりで行い、LLM のガードを積まずに判定して当たれば何も閉じずに失敗、通れば押した時点の OPEN を日付を問わず `OPEN→READY`（detail `summarize_now`）にして閉じた数を返す。要約は同じ tick の `processReadySessions` が進め、その後に届いた同じ日の録音は既存の再オープン（§5.6）で要約し直す。辺・ログのイベント・設定キーは増やさない。パネルのボタンと `AppServices` の口はパネルの作り直しの後に足す |
 | F-67 | 誤 | §8.1・§8.9.5 | （2026-09-23。issue #97。F-64 のレビューで判明）`DeviceReader.scan` は `lstat` の失敗を errno によらず黙って飛ばしていたので、`complete == true` でも一覧が欠けることがあり、F-64 の自動完了（一覧に無い RAW_SAVED を完了にする）の根拠として弱かった → `lstat` が `ENOENT` 以外で失敗した項目があれば `complete = false`（`readdir` の途中の失敗は従来どおり偽）。`ENOENT`（列挙から `lstat` までの間に消えた）は飛ばして偽にしない。深さの上限の外は列挙も `lstat` もせず、偽にもしない（上限の外の録音は Part にならず、削除にも F-64 にも関わらない。`maxScanDepth` を下げる前に取り込んだ Part だけは完了しうるが消さない側）。偽のデバイスは従来どおり `devices` に載せず `unavailable`（`not_listable`）。取り込みは続け、前回の snapshot の一覧は持ち越さない（一時的な失敗は次の走査で戻る）。`notListableErrno` は規則 5 の errno だけ。`DeviceReader` の `lstat` は internal の `init(lstat:)` で差し替えられる（テストが失敗を注入する。公開 API は増やさない）。理由語・ログの語・設定キーは増やさない |
 | F-68 | 欠 | §4.1・§4.4・§5.4・§8.4・§8.7・§8.12・§10.3 | （2026-09-23。issue #18。利用者が任せた）SPEC 同期を広げた。PLAN に表を置き（§4.1・§4.4 の名前の正規表現、§5.4 の tick の段、§8.12 の節と画面・はじめにの項目・ui-state.json の鍵。§8.12 のアイコンの表には `IconState` の列を足した）、`tools/spec/make-spec.py` が SPEC の S10（名前の正規表現）・S11（whisper-cli の argv。§8.4 の `text` フェンスをそのまま）・S12（保存検証 RN / DN。§8.7 の表）・S13（tick の段）・S20（パネルの節と画面）・S21（アイコン）・S22（はじめに）・S23（ui-state.json）に写す。付録 B.2 の理由語は既存の S8 の列から読む。照合のテストは実装を import できる各モジュールのテストに置き（PolicyTests は TestSupport にしか依存しない。Package.swift は変えない）、`SpecDocument` の読み取り口は extension で足した（00-api-map §15）。RN / DN はテストの表示名の先頭に ` / ` で ID を並べてよい（§10.3）。S20 は F-65 の後のカード型に合わせ、T-30 の案の「チケット」の列をやめて主画面での出し方と `PanelScreen` の case を持つ。要対応（§8.11）・状態の詳細・reaper の終了コードとイベント・削除の有効化と無効化の段は、PLAN が散文か実装に列挙できる列が無いので足していない（T-32・T-37・T-40 に理由を書いた） |
+| F-70 | 誤 | §2.3・§8.12 | （2026-09-23。issue #105。利用者との実機の動作確認で判明）パネルの「最終接続」を AppModel のメモリにだけ持っていたので、アプリを再起動すると「まだありません」に戻った → デバイスを最後に観測した時刻を `<HOME>/ui-state.json` の `lastConnectedAt`（epoch ミリ秒の整数。一度も観測していなければキーを書かない）に残し、起動直後の（メモリに値が無い）`read` はその値を使う（`LastConnected.resolve`）。書くのは AppModel の `refresh` で、この起動で最後に書こうとした値（無ければファイルの値）と違うときだけ（時計が戻った値も書く。差は桁あふれでトラップさせない）、接続中は観測時刻が 60 秒以上動いたときだけ、切れたら最後に見た時刻を 1 回だけ（`LastConnected.valueToSave`）。refresh が重なっても、この起動で書いた `loginItemDecided = true` と最終接続を古い read の値で戻さない（書くたびに AppModel が覚えた値と合わせる）。書けなくても表示は変えず、同じ値を書き直し続けない（「今はしない」の `uiStateSaveFailed` とは別）。`schema` は 1 のまま（足した鍵は任意で、F-70 より前の版の読み手は未知の鍵として無視する）。`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にし、`loginItemDecided` を失わない。DB の取り込みの時刻から導く案は、新しい録音が無かった接続を拾えないので採らない。表示の文言は変えない |

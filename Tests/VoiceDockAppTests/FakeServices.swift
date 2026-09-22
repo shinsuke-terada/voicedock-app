@@ -17,6 +17,9 @@ final class FakeServices: AppServices {
         var reloadCount = 0
         var scanCount = 0
         var lastConnectedSeen: [Instant?] = []
+        /// 0 より大きければ、次の read をその数だけ止める（観測とファイルを読んだ後、返す前。F-70 の重なりのテスト）
+        var holdReads = 0
+        var readGates: [AsyncStream<Void>.Continuation] = []
         var continuations: [AsyncStream<Void>.Continuation] = []
         // T-31
         var config = AppConfig.defaults(timeZone: "UTC")
@@ -62,9 +65,14 @@ final class FakeServices: AppServices {
     }
 
     private let state: Mutex<State>
+    /// 与えたら ui-state.json を本物のファイルで持つ（F-70 の再起動のテスト）。
+    /// read は LiveServices と同じく、ファイルを読んで uiState に入れ、最終接続を LastConnected.resolve で決める。
+    /// saveUIState は savedStates に記録した上で、saveResult が真ならファイルにも書く
+    private let uiStore: UIStateStore?
 
-    init(_ snapshot: AppSnapshot) {
+    init(_ snapshot: AppSnapshot, uiStore: UIStateStore? = nil) {
         state = Mutex(State(snapshot: snapshot))
+        self.uiStore = uiStore
     }
 
     func set(_ snapshot: AppSnapshot) { state.withLock { $0.snapshot = snapshot } }
@@ -88,9 +96,39 @@ final class FakeServices: AppServices {
     }
 
     func read(lastConnectedAt: Instant?) async -> AppSnapshot {
-        state.withLock {
-            $0.lastConnectedSeen.append(lastConnectedAt)
-            return $0.snapshot
+        var (s, hold) = state.withLock { st -> (AppSnapshot, Bool) in
+            st.lastConnectedSeen.append(lastConnectedAt)
+            let hold = st.holdReads > 0
+            if hold { st.holdReads -= 1 }
+            return (st.snapshot, hold)
+        }
+        if let uiStore {
+            s.uiState = uiStore.load()
+            s.lastConnectedAt = LastConnected.resolve(
+                device: s.device, carried: lastConnectedAt, persisted: s.uiState.lastConnectedAt)
+        }
+        if hold {
+            let (gate, continuation) = AsyncStream.makeStream(of: Void.self)
+            state.withLock { $0.readGates.append(continuation) }
+            var it = gate.makeAsyncIterator()
+            _ = await it.next()
+        }
+        return s
+    }
+
+    /// 次の n 回の read を止める（読んだ値は止める前に決まる）
+    func holdNextReads(_ n: Int) { state.withLock { $0.holdReads = n } }
+    /// 止まっている read の数
+    var heldReadCount: Int { state.withLock { $0.readGates.count } }
+    /// 止まっている read をすべて返す
+    func releaseReads() {
+        let gates = state.withLock { st -> [AsyncStream<Void>.Continuation] in
+            defer { st.readGates = [] }
+            return st.readGates
+        }
+        for g in gates {
+            g.yield(())
+            g.finish()
         }
     }
 
@@ -215,10 +253,12 @@ final class FakeServices: AppServices {
     func openSystemSettingsLoginItems() { state.withLock { $0.openSettingsCount += 1 } }
 
     func saveUIState(_ ui: UIState) -> Bool {
-        state.withLock {
+        let ok = state.withLock {
             $0.savedStates.append(ui)
             return $0.saveResult
         }
+        guard ok, let uiStore else { return ok }
+        return uiStore.save(ui)
     }
 
     // MARK: T-32 の差し替えと記録
