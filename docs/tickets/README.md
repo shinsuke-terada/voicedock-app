@@ -99,9 +99,9 @@ VoiceDock for Mac の実装タスクごとの詳細仕様。**誰が実装して
 | [T-30](T-30-ui-shell.md) | UI: メニューバーとパネル・AppModel | 7 | T-29 |
 | [T-31](T-31-ui-onboarding.md) | UI: はじめに・Vault・モデル・ログイン項目 | 7 | T-30, T-23 |
 | [T-32](T-32-diagnostics-attention.md) | 診断・要対応・状態の詳細（`LockObserving` と既定の「無効」実装もここで作る。T-36 が差し替える） | 7 | T-30 |
-| [T-33](T-33-migration.md) | voicedock からの乗り換え | 7 | T-29 |
+| [T-33](T-33-migration.md) | voicedock からの乗り換え — 取り下げ（2026-09-22、利用者の決定。PLAN F-60） | 7 | T-29 |
 | [T-34](T-34-release-scripts.md) | .app の組み立て・署名・公証・dmg | 7 | T-01, T-03, T-30 |
-| [T-35](T-35-e2e-off.md) | 実機 E2E（削除 OFF） | 7 | T-30〜T-34 |
+| [T-35](T-35-e2e-off.md) | 実機 E2E（削除 OFF） | 7 | T-30〜T-32, T-34 |
 | [T-36](T-36-deletion-policy.md) | 削除条件・ロックの評価 | 8 | T-29, T-07 |
 | [T-37](T-37-reaper.md) | reaper 実行ファイル | 8 | T-07 |
 | [T-38](T-38-deletion-flow.md) | 要求・Session の削除段・reaper の起動・回収・期限切れ・後始末 | 8 | T-36, T-37 |

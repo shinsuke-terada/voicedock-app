@@ -215,8 +215,8 @@ public struct WorkerDependencies: Sendable {
 }
 ```
 
-- 足す予定（参考。このチケットでは書かない）: T-22 が `llama: any LLMServerControl`・`chatTransportFactory`・`physicalMemoryBytes`・`verificationCache`、次に T-33 が `importedKeys: ImportedKeysService`、最後に T-36 が `locks`・`volumeOpener`（`reaper` は持たない。`locks.reaper` を使う）。**init の引数は宣言の順**
-- **並びは 00-api-map §11 の `WorkerDependencies` の行の相対順が正**（地図 ＞ チケット。上の並びは地図から T-18 の時点のフィールドだけを抜いたもの）。T-22 は `llama`・`chatTransportFactory` を `runner` の後に挿し、`physicalMemoryBytes`（と `verificationCache`）を `catalog` の後に置く。T-33 の `importedKeys` → T-36 の `locks` と `volumeOpener` は末尾に足す
+- 足す予定（参考。このチケットでは書かない）: T-22 が `llama: any LLMServerControl`・`chatTransportFactory`・`physicalMemoryBytes`・`verificationCache`、次に T-33 が `importedKeys: ImportedKeysService`（T-33 は取り下げ）、最後に T-36 が `locks`・`volumeOpener`（`reaper` は持たない。`locks.reaper` を使う）。**init の引数は宣言の順**
+- **並びは 00-api-map §11 の `WorkerDependencies` の行の相対順が正**（地図 ＞ チケット。上の並びは地図から T-18 の時点のフィールドだけを抜いたもの）。T-22 は `llama`・`chatTransportFactory` を `runner` の後に挿し、`physicalMemoryBytes`（と `verificationCache`）を `catalog` の後に置く。T-33 の `importedKeys`（T-33 は取り下げ）→ T-36 の `locks` と `volumeOpener` は末尾に足す
 - **タイムゾーンは持たない**: 分組・「今日」・表示の時刻は tick ごとに `config.timeZone`（CV-32 で解決できることが保証済み）から作る（§4.9 `Worker.zone(for:)`）
 
 ### 4.5 `WorkerStatus.swift`

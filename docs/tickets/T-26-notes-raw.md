@@ -435,7 +435,7 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 
 ### 5.6 `ConfigEffectPending.swift`（PolicyTests。T-09 §9）
 
-`obsidian.maxTitleBytes`・`obsidian.raw.filenameTemplate`・`obsidian.raw.timestampIntervalSeconds`・`obsidian.raw.partBoundaryHeading` の 4 行を消す（CE テストは §5.2・§5.4）。`obsidian.raw.folderTemplate` は T-33 が消す。
+`obsidian.maxTitleBytes`・`obsidian.raw.filenameTemplate`・`obsidian.raw.timestampIntervalSeconds`・`obsidian.raw.partBoundaryHeading` の 4 行を消す（CE テストは §5.2・§5.4）。`obsidian.raw.folderTemplate` は T-33 が消す（T-33 は取り下げ）。
 
 ## 6. 破壊による証明
 

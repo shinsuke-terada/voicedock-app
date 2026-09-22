@@ -16,8 +16,8 @@ GUI で変えられる設定は 4 つだけ（PLAN §6.3）——Vault の場所
 
 ## 2. 参照
 
-- PLAN §8.12 の 3〜6（はじめに・保存先・モデル・一般）、§6.3（GUI に出すのは 4 つだけ）、§8.10（VDModels。メモリの条件・ファイルから読み込む・進捗）、§8.7（Vault の確認）、§8.13（乗り換えの取り込み）、§2.3（`ui-state.json`）、§8.1 の規則 8・9（`mount_name_mismatch` / `invalid_device_id`）、付録 C DEV-10（**アプリはデバイスに書かない**）、付録 A.4（`model_downloaded` / `model_download_failed` / `imported_keys_added`）
-- 00-api-map.md §12（`UIState.swift`・`LoginItem.swift`・`Panel/*`）、§10（VDModels）、§2.2（`ModelCatalog` / `ModelEntry` / `ModelFiles` / `CustomModelID`）、§9（`VaultCheck`）、§11（`ConfigStore`・`ImportedKeysScanner`）
+- PLAN §8.12 の 3〜6（はじめに・保存先・モデル・一般）、§6.3（GUI に出すのは 4 つだけ）、§8.10（VDModels。メモリの条件・ファイルから読み込む・進捗）、§8.7（Vault の確認）、§2.3（`ui-state.json`）、§8.1 の規則 8・9（`mount_name_mismatch` / `invalid_device_id`）、付録 C DEV-10（**アプリはデバイスに書かない**）、付録 A.4（`model_downloaded` / `model_download_failed`）
+- 00-api-map.md §12（`UIState.swift`・`LoginItem.swift`・`Panel/*`）、§10（VDModels）、§2.2（`ModelCatalog` / `ModelEntry` / `ModelFiles` / `CustomModelID`）、§9（`VaultCheck`）、§11（`ConfigStore`）
 - 先行チケット: T-30 §4.7〜§4.14（`AppSnapshot` / `AppServices` / `AppModel` / `Strings` / `LoginItem`）、T-09（`AppConfig.vault` / `transcription.whisperModelID` / `llm.modelID`・CV-40〜45）、T-23（`ModelManager` / `ModelDownloader` / `ModelImporter`）、T-28（`VaultCheck` と `VaultStatus.message`）
 - voicedock@d3d595e: 該当なし（voicedock には GUI が無い。「はじめに」は本計画の新規）
 
@@ -94,8 +94,6 @@ T-30 §4.0 の全体の規則を適用する。**このチケットのコード�
     func cancelDownload(id: String) async
     /// 利用者が選んだ .gguf を読み込む（PLAN §8.10「ファイルから読み込む」）。
     func importGGUF(from source: URL) async -> Result<(id: String, url: URL), ModelError>
-    /// PLAN §8.13 の取り込み。追加した件数を返す。
-    func importVoicedockKeys() async -> Int
     /// ログイン項目の操作（PLAN §8.12 の 6）。
     func registerLoginItem() -> Result<Void, String>
     func unregisterLoginItem() -> Result<Void, String>
@@ -109,7 +107,6 @@ T-30 §4.0 の全体の規則を適用する。**このチケットのコード�
 - `download` = `await context.models.download(entry.id, kind: kind, progress: progress)`（UI は `ModelManager` だけを使う。00-api-map §10・T-23 §10。`ModelManager` が状態（`downloading` / `failed`）を動かす）
 - `cancelDownload` = `await context.models.cancel(id: id)`
 - `importGGUF` = `await context.models.importCustomLLM(from: source)`（**T-23 が正**: `ModelManager.importCustomLLM(from:)` が `ModelImporter.importGGUF(from:layout:chunkBytes:)` を包む。`chunkBytes` は `ModelManager.init(… hashChunkBytes:)` に渡した値（設定の `audio.hashChunkBytes`）で、Bootstrap（T-30 手順 14）が `ModelDownloader(layout:factory:log:hashChunkBytes:)` と `ModelManager(layout:catalog:downloader:cache:log:hashChunkBytes:)` に渡す）
-- `importVoicedockKeys`: **このチケットでは 0 を返し、`// T-33 が ImportedKeysScanner.scan(vault:config:) を呼ぶ（PLAN §8.13）。` と書く**（T-33 が本体を入れる。T-30 の「空の段」と同じやり方）
 - `registerLoginItem` / `unregisterLoginItem` / `openSystemSettingsLoginItems` = `context.loginItem` へ委譲
 - `saveUIState` = `context.uiState.save(_:)`
 
@@ -336,12 +333,11 @@ enum DownloadState: Equatable, Sendable {
 7. `let r = await services.updateConfig { $0.vault.path = path }`
 8. `.failure(let v)` → `vaultError = Strings.configRejected(v)`、`return`
 9. `vaultError = nil`
-10. `let n = await services.importVoicedockKeys()`（**PLAN §8.13 の取り込みを、Vault を選んだ直後に行う**）。`if n > 0 { vaultNotice = Strings.importedKeys(n) }`
-11. `await services.scanNow()`（Vault が使えるようになったので、止まっていた工程を進める。ガードは次の tick で外れる）
-12. `await refresh()`
+10. `await services.scanNow()`（Vault が使えるようになったので、止まっていた工程を進める。ガードは次の tick で外れる）
+11. `await refresh()`
 
 - 6 の判定は `VaultCheck` を**そのまま**使う（判定関数は 1 つ。PLAN §8.7）。パネル独自の条件を足さない
-- `vaultError` / `vaultNotice` は `panelDidClose()` で消す（T-30 §4.11 の `reloadResult` と同じ）
+- `vaultError` は `panelDidClose()` で消す（T-30 §4.11 の `reloadResult` と同じ）
 
 ### 4.9 `LoginItem.swift`（T-30 のファイルへの追加）と `AppModel+LoginItem.swift`
 
@@ -395,7 +391,6 @@ extension SystemLoginItem {
 | `chooseVaultPrompt` | `この Vault を使う` |
 | `buttonChangeVault` | `変更…` |
 | `vaultNotChosen` | `まだ選ばれていません` |
-| `importedKeys(_:)` | `voicedock が作ったノートから <n> 件の録音を取り込み済みとして記録しました` |
 | `chooseGGUFMessage` | `読み込む .gguf ファイルを選んでください` |
 | `chooseGGUFPrompt` | `読み込む` |
 | `buttonImportGGUF` | `ファイルから読み込む…` |
@@ -444,7 +439,7 @@ extension SystemLoginItem {
 `VaultSection`（§8.12 の 4）:
 - `SectionBox(title: Strings.sectionVault)`。1 行目にパス（`model.snapshot.vaultPath ?? Strings.vaultNotChosen`）と、`.available` でなければ `VaultStatus.message` を赤で
 - `Button(Strings.buttonChangeVault) { Task { await model.chooseVault() } }`
-- `model.vaultError` / `model.vaultNotice` を出す
+- `model.vaultError` を出す
 
 `ModelsSection`（§8.12 の 5）:
 - `SectionBox(title: Strings.sectionModels)`
@@ -525,11 +520,9 @@ extension SystemLoginItem {
 | `rejectsFolderWithoutMarker` / 「目印が無いフォルダは拒否する」 | `.obsidian` を作らない | `updateConfig` が呼ばれない、`vaultError == <path> に .obsidian/ がありません（Vault が未マウントか、別の場所を指しています）` |
 | `rejectsUnreadableFolder` / 「読めないフォルダは拒否する」 | `chmod 0o000` のディレクトリ | `vaultError` が `を読めません（errno ` を含む、`updateConfig` が呼ばれない |
 | `acceptsVaultAndWritesConfig` / 「目印が在れば設定に書く」 | `.obsidian/` 在り | `updateConfig` が 1 回、`vault.path` が選んだパス |
-| `runsImportAfterChoosing` / 「PLAN §8.13 の取り込みを直後に行う」 | 同上、`importVoicedockKeys` が 3 を返す | 呼ばれ、`vaultNotice == voicedock が作ったノートから 3 件の録音を取り込み済みとして記録しました` |
-| `noNoticeWhenNothingImported` / 「0 件なら何も出さない」 | 同上、0 を返す | `vaultNotice == nil` |
 | `scansAfterChoosing` / 「選んだら走査を促す」 | 同上 | `fake.scanCount == 1` |
 | `configRejectionIsShown` / 「設定に弾かれたら文言を出す」 | `updateConfig` が `.failure([v])` | `vaultError` が `設定に書けませんでした: ` で始まる |
-| `closingClearsMessages` / 「閉じたら消える」 | 失敗の後 `panelDidClose()` | `vaultError == nil`、`vaultNotice == nil` |
+| `closingClearsMessages` / 「閉じたら消える」 | 失敗の後 `panelDidClose()` | `vaultError == nil` |
 | `modalIsWrapped` / 「popover を閉じてから開き直す」 | `presentModal` の呼び出しを記録する偽物 | `presentModal` が 1 回呼ばれ、その中で chooser が呼ばれる |
 
 ### 5.5 `AppModelModelsTests.swift`（`@Suite("AppModel のモデル")`）
@@ -579,15 +572,14 @@ extension SystemLoginItem {
 | 9 | `ModelChoices.llm` が `ModelMemory.hasEnough` の結果を反転して使う | `exactMemoryIsSelectable`・`insufficientMemoryIsNotSelectable` |
 | 10 | 選べない選択肢を一覧から取り除く | `insufficientStaysInTheList` |
 | 11 | `chooseVault` の `VaultCheck` の判定を消す | `rejectsFolderWithoutMarker`・`rejectsUnreadableFolder` |
-| 12 | `chooseVault` の `importVoicedockKeys()` の呼び出しを消す | `runsImportAfterChoosing` |
-| 13 | `chooseVault` の `scanNow()` を消す | `scansAfterChoosing` |
-| 14 | `fetchModel` の二重起動の番人を外す | `fetchIsNotStartedTwice` |
-| 15 | `cancelModel` の後に `.failed` を書くようにする | `cancelStopsAndDoesNotShowError` |
-| 16 | `progress` の `guard case .running` を外す | `lateProgressAfterCancelIsDropped` |
-| 17 | `selectLLM` の `selectable` の番人を外す | `selectLLMRejectsUnselectable` |
-| 18 | `setLoginItem(true)` の `markLoginItemDecided()` を消す | `turningOnMarksDecided` |
-| 19 | `register` が失敗しても `markLoginItemDecided()` するようにする | `registerFailureIsShown` |
-| 20 | `OpenPanelFolderChooser` の `canCreateDirectories = true` にする | （自動テストでは落ちない）**受け入れ条件のチェックリストと `PanelPolicyTests`（§7）で守る** |
+| 12 | `chooseVault` の `scanNow()` を消す | `scansAfterChoosing` |
+| 13 | `fetchModel` の二重起動の番人を外す | `fetchIsNotStartedTwice` |
+| 14 | `cancelModel` の後に `.failed` を書くようにする | `cancelStopsAndDoesNotShowError` |
+| 15 | `progress` の `guard case .running` を外す | `lateProgressAfterCancelIsDropped` |
+| 16 | `selectLLM` の `selectable` の番人を外す | `selectLLMRejectsUnselectable` |
+| 17 | `setLoginItem(true)` の `markLoginItemDecided()` を消す | `turningOnMarksDecided` |
+| 18 | `register` が失敗しても `markLoginItemDecided()` するようにする | `registerFailureIsShown` |
+| 19 | `OpenPanelFolderChooser` の `canCreateDirectories = true` にする | （自動テストでは落ちない）**受け入れ条件のチェックリストと `PanelPolicyTests`（§7）で守る** |
 
 ## 7. 受け入れ条件
 
@@ -609,9 +601,8 @@ extension SystemLoginItem {
 
 ## 9. マージ後にやること
 
-1. T-33 のマージで `LiveServices.importVoicedockKeys()` の本体を `ImportedKeysScanner.scan(vault:config:)` にする（**起動時にも 1 回呼ぶ**のは T-33 の担当。PLAN §8.13）
-2. T-24（カタログの確定）のマージで `verified` が真になった LLM が `ModelsSection` に出ることを確かめる
-3. README の一覧の T-31 の前提はそのまま（T-30・T-23）
+1. T-24（カタログの確定）のマージで `verified` が真になった LLM が `ModelsSection` に出ることを確かめる
+2. README の一覧の T-31 の前提はそのまま（T-30・T-23）
 
 ## 10. API 地図への変更提案
 
@@ -621,7 +612,6 @@ extension SystemLoginItem {
 4. `ModelManager` の取り込みの口の名前は **T-23 が正**の `importCustomLLM(from:)`（`ModelImporter` を `layout` と `chunkBytes` 付きで呼ぶ包み）。`AppServices` 側の名前は `importGGUF(from:)` のままにする（UI の語） → 00-api-map §10 に反映済み（整合修正 M-5）
 5. §10 の `ModelDownloader.download` の `progress` が `@escaping` であることを明記する（`AppServices.download` が転送するため）
 6. （整合修正 M-5）`ModelDownloader.init(layout:factory:log:hashChunkBytes:)` と `ModelManager.init(layout:catalog:downloader:cache:log:hashChunkBytes:)`（T-23 §4 が正。`clock:` は無い）を前提にする → 00-api-map §10 に反映済み
-6. §11 の `ImportedKeysScanner.scan` の呼び出し元を「T-33（起動時）と T-31（Vault を選んだ直後）」と注記する（PLAN §8.13 は両方を要求している）
 
 ## 11. 仕様の問題（PLAN に直したいこと）
 
