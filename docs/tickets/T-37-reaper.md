@@ -58,7 +58,7 @@
 - 子プロセスを起動しない・ネットワークを使わない・ディレクトリを再帰削除しない・マウント操作をしない（PR-19。文字列に `diskutil` を書かない。PT-15）
 - **ディレクトリを作らない。**`<HOME>` 配下のディレクトリはアプリの `HomeLayout.createDirectories()` が作る。無ければその書き込みが失敗するだけ（下の「書き込みに失敗したとき」の規則に従う）
 - 鍵の照合（RV-02b・RV-05）は**スカラー列の一致**で行う（`Array(a.unicodeScalars) == Array(b.unicodeScalars)`。Swift の `==` は正準等価で比べるため。00-api-map §0）。この比較は `RequestProcessor.scalarsEqual(_:_:)` の 1 か所に置く
-- 型はすべて `internal`（実行ファイルのターゲットなので `public` にしない）。テストは `@testable import voicedock_reaper` を使わず、**実行ファイルを起動して外から観測する**（PLAN §10.5）
+- 型はすべて `internal`（実行ファイルのターゲットなので `public` にしない）。テストは `@testable import voicedock_reaper` を使わず、**実行ファイルを起動して外から観測する**（PLAN §10.5）。例外は §5.3 末尾の `@Suite("ReaperLog の行")`（行の書式の単体。§4.6 の `format` / `value` を直接呼ぶ）だけで、`ReaperQueueTests.swift` の先頭で `@testable import voicedock_reaper` する（実装時に確かめた: 実行ファイルのターゲットも `-enable-testing` でビルドされ、テストから import できる）
 
 ### 4.1 `ReaperIO.swift`（「// fd の読み書き（voicedock-reaper の中だけ。VDContract の PosixIO は internal で使えない）。」）
 
@@ -152,7 +152,7 @@ enum SelfLocation {
 `executablePath()`:
 1. `var size = UInt32(PATH_MAX)`、`var buf = [CChar](repeating: 0, count: Int(size))`
 2. `_NSGetExecutablePath(&buf, &size) == 0` でなければ（バッファが足りない）`buf` を `size` で作り直して 1 回だけやり直す。2 回目も失敗なら nil
-3. `raw = String(cString: buf)` → `ReaperIO.realpath(raw)`（symlink 経由で起動された場合に実体へ直す）
+3. `raw = String(decoding: buf.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)` → `ReaperIO.realpath(raw)`（symlink 経由で起動された場合に実体へ直す）。`String(cString:)` の配列版は Xcode 27.0 で非推奨の警告になり、警告はエラーなので使わない（実装時に確かめた）
 
 `isAtExpectedPlace(home:)`（この順。どれか 1 つでも偽なら偽）:
 1. `guard let selfPath = executablePath() else { return false }`
@@ -419,13 +419,15 @@ struct RequestProcessor {
 `result(stem:deviceID:partkey:status:detail:)`: `DeleteResult(schema: Contract.resultSchema, requestID: stem, completedAt: clock.nowISO(), reaperVersion: AppVersion.string, deviceID: deviceID, partkey: partkey, status: …, detail: …)`。
 **JSON が読めなかった段（手順 3・5）では `deviceID` と `partkey` は空文字列 `""`**（voicedock の `${RESULT_DEVICE_ID:-}` と同じ）。
 
-- 手順 11 と `refuse` の 2 か所以外に結果を書くコードを置かない
+- 手順 6（RV-04 の `replayed`）・手順 11・`refuse` の 3 か所以外に結果を書くコードを置かない（手順 6 も結果を書くので「2 か所」ではない。実装時に直した）
+- 手順 1 と手順 4（RV-02b）の退避は同じ処理なので `private func reject(name: String) -> RequestOutcome`（`moveToRejected` → `request_rejected` → `.rejectedFileName`）の 1 か所に置く
 - `detail` は連結しない（DELETED は relpath、MISMATCH は理由語の**どちらか一方**。PLAN §4.4）
 
 ### 4.11 `ReaperMain.swift`（「// 起動時の検査 → flock → 走査 → 1 件ずつ（PLAN §8.9.4）。」）
 
+（`import Darwin` は使わないので書かない。レビューで外した）
+
 ```swift
-import Darwin
 import Foundation
 import VDContract
 
@@ -516,9 +518,9 @@ public final class ReaperProcess: Sendable {
 ```
 
 `url()`:
-1. `var dir = Bundle.main.bundleURL`。`dir.pathExtension == "xctest"` なら `dir = dir.deletingLastPathComponent()`
+1. `bundle = Bundle(for: ReaperProcess.self).bundleURL`（このファイルが静的にリンクされたテストバンドル）、`var dir = bundle`。`dir.pathExtension == "xctest"` なら `dir = dir.deletingLastPathComponent()`。**`Bundle.main` は使わない**（`swift test` では Bundle.main がツールチェーンの `usr/libexec/swift/pm/`（swiftpm-testing-helper）を指し、実行ファイルが見つからない。実装時に確かめた）
 2. `dir` から最大 4 回まで `deletingLastPathComponent()` しながら、`dir.appendingPathComponent(Contract.reaperFileName)` が `lstat` で通常ファイルかつ `access(X_OK)` が通るものを探す
-3. 見つからなければ `ReaperBinaryError(description: "voicedock-reaper が見つかりません（swift build をしてください）: " + p(Bundle.main.bundleURL))`
+3. 見つからなければ `ReaperBinaryError(description: "voicedock-reaper が見つかりません（swift build をしてください）: " + p(bundle))`
 
 `run(executable:arguments:)`: `Foundation.Process`（`Tests/` は PT-03 の対象外）。`standardOutput` / `standardError` は `Pipe`、
 `environment = ["PATH": "/usr/bin:/bin"]`（余計な環境を渡さない）、`run()` → 先に両方の `readDataToEndOfFile()` を**別スレッドで**読んでから `waitUntilExit()`（パイプの詰まりを避ける）。
@@ -539,12 +541,15 @@ import TestSupport
 import VDContract
 
 struct ReaperBench {
-    static let deviceID = "DJIMIC3"
+    /// 層 R1 のディレクトリ名と層 R3 のディスクイメージの名前（PLAN §10.2: 実機と同じ DJIMIC3 を使わない。`DiskImageVolume` が DJIMIC3 を拒む）。
+    /// 層 R1 でも DJIMIC3 にしない: 壊した reaper（破壊による証明の 3 など）が VOLUMES_ROOT を既定の /Volumes に倒しても、
+    /// 利用者の実機 /Volumes/DJIMIC3 ではなく device_absent になる（実装時に、実機が挿さったまま証明の 3 を行って気づいた）
+    static let deviceID = "VDT0037"
     static let folder = "TX_MIC001_20260912_090000"
     static let fileName = "TX00_MIC001_20260912_090000_orig.wav"
     static let relpath = "TX_MIC001_20260912_090000/TX00_MIC001_20260912_090000_orig.wav"
-    static let partkey = "DJIMIC3/TX_MIC001_20260912_090000/TX00_MIC001_20260912_090000_orig.wav"
-    static let sessionKey = "DJIMIC3:20260912"
+    static let partkey = "VDT0037/TX_MIC001_20260912_090000/TX00_MIC001_20260912_090000_orig.wav"
+    static let sessionKey = "VDT0037:20260912"
     static let createdAt = "2026-09-12T18:00:00+09:00"
     /// 2026-09-12T09:01:00+09:00。偶数秒（FAT の 2 秒分解能でも変わらない）
     static let mtime: Double = 1_789_171_260
@@ -564,6 +569,7 @@ struct ReaperBench {
     func placeSource(_ relpath: String = ReaperBench.relpath, content: Data = ReaperBench.content) throws
     /// 実際に置いたファイルの (size, mtime)（FAT は 2 秒刻みなので lstat した値を使う）
     func actualStat(_ relpath: String = ReaperBench.relpath) throws -> (size: Int64, mtime: Double)
+    /// volumesRoot が nil ならこの舞台の volumesRoot（**`/Volumes` を既定にしない**）
     func writeReaperConf(deleteSourceAudio: Bool = true, volumesRoot: String? = nil) throws
     func writeReaperConfRaw(_ text: String) throws
     func removeReaperConf() throws
@@ -589,13 +595,17 @@ struct ReaperBench {
     func sourceExists(_ relpath: String = ReaperBench.relpath) -> Bool
     /// queue/result の外にファイルが作られていないこと（ND-38）
     func filesUnderQueue() -> [String]
+
+    /// 実機に触れ得る舞台を拒む（hdiutil を使わずに確かめられるよう static）: deviceID が `"DJIMIC3"`、
+    /// または volumesRoot の realpath（無ければ標準化したパス）か標準化したパスが `/Volumes` かその下（末尾の `/` は落として比べる）→ `BenchError`
+    static func refuseUnsafe(volumesRoot: URL, deviceID: String) throws
 }
 ```
 
 `init` の手順:
 1. `tmp` を使う（nil なら `try TempDirectory()`）。`layout = HomeLayout(root: tmp.url/"home")`、`createDirectories()`、`bin` を作る
 2. **ビルドした reaper を `layout.reaperExecutable` に複製し `chmod 0o755`**（RV-00 は `<HOME>/bin/voicedock-reaper` からの起動だけを許すため。`Data(contentsOf:)` → `write(to:)` → `chmod`）
-3. `volumesRoot = diskImage?.volumesRoot ?? tmp.url/"Volumes"`、`deviceRoot = volumesRoot/"DJIMIC3"`。ディスクイメージでなければ `deviceRoot` を作る
+3. ディスクイメージの `deviceID` が `ReaperBench.deviceID` でなければ `BenchError`。`root = diskImage?.volumesRoot ?? tmp.url/"Volumes"` を **`Self.refuseUnsafe(volumesRoot: root, deviceID: diskImage?.deviceID ?? ReaperBench.deviceID)` に通してから** `volumesRoot = root`、`deviceRoot = volumesRoot/ReaperBench.deviceID`。ディスクイメージでなければ `deviceRoot` を作る（構造で守る。レビューで足した）
 4. `placeSource()`
 5. `writeReaperConf(deleteSourceAudio: deleteSourceAudio, volumesRoot: p(volumesRoot))`
 
@@ -603,6 +613,7 @@ struct ReaperBench {
 `writeRequest`: `partkey ?? (deviceID + "/" + relpath)`、`size ?? actualStat(relpath).size`、`mtime ?? actualStat(relpath).mtime` で `DeleteRequest` を作り、
 `ContractJSON.encode` を `layout.queueDelete/(fileName ?? requestID + ".json")` に書く。戻り値は書いた名前。
 `run()`: `try ReaperBinary.run(executable: layout.reaperExecutable, arguments: ["--home", p(layout.root)])`。
+準備の失敗は同じファイルの `struct BenchError: Error, CustomStringConvertible { let description: String }` を投げる（`ReaperBinaryError` の初期化子は TestSupport の外から呼べない）。
 
 - **`/Volumes` の下には決して置かない**（`volumesRoot` は必ず一時ディレクトリかディスクイメージの一時マウント点。T-07 §4.5 と同じ約束）
 
@@ -620,20 +631,30 @@ struct ReaperBench {
 | `nd40AnyOtherPlaceIsRefused` | `ND-40 [R1] <HOME>/bin 以外の場所からの起動は 3` | `<tmp>/elsewhere/voicedock-reaper` に複製 | 同上（exit 3） |
 | `rv00SymlinkedReaperIsRefused` | `RV-00 <HOME>/bin/voicedock-reaper が symlink なら 3` | 本体を `bin/real` に置き、`bin/voicedock-reaper` をその symlink に | exit 3、何も書かれない |
 | `rv00AnotherHomeIsRefused` | `RV-00 別の --home を渡すと 3` | 舞台を 2 つ作り、A の実行ファイルに `--home <B>` | exit 3、A・B のどちらにも何も書かれない |
+| `rv00HomeInsideABundleIsRefused` | `RV-00 <HOME> が .app/Contents/ の下なら 3` | 舞台の `<HOME>` を `<tmp>/VoiceDock.app/Contents/home` へ移し、その `bin/voicedock-reaper` を `--home <移した先>` で起動（置き場所の一致は通る） | exit 3、stdout・stderr 空、ログが無い、要求が残る、結果 0 件（§6 の 2 のために足した。`nd40BundledReaperDoesNothing` は一致の検査でも弾かれるので、`bundleMarker` の検査を消しても緑のままだった） |
 | `rv00MissingHomeIsRefused` | `RV-00 --home が無いディレクトリなら 3` | `--home <tmp>/nope` | exit 3 |
 | `badArgumentsExitTwo` | 引数が不正なら 2（キューに触らない） | `[]`・`["--help"]`・`["-h"]`・`["--home"]`・`["--home", "<HOME>", "--x"]`・`["--version", "x"]`（パラメタ化） | exit 2、stderr == `ReaperArguments.usage`、`logs/reaper.log` が無い、要求が残る |
 
+同じファイルの `@Suite("ReaperBench は実機に触れ得る舞台を拒む") struct ReaperBenchSafetyTests`（hdiutil を使わない。レビューで足した）:
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `volumesRootUnderVolumesIsRefused` | volumesRoot が /Volumes かその下なら舞台を作らない | `refuseUnsafe(volumesRoot:)` に `/Volumes`・`/Volumes/`・`/Volumes/VDT0037`（パラメタ化。何も書かない） | `BenchError` を投げる |
+| `symlinkToVolumesIsRefused` | /Volumes を指す symlink も realpath で拒む | 一時ディレクトリに `Volumes -> /Volumes` の symlink を作り、それを渡す | `BenchError` を投げる |
+| `realDeviceNameIsRefused` | deviceID が DJIMIC3 なら舞台を作らない | 一時ディレクトリの volumesRoot と `deviceID: "DJIMIC3"` | `BenchError` を投げる |
+| `temporaryRootIsAccepted` | 一時ディレクトリの下で VDT0037 なら通る（対照） | 一時ディレクトリの volumesRoot と `VDT0037`、続けて `ReaperBench(in: tmp)` | 投げない。舞台の volumesRoot が一時ディレクトリの下 |
+
 ### 5.2 `ReaperConfGateTests.swift`（`@Suite("reaper.conf とロック 1（層 R1）")`）
 
-準備は共通で「舞台 ＋ 通る要求 1 件」。期待の「要求に触らない」= `requests() == [name]`・`results() == []`・`rejected() == []`・`processedLines() == []`・デバイス上のファイルが在る。
+準備は共通で「舞台 ＋ 通る要求 1 件」。**手で書く reaper.conf には、壊す 1 か所以外に必ず `VOLUMES_ROOT=<舞台の volumesRoot>` を入れる**（壊した reaper が不正な conf を受け入れても、既定の `/Volumes` ではなく一時ディレクトリを見るように）。期待の「要求に触らない」= `requests() == [name]`・`results() == []`・`rejected() == []`・`processedLines() == []`・デバイス上のファイルが在る。
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
 | `nd22Lock1FalseTouchesNothing` | `ND-22 [R1] reaper.conf の DELETE_SOURCE_AUDIO=false なら要求に触らない` | `writeReaperConf(deleteSourceAudio: false)` | exit 0、`reaper_disabled reason=lock1`、要求に触らない |
-| `nd43UnknownKeyIsInvalid` | `ND-43 [R1] 未知のキーは無効側` | `SCHEMA=1\nDELETE_SOURCE_AUDIO=true\nEXTRA=1\n` | exit 2、`reaper_disabled reason=conf_invalid`、要求に触らない |
+| `nd43UnknownKeyIsInvalid` | `ND-43 [R1] 未知のキーは無効側` | `SCHEMA=1\nDELETE_SOURCE_AUDIO=true\nVOLUMES_ROOT=<ROOT>\nEXTRA=1\n` | exit 2、`reaper_disabled reason=conf_invalid`、要求に触らない |
 | `nd43DuplicateKeyIsInvalid` | `ND-43 [R1] 重複したキーは無効側` | `DELETE_SOURCE_AUDIO` を 2 行 | 同上 |
 | `nd43BadValueIsInvalid` | `ND-43 [R1] 不正な値は無効側` | `DELETE_SOURCE_AUDIO=yes` / `SCHEMA=2` / `VOLUMES_ROOT=rel`（パラメタ化） | 同上 |
-| `nd43MissingKeyIsInvalid` | `ND-43 [R1] 必須のキーが欠けていたら無効側` | `SCHEMA=1\n` だけ / `DELETE_SOURCE_AUDIO=true\n` だけ | 同上 |
+| `nd43MissingKeyIsInvalid` | `ND-43 [R1] 必須のキーが欠けていたら無効側` | `SCHEMA=1\nVOLUMES_ROOT=<ROOT>\n` / `DELETE_SOURCE_AUDIO=true\nVOLUMES_ROOT=<ROOT>\n`（パラメタ化） | 同上 |
 | `nd43MalformedLineIsInvalid` | `ND-43 [R1] 書式に合わない行は無効側` | `delete_source_audio=true`（小文字）/ `SCHEMA = 1`（空白） | 同上 |
 | `missingConfIsInvalid` | reaper.conf が無ければ無効側 | `removeReaperConf()` | 同上 |
 | `symlinkedConfIsInvalid` | reaper.conf が symlink なら無効側 | `bin/reaper.conf` を別ファイルへの symlink に | 同上 |
@@ -652,7 +673,7 @@ struct ReaperBench {
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `nd38BadFileNamesGoToRejected` | `ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ` | 名前 `evil.json`・`..json`・`20260912T090000Z-a5d046dce76cfedc-A1B2C3.json`（大文字 16 進）・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.JSON`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.json.bak`（パラメタ化） | exit 0、`rejected() == [その名前]`、`results() == []`、`processedLines() == []`、外へ書かない、`request_rejected file=<名前> reason=malformed_request_id`、デバイス上のファイルが在る |
+| `nd38BadFileNamesGoToRejected` | `ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ` | 名前 `evil.json`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3..json`（`..` を含む。`..json` は `.` で始まり走査が無視するので使わない）・`20260912T090000Z-a5d046dce76cfedc-A1B2C3.json`（大文字 16 進）・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.JSON`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.json.bak`（パラメタ化）。**中の `request_id` はファイル名の stem（`.json` で終わらない名前は名前そのもの）にする**（既定の request_id のままだと RV-02b が代わりに弾き、§6 の 6 で落ちなかった） | exit 0、`rejected() == [その名前]`、`results() == []`、`processedLines() == []`、外へ書かない、`request_rejected file=<名前> reason=malformed_request_id`、デバイス上のファイルが在る |
 | `nd38InnerRequestIDMismatchGoesToRejected` | `ND-38 [R1] JSON の request_id がファイル名と違えば rejected/ へ（RV-02b）` | 正しい名前、中の `request_id` を `../evil` に | 同上。加えて `<HOME>/queue/evil.json` が無い |
 | `rv02bNonStringRequestIDGoesToRejected` | `RV-02b request_id が文字列でなければ rejected/ へ` | 中の `request_id` を `1` に | 同上 |
 | `nonJSONNamesGoToRejected` | `.json` で終わらない名前は rejected/ へ | 名前 `README` | 同上 |
@@ -662,6 +683,7 @@ struct ReaperBench {
 
 | 関数名 | 表示名 | 準備 |
 |---|---|---|
+| `handWrittenJSONPassesWhenIntact` | `手書きの要求 JSON は壊さなければ not_a_mount_point まで進む（RV-03 の対照）` | 下の行が使う手書きの JSON を壊さずに置く（期待は `detail == "not_a_mount_point"`。TEST-19: 各行が「弾かせたい 1 か所」以外を満たしていることの担保） |
 | `rv03ExtraKeyIsMalformed` | `RV-03 余分なキーがあれば malformed_request` | 正しい JSON に `"extra": 1` を足す |
 | `rv03MissingKeyIsMalformed` | `RV-03 キーが欠けていれば malformed_request` | `session_key` を消す |
 | `rv03BoolSchemaIsMalformed` | `RV-03 schema が真偽値なら malformed_request` | `"schema": true` |
@@ -679,24 +701,27 @@ struct ReaperBench {
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `nd27ReplayedRequestIsRefused` | `ND-27 [R1] 同じ request_id の 2 回目は replayed` | 1 回目を走らせた後、同じ ID の要求をもう一度置いて 2 回目を走らせる | 2 回目は結果の `detail == "replayed"`、`processedLines()` が 1 行のまま（再追記しない）、要求が消える、`reason=replayed` のログ |
+| `nd27ReplayedRequestIsRefused` | `ND-27 [R1] 同じ request_id の 2 回目は replayed` | 1 回目を走らせた後、**1 回目の結果ファイルを消し**（アプリが回収した後。残っていると RV-04 は結果を書かない）、同じ ID の要求をもう一度置いて 2 回目を走らせる | 2 回目は結果の `detail == "replayed"`、`processedLines()` が 1 行のまま（再追記しない）、要求が消える、`reason=replayed` のログ |
 | `replayedDoesNotOverwriteAnExistingResult` | `RV-04 replayed は既に在る結果を上書きしない` | `processed.log` に ID を 1 行、`queue/result/<ID>.json` に `DELETED`（detail = relpath）を置き、同じ ID の要求を置く | 結果ファイルのバイト列が**変わらない**、要求が消える、`processedLines()` が 1 行のまま、`reason=replayed` のログ |
-| `nd44PartkeyMismatchIsRefused` | `ND-44 [R1] device_id/relpath が partkey と違えば partkey_mismatch` | `partkey: "DJIMIC3/other.wav"` | `detail == "partkey_mismatch"`、要求が消える、ファイルが在る |
+| `nd44PartkeyMismatchIsRefused` | `ND-44 [R1] device_id/relpath が partkey と違えば partkey_mismatch` | `partkey: "VDT0037/other.wav"` | `detail == "partkey_mismatch"`、要求が消える、ファイルが在る |
 | `nd44DeviceIDMismatchIsRefused` | `ND-44 [R1] partkey の device_id だけが違えば partkey_mismatch` | `partkey: "OTHER/" + relpath` | 同上 |
 | `rv06AbsentDeviceLeavesTheRequest` | `RV-06 デバイスが無ければ要求を残す` | `deviceID: "NOSUCH"`、`partkey` も合わせる | exit 0、要求が**残る**、`results() == []`、`processedLines() == []`、`device_absent request_id=… device=NOSUCH` |
 | `rv06InvalidDeviceIDIsRejected` | `RV-06 device_id が不正なら not_a_mount_point` | `.hidden`・`a:b`（パラメタ化。partkey も合わせる） | `detail == "not_a_mount_point"`、要求が消える |
 | `namesAreProcessedInByteOrder` | 要求は名前のバイト順に処理される | 乱数部だけ違う 3 件（`…-a00001`・`…-a00002`・`…-a00003`）を作る順を入れ替えて置く | `processedLines()` が昇順、`reaper_completed requests=3` |
+| `nonASCIINamesAreProcessedInByteOrder` | 正規化で順が変わる名前もバイト順に処理される（rejected/ へ退避する名前） | `\u{212B}.json`（UTF-8 は E2 84 AB。Swift の比較では NFC の U+00C5）と `\u{00D0}.json`（C3 90）を置く（§6 の 14 のために足した。ASCII の名前では Swift の順とバイト順が一致し落ちない） | `request_rejected` の行が `\u{00D0}.json` → `\u{212B}.json` の順 |
+| `rv04UnreadableProcessedLogIsFailClosed` | `RV-04 processed.log が読めなければ replayed（fail-closed）` | 空の `processed.log` を `chmod 0o000`（`state/` ごとではない。`state/` を 000 にするとロックが取れず exit 4 になる）＋ 通る要求 | 結果の `detail == "replayed"`、要求が消える、ファイルが在る（§6 の 19 のために足した） |
 | `anEmptyQueueCompletesWithZero` | 要求が 0 件でも正常に終わる（TEST-28） | 要求を置かない | exit 0、`reaper_completed requests=0`、`reaper_started` が 1 行 |
 | `aHeldLockStopsTheReaper` | ロックが取れなければ何もせず 4 | テスト側で `FileLock.tryAcquire(url: layout.reaperLock)` を保持したまま起動 | exit 4、`reaper_busy`、要求に触らない |
 | `theLockIsReleasedAfterTheRun` | 実行が終わればロックは外れる（対照） | 1 回走らせた後にテスト側で `FileLock.tryAcquire` | 取れる（nil でない） |
 | `theLogRotatesAtFiveMiB` | ログは 5 MiB を超える書き込みの前に `.1` へ回る | `logs/reaper.log` に `ReaperLog.maxBytes` バイトの詰め物を置いてから 1 回走らせる | `reaper.log.1` が詰め物と同じ、`reaper.log` が今回の行だけ |
-| `sigtermStopsBetweenRequests` | SIGTERM は処理中の 1 件を終えてから止まる | `processed.log` に 50,000 行の詰め物（1 件あたりの照合を重くする）＋ 通らない要求（`partkey_mismatch`）を 50 件。`start()` → 60 ms 後に `sendTermination()` → `wait()` | exit 0、**どの要求も中途半端でない**（結果が在るなら要求が消えている、結果が無いなら要求が残っている）、要求が 1 件以上残る、`reaper_completed requests=<結果の数>` |
+| `theLogDoesNotRotateAtExactlyFiveMiB` | 書いた後がちょうど 5 MiB になる行では回さない（境界） | `logs/reaper.log` に `5 MiB − 47` バイトの詰め物（最初の行 `<ts 25 桁> INFO  reaper_started\n` が 47 バイト）を置いてから 1 回走らせる | `reaper.log.1` が 5 MiB ちょうどで詰め物 ＋ `reaper_started` の行、`reaper.log` が `reaper_completed` の 1 行だけ（§6 の 18 のために足した。詰め物が 5 MiB ちょうどだと `>` と `>=` のどちらでも回り、`theLogRotatesAtFiveMiB` は緑のままだった） |
+| `sigtermStopsBetweenRequests` | SIGTERM は処理中の 1 件を終えてから止まる | 通らない要求（`partkey_mismatch`）を 500 件（1 件ごとに processed.log の fsync・結果の AtomicFile の fsync 2 回・要求の unlink があり、1 件目の結果が見えてから SIGTERM が届くまでに全部は片付かない。processed.log の詰め物は読み込みを遅くするだけで 1 件あたりの照合は重くならないので使わない。10 回続けて緑を確かめた）。`start()` → `results()` が空でなくなる（= ハンドラを入れた後に走査が始まった）まで 1 ms ごとに待ち（最大 10 秒）→ `sendTermination()` → `wait()`（60 ms 固定では、複製したばかりの実行ファイルの起動が間に合わず、ハンドラを入れる前の SIGTERM で終了コード 143 になった。実装時に確かめた） | exit 0、**どの要求も中途半端でない**（結果が在るなら要求が消えている、結果が無いなら要求が残っている）、要求が 1 件以上残る、`reaper_completed requests=<結果の数>` |
 
-- `ReaperLog.format` / `ReaperLog.value` の単体（同じファイル内の `@Suite("ReaperLog の行")`）: 空白を含む値・`=` を含む値・空文字列・`"` を含む値・改行を含む値・非 ASCII が §8.15 のとおりに引用されること、`INFO` が 5 桁左寄せ（`"INFO  "` の後に event）であること
+- `ReaperLog.format` / `ReaperLog.value` の単体（同じファイル内の `@Suite("ReaperLog の行") struct ReaperLogLineTests`。`infoIsPaddedToFive`「INFO は 5 桁左寄せ（INFO と 2 つの空白の後に event）」・`fieldsAreAppendedInOrder`「フィールドは順に k=v で足される」・`valuesAreQuoted`「値は §8.15 のとおりに引用される」（パラメタ化））: 空白を含む値・`=` を含む値・空文字列・`"` を含む値・改行を含む値・非 ASCII が §8.15 のとおりに引用されること、`INFO` が 5 桁左寄せ（`"INFO  "` の後に event）であること
 
 ### 5.4 `ReaperDiskImageTests.swift`（`@Suite("voicedock-reaper × FAT32（層 R3）", .serialized, .enabled(if: TestEnvironment.diskTests))`）
 
-共通の準備: `let image = try DiskImageVolume(in: tmp, deviceID: "DJIMIC3", filesystem: .fat32)`、`let bench = try ReaperBench(in: tmp, diskImage: image)`。
+共通の準備: `let image = try DiskImageVolume(in: tmp, deviceID: ReaperBench.deviceID, filesystem: .fat32)`（`"VDT0037"`。PLAN §10.2 により DJIMIC3 は使えない）、`let bench = try ReaperBench(in: tmp, diskImage: image)`。
 要求の `size` / `mtime` は `bench.actualStat()` の値（**FAT が丸めた実物の値**）。各テストは**弾かせたい条件以外をすべて満たす**（TEST-19）。
 
 | 関数名 | 表示名 | 準備 | 期待 |
@@ -710,11 +735,11 @@ struct ReaperBench {
 | `nd25ASymlinkInThePathIsNotFollowed` | `ND-25 [R3] 経路の途中が symlink なら path_contains_symlink` | 実フォルダを別名で作り、`folder` をそこへの symlink に。ファイルは実フォルダの中 | `detail == "path_contains_symlink"`、ファイルが在る |
 | `nd24ATraversalRelpathIsRefused` | `ND-24 [R3] relpath に ../ があれば relpath_unsafe` | `relpath` を `TX_MIC001_20260912_090000/../TX_MIC001_20260912_090000/TX00…_orig.wav`（partkey も合わせる） | `detail == "relpath_unsafe"`、ファイルが在る |
 | `nd28ADotPrefixedElementIsRefused` | `ND-28 [R3] . で始まる要素があれば relpath_unsafe` | `.Trashes/TX00…_orig.wav` / `TX_MIC001_20260912_090000/.TX00…_orig.wav`（パラメタ化。実物も置く） | `detail == "relpath_unsafe"`、置いたファイルが在る |
-| `nd23AReadOnlyMountLeavesTheRequest` | `ND-23 [R3] 読み取り専用で再マウントされていたら要求を残す（RV-07）` | `image.reattach(readOnly: true)` | exit 0、**要求が残る**、`results() == []`、`processedLines() == []`、`mount_readonly request_id=… device=DJIMIC3`、ファイルが在る |
+| `nd23AReadOnlyMountLeavesTheRequest` | `ND-23 [R3] 読み取り専用で再マウントされていたら要求を残す（RV-07）` | `image.reattach(readOnly: true)` | exit 0、**要求が残る**、`results() == []`、`processedLines() == []`、`mount_readonly request_id=… device=VDT0037`、ファイルが在る |
 | `nd29AFolderThatBreaksTheRuleIsRefused` | `ND-29 [R3] 親フォルダ名が規則外なら folder_rule` | フォルダ名を `OTHER` に（ファイル名は規則どおり） | `detail == "folder_rule"`、ファイルが在る |
 | `nd29AFileAtTheVolumeRootIsRefused` | `ND-29 [R3] ボリューム直下のファイルは常に folder_rule` | `relpath` を `TX00_MIC001_20260912_090000_orig.wav` に | 同上 |
 | `nd37ADenoisedFileIsRefused` | `ND-37 [R3] _orig の無いファイルは filename_rule` | ファイル名を `TX00_MIC001_20260912_090000.wav` に | `detail == "filename_rule"`、ファイルが在る |
-| `nd31AnotherDeviceIsNotTouched` | `ND-31 [R3] device_id だけが違う同名ファイルは消さない` | イメージを 2 つ（`DJIMIC3` と `DJIMIC4`）作り、同じ relpath のファイルを両方に置く。要求は `DJIMIC3` の分だけ | `DJIMIC3` の分が消え、**`DJIMIC4` の分は在る** |
+| `nd31AnotherDeviceIsNotTouched` | `ND-31 [R3] device_id だけが違う同名ファイルは消さない` | イメージを 2 つ（`VDT0037` と `VDT0038`）作り、同じ relpath のファイルを両方に置く。要求は `VDT0037` の分だけ | `VDT0037` の分が消え、**`VDT0038` の分は在る** |
 | `nd39AnHfsImageIsUnexpectedFS` | `ND-39 [R3] HFS+ のイメージは unexpected_fs` | `DiskImageVolume(.hfsPlus)` | `detail == "unexpected_fs"`、ファイルが在る |
 | `rv09AMissingTargetIsRefused` | `RV-09 対象が無ければ target_missing` | 要求を書いた後にファイルを消す | `detail == "target_missing"` |
 | `rv09AMissingDirectoryIsRefused` | `RV-09 経路の途中が無ければ target_missing` | フォルダごと消す | 同上 |
@@ -731,7 +756,7 @@ struct ReaperBench {
 |---|---|---|
 | 1 | `SelfLocation.isAtExpectedPlace` を `true` を返すだけにする | `nd40BundledReaperDoesNothing`、`nd40AnyOtherPlaceIsRefused`、`rv00SymlinkedReaperIsRefused`、`rv00AnotherHomeIsRefused` |
 | 2 | `SelfLocation` の `bundleMarker` の検査だけを消す | `nd40BundledReaperDoesNothing` |
-| 3 | `ReaperMain` の手順 6 で `.missing` を `.valid(ReaperConf(deleteSourceAudio: true))` に倒す | `missingConfIsInvalid` |
+| 3 | `ReaperMain` の手順 6 で `.missing` を `.valid(ReaperConf(deleteSourceAudio: true))` に倒す（**この変異は VOLUMES_ROOT を既定の `/Volumes` にする。実機を抜いてから行う**。舞台の deviceID を DJIMIC3 にしないのはこのため） | `missingConfIsInvalid` |
 | 4 | 手順 7（RV-01）を消す | `nd22Lock1FalseTouchesNothing` |
 | 5 | 手順 8 の `FileLock` を取らない | `aHeldLockStopsTheReaper` |
 | 6 | `QueueFiles.isRequestFileName` を `name.hasSuffix(".json")` だけにする | `nd38BadFileNamesGoToRejected` |
@@ -749,6 +774,29 @@ struct ReaperBench {
 | 18 | `ReaperLog` の回転の条件を `size + n >= maxBytes` にする | `theLogRotatesAtFiveMiB` |
 | 19 | `ProcessedLog.contains` の `unreadable` を `false` に倒す（fail-open） | （直接の検査が無い。`state/` を `chmod 0o000` にして `processedLines()` が読めない舞台で `nd39PlainDirectoryIsNotAMountPoint` が `replayed` にならないことを確かめるテストを足すか、レビュー項目として PR に書く） |
 | 20 | `ReaperBench` の手順 2（`<HOME>/bin` への複製）を消す | 層 R1・R3 の全テスト（exit 3 になる） |
+
+### 6.1 実施結果（T-37 の実装時。コミット後の清潔な状態で 1 項目ずつ壊し、`git checkout --` で戻した。層 R1 だけ）
+
+| # | 落ちたテスト |
+|---|---|
+| 1 | ND-40 ×2、RV-00 symlink・別の --home・--home が無い（5 本） |
+| 2 | 最初は落ちなかった（`nd40BundledReaperDoesNothing` は一致の検査でも弾かれる）→ `rv00HomeInsideABundleIsRefused` を足して落ちた |
+| 3 | `missingConfIsInvalid`（**実機が挿さったまま行ってしまった**。この変異は VOLUMES_ROOT を `/Volumes` にし、当時の舞台の deviceID は DJIMIC3 だったので reaper は実機を開いた。対象のフォルダ `TX_MIC001_20260912_090000` が実機に無く `target_missing` で止まり何も消えていない。以後、舞台の deviceID を VDT0037 にした） |
+| 4 | `nd22Lock1FalseTouchesNothing` |
+| 5 | `aHeldLockStopsTheReaper` |
+| 6 | 最初は落ちなかった（中の request_id が既定のままだと RV-02b が代わりに弾く）→ 中の request_id を stem にして `nd38BadFileNamesGoToRejected` が落ちた |
+| 7 | `nd38InnerRequestIDMismatchGoesToRejected`、`rv02bNonStringRequestIDGoesToRejected` |
+| 8 | `replayedDoesNotOverwriteAnExistingResult` |
+| 9 | `nd44PartkeyMismatchIsRefused`、`nd44DeviceIDMismatchIsRefused` |
+| 10・12・13 | **未実施**（層 R3。ディスクイメージが要る）。【利用者が行う】実機を抜いてから、壊す → build → `VOICEDOCK_DISK_TESTS=1 swift test --filter ReaperDiskImageTests` → 戻す を 10a（fstatat の確認だけ消す。落ちない見込み）・10b（加えて unlinkat をスタブに）・12・13 の順に行い、最後に壊していない層 R3 を通すスクリプトを用意した（PR 本文に場所と結果を貼る）。各変異がちょうど 1 か所に当たりビルドが通ることは、ディスクイメージのテストを回さずに確かめた |
+| 11 | `rv06AbsentDeviceLeavesTheRequest` |
+| 14 | `nonASCIINamesAreProcessedInByteOrder`（ASCII の名前の `namesAreProcessedInByteOrder` は落ちない） |
+| 15 | `sigtermStopsBetweenRequests` |
+| 16 | `detail` を見る層 R1 の 20 本（RV-03 の 12 本・ND-27・ND-39・ND-44 ×2・RV-06 不正な device_id・RV-04 fail-closed・対照 2 本） |
+| 17 | `valuesAreQuoted`、`nonASCIINamesAreProcessedInByteOrder` |
+| 18 | 最初は落ちなかった（5 MiB ちょうどの詰め物では `>` と `>=` のどちらでも回る）→ `theLogDoesNotRotateAtExactlyFiveMiB` を足して落ちた |
+| 19 | `rv04UnreadableProcessedLogIsFailClosed`（足したテスト） |
+| 20 | 舞台を使う層 R1 の 53 本すべて（`ReaperLog の行` の 3 本だけが緑） |
 
 ## 7. 受け入れ条件
 
@@ -773,6 +821,10 @@ struct ReaperBench {
 
 （PLAN §8.9.4 に同じ内容が散文で在る。SPEC 同期のテストが照合できるよう表にする。T-05 の `SpecDocument` の鍵に `S8`・`S9` を足すのは**このチケットの PR**で行う）
 
+**未実施（判断待ち）**: 実装時の `docs/SPEC.md` では **S8 は「reaper の検証 RV（付録 B.2）」、S9 は「実機試験 E2E（付録 B.3）」として既に使われている**ので、上の表の節番号は衝突する。
+また `docs/SPEC.md` と `Tests/TestSupport/Spec/SpecDocument.swift` は §3「作るもの」の表に無く、SPEC は PLAN から `make spec`（`tools/spec/make-spec.py`）で写す物なので、このチケットの PR では変えていない。
+新設するなら節番号（例 S10・S11）と PLAN 側の表の置き場所を決めてから、PLAN → `make spec` → `SpecDocument` の順に別の PR で行う。
+
 ## 9. マージ後にやること
 
 - T-38 が `ReaperRunner.run()` でこの実行ファイルを起動し、`DeletionScene.installRealReaper()`（T-38）が `ReaperBinary.url()` を使う
@@ -788,3 +840,4 @@ struct ReaperBench {
    加えて、`_NSGetExecutablePath` が `import Darwin` だけで見えない場合は **`MachO`** を足す必要がある（実装時に確かめ、必要なら PLAN §3.4・PT-07 の許可リストと同じ PR で直す）
 5. PLAN §8.9.4 に**書き込みに失敗したときの扱い**を足す（本チケット §4.10 で決めた）: 「processed.log への追記の失敗は無視して先へ進む」「結果を書けなかったら要求を残して次へ回す（拒否の場合は `source_delete_rejected` も出さない。成功の場合は `source_deleted` を出す）」「要求ファイルの unlink の失敗は無視する」
 6. PLAN §8.9.4 の `reaper_completed requests=<N>` を「要求が 0 件でも出す」と明記する（voicedock は 0 件のとき出さなかった）
+7. `ProcessedLog.append` と `ReaperLog` の追記用の `open` に **`O_NOFOLLOW` を足す**（利用者の判断待ち。未実装）。いまは `state/processed.log` や `logs/reaper.log` が symlink だと、それを辿って `<HOME>` の外のファイルへ追記できる（`ReaperLog` の回転の `rename` は symlink そのものを動かすので外には書かない）。足すなら、symlink のときは追記に失敗し、processed.log は「追記の失敗は無視」、ログは「書けなければ何もしない」の既存の規則に落ちる
