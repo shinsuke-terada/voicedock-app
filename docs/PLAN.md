@@ -1638,6 +1638,8 @@ func skipReasonIsBacked(...) -> Bool {
   - `readiness` が `.disabled` → 削除せずに完了する（`source_delete_skipped session_key=… reason=<語>`）。待っても変わらない条件で待たない（DEL-15 / DEL-16）
   - デバイスが**接続中で** `.readOnly` か `.unknown` → 削除せずに完了する（`reason=device_readonly`。voicedock と同じ。有効化の直後で挿し直す前のデバイスもここに入る。消し損ねた分は「過去分を削除対象にする」で拾える）
   - デバイスが **`.absent`（未接続）なら待つ**（`delete_attempts += 1` して backoff。voicedock は未接続を「書き込み可能」扱いにして要求を書かず待っていた）
+  - デバイスが**接続中で列挙でき**、RAW_SAVED の Part の元ファイルが一覧に**無い** → その Part は消す必要が無いので、要求を書かずに完了する（§8.9.5 の `requestDeletions`。F-64）。
+    事前確認（`preIdentityCheck`）は不在のファイルを同定できず永久に偽なので、待っても変わらない（CR-15）。未接続・列挙できない・snapshot が古いときは「無い」と判定せず待つ
 - 消し損ねた分は「過去分を削除対象にする」（§8.9.9）で後から拾える
 
 #### 8.9.3 ロック 2-A: 同梱して複製で解除（D-5）
@@ -1759,6 +1761,9 @@ for part in Session の Part（started_at, partkey 順）:
   part.status ∈ {SOURCE_DELETING, COMPLETED} → 飛ばす（通常経路は COMPLETED を消しにいかない）
   part.delete_request_id != nil → 飛ばす（結果待ち）
   part.partkey ∈ この tick で PENDING に落とした集合 → 飛ばす（同じ周回で再要求しない。DEL-11）
+  part.status == RAW_SAVED かつ sourceIsObservedAbsent(part, snapshot):                          // F-64。要求を書かない
+      part.status RAW_SAVED→COMPLETED（detail already_absent）                                  // TransitionConflict → source_delete_skipped … reason=status_changed、飛ばす
+      log source_delete_skipped recording_key reason=already_absent; 飛ばす                    // source_deleted_at は入れない（アプリが消したのではない）
   canDeleteSource(...) が偽 → 飛ばす
   id = RequestID.make(partkey, now)
   updateRecording(delete_request_id = id)                         // ① ID を先に
@@ -1773,6 +1778,12 @@ for part in Session の Part（started_at, partkey 順）:
   `PartKey.make(device_id, source_path) == partkey`、snapshot にそのデバイスが在り relpath が在る、`source_size` / `source_mtime` が nil でない、
   そして**アプリも実ファイルに検証をかける**: 注入された `VolumeOpener` でボリュームを開き（本番は `TargetIdentity.openVolume`）、`VolumeHandle.readOnly == false` を確かめ、`TargetIdentity.withVerifiedTarget` をかける（body では何もしない）。
   これは事前確認であり、**reaper は同じ検証を unlink の直前に独立してやり直す**（判断と直前の再検証を分ける。DEL-26）
+- **元ファイルが無いと観測できた `sourceIsObservedAbsent(part, snapshot)`**（F-64）: 上の新鮮な snapshot で、`snapshot.unavailable[device_id]` が無く、
+  `snapshot.devices[device_id]` が在り（接続中で一覧が完全。一覧が不完全なデバイスは IngestService が devices に載せない）、`source_path` が nil でも空でもなく、その relpath が一覧に**無い**。
+  どれかが欠ければ偽（観測できたときだけ「無い」と言う。安全側は「待つ」）。書き込み可否（`readOnly`）は問わない（消さないので）。
+  RAW_SAVED だけが対象で、SOURCE_DELETE_PENDING は従来どおり「手動で消した分を完了にする」（§8.9.9）に任せる。`delete_request_id` を持つ Part は結果待ちなので手前で飛ぶ。
+  これが無いと、削除が有効（`.configured`・`.writable`）なのに元ファイルが消えている RAW_SAVED の Part は、事前確認が永久に偽で要求が書かれず、
+  削除段が `requested == 0` のまま `delete_attempts += 1` を繰り返して Session が COMPLETED にならない（抜け道は削除を無効にすることだけだった。CR-15・DEL-15/16）
 - 書く順は ①ID → ②要求ファイル → ③遷移（§4.4）。②の後・③の前に落ちても、Part は RAW_SAVED のまま ID を持ち「結果待ち」として回収される（§8.9.6）
 - `evaluateDeletions`: 全 Session を `ORDER BY updated_at, session_key` で見て、`deleteEvaluated` に在り、`now − updated_at >= delay(delete_attempts)` のものに `deleteSourcesIfSafe`。
   `delay(a) = backoff[min(max(a, 1), backoff.count) − 1]`（**a = 0 と 1 はどちらも先頭の値**。voicedock pipeline.py:1855-1868。テスト: (1, 30 秒前)→評価しない、(1, 120)→する、(4, 1800)→しない、(4, 7200)→する）
@@ -1872,7 +1883,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 - 「過去分を削除対象にする」（`BacklogPlanner.planBacklog`）: **COMPLETED の Session** の Part のうち、状態が COMPLETED か SOURCE_DELETE_PENDING のもの。
   `source_deleted_at` が在る → 対象外 `already_deleted`、`delete_request_id` が在る（結果待ち。復旧後の PENDING など）→ 対象外 `not_deletable`（二重に要求しない）、`canDeleteSource` が偽 → `not_deletable`、真 → 対象。
   実行: 各対象を読み直し、ID → 要求ファイル → `COMPLETED→SOURCE_DELETING` / `SOURCE_DELETE_PENDING→SOURCE_DELETING`（回収は §8.9.6 の全件回収が拾う）
-- 「手動で消した分を完了にする」（`planResolveAbsent`）: SOURCE_DELETE_PENDING の Part のうち、**新鮮な snapshot にそのデバイスが載っていて relpath が無い**もの
+- 「手動で消した分を完了にする」（`planResolveAbsent`）: SOURCE_DELETE_PENDING の Part のうち（RAW_SAVED の Part は §8.9.5 の `requestDeletions` が同じ観測の条件で自動で完了にする。F-64）、**新鮮な snapshot にそのデバイスが載っていて relpath が無い**もの
   （デバイスが無い・snapshot が古い → 対象外 `device_absent`、relpath が在る → `still_present`、`source_path` が無い → `still_present`。voicedock は未接続でも「無い」と判定していた）。
   実行: `SOURCE_DELETE_PENDING→SOURCE_DELETING`（detail `resolve_absent`）→ `SOURCE_DELETING→COMPLETED`（detail `already_absent`）→ 要求・結果を取り下げ → ID を外す →
   `source_delete_skipped recording_key=… reason=already_absent`。**`source_deleted_at` は入れない**（不可逆操作の記録に嘘を混ぜない）
@@ -2609,7 +2620,8 @@ COMPLETED→SOURCE_DELETING(過去分)
 FAILED→NORMALIZING | FAILED→TRANSCRIBING | FAILED→RAW_WRITING
 ```
 （「手動で消した分を完了にする」は直通の辺を足さず、voicedock backlog.py と同じく SOURCE_DELETE_PENDING→SOURCE_DELETING→COMPLETED の 2 遷移で行う。
-RAW_SAVED で結果を待っていた Part の DELETED も RAW_SAVED→SOURCE_DELETING→COMPLETED の 2 遷移で進める）
+RAW_SAVED で結果を待っていた Part の DELETED も RAW_SAVED→SOURCE_DELETING→COMPLETED の 2 遷移で進める。
+元ファイルが無いと観測できた RAW_SAVED の Part は、既存の RAW_SAVED→COMPLETED を detail `already_absent` で使う（§8.9.5。F-64。辺は増やさない））
 
 Session:
 ```text
@@ -3094,3 +3106,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-61 | 事 | §1.3・§2.1・§5.4・§8.1・§8.2・§8.11・§10.3・§12・付録 A.4・付録 B.3 | （2026-09-22 に利用者が決定）このアプリが完成したら voicedock は動かさないので、共存ガード（voicedock の Helper の LaunchAgent が登録されていたら取り込み・処理・削除を止める）を取り下げた。§8.1 の手順 1 は欠番、DR-13 は打ち消しの行、E2E-15 は取り下げ（番号は詰めない）。`coexistence_blocked`・要対応の `coexistenceBlocked` を消した。読み取り専用の再マウント・原本を `O_RDONLY` で開くことなど、ほかの取り込みの安全策は変えない |
 | F-62 | 事 | §11.3 | （2026-09-22 に利用者が決定）dmg の作成を `hdiutil create -srcfolder`（内部でイメージを既定の場所に attach しうる）から、空の HFS+ イメージを `hdiutil attach -nobrowse -mountpoint` で `dist/` の中にだけマウントして `ditto` で書き、detach して `convert -format UDZO` する方式に変えた。マウントを伴わない `makehybrid -hfs` は全ファイルに `com.apple.FinderInfo` を付けて `.app` の署名が `codesign --strict` で落ち、`-udf` は `/Applications` への symlink が壊れるので却下した |
 | F-63 | 事 | 付録 B.3 | （2026-09-22 に利用者が決定）E2E-11 の後半「手動で消した分の完了」を実機の試験から外し、T-41 の単体テスト（`BacklogPlannerTests` の resolveAbsent 系）で代えた。対象の `SOURCE_DELETE_PENDING` は reaper の拒否・期限切れ（`no_result`）・`still_in_inventory` でしか生じず、要求を書いてから reaper が動くまでが同じ tick の中にあるので、手の操作で確実に作れない。運用中に `SOURCE_DELETE_PENDING` が出たら docs/E2E.md §3.11 に記録する。E2E-11 は前半（過去分を削除対象にする）が PASS なら PASS とし、削除のゲート（§12.4 の 2）もそれで満たす |
+| F-64 | 誤 | §8.9.2・§8.9.5・§8.9.9・付録 A.2 | （2026-09-22 に利用者が承認）削除が有効（`.configured`・`.writable`）なのに RAW_SAVED の Part の元ファイルがデバイスから消えていると、事前確認（`preIdentityCheck`）が永久に偽で要求が書かれず、削除段が `requested == 0` のまま `delete_attempts += 1` を繰り返して Session が COMPLETED にならなかった（「手動で消した分を完了にする」は SOURCE_DELETE_PENDING だけが対象で救えず、抜け道は削除の無効化だけ。CR-15・DEL-15/16 に反する）→ `requestDeletions` が、新鮮な snapshot でデバイスが接続中で列挙でき relpath が一覧に無い RAW_SAVED の Part を、要求を書かずに RAW_SAVED→COMPLETED（detail `already_absent`、`source_delete_skipped recording_key=… reason=already_absent`）にする。`source_deleted_at` は入れない。未接続・列挙できない・snapshot が古いときは従来どおり待つ。遷移とログの語は既存のもの（A.2・A.4 の語は増やさない）。根拠 B（SKIPPED）は Session の完了を待たせず、不在の Part は要求の対象から外れるので同じ詰まりは無い |

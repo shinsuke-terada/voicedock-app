@@ -1,6 +1,7 @@
 // Part の削除要求（根拠 A）。Raw を保存した直後（§5.5）と Session の削除段から呼ばれる。
 // PLAN §8.9.5 requestDeletions（voicedock pipeline.py:670-748 ＋ 本計画の差分）。
 import VDCore
+import VDDevice
 import VDStore
 
 /// Part の削除要求（根拠 A）。Session の状態で門前払いしない（AY-1）。結果の回収はここでしない（§8.9.6）。
@@ -37,6 +38,22 @@ struct DeletionRequester {
                 if part.deleteRequestID != nil { continue }
                 // 4. 同じ周回で再要求しない（DEL-11）
                 if deps.pended.contains(part.partkey) { continue }
+                // 4a. 新鮮な snapshot で元ファイルが無いと観測できた RAW_SAVED は消す必要が無い（F-64）。要求を書かずに完了へ。
+                //     source_deleted_at は入れない（アプリが消したのではない）。待っても変わらない条件で待たない（CR-15）
+                if part.status == .rawSaved && Self.sourceIsObservedAbsent(part, in: snapshot) {
+                    do {
+                        try deps.store.recordPartTransition(
+                            partkey: part.partkey, from: .rawSaved, to: .completed,
+                            detail: DeletionReason.alreadyAbsent)
+                    } catch is TransitionConflict {
+                        deps.logStatusChanged(recordingKey: part.partkey)
+                        continue
+                    }
+                    deps.log.info(
+                        .sourceDeleteSkipped,
+                        [(.recordingKey, .string(part.partkey)), (.reason, .string(DeletionReason.alreadyAbsent))])
+                    continue
+                }
                 // 5.
                 guard
                     DeletionPolicy.canDeleteSource(
@@ -68,5 +85,15 @@ struct DeletionRequester {
         }
         // 5.
         return requested
+    }
+
+    /// 元ファイルが無いと観測できた（F-64）: デバイスが snapshot に載り（接続中で一覧が完全）、unavailable に無く、relpath が一覧に無い。
+    /// source_path が無い・空なら偽（「無い」と確かめられない）。未接続・列挙できないときは偽（観測できたときだけ「無い」と言う）。
+    /// 新鮮さは呼び手が確かめる（DEL-20）
+    static func sourceIsObservedAbsent(_ part: RecordingRow, in snapshot: DeviceSnapshot) -> Bool {
+        guard snapshot.unavailable[part.deviceID] == nil, let observation = snapshot.devices[part.deviceID],
+            let relpath = part.sourcePath, !relpath.isEmpty
+        else { return false }
+        return !observation.relpaths.contains(where: { DeletionPolicy.sameKey($0, relpath) })
     }
 }

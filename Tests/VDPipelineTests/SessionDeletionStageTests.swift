@@ -143,6 +143,75 @@ struct SessionDeletionStageTests {
         #expect(!Self.hasSkippedLog(scene))
     }
 
+    /// 既定の Part とは別の録音（一覧には在る。デバイスは接続中で列挙できている姿）
+    static let otherRelpath = "TX_MIC001_20260912_100000/TX00_MIC001_20260912_100000_orig.wav"
+
+    /// 元ファイルが無いと観測できて完了した姿（F-64）
+    static func expectCompletedAsAbsent(_ scene: DeletionScene) throws {
+        #expect(scene.requests() == [])
+        let part = try Self.part(scene)
+        #expect(part.status == .completed)
+        #expect(part.sourceDeletedAt == nil)
+        #expect(part.deleteRequestID == nil)
+        let last = try #require(try scene.store.events(entity: .recording, key: Self.pk).last)
+        #expect(last.fromStatus == "RAW_SAVED")
+        #expect(last.toStatus == "COMPLETED")
+        #expect(last.detail == "already_absent")
+        #expect(Self.logged(scene, "source_delete_skipped recording_key=" + Self.pk + " reason=already_absent"))
+        let session = try Self.session(scene)
+        #expect(session.status == .completed)
+        #expect(session.deleteAttempts == 0)
+    }
+
+    @Test("F-64 接続中で列挙できた一覧に元ファイルが無い RAW_SAVED は、要求を書かずに完了する（source_deleted_at は入れない）")
+    func observedAbsentSourceCompletes() async throws {
+        let scene = try DeletionScene()
+        await Self.stage(scene, snapshot: scene.snapshot(relpaths: [Self.otherRelpath])).deleteSourcesIfSafe(
+            sessionKey: Self.key)
+        try Self.expectCompletedAsAbsent(scene)
+    }
+
+    @Test("TEST-28 一覧が空（録音 0 件）でも、接続中で列挙できていれば無いと観測できたとして完了する")
+    func emptyListingCompletes() async throws {
+        let scene = try DeletionScene()
+        await Self.stage(scene, snapshot: scene.snapshot(relpaths: [])).deleteSourcesIfSafe(sessionKey: Self.key)
+        try Self.expectCompletedAsAbsent(scene)
+    }
+
+    @Test(
+        "F-64 無いと観測できなければ完了にしない（パラメータ化: 未接続・列挙できない・unavailable が観測より優先・snapshot が古い）",
+        arguments: ["未接続", "列挙できない", "unavailable が優先", "snapshot が古い"])
+    func unobservedAbsenceWaits(_ condition: String) async throws {
+        let scene = try DeletionScene()
+        let listed = scene.snapshot(relpaths: [Self.otherRelpath])
+        let snapshot: DeviceSnapshot
+        switch condition {
+        case "未接続":
+            snapshot = scene.snapshot(relpaths: [Self.otherRelpath], includeDevice: false)
+        case "列挙できない":
+            // IngestService の姿: 一覧が不完全なデバイスは devices に載せず unavailable に載せる
+            snapshot = DeviceSnapshot(
+                generation: 1, completedAt: scene.clock.now(), connectEpoch: 1, devices: [:],
+                unavailable: [scene.deviceID: "not_listable"], notListableErrno: [:])
+        case "unavailable が優先":
+            snapshot = DeviceSnapshot(
+                generation: 1, completedAt: scene.clock.now(), connectEpoch: 1, devices: listed.devices,
+                unavailable: [scene.deviceID: "not_listable"], notListableErrno: [:])
+        default:
+            snapshot = scene.snapshot(
+                relpaths: [Self.otherRelpath], completedAt: DeletionScene.now.adding(seconds: -901))
+        }
+        await Self.stage(scene, snapshot: snapshot).deleteSourcesIfSafe(sessionKey: Self.key)
+        let session = try Self.session(scene)
+        #expect(session.status == .saved)
+        #expect(session.deleteAttempts == 1)
+        let part = try Self.part(scene)
+        #expect(part.status == .rawSaved)
+        #expect(part.sourceDeletedAt == nil)
+        #expect(scene.requests() == [])
+        #expect(!Self.hasSkippedLog(scene))
+    }
+
     @Test("RAW_SAVED で ID を持つ Part が在れば完了させない")
     func rawSavedWithRequestIDDoesNotComplete() async throws {
         let scene = try DeletionScene()
