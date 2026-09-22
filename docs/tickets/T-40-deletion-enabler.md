@@ -37,6 +37,8 @@
 | `Sources/VoiceDockApp/AppServices.swift`（変更） | 有効化・無効化の 3 つの口（00-api-map §12「T-40 が有効化・無効化の口を足す」）と、`read` での `DeletionPanelState` の組み立て |
 | `Sources/VoiceDockApp/AppSnapshot.swift`（変更） | `deletionEnabled` を `deletion: DeletionPanelState?` に置き換える（T-30 の「T-40 が lockDisplay を足す」） |
 | `Sources/VoiceDockApp/IconState.swift`（変更） | `trash` を出す条件を `DeletionPanelState.showsTrash` から取る |
+| `Sources/VoiceDockApp/Strings.swift`（変更） | 「元音声の削除」の節のボタン・無効化の失敗・`EnableError` の文言（§4.5 の表） |
+| `Sources/VoiceDockApp/Panel/DeletionSection.swift`（変更） | 「元音声の削除」の節の中身（T-30 が「T-40 が中身を書く」とした。§4.7） |
 | `Tests/VoiceDockAppTests/FakeServices.swift`（変更） | `AppServices` に足した 3 つの口の偽物 |
 | `Tests/VoiceDockAppTests/AppModelTests.swift`（変更） | `deletionEnabled` を `deletion` に、`AppContext` に `enabler` を渡す |
 | `Tests/VDPipelineTests/EnablerBench.swift` | テストの舞台（`DeletionScene` ＋ 本物の `ConfigStore`） |
@@ -44,6 +46,9 @@
 | `Tests/VDPipelineTests/ReconcileLock1Tests.swift` | `reconcileLock1` と `ConfigStore.load` との配線（F-37 の回帰） |
 | `Tests/VDPipelineTests/DeletionPanelStateTests.swift` | 3 行の逐語・`trash`・注意書き |
 | `Tests/VDPipelineTests/DisableStopsDeletionTests.swift` | E2E-17 に対応する単体 |
+| `Tests/VoiceDockAppTests/DeletionTextsTests.swift` | 節の文言と `EnableError` の文言の逐語 |
+| `Tests/VoiceDockAppTests/AppModelDeletionTests.swift` | `AppModel` の 3 つの口（押したら `services` が呼ばれる・結果が画面の値になる） |
+| `Tests/PolicyTests/BootstrapOrderTests.swift` | `Bootstrap.build()` で修復口が最初の `config.load()` より前にあることのトークン検査 |
 
 ## 4. 仕様
 
@@ -299,6 +304,8 @@ _ = await configStore.load()      // 修復口を挿した後に読む
 - T-30 の `Bootstrap` は 7 で `load()` し、11 で `IngestService` を**読み込んだ設定の時刻帯とログで**作る。`DeletionEnabler` は `ingest` を要るので、
   7 の中で `LateBoundIngest()`（`Bootstrap.swift` の internal な `final class LateBoundIngest: IngestPort`。`Mutex<IngestService?>` を持ち、`bind(_:)` の前は `nil`・`.idle`・すぐ終わるストリームを返す）を渡して作り、11 の直後に `enablerIngest.bind(ingest)` でつなぐ。
   13 の行は「7 でつないだ」のコメントにする
+  - **なぜ中継か**（利用者の決定 2026-09-22）: 代わりに `IngestService` を `load()` の前に作ると、取り込み側のログが設定の時刻帯（`timeZone`）とレベル（`logging.level`）に従わなくなる。ログを設定に従わせる方を優先し、循環は中継で切る。`LateBoundIngest` は internal で Bootstrap の中だけで使う
+  - この順は単体テストで動かせない（`Bootstrap.build()` は本番の <HOME> を使う）ので、`Tests/PolicyTests/BootstrapOrderTests.swift` が `func build(` の本体のトークンで「`setLock1Reconciler` が最初の `config.load()` より前」を検査する（コメントと文字列は数えない）
 - `DeletionEnabler` は `AppContext.enabler` に持たせ、`LiveServices` が `AppModel` の 3 つの口から呼ぶ（`AppModel` は `AppServices` だけを見る。T-30）
 
 ### 4.5 `AppModel.swift` の変更（T-30 のファイル。UI への口）
@@ -325,6 +332,24 @@ extension AppModel {
   挿し直すまでの間は `deletion.notices` にも同じ文言が載る（§4.1 の 3-2）
 - 有効化の前に `DeletionStrings.confirmVerified` と `DeletionStrings.confirmIrreversible` と**最新の診断結果**（T-32 の `[DiagnosticResult]`）を出す
 - 無効化の返り値が空でなければ、段の名前をそのまま並べて出す（`copy_reaper` などの語は英語のまま。ログと突き合わせるため）
+- 有効化・根拠 B の失敗は `private(set) var enableError: EnableError?` に残し（成功と無効化で nil に戻す）、`Strings.enableFailed(_:)` で出す
+
+`Strings` に足す文言（PLAN に無いので最小限。形は「有効にできませんでした: <理由>」。利用者の決定 2026-09-22）:
+
+| ケース | 文言 |
+|---|---|
+| ボタン（有効化） | `有効にする` |
+| ボタン（根拠 B） | `無音・重複も消す` |
+| ボタン（無効化） | `無効にする` |
+| 無効化の失敗 `disableFailed(stages)` | `無効にできなかった段: ` ＋ 段の名前を `, ` でつないだもの |
+| `.notConfirmed` | `有効にできませんでした: ENABLE と入力してください` |
+| `.install(m)` | `有効にできませんでした: 削除モジュールを置けません（m）` |
+| `.signature` | `有効にできませんでした: 削除モジュールの署名を確かめられません` |
+| `.reaperConfWrite(m)` | `有効にできませんでした: reaper.conf を書けません（m）` |
+| `.config([])` | `有効にできませんでした: 元音声の削除が有効になっていません` |
+| `.config(v)`（空でない） | `有効にできませんでした: 設定に書けません（` ＋ `v.map(\.rendered)` を `、` でつないだもの ＋ `）` |
+| `.configNotLoaded` | `有効にできませんでした: 設定が読み込まれていません` |
+| `.rollback(stages)` | `有効にできませんでした: 元に戻せなかった段があります（` ＋ 段の名前を `, ` でつないだもの ＋ `）` |
 
 ### 4.6 `Tests/VDPipelineTests/EnablerBench.swift`
 
@@ -372,6 +397,19 @@ struct EnablerBench {
 9. `realReaper` が真なら `try scene.installRealReaper()`（T-38。本物の実行ファイルを bin に置く）
 
 - `/Volumes` には触れない（`DeletionScene` の約束のまま）
+
+### 4.7 `Panel/DeletionSection.swift`（T-30 のファイル。PLAN §8.9.8・§8.12 の 7）
+
+`model.deletion` が nil（設定エラー中）なら何も出さない。そうでなければ `SectionBox(title: Strings.sectionDeletion)` に、この順で:
+1. `deletion.lines`（3 行。等幅）と `deletion.notices`
+2. `model.deletionNotice`（`deletion.notices` に同じ文言が無いときだけ）
+3. `deletion.showsTrash` が真なら:
+   - `showsSkippedToggle` が真で `skippedEnabled` が偽なら、`ENABLE` の入力欄（プレースホルダは `DeletionStrings.confirmationWord`）と `Strings.buttonEnableSkippedDeletion`。押したら入力をそのまま `enableSkippedDeletion(confirmation:)` に渡す
+   - `Strings.buttonDisableDeletion`（**確認を出さない**）→ `disableDeletion()`
+4. 偽なら（有効化の前）: `DeletionStrings.confirmVerified`・`DeletionStrings.confirmIrreversible`、診断が済んでいれば `Diagnostics.summary(結果)`、済んでいなければ `Strings.buttonRunDiagnostics`。`ENABLE` の入力欄と `Strings.buttonEnableDeletion`。押したら入力をそのまま `enableDeletion(confirmation:)` に渡す（**完全一致のときだけ押せる形にはしない**。判定は `DeletionEnabler`）
+5. `model.enableError` があれば `Strings.enableFailed(_:)`、`model.disableFailedStages` が空でなければ `Strings.disableFailed(_:)`（赤）
+
+ビューそのものはテストしない。文言は §6.5、口は §6.6 で守る。
 
 ## 5. ログ（このチケットが出すもの）
 
@@ -467,6 +505,35 @@ struct EnablerBench {
 | `e2e17DisableRemountsAtOnce` | `E2E-17` 直ちに再マウントを促す | 同上 | `ingest.scanNowCalls == 1` |
 | `e2e17TheReaperIsGone` | `E2E-17` 削除モジュールが消える | `realReaper: true` で有効な状態から `disable()` | `reaperIsInstalled() == false`、`readiness == .disabled(delete_source_audio_disabled)`（config が先に落ちる） |
 
+### 6.5 `Tests/VoiceDockAppTests/DeletionTextsTests.swift`（`@Suite("元音声の削除の文言")`）
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `labelsAreVerbatim` | ボタンと無効化の失敗の文言は逐語 | — | §4.5 の表のボタン 3 つ、`Strings.sectionDeletion == "元音声の削除"`、`disableFailed(["reaper_conf", "remount"]) == "無効にできなかった段: reaper_conf, remount"` |
+| `planTextsAreVerbatim` | PLAN §8.9.8 の事前確認・確認語・挿し直しの案内は逐語 | — | `DeletionStrings` の 4 つが §4.1 の逐語 |
+| `enableFailureTextsAreVerbatim` | EnableError の各ケースの文言は逐語（T-40 §4.5 の表） | 8 ケース（パラメタ化。`.config` は空と違反 1 件の 2 通り） | §4.5 の表のとおり |
+| `disableFailedWithNoStages` | TEST-28 段が 0 件でも無効化の失敗の文言は落ちない | `disableFailed([])` | `"無効にできなかった段: "` |
+
+### 6.6 `Tests/VoiceDockAppTests/AppModelDeletionTests.swift`（`@Suite("AppModel+Deletion")`。`FakeServices` を使う）
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `enablePassesTheInputAndShowsTheReinsertNotice` | 有効化は入力をそのまま services に渡し、成功したら挿し直しの案内を出す | `enableDeletion(confirmation: " enable ")` | `fake.enableConfirmations == [" enable "]`、`deletionNotice == DeletionStrings.reinsertNotice` の逐語、`enableError == nil`、`read` が 1 回 |
+| `enableFailureIsKept` | 有効化の失敗は enableError に残り、案内は出さない | `setEnableResult(.failure(.notConfirmed))` | `enableError == .notConfirmed`、`deletionNotice == nil` |
+| `enableSkippedPassesTheInput` | 根拠 B は入力をそのまま services に渡す | `setEnableResult(.failure(.config([])))` → `enableSkippedDeletion("ENABLE")` | `skippedConfirmations == ["ENABLE"]`、`enableConfirmations == []`、`enableError == .config([])` |
+| `disableCallsServicesOnceAndKeepsTheStages` | 無効化は確認なしで services を 1 回呼び、失敗した段をそのまま持つ | `setDisableResult(["reaper_conf", "remount"])`、先に有効化 | `disableCount == 1`、戻り値と `disableFailedStages` が同じ 2 語、`deletionNotice == nil` |
+| `disableWithNoFailures` | TEST-28 無効化がすべて成功すれば段の表示は空 | 既定 | `[]` |
+| `deletionAndTrashFollowTheSnapshot` | deletion は観測の写しのまま、trash は DeletionPanelState.showsTrash に従う | (app false, conf enabled) → (app false, conf missing) | `deletion` が写しのまま、`showsTrash` が true → false |
+| `noTrashWithoutDeletionState` | 設定エラー中（deletion が nil）は trash を出さない | `deletion: nil` | `deletion == nil`、`showsTrash == false` |
+
+### 6.7 `Tests/PolicyTests/BootstrapOrderTests.swift`（`@Suite("起動の順（T-40）")`）
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `reconcilerIsInstalledBeforeTheFirstLoad` | 修復口を最初の config.load() より前に挿す | `SourceTree.load()` の `VoiceDockApp/Bootstrap.swift` | `func build(` の本体で `setLock1Reconciler`（`(` か `{` が続く）が最初の `config.load()` より前 |
+| `selfTest` | 自己テスト: 順が逆・呼び出しが無い・関数が無いを検出する | 5 つの断片（パラメタ化。空の入力を含む） | 正しい順は nil、ほかはそれぞれの説明 |
+| `commentsAreIgnored` | 自己テスト: コメントの中の setLock1Reconciler は数えない | コメントにだけ書いた断片 | `"setLock1Reconciler がありません"` |
+
 ## 7. 破壊による証明
 
 | # | 壊し方（1 か所だけ） | 落ちるべきテスト |
@@ -490,9 +557,15 @@ struct EnablerBench {
 | 17 | `withdrawAllRequests` が結果（`queue/result`）も消す | `disableWithdrawsEveryRequest` |
 | 18 | `reconcileLock1` が config.json も書く | `reconcileTurnsTheConfOff`（config.json が変わらないことの検査） |
 | 19 | `reconcileLock1` の `volumesRoot` を `Contract.volumesRoot` に固定する | `reconcileKeepsTheVolumesRoot`、`enableKeepsTheVolumesRootOfTheOldConf` |
-| 20 | `Bootstrap` の `setLock1Reconciler` を `load()` の後に動かす | 落ちない（`Bootstrap.build()` は本番の <HOME> を使うのでテストが無い。実装で確かめた）。順序の効き目は `cv30IsReconciledOnLoad`（挿してから読む）と `loadWithoutAReconcilerIsAConfigError`（挿さずに読む）の対で示し、`Bootstrap` の順はレビュー項目として PR に書く |
+| 20 | `Bootstrap` の `setLock1Reconciler` を `load()` の後に動かす | `reconcilerIsInstalledBeforeTheFirstLoad`（§6.7 のトークン検査。`Bootstrap.build()` は本番の <HOME> を使うので動かすテストは無い）。順序の効き目は `cv30IsReconciledOnLoad`（挿してから読む）と `loadWithoutAReconcilerIsAConfigError`（挿さずに読む）の対で示す。PR のレビュー項目にも書く |
 | 21 | `DeletionPanelState` の `showsTrash` を `display.readiness == .configured` にする | `trashIsShownWhileEitherSideIsEnabled`、`trashIsShownEvenWhenTheDeviceIsAbsent` |
 | 22 | `notices` の 2 つの順を入れ替える | `bothNoticesAppearInOrder` |
+| 24 | `AppModel.enableDeletion` の成功で `deletionNotice` を入れない | `enablePassesTheInputAndShowsTheReinsertNotice` |
+| 25 | `AppModel.enableDeletion` が入力の前後の空白を削ってから渡す | `enablePassesTheInputAndShowsTheReinsertNotice`（`" enable "` がそのまま渡ることの検査） |
+| 26 | `AppModel.disableDeletion` が段の名前を持たない | `disableCallsServicesOnceAndKeepsTheStages` |
+| 27 | `AppModel.enableSkippedDeletion` が `services.enableDeletion` を呼ぶ | `enableSkippedPassesTheInput` |
+| 28 | `Strings.enableFailureReason` の `.signature` の文言を変える | `enableFailureTextsAreVerbatim` |
+| 29 | `AppModel.showsTrash` を `deletion != nil` にする | `deletionAndTrashFollowTheSnapshot` |
 | 23 | `LockDisplay` の行 2 に文言を直書きに戻す | 落ちない（値は同じ）。**PT の対象外なので、`DeletionStrings.reaperUpdateNotice` を 1 文字変えると `updateNoticeOnVersionMismatch` の「行 2 の末尾が同じ文言で終わる」が落ちることを PR に貼る** |
 
 ## 8. 受け入れ条件
@@ -536,5 +609,5 @@ struct EnablerBench {
 7. 付録 A.4 の `deletion_enabled` に `reason=skipped_source` を足す（根拠 B の有効化を同じイベントで区別する）。`deletion_disabled` に `reason=<失敗した段>` を足す
 8. （整合修正・低 9）`IngestService.remountAllReadOnly()` は誰も呼んでいない（本チケットの段 5 は `scanNow()` を使う。戻り値の generation が要るため）→ **T-15 §4 と地図 §5 から消した**（2026-09-21）
 9. （実装で分かった）§12 の `AppServices.swift` の行に T-40 の 3 つの口 `enableDeletion(confirmation:)`・`enableSkippedDeletion(confirmation:)`・`disableDeletion()` を名前で書く。`AppSnapshot` の `deletionEnabled` は `deletion: DeletionPanelState?` に置き換えた（trash の条件を 1 か所にするため）
-10. （実装で分かった）`Panel/DeletionSection.swift` の中身（ボタン・テキストフィールド・有効化の失敗の文言）はこのチケットに仕様が無いので書いていない（T-30 の `EmptyView` のまま）。有効化の失敗（`EnableError` の各ケース）を利用者に見せる文言を決め、節の中身を書くチケットを決める必要がある
-11. （実装で分かった）起動の順: PLAN §6.1 は修復口を最初の読み込みの前に要るが、T-30 の Bootstrap は `IngestService` を読み込みの後に作る。本チケットは `LateBoundIngest`（Bootstrap の internal な中継）で循環を切った（§4.4）。PLAN §8.15 の起動の列に「修復口を挿す → 設定を読む」を明記するとよい
+10. （実装で分かった）§12 の `Panel/*.swift` の行に「`DeletionSection` の中身は T-40（§4.7）」と書く。`EnableError` の文言は PLAN に無いので本チケット §4.5 の表で決めた（利用者の決定 2026-09-22）。PLAN §8.9.8 に失敗の表示の形「有効にできませんでした: <理由>」を足すとよい
+11. （実装で分かった）起動の順: PLAN §6.1 は修復口を最初の読み込みの前に要るが、T-30 の Bootstrap は `IngestService` を読み込みの後に作る。本チケットは `LateBoundIngest`（Bootstrap の internal な中継）で循環を切った（§4.4。ログを設定に従わせる方を優先した利用者の決定 2026-09-22）。順は PolicyTests（§6.7）が固定する。PLAN §8.15 の起動の列に「修復口を挿す → 設定を読む」を明記するとよい
