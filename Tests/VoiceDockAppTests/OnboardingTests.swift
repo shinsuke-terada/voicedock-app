@@ -112,6 +112,10 @@ struct OnboardingTests {
         #expect(item.visible == true)
         #expect(item.done == false)
         #expect(item.detail?.hasPrefix("NO NAME という名前のデバイスがつながっています。") == true)
+        // 改名されて候補が無くなっても「完了」にはしない（出さなくなるだけ）
+        var renamed = AppSnapshot(now: Self.fixed)
+        renamed.renameCandidates = []
+        #expect(try Self.item(renamed, .deviceName).done == false)
     }
 
     @Test("devices と unavailable の両方から集める")

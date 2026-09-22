@@ -501,7 +501,7 @@ extension SystemLoginItem {
 | `loginItemDoneWhenEnabled` / 「オンなら完了」 | `loginItem = .enabled` | ④ 完了 |
 | `loginItemDoneWhenDecided` / 「今はしないでも完了」 | `loginItem = .notRegistered`、`uiState.loginItemDecided = true` | ④ 完了 |
 | `deviceNameHiddenWithoutCandidates` / 「改名が要らなければ出さない」 | `renameCandidates = []` | ⑤ の `visible == false` |
-| `deviceNameNeverDone` / 「⑤ は完了にならない」 | `renameCandidates = ["NO NAME"]` | ⑤ の `visible == true`、`done == false` |
+| `deviceNameNeverDone` / 「⑤ は完了にならない」 | `renameCandidates = ["NO NAME"]` / `[]` | `["NO NAME"]` なら ⑤ の `visible == true`、`done == false`。`[]` でも `done == false`（破壊による証明 6 を落とすため） |
 | `renameCandidatesFromBothMaps` / 「devices と unavailable の両方から集める」 | `devices: ["NO NAME": …]`、`unavailable: ["NO NAME": "invalid_device_id"]` | `["NO NAME"]`（重複なし） |
 | `renameCandidatesIgnoreOtherNames` / 「NO NAME 以外は案内しない」 | `devices: ["DJIMIC3": …]` | `[]` |
 | `completeWhenAllDone` / 「全部終われば節を出さない」 | 4 項目 done、`renameCandidates` 空 | `isComplete == true` |
