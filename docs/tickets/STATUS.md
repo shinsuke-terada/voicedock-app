@@ -44,6 +44,7 @@ python3 docs/porting-notes/check-tickets.py
 | T-06 | マージ済み | PR #8 |
 | T-07 | マージ済み | PR #14。ディスクイメージのテスト 5 本は未実行（実機を抜いてから `make test-disk`） |
 | T-25 | マージ済み | PR #4 |
+| T-33 | 取り下げ | 2026-09-22、利用者の決定（voicedock からの乗り換えは考慮しない。PLAN §8.13・F-60）。PR #70 は閉じた。E2E-18 も取り下げ（番号は詰めない） |
 | T-45 | マージ済み | PR #10 |
 
 ### 利用者と決めたこと
@@ -52,6 +53,7 @@ python3 docs/porting-notes/check-tickets.py
 - `BUNDLE_ID=io.github.shinsuke-terada.VoiceDock`、`TEAM_ID=ZCWP35H248`。Developer ID Application の証明書は T-34 までに利用者が作る
 - CI は開発機のセルフホストランナー。ディスクイメージのテストは CI で走らせない
 - マージは毎回利用者が行う
+- voicedock からの乗り換えは考慮しない（2026-09-22）。T-33 と E2E-18 を取り下げた（PLAN F-60）。T-11 の `imported_keys` の表と T-14 の除外は空の表として残る
 
 ### 実装で分かった共通の約束（後続のチケットにも効く）
 

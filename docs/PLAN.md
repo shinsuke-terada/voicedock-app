@@ -121,12 +121,11 @@ voicedock は 1,500 本超のテストと 56 版の仕様改訂で、多くの�
 - 元音声の削除（三重ロック。既定はすべて掛かった状態）
 - モデル管理（Whisper / VAD / LLM の選択・ダウンロード・SHA-256 検証・ローカルファイル取り込み）
 - 診断（パネルの「診断を実行」）
-- voicedock からの乗り換え（Vault に載っている録音を再処理しない。§8.13）
 
 ### 1.3 v1 に含めない（非目標）
 
 課金・ライセンス認証、自動アップデート、通知センター、話者識別、送信機 2 台の実機保証（コードは複数台を扱う）、
-受信機側ストレージ、Mac App Store 配布（サンドボックス下で 2-B が成立するか未検証）、Intel Mac。
+受信機側ストレージ、Mac App Store 配布（サンドボックス下で 2-B が成立するか未検証）、Intel Mac、voicedock からの乗り換え（§8.13。F-60）。
 
 ### 1.4 判断が割れたときの優先順位（voicedock §1.3 を継承）
 
@@ -985,7 +984,7 @@ CREATE TABLE events (
 );
 CREATE INDEX idx_events_entity ON events (entity_type, entity_key, id);
 
--- 本アプリ: voicedock から乗り換えた利用者の Vault に載っている録音。取り込みで飛ばす（§8.13）
+-- 本アプリ: 取り込みで飛ばす録音（§8.13）。v1 では書く者がいないので常に空（F-60）
 CREATE TABLE imported_keys (
     partkey      TEXT PRIMARY KEY NOT NULL,
     source_note  TEXT NOT NULL,          -- Vault からの相対パス
@@ -2001,7 +2000,7 @@ SwiftUI の `PanelView` をホストする。`MenuBarExtra` は使わない（�
 3. **はじめに**（未完了の項目がある間だけ最上部に出す）: ① Vault を選ぶ ② Whisper モデルを入手 ③ LLM を選んで入手 ④ ログイン時に起動（オン／「今はしない」のどちらかを選べば完了）
    ⑤ デバイス名が `NO NAME` なら改名の案内（**アプリは改名しない**。デバイスに書かない。Finder か ディスクユーティリティで行う手順を表示。DEV-10）
    - ④の「今はしない」は `<HOME>/ui-state.json`（`HomeLayout.uiState`。§2.3）（`{"schema": 1, "loginItemDecided": true}`。`AtomicFile`）に記録する（UserDefaults を使わない。PR-03）
-4. **保存先（Vault）**: パスと「変更…」（`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）。選んだら §8.13 の取り込みを行う
+4. **保存先（Vault）**: パスと「変更…」（`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）
 5. **モデル**: Whisper（状態・入手）、LLM（カタログから選ぶ `Picker`。メモリ不足のものは選べない理由付き、「ファイルから読み込む…」、進捗バー、キャンセル）
 6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）
 7. **元音声の削除**: §8.9.8 のロック表示・有効化（`ENABLE` 入力欄）・無効化・無音と重複の削除
@@ -2022,19 +2021,11 @@ SwiftUI の `PanelView` をホストする。`MenuBarExtra` は使わない（�
 - 文言は日本語のみ（v1）。文言は `Strings.swift` に集める
 - UI は `@MainActor @Observable final class AppModel` を見るだけ。AppModel は IngestService / Worker / ModelManager から来る値の写しで、UI から DB を直接触らない
 
-### 8.13 voicedock からの乗り換え
+### 8.13 voicedock からの乗り換え（v1 では実装しない）
 
-- `ImportedKeysScanner.scan(vault:)`: Vault が `.available` のとき、**Vault を選んだ直後と起動時**に、Raw フォルダの接頭辞（`raw.folderTemplate` の最初の `{` より前。既定 `Daily/Voice/Raw`）配下の
-  `*.md`（`.` 始まりは無視、symlink は辿らない）の frontmatter を Yams で読み、`voicedock_recording_keys` の各 partkey を、**アプリの DB に行が無ければ** `imported_keys` に入れる
-  （`source_note` = Vault からの相対パス、`imported_at` = now。既に在る partkey は上書きしない）。追加があれば `imported_keys_added count=<n>`
-  （Raw ノートを書いたのがアプリか voicedock かは問わない。アプリが書いたものは DB に行があるので入らない）
-- Raw フォルダの接頭辞が空（テンプレートが `{` で始まる）なら Vault 全体を走る
-- frontmatter の鍵が `PartKey` の形（`<device_id>/<relpath>` で `RelPath.isSafe`）でなければ `imported_keys` に入れない（壊れた鍵が取り込みの除外に効くと、取り込まれない録音が生まれる）
-- IngestService は `imported_keys` の partkey をコピーしない（二重処理しない。安定性判定の候補から外す）
-- それらの原本はアプリからは削除されない（アプリに transcript が無く、根拠 A が成立しない）。乗り換え前に voicedock 側の `cleanup --backlog` で消すか、手で消す旨を README に書く
-- 既存ノートを上書きしない規則は §8.8
-- 共存ガード（§8.1）と DR-13 で voicedock の Helper が止まっていることを確かめる
-- E2E-18 で確かめる
+利用者の決定（2026-09-22。F-60）により、voicedock の Vault に載っている録音を `imported_keys` に取り込む処理（`ImportedKeysScanner`）は v1 では作らない。
+T-11・T-14 で実装済みの `imported_keys` の表と IngestService の除外（§8.1 の安定性判定の候補から外す）はそのまま残る。書く者がいないので表は常に空で、無害である。
+既存ノートを上書きしない規則（§8.8）は乗り換えと関係なく要るので残る。
 
 ### 8.14 課金の差し込み口（v1 では実装しない）
 
@@ -2488,9 +2479,9 @@ cmake --build build --config Release --target llama-server -j       # → build/
 | T-30 | UI: NSStatusItem・パネル・AppModel・アイコン状態・起動と終了 | VoiceDockApp | AppModel の単体テスト（UI の見た目はテストしない） |
 | T-31 | UI: はじめに・Vault 選択・モデル・ログイン項目 | | AppModel のテスト |
 | T-32 | 診断（DR）・要対応（沈黙の検出）・状態の詳細 | | DR ごとのテスト、診断が何も書かないこと（PT-17） |
-| T-33 | voicedock からの乗り換え（imported_keys） | | Raw ノートから鍵を読む、既存ノートを上書きしない |
+| T-33 | — 取り下げ（F-60。voicedock からの乗り換えは v1 で扱わない） | | — |
 | T-34 | make-app / sign / notarize / dmg / verify-bundle | scripts | verify-bundle が通る |
-| T-35 | 実機 E2E（削除 OFF）: E2E-01〜09, 12〜16, 18 | docs/E2E.md | 付録 B.3 |
+| T-35 | 実機 E2E（削除 OFF）: E2E-01〜09, 12〜16 | docs/E2E.md | 付録 B.3 |
 | **Phase 8: 削除（ゲートあり）** ||||
 | T-36 | canDeleteSource・LockEvaluator（readiness と観測）・事前確認 | | ND（アプリ層）と正の対照、式の形の固定 |
 | T-37 | reaper 実行ファイル（RV-00〜13） | voicedock-reaper | ND（reaper 層）と正の対照、`.diskImage` |
@@ -2500,7 +2491,7 @@ cmake --build build --config Release --target llama-server -j       # → build/
 | T-41 | 後追い（過去分・手動で消した分） | | プレビュー、対象 1 件以上で試す |
 | T-42 | 実機 E2E（削除 ON）: E2E-10, 11, 17 と、E2E-01〜09 を削除 ON で再実行 | docs/E2E.md | **ゲート（12.4）** |
 | **Phase 9: v1.0** ||||
-| T-43 | README（利用者向け: 導入・TCC・乗り換え・削除の有効化と戻し方・既知の制約）と文書テスト | | 文書テスト |
+| T-43 | README（利用者向け: 導入・TCC・削除の有効化と戻し方・既知の制約）と文書テスト | | 文書テスト |
 | T-44 | v1.0 のリリース | dmg | verify-bundle、E2E-06（1 日運用）の記録 |
 
 ### 12.4 削除のゲート（Phase 8 の完了条件。緩めない）
@@ -2834,7 +2825,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | E2E-15 | voicedock の Helper の LaunchAgent が登録されている → 取り込まない（共存ガード・DR-13） | OFF |
 | E2E-16 | リムーバブルボリュームの許可を拒否 → パネルに案内が出る。許可後に取り込む | OFF |
 | E2E-17 | 削除を無効化（確認なし）→ 直ちに読み取り専用へ再マウントされ、以後削除されない | ON→OFF |
-| E2E-18 | voicedock からの乗り換え: voicedock が書いた Raw / Daily がある Vault を選ぶ → `imported_keys` に入った録音はコピーされず、同じ日の新しい録音は ` (2)` のノートに書かれ、voicedock のノートは 1 バイトも変わらない | OFF |
+| E2E-18 | — 取り下げ（F-60） | — |
 
 ---
 
@@ -3103,3 +3094,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-57 | 事 | §9.4 | （T-04 のレビューで発見、利用者が承認）PT-08・PT-19 は `Swift.` 修飾の呼び出しも検出、PT-20 に `Regex` の語と `firstMatch(of:` などを追加（Swift 6 のスラッシュ正規表現リテラル対策）、PT-12 は `FileHandle(forWriting…` の接頭辞、PT-06 は補間の入れ子と raw 文字列。PT-03 の関数参照と PT-09・PT-17・PT-22 の暗黙メンバーは既知の限界として残した |
 | F-58 | 事 | §2.1・§6.1・00-api-map §2.2・§3 | （T-09・T-11・T-12 の実装で発見、利用者が承認）子の終了の待ちに `waitpid(WNOHANG)` の予備のタイマーを併用（kqueue の登録前に終わった子の取りこぼし）、`ConfigLoader.load`・`ConfigStore.update` のラベルは `reaperConfObservation:`（PT-11）、地図に `ConfigViolation: Error`・`NewSession: Equatable`・`EntityType: CaseIterable` を明記。整数の位置の小数の CV-39 の表示を「型が違います」に揃えた |
 | F-59 | 事 | §8.1 規則 5・§8.1（再マウント） | （P0-01・P0-02 の実測）`access(2)` は macOS 26.6 では TCC の拒否で EPERM になる（「成功する」は版による）。判定は従来どおり列挙で行う。実機の再マウントでは `-mountPoint` は使えない（アンマウントで `/Volumes/<名前>` が消える）ので本番は `useMountPoint: false` |
+| F-60 | 事 | §1.2・§1.3・§7.2・§8.12・§8.13・§12.3・付録 B.3 | （2026-09-22 に利用者が決定）voicedock からの乗り換えを v1 で扱わない。§8.13（`ImportedKeysScanner`）と T-33・E2E-18 を取り下げた（番号は詰めない）。`imported_keys` の表と IngestService の除外は実装済みのまま残り、空の表として無害。§8.8 は残す |

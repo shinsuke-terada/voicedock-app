@@ -3,7 +3,7 @@
 | 項目 | 値 |
 |---|---|
 | ID | T-43 |
-| 題 | 利用者向け `README.md`（導入・TCC・乗り換え・削除の有効化と戻し方・既知の制約・トラブルシュート）と文書テスト |
+| 題 | 利用者向け `README.md`（導入・TCC・削除の有効化と戻し方・既知の制約・トラブルシュート）と文書テスト |
 | Phase | 9 |
 | 前提 | T-42（削除 ON の E2E とゲート。README に書く文言を実機で確かめてから書く） |
 | 見積もり | `README.md` 約 290 行（文書）＋ `Tests/PolicyTests/ReadmeTests.swift` 約 220 行 |
@@ -15,7 +15,7 @@ T-01 が置いた仮の `README.md` を、**利用者向けの正本**に置き�
 
 ## 2. 参照
 
-- PLAN §1.1（利用者から見た動き）、§1.2〜§1.5（含める・含めない・優先順位・動作環境）、§2.3（`<HOME>`）、§8.9.1〜§8.9.3・§8.9.8・§8.9.9（削除）、§8.11（診断 DR・要対応）、§8.12（パネル）、§8.13（乗り換え）、§10.8（CI と `.diskImage`）、§11.1（TCC の説明文）、§12.4（削除のゲート）、§14（RK。既知の制約）
+- PLAN §1.1（利用者から見た動き）、§1.2〜§1.5（含める・含めない・優先順位・動作環境）、§2.3（`<HOME>`）、§8.9.1〜§8.9.3・§8.9.8・§8.9.9（削除）、§8.11（診断 DR・要対応）、§8.12（パネル）、§10.8（CI と `.diskImage`）、§11.1（TCC の説明文）、§12.4（削除のゲート）、§14（RK。既知の制約）
 - PLAN §10.3（文書テスト: 「診断は 17 件」などの散文の数字も機械で見る）
 - 先行チケット: T-05（`SpecDocument`・`SpecIDKind`）、T-04（`MarkdownDocument`）、T-01（`README.md` の仮版・`Makefile`・`PackageRoot`）、T-34（`scripts/*`・dmg）、T-35（`docs/E2E.md`）、T-42（`docs/E2E.md` のゲート）、T-32（診断の実装）
 - 移植メモ `docs/porting-notes/V6-doctor-ci-e2e-docs.md` §4.4（`test_readme.py`）
@@ -37,7 +37,7 @@ T-01 が置いた仮の `README.md` を、**利用者向けの正本**に置き�
 3. **版を直書きしない。**計画書・SPEC の版番号を書かない。`X.Y.Z` の形の数は、`Vendor/versions.env` に在るもの（whisper.cpp / llama.cpp の版）以外は書かない
 4. 参照するファイルは**リポジトリからの相対パス**（`docs/E2E.md`）。存在しないパスを書かない
 5. `make <ターゲット>` は `Makefile` に在るものだけ
-6. **voicedock（参照実装）の語を持ち込まない**: `docker` / `Docker` / `Helper` / `LaunchAgent` / `compose` を書かない（「voicedock からの乗り換え」の章で voicedock の名前に触れるのは可。ただし**打てるコマンドの形で書かない**）
+6. **voicedock（参照実装）の語を持ち込まない**: `docker` / `Docker` / `Helper` / `LaunchAgent` / `compose` を書かない（voicedock からの乗り換えの章は置かない。PLAN §8.13・F-60）
 7. 日本語。利用者は「Mac を普通に使える人」。**シェルを開かなくても導入が終わる**ように書く（トラブルシュートと保守だけシェルを使う）
 
 ### 4.1 見出し（この順・この文字列）
@@ -54,18 +54,17 @@ T-01 が置いた仮の `README.md` を、**利用者向けの正本**に置き�
 | 8 | `## 使い方` | 2 |
 | 9 | `### できあがるもの` | 3 |
 | 10 | `### 状況を見る` | 3 |
-| 11 | `## voicedock からの乗り換え` | 2 |
-| 12 | `## 元音声の削除` | 2 |
-| 13 | `### 三重ロック` | 3 |
-| 14 | `### 削除の根拠` | 3 |
-| 15 | `### 有効にする` | 3 |
-| 16 | `### 元に戻す` | 3 |
-| 17 | `## 既知の制約` | 2 |
-| 18 | `## 困ったとき` | 2 |
-| 19 | `## データの置き場所` | 2 |
-| 20 | `## 保守` | 2 |
-| 21 | `## 開発` | 2 |
-| 22 | `## 状態` | 2 |
+| 11 | `## 元音声の削除` | 2 |
+| 12 | `### 三重ロック` | 3 |
+| 13 | `### 削除の根拠` | 3 |
+| 14 | `### 有効にする` | 3 |
+| 15 | `### 元に戻す` | 3 |
+| 16 | `## 既知の制約` | 2 |
+| 17 | `## 困ったとき` | 2 |
+| 18 | `## データの置き場所` | 2 |
+| 19 | `## 保守` | 2 |
+| 20 | `## 開発` | 2 |
+| 21 | `## 状態` | 2 |
 
 ### 4.2 `# VoiceDock for Mac`（導入）
 
@@ -162,14 +161,9 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 
 メニューバーのアイコン（待機中 / 取り込み中 / 文字起こし・要約中 / 要対応 / 削除が有効）と、パネルの「状態」「要対応」「詳細 → 状態の詳細」を説明する。
 
-### 4.7 `## voicedock からの乗り換え`
+### 4.7 （欠番）
 
-- Vault を選んだときと起動時に、Raw フォルダの既存のノートを読んで「voicedock がすでに処理した録音」を覚える
-- **逐語 V-7**: `voicedock が処理済みの録音はコピーされません。**それらの元音声はこのアプリからは削除されません。**`
-  - 理由（「このアプリに文字起こしのコピーが無いので、削除の根拠が成立しないため」）と、消したい場合は乗り換え前に voicedock 側で消すか手で消す旨
-- 同じ日に新しい録音があれば、voicedock のノートは**書き換えず**に ` (2)` の付いた別のノートを作ること
-- **voicedock を動かしたままにしない**こと（両方が同じデバイスを触ると二重に取り込む。アプリは voicedock の常駐が登録されていると取り込みを止め、要対応に出す）。
-  **`launchctl` のコマンドを README に書かない**（`docs/E2E.md` の E2E-15 に在る）
+`## voicedock からの乗り換え` の章は置かない（2026-09-22、利用者の決定。PLAN §8.13・F-60）。節の番号と逐語の番号（V-7）は詰めない。
 
 ### 4.8 `## 元音声の削除`
 
@@ -396,7 +390,6 @@ struct DocumentedCounts: Sendable {
 | V-4 | `**録って、挿す。以上です。**` |
 | V-5 | `**コピーが終われば抜いて大丈夫です。**` |
 | V-6 | `**手で書き加えた内容は次の再生成で失われます。**` |
-| V-7 | `**それらの元音声はこのアプリからは削除されません。**` |
 | V-8 | `**既定では削除しません。**` |
 | V-9 | `**元音声の削除は、Raw ノートの検証を通った録音だけを対象にします。**` |
 | V-10 | `**消した録音は戻りません。**` |
@@ -412,8 +405,8 @@ struct DocumentedCounts: Sendable {
 | `theExtractionFindsAPath()` | **陽性対照**: 参照の抽出が効く | 文字列を直に渡す | `"[手順](docs/E2E.md) と `scripts/release.sh`"` から `["docs/E2E.md", "scripts/release.sh"]`。`"AVFoundation/CoreAudio"` からは何も拾わない |
 | `theExtractionFindsAVersionNumber()` | **陽性対照**: 版の抽出が効く | 同上 | `"VoiceDock-1.0.0.dmg"` から `["1.0.0"]`、`"macOS 15.0 以上"` からは空、`"約 18.6 GB"` からは空 |
 | `theReadmeExists()` | README.md が在る | — | `Readme.load()` が投げない |
-| `theHeadingsAreInOrder()` | 見出しが §4.1 の表のとおり | `headings()` | 深さと本文の列が §4.1 の 22 行と完全一致 |
-| `everyVerbatimSentenceIsPresent(_:)` | 逐語の文が在る | V-1〜V-14 で parametrize | `text.contains(_)` |
+| `theHeadingsAreInOrder()` | 見出しが §4.1 の表のとおり | `headings()` | 深さと本文の列が §4.1 の 21 行と完全一致 |
+| `everyVerbatimSentenceIsPresent(_:)` | 逐語の文が在る | V-1〜V-14（V-7 は欠番）で parametrize | `text.contains(_)` |
 | `theUsageDescriptionsMatchTheInfoPlist(_:)` | TCC の説明文が Info.plist と一字一句同じ | V-13・V-14 | `Resources/Info.plist.template` にも同じ文字列が在る（**2 か所の文言がずれない**。T-34） |
 | `theDiagnosticsCountMatchesTheSpec()` | 診断の件数が SPEC と一致 | `DocumentedCounts.load()` | `text.contains(counts.diagnosticsSentence)` |
 | `theReaperCheckCountMatchesTheSpec()` | reaper の検証の件数が SPEC と一致 | 同上 | `text.contains(counts.reaperSentence)` |
@@ -459,7 +452,7 @@ struct DocumentedCounts: Sendable {
 
 ## 7. 受け入れ条件
 
-- [ ] `README.md` が §4.1 の 22 見出しをその順で持ち、T-01 の仮版の文（`利用者向けの説明は T-43 で書く。`）が残っていない
+- [ ] `README.md` が §4.1 の 21 見出しをその順で持ち、T-01 の仮版の文（`利用者向けの説明は T-43 で書く。`）が残っていない
 - [ ] 14 個の逐語の文がすべて在る
 - [ ] 件数の 3 文が `docs/SPEC.md` から数えた値と一致する（**チケットの数字を写していない**ことを、`docs/SPEC.md` を数えて確かめた）
 - [ ] TCC の 2 つの説明文が `Resources/Info.plist.template` と一字一句同じ

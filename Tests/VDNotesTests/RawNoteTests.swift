@@ -114,6 +114,14 @@ struct RawNoteTests {
         #expect(headings(try render([part], config: config)).isEmpty)
     }
 
+    @Test("CE obsidian.raw.folderTemplate が Raw ノートの置き場所になる")
+    func ceRawFolderTemplate() throws {
+        var config = NotesFixtures.config()
+        #expect(RawNote.folder(config: config, day: try NotesFixtures.day) == "Daily/Voice/Raw/20260829")
+        config.raw.folderTemplate = "Voice/{date}"
+        #expect(RawNote.folder(config: config, day: try NotesFixtures.day) == "Voice/2026-08-29")
+    }
+
     @Test("見出しを無効にした設定")
     func headingsDisabled() throws {
         var config = NotesFixtures.config()

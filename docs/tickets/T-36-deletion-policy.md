@@ -464,8 +464,8 @@ public enum DeletionPolicy {
 ### 4.8 `WorkerDependencies.swift`（変更）
 
 末尾（既に在るフィールドの後）に 2 つ足す。init の引数も同じ順で末尾に足す。
-**末尾に足す順は 00-api-map §11 の `WorkerDependencies` の行が正**: T-18 の並び → T-33 の `importedKeys: ImportedKeysService` → 本チケットの `locks`・`volumeOpener`（この 2 つが最後）。
-本チケットは T-33（Phase 7）の後なので、`importedKeys` の**後ろ**に足す:
+**末尾に足す順は 00-api-map §11 の `WorkerDependencies` の行が正**: T-18 の並び → 本チケットの `locks`・`volumeOpener`（この 2 つが最後。T-33 の `importedKeys` は取り下げ。PLAN F-60）。
+T-18 の並びの直後に足す:
 ```swift
     /// 三重ロックの評価と reaper の検証・起動（T-36。reaper は locks.reaper。別のフィールドに持たない）
     public let locks: LockEvaluator
@@ -481,7 +481,7 @@ T-30（Phase 7）の Bootstrap は本チケットの型を 1 つも使わない�
    `let locks = LockEvaluator(layout: layout, verifier: CodeSignatureVerifier(requirement: ReaperSignature.production), runner: runner, log: log.withCategory("pipeline"))` に替える
    （`DiagnosticsDependencies` と `AppContext.locks` は `any LockObserving` を取るので、ここ 1 行の差し替えで両方が本物になる）
 2. ConfigStore の `observeReaperConf: { .missing }` を `observeReaperConf: { await locks.observeReaperConf() }` に替える（T-18 §10）
-3. `WorkerDependencies(…)` の末尾に `locks: locks, volumeOpener: SystemVolumeOpener()` を足す（T-30・T-32 はこの 2 つを渡していない。§4.8 の並び。`importedKeys` の後ろ）
+3. `WorkerDependencies(…)` の末尾に `locks: locks, volumeOpener: SystemVolumeOpener()` を足す（T-30・T-32 はこの 2 つを渡していない。§4.8 の並び。T-18 の並びの後ろ）
 4. `SystemVolumeOpener` は本チケット（T-38 が使う `VolumeOpener` の本番実装）。T-30 は使わない
 - os.Logger の subsystem が文字列で書かれていれば `AppIdentity.bundleID` に替える
 

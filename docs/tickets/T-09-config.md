@@ -515,14 +515,14 @@ enum ConfigEffectPending {
 | `llm.analysis.sections.*.heading`（7 個）、`llm.analysis.sections.timeline.enabled`、`llm.analysis.order`、`obsidian.defaultTags`、`obsidian.wiki.*`（`vaultIndexCacheSeconds` を除く 7 個） | T-27 |
 | `obsidian.wiki.vaultIndexCacheSeconds` | T-29 |
 | `obsidian.maxTitleBytes`、`obsidian.raw.filenameTemplate`、`obsidian.raw.timestampIntervalSeconds`、`obsidian.raw.partBoundaryHeading` | T-26 |
-| `obsidian.raw.folderTemplate` | T-33 |
+| `obsidian.raw.folderTemplate` | T-33（T-33 は取り下げ） |
 | `cleanup.deleteSkippedSource` | T-39 |
 
 （表の `*` はコードでは 1 つずつ書く。`owners` は 90 個 = 93 − 3。件数はテストで直書きせず 4 条件で確かめる）
 
 **割り当ての根拠のうち、素直でないもの**:
 - `llm.analysis.sections.timeline.enabled` は LLM のスキーマに出ない節（§4.1 手順 5 の `NOT_A_SECTION`）なので、効くのは Daily ノートの描画だけ。T-19 ではなく **T-27** が書く
-- `obsidian.raw.folderTemplate` は T-33（乗り換えの取り込み元）に、`obsidian.wiki.vaultIndexCacheSeconds` は T-29（索引の作り直し）に、すでに `CE` のテストがある。二重には書かない
+- `obsidian.raw.folderTemplate` は T-33（乗り換えの取り込み元。T-33 は取り下げ）に、`obsidian.wiki.vaultIndexCacheSeconds` は T-29（索引の作り直し）に、すでに `CE` のテストがある。二重には書かない
 - **`llm.analysis.sections.summary.maxItems` と `llm.analysis.sections.timeline.maxItems` は設定から無くなった**（F-54。どちらも読む場所が 1 か所も無い「効かない設定」だったため、PLAN §6.2 の JSON からキーごと消えた）。
   この 2 つは `ConfigKeys.allKeyPaths` にも `owners` にも載せない。JSON に書いたら CV-01（未知のキー）になる（§3・§5 手順 3）。
   よって `owners` は**すべてのキーに担当チケットが付いた状態**で始まり、各チケットが自分の行を消していけば**空にできる**（T-43 の「`owners` が空」の受け入れ条件は、もう決着待ちではない）
