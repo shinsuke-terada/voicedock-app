@@ -49,6 +49,14 @@ struct SignatureVerifierTests {
         )
     }
 
+    @Test("本番の要件の文字列（逐語。Team ID で束縛する）")
+    func productionRequirementIsVerbatim() {
+        #expect(
+            ReaperSignature.production
+                == #"anchor apple generic and identifier "io.github.shinsuke-terada.VoiceDock.reaper" and certificate leaf[subject.OU] = "ZCWP35H248""#
+        )
+    }
+
     @Test("本番の要件は AppIdentity から作る")
     func productionUsesAppIdentity() {
         #expect(

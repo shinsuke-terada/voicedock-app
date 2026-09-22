@@ -28,6 +28,12 @@ public final class DeletionScene: Sendable {
     public static let now = Instant(epochMillis: 1_789_182_000_000)
     public static let transcriptText = "おはようございます。"
 
+    /// このインスタンスのデバイス（偽のボリュームは DeletionScene.deviceID、ディスクイメージは diskImage.deviceID。DJIMIC3 はディスクイメージに使えない）
+    public let deviceID: String
+    /// deviceID + "/" + DeletionScene.relpath（偽のボリュームでは DeletionScene.partkey と同じ）
+    public let partkey: String
+    /// deviceID + ":20260912"（偽のボリュームでは DeletionScene.sessionKey と同じ）
+    public let sessionKey: String
     public let tmp: TempDirectory
     /// <tmp>/home（createDirectories 済み。bin も作る）
     public let layout: HomeLayout
@@ -35,7 +41,7 @@ public final class DeletionScene: Sendable {
     public let vault: URL
     /// <tmp>/Volumes、またはディスクイメージの volumesRoot
     public let volumesRoot: URL
-    /// <volumesRoot>/DJIMIC3
+    /// <volumesRoot>/DJIMIC3、またはディスクイメージの mountPoint
     public let deviceRoot: URL
     /// layout.database
     public let store: Store
@@ -82,7 +88,10 @@ public final class DeletionScene: Sendable {
             at: vault.appendingPathComponent(".obsidian", isDirectory: true), withIntermediateDirectories: true)
         // 3.
         let volumesRoot = diskImage?.volumesRoot ?? tmp.url.appendingPathComponent("Volumes", isDirectory: true)
-        let deviceRoot = volumesRoot.appendingPathComponent(Self.deviceID, isDirectory: true)
+        let deviceID = diskImage?.deviceID ?? Self.deviceID
+        let deviceRoot = diskImage?.mountPoint ?? volumesRoot.appendingPathComponent(deviceID, isDirectory: true)
+        let partkey = try PartKey.make(deviceID: deviceID, relpath: Self.relpath)
+        let sessionKey = try SessionKey.make(deviceID: deviceID, dayStamp: "20260912")
         if diskImage == nil {
             try FileManager.default.createDirectory(at: deviceRoot, withIntermediateDirectories: true)
         }
@@ -111,8 +120,11 @@ public final class DeletionScene: Sendable {
         let opener: any VolumeOpener = diskImage == nil ? FakeVolumeOpener() : SystemVolumeOpener()
         // 10.
         let store = try Store(url: layout.database, clock: clock, zone: zone)
-        try store.insertSession(NewSession(sessionKey: Self.sessionKey, dayDate: Self.dayDate, deviceID: Self.deviceID))
+        try store.insertSession(NewSession(sessionKey: sessionKey, dayDate: Self.dayDate, deviceID: deviceID))
 
+        self.deviceID = deviceID
+        self.partkey = partkey
+        self.sessionKey = sessionKey
         self.tmp = tmp
         self.layout = layout
         self.vault = vault
@@ -160,8 +172,8 @@ public final class DeletionScene: Sendable {
         let devices: [String: DeviceObservation] =
             includeDevice
             ? [
-                Self.deviceID: DeviceObservation(
-                    deviceID: Self.deviceID, mountPath: deviceRoot.path(percentEncoded: false),
+                deviceID: DeviceObservation(
+                    deviceID: deviceID, mountPath: deviceRoot.path(percentEncoded: false),
                     deviceNode: "/dev/disk9", readOnly: readOnly, freeBytes: 1_000_000_000,
                     relpaths: relpaths ?? deviceRelpaths)
             ] : [:]
@@ -188,7 +200,9 @@ public final class DeletionScene: Sendable {
             config: config, locks: observation, layout: layout, volumeOpener: opener ?? self.opener)
     }
 
-    public func candidate(_ partkey: String = DeletionScene.partkey) throws -> DeletionCandidate {
+    /// partkey が nil なら self.partkey
+    public func candidate(_ partkey: String? = nil) throws -> DeletionCandidate {
+        let partkey = partkey ?? self.partkey
         guard let c = try DeletionCandidate.load(partkey: partkey, store: store) else {
             throw StorePathError("\(partkey) の candidate が作れない")
         }
@@ -202,21 +216,22 @@ public final class DeletionScene: Sendable {
     @discardableResult
     public func addPart(
         fileName: String, folder: String = DeletionScene.folder, startedAt: String, status: PartStatus,
-        errorCode: ErrorCode? = nil, duplicateOf: String? = nil, sessionKey: String = DeletionScene.sessionKey,
+        errorCode: ErrorCode? = nil, duplicateOf: String? = nil, sessionKey: String? = nil,
         onDevice: Bool = true, transcript: Bool = true, inRawNote: Bool = true
     ) throws -> String {
+        let sessionKey = sessionKey ?? self.sessionKey
         let relpath = folder + "/" + fileName
-        let pk = try PartKey.make(deviceID: Self.deviceID, relpath: relpath)
+        let pk = try PartKey.make(deviceID: deviceID, relpath: relpath)
         if onDevice {
             try placeOnDevice(relpath)
         }
         guard let start = zone.parseISO(startedAt) else { throw StorePathError("\(startedAt) が読めない") }
         try store.insertRecording(
             NewRecording(
-                partkey: pk, deviceID: Self.deviceID, sourceFolder: folder, transmitterID: String(fileName.prefix(4)),
+                partkey: pk, deviceID: deviceID, sourceFolder: folder, transmitterID: String(fileName.prefix(4)),
                 micIndex: 1, startedAt: startedAt, durationSeconds: 60.0, endedAt: zone.iso(start.adding(seconds: 60)),
                 sourcePath: relpath, sourceSize: 4096, sourceMtime: originalMtime,
-                sha256Helper: FileHasher.sha256(Self.content), inboxPath: "inbox/" + Self.deviceID + "/" + relpath))
+                sha256Helper: FileHasher.sha256(Self.content), inboxPath: "inbox/" + deviceID + "/" + relpath))
         let transcriptURL = layout.transcript(slug: KeySlug.of(pk))
         var fields: [RecordingField] = [.sessionKey(sessionKey)]
         if let duplicateOf { fields.append(.duplicateOf(duplicateOf)) }
@@ -243,11 +258,12 @@ public final class DeletionScene: Sendable {
 
     /// 別の日の Session を作る（OPEN）。重複の双子を別の日に置くため
     public func addSession(key: String, dayDate: String) throws {
-        try store.insertSession(NewSession(sessionKey: key, dayDate: dayDate, deviceID: Self.deviceID))
+        try store.insertSession(NewSession(sessionKey: key, dayDate: dayDate, deviceID: deviceID))
     }
 
     /// Session の Raw ノートを書き直す（載せる対象の Part を RawNote.render で。DB の raw_output_path・raw_output_sha256 を更新）
-    public func writeRawNote(sessionKey: String = DeletionScene.sessionKey) throws {
+    public func writeRawNote(sessionKey: String? = nil) throws {
+        let sessionKey = sessionKey ?? self.sessionKey
         guard let session = try store.session(sessionKey), let day = LocalDate(dashed: session.dayDate) else {
             throw StorePathError("\(sessionKey) の Session が無い")
         }
@@ -275,7 +291,8 @@ public final class DeletionScene: Sendable {
         try store.updateSession(sessionKey, [.rawOutputPath(folder + "/" + baseName + ".md"), .rawOutputSHA256(sha)])
     }
 
-    public func rawNoteURL(sessionKey: String = DeletionScene.sessionKey) throws -> URL {
+    public func rawNoteURL(sessionKey: String? = nil) throws -> URL {
+        let sessionKey = sessionKey ?? self.sessionKey
         guard let relative = try store.session(sessionKey)?.rawOutputPath else {
             throw StorePathError("\(sessionKey) の raw_output_path が無い")
         }
@@ -284,8 +301,9 @@ public final class DeletionScene: Sendable {
 
     /// ノートの中の文字列を置き換える。updateSHA が真なら DB の raw_output_sha256 を新しい SHA にする（鍵の包含だけを壊す）
     public func replaceInRawNote(
-        _ target: String, with replacement: String, updateSHA: Bool, sessionKey: String = DeletionScene.sessionKey
+        _ target: String, with replacement: String, updateSHA: Bool, sessionKey: String? = nil
     ) throws {
+        let sessionKey = sessionKey ?? self.sessionKey
         let url = try rawNoteURL(sessionKey: sessionKey)
         let text = try String(contentsOf: url, encoding: .utf8)
         let data = Data(text.replacingOccurrences(of: target, with: replacement).utf8)
@@ -296,7 +314,8 @@ public final class DeletionScene: Sendable {
     }
 
     /// 末尾に追記する（SHA は更新しない。改竄）
-    public func appendToRawNote(_ text: String, sessionKey: String = DeletionScene.sessionKey) throws {
+    public func appendToRawNote(_ text: String, sessionKey: String? = nil) throws {
+        let sessionKey = sessionKey ?? self.sessionKey
         let url = try rawNoteURL(sessionKey: sessionKey)
         var data = try Data(contentsOf: url)
         data.append(Data(text.utf8))
@@ -324,7 +343,8 @@ public final class DeletionScene: Sendable {
         try StorePaths.advancePart(store, partkey: partkey, to: status, errorCode: errorCode)
     }
 
-    public func moveSession(to status: SessionStatus, sessionKey: String = DeletionScene.sessionKey) throws {
+    public func moveSession(to status: SessionStatus, sessionKey: String? = nil) throws {
+        let sessionKey = sessionKey ?? self.sessionKey
         try StorePaths.advanceSession(store, sessionKey: sessionKey, to: status)
     }
 
@@ -369,7 +389,7 @@ public final class DeletionScene: Sendable {
         let data = try ContractJSON.encode(
             DeleteResult(
                 requestID: requestID, completedAt: zone.iso(clock.now()), reaperVersion: AppVersion.string,
-                deviceID: Self.deviceID, partkey: partkey, status: status, detail: detail))
+                deviceID: deviceID, partkey: partkey, status: status, detail: detail))
         let url = layout.queueResult.appendingPathComponent(requestID + ".json", isDirectory: false)
         try data.write(to: url)
         return url

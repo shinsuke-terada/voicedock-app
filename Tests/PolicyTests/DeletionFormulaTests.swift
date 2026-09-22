@@ -12,14 +12,15 @@ struct DeletionFormulaTests {
     /// 期待する本体（PLAN §8.9.1 の式を Swift に写したもの）。トークンを並べ、識別子・数値が隣り合う所だけ空白 1 つを挟んだ形。
     /// 振る舞いでは落とせない項と、その理由:
     /// - canDeleteSource の `&&(…||…)`: 根拠 B 単独のテストは `||` が外に出ても通る（共通項を迂回した形でも根拠 B の正の対照は真のまま）
-    /// - deletionIsIdentified の `sameKey(c.part.sessionKey,c.session.sessionKey)`: 別の Session を渡すと RN-5 か鍵の包含が先に偽になる
     /// - 同 `c.part.sourcePath!=nil` と `c.part.sourcePath?.isEmpty==false`: preIdentityCheck が同じ値を先に偽にする
     /// - textIsPreserved の `session.rawOutputPath!=nil`: verifyRawNote が .notRecorded で先に偽にする
-    /// - 同 `frontmatterKeys(…).contains(…)`: RN-6 が同じ鍵の集合を見ている（ND-09 はどちらでも落ちる）
     /// - skipReasonIsBacked の `!sameKey(twin.part.partkey,c.part.partkey)`: 自分を双子にすると SKIPPED は deletable に無く根拠 A が偽
-    /// - 同 `sameKey(twin.part.sessionKey,twin.session.sessionKey)`: 別の Session を渡すと RN-5 が先に偽
     /// - 同 `default:return false`: 許可リストに無い理由は nothingToPreserve の SkipReasons.deletable が先に落とす
     /// - 双子に deletionIsIdentified を要求しないこと: 双子の元音声は通常もう無いので、要求すると根拠 B が永久に偽（振る舞いは T-39 の正の対照が見る）
+    /// 振る舞いでも落とせる項（形でも固定する。落とすテストは DeletionPolicyTests）:
+    /// - deletionIsIdentified の `sameKey(c.part.sessionKey,c.session.sessionKey)`: partFromAnotherSessionIsNotIdentified
+    /// - textIsPreserved の `frontmatterKeys(…).contains(…)`: frontmatterKeysAloneBlocksWhenExpectedIsEmpty（期待する鍵が空集合なら RN-6 は通る）
+    /// - skipReasonIsBacked の `sameKey(twin.part.sessionKey,twin.session.sessionKey)`: twinSessionMismatchIsNotBacked
     static let expected: [String: String] = [
         "canDeleteSource":
             "deletionIsIdentified(c,ctx)&&(textIsPreserved(c.part,c.session,c.parts,ctx)||nothingToPreserve(c,ctx))",

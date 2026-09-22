@@ -88,13 +88,23 @@ struct DeletionPolicyNDTests {
 
     @Test("ND-06 [A] 無音は deleteSkippedSource が偽なら消さない")
     func nd06NoSpeechKeptWhileLockBIsClosed() async throws {
-        let scene = try DeletionScene(status: .skipped, errorCode: .noSpeechDetected)
+        // 無音の Part は Raw に載らない。transcript のファイルは在るが transcript_path の列は NULL にする
+        // （根拠 B は実ファイルだけを見る。列で門前払いする退行を対照側で落とす）
+        let scene = try DeletionScene()
+        let pk = try scene.addPart(
+            fileName: "TX00_MIC001_20260912_100000_orig.wav", folder: "TX_MIC001_20260912_100000",
+            startedAt: "2026-09-12T10:00:00+09:00", status: .skipped, errorCode: .noSpeechDetected, inRawNote: false)
+        try scene.store.updateRecording(pk, [.transcriptPath(nil)])
         let (c, ctx) = try await Self.evaluate(scene)
-        #expect(DeletionPolicy.canDeleteSource(c, ctx) == false)
+        let silent = try scene.candidate(pk)
+        #expect(silent.part.transcriptPath == nil)
+        #expect(DeletionPolicy.canDeleteSource(silent, ctx) == false)
         // 対照: ロック B を開けると真
         scene.updateConfig { $0.cleanup.deleteSkippedSource = true }
         let opened = await scene.context(snapshot: scene.snapshot())
-        #expect(DeletionPolicy.canDeleteSource(c, opened))
+        #expect(DeletionPolicy.canDeleteSource(silent, opened))
+        // 既定の Part（根拠 A）には影響しない
+        #expect(DeletionPolicy.canDeleteSource(c, ctx))
     }
 
     @Test("ND-07 [A] Raw ノートの書き込みに失敗（raw_output_path が NULL）なら消さない")

@@ -263,6 +263,8 @@ struct LockEvaluatorTests {
         #expect(await f.evaluator.reaperStatus() == .versionMismatch(found: "0.9.0"))
     }
 
+    /// 二重の防御: 消えた時点で cache を空にし（手順 1）、置き直したファイルは (inode, size, mtime) の鍵も変わる。
+    /// どちらか一方を外してもこのテストは通るので、cache = nil だけは cacheIsClearedWhenReaperDisappears が固定する。
     @Test("消えたら未導入に戻り、置き直せば検証し直す")
     func removedReaperClearsCache() async throws {
         let f = try Self.makeEvaluator()
@@ -337,5 +339,20 @@ struct LockEvaluatorTests {
         #expect(
             await f.evaluator.observeReaperConf()
                 == .valid(ReaperConf(deleteSourceAudio: true, volumesRoot: "/tmp/vd-volumes")))
+    }
+
+    @Test("消えたらキャッシュを捨てる（同じファイルを rename で戻しても検証し直す）")
+    func cacheIsClearedWhenReaperDisappears() async throws {
+        let f = try Self.makeEvaluator()
+        #expect(await f.evaluator.readiness(config: f.config) == .configured)
+        let path = f.layout.reaperExecutable.path(percentEncoded: false)
+        let aside = f.layout.binDirectory.appendingPathComponent("aside", isDirectory: false).path(
+            percentEncoded: false)
+        #expect(rename(path, aside) == 0)
+        #expect(await f.evaluator.readiness(config: f.config) == .disabled("reaper_not_installed"))
+        f.verifier.setValid(false)
+        // 同じ inode・size・mtime のまま戻す（鍵は元と同じ）
+        #expect(rename(aside, path) == 0)
+        #expect(await f.evaluator.readiness(config: f.config) == .disabled("reaper_invalid"))
     }
 }

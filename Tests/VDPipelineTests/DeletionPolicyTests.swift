@@ -46,6 +46,7 @@ struct DeletionPolicyTests {
         let scene = try DeletionScene()
         let (c, ctx) = try await Self.evaluate(scene, snapshot: scene.snapshot(relpaths: []))
         #expect(DeletionPolicy.preIdentityCheck(c.part, ctx) == false)
+        #expect(DeletionPolicy.canDeleteSource(c, ctx) == false)
         #expect(ctx.locks.allReleased(for: c.part.deviceID))
     }
 
@@ -75,6 +76,7 @@ struct DeletionPolicyTests {
         let (c, ctx) = try await Self.evaluate(scene)
         #expect(ctx.snapshot?.devices["DJIMIC3"]?.relpaths.contains(other) == true)
         #expect(DeletionPolicy.preIdentityCheck(c.part, ctx) == false)
+        #expect(DeletionPolicy.canDeleteSource(c, ctx) == false)
     }
 
     @Test("不健全な relpath は偽")
@@ -102,6 +104,7 @@ struct DeletionPolicyTests {
         let (c, ctx) = try await Self.evaluate(scene)
         #expect(ctx.locks.volumesRoot == root)
         #expect(DeletionPolicy.preIdentityCheck(c.part, ctx) == false)
+        #expect(DeletionPolicy.canDeleteSource(c, ctx) == false)
     }
 
     @Test("デバイス上のファイルのサイズが DB と違えば偽（withVerifiedTarget）")
@@ -117,6 +120,7 @@ struct DeletionPolicyTests {
         let (c, ctx) = try await Self.evaluate(scene)
         #expect(ctx.snapshot?.devices["DJIMIC3"]?.relpaths.contains(DeletionScene.relpath) == true)
         #expect(DeletionPolicy.preIdentityCheck(c.part, ctx) == false)
+        #expect(DeletionPolicy.canDeleteSource(c, ctx) == false)
     }
 
     @Test("DEL-12 inbox のコピーの時刻（4 時間 34 分後）では事前確認が偽")
@@ -125,6 +129,7 @@ struct DeletionPolicyTests {
         try scene.store.updateRecording(DeletionScene.partkey, [.sourceMtime(DeletionScene.sourceMtime + 16_440)])
         let (c, ctx) = try await Self.evaluate(scene)
         #expect(DeletionPolicy.preIdentityCheck(c.part, ctx) == false)
+        #expect(DeletionPolicy.canDeleteSource(c, ctx) == false)
     }
 
     @Test("Raw ノートが一致すれば passed")
@@ -382,5 +387,80 @@ struct DeletionPolicyTests {
             let (c, ctx) = try await Self.evaluate(scene, partkey: partkey)
             #expect(DeletionPolicy.skipReasonIsBacked(c, ctx), "\(code)")
         }
+    }
+
+    @Test("Raw ノートに当該の鍵が無ければ、RN-6 が空集合で通っても偽")
+    func frontmatterKeysAloneBlocksWhenExpectedIsEmpty() async throws {
+        let scene = try DeletionScene()
+        let dup = try Self.addDuplicate(scene, duplicateOf: scene.partkey)
+        scene.updateConfig { $0.cleanup.deleteSkippedSource = true }
+        try scene.replaceInRawNote(scene.partkey, with: scene.deviceID + "/other/other.wav", updateSHA: true)
+        let ctx = await scene.context(snapshot: scene.snapshot())
+        let session = try Self.session(scene)
+        let parts = try scene.store.recordings(inSession: scene.sessionKey)
+        let twin = TwinPart(part: try Self.row(scene, scene.partkey), session: session, parts: [])
+        let c = DeletionCandidate(part: try Self.row(scene, dup), session: session, parts: parts, twin: twin)
+        // 期待する鍵が空集合なので RN-6 は通る。鍵の包含の項だけが落とす
+        #expect(DeletionPolicy.verifyRawNote(session, [], ctx) == .passed)
+        #expect(DeletionPolicy.canDeleteSource(c, ctx) == false)
+        // 対照: ノートを書き直して鍵を戻すと真
+        try scene.writeRawNote()
+        let restored = await scene.context(snapshot: scene.snapshot())
+        let freshSession = try Self.session(scene)
+        let freshTwin = TwinPart(part: try Self.row(scene, scene.partkey), session: freshSession, parts: [])
+        let again = DeletionCandidate(
+            part: try Self.row(scene, dup), session: freshSession, parts: parts, twin: freshTwin)
+        #expect(DeletionPolicy.canDeleteSource(again, restored))
+    }
+
+    @Test("Part の session_key と渡された Session が食い違えば同定しない")
+    func partFromAnotherSessionIsNotIdentified() async throws {
+        let scene = try DeletionScene()
+        let otherDay = "DJIMIC3:20260911"
+        try scene.addSession(key: otherDay, dayDate: "2026-09-11")
+        let pk = try scene.addPart(
+            fileName: "TX00_MIC001_20260911_090000_orig.wav", folder: "TX_MIC001_20260911_090000",
+            startedAt: "2026-09-11T09:00:00+09:00", status: .rawSaved, sessionKey: otherDay)
+        try scene.writeRawNote(sessionKey: otherDay)
+        // DB の session_key だけを既定の Session に変える（Raw ノートは 20260911 のまま）
+        try scene.store.updateRecording(pk, [.sessionKey(scene.sessionKey)])
+        let ctx = await scene.context(snapshot: scene.snapshot())
+        let part = try Self.row(scene, pk)
+        let other = try Self.session(scene, otherDay)
+        let c = DeletionCandidate(part: part, session: other, parts: [part], twin: nil)
+        #expect(DeletionPolicy.textIsPreserved(part, other, [part], ctx))
+        #expect(DeletionPolicy.deletionIsIdentified(c, ctx) == false)
+        #expect(DeletionPolicy.canDeleteSource(c, ctx) == false)
+    }
+
+    @Test("双子の session_key と双子の Session が食い違えば根拠が無い")
+    func twinSessionMismatchIsNotBacked() async throws {
+        let scene = try DeletionScene()
+        let otherDay = "DJIMIC3:20260911"
+        try scene.addSession(key: otherDay, dayDate: "2026-09-11")
+        let twinKey = try scene.addPart(
+            fileName: "TX00_MIC001_20260911_090000_orig.wav", folder: "TX_MIC001_20260911_090000",
+            startedAt: "2026-09-11T09:00:00+09:00", status: .rawSaved, sessionKey: otherDay, onDevice: false)
+        try scene.writeRawNote(sessionKey: otherDay)
+        let dup = try Self.addDuplicate(scene, duplicateOf: twinKey)
+        scene.updateConfig { $0.cleanup.deleteSkippedSource = true }
+        let ctx = await scene.context(snapshot: scene.snapshot())
+        let other = try Self.session(scene, otherDay)
+        let original = try Self.row(scene, twinKey)
+        // 双子の行の session_key だけを既定の Session に変える
+        try scene.store.updateRecording(twinKey, [.sessionKey(scene.sessionKey)])
+        let moved = try Self.row(scene, twinKey)
+        let dupRow = try Self.row(scene, dup)
+        let session = try Self.session(scene)
+        let parts = try scene.store.recordings(inSession: scene.sessionKey)
+        let c = DeletionCandidate(
+            part: dupRow, session: session, parts: parts, twin: TwinPart(part: moved, session: other, parts: [moved]))
+        #expect(DeletionPolicy.textIsPreserved(moved, other, [moved], ctx))
+        #expect(DeletionPolicy.skipReasonIsBacked(c, ctx) == false)
+        // 対照: 双子の行が双子の Session を指していれば真
+        let backed = DeletionCandidate(
+            part: dupRow, session: session, parts: parts,
+            twin: TwinPart(part: original, session: other, parts: [original]))
+        #expect(DeletionPolicy.skipReasonIsBacked(backed, ctx))
     }
 }
