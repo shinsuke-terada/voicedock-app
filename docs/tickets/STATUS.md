@@ -46,9 +46,9 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 - **削除 ON の小さな実験**: `deletion_enabled` → `delete_requested` 3 件 → `reaper_run exit=0` → `source_deleted` 3 件（`reaper.log` にも同じ 3 件と `reaper_completed requests=3`）。退避（`~/VoiceDockE2E/device-backup`）を取ってから行った
 - **LLM の疎通**: `session_merged parts=3 excluded=1 chars=205` → `llm_completed chunks=1 elapsed_s=3.5`
 - **Daily ノート**: `obsidian_saved path="Daily/Voice/Wiki/20260922/2026-09-22 Voice.md" bytes=1775`。Raw は `Daily/Voice/Raw/20260922/2026-09-22 raw.md`
-- **要約の契機**: この回は 0:00 の自動要約で走った。その後 F-66 で 0:00 の自動要約を**廃止**し、パネルの「今すぐ要約」に置き換えた（PR #102・#107）
+- **要約の契機**: 2026-09-23 00:00 の Daily ノートは、当時の 0:00 の自動要約で走った。その後 F-66 で 0:00 の自動要約を**廃止**し、パネルの「今すぐ要約」に置き換えた（PR #102・#107）。「今すぐ要約」ボタンは、レビュー用のビルド（worktree の dist）で利用者が押し、「新しく要約する録音はありません」が出て 4 秒で消えることを確かめた
 
-> **注意**: `dist/VoiceDock.app` は 2026-09-22 23:19 のビルドで、**PR #100 以降（カード型パネル・今すぐ要約・最終接続の保存・F-64/67/69）を含まない**。
+> **注意**: 本体のチェックアウトの `dist/VoiceDock.app` は古いことがある（実機の確認は、その時々の worktree で組んだ `.app` で行った）。実機に触る前に、必ず develop で `make app` を回し直してから使う。
 > 次に実機で触る前に `make app` で組み直す。
 
 ## 3. 利用者の環境
