@@ -805,7 +805,7 @@ struct ReleaseBundleTests {
 | 11 | `scripts/verify-bundle.sh` の V-1（manifest の照合）を消す | `verifyBundleRunsEveryRequiredCheck("bundle-manifest.txt")` |
 | 12 | `scripts/release.sh` の `make-dmg.sh` の行と `sign.sh" developerid` の行の順を入れ替える | `releaseRunsTheStepsInOrder` |
 | 13 | `scripts/notarize.sh` の `--wait` を消す | `notarizeWaitsAndUsesTheProfile` |
-| 14 | `scripts/make-dmg.sh` に `/Volumes/VoiceDock` の行を足す | `noScriptMentionsVolumes("scripts/make-dmg.sh")` |
+| 14 | `scripts/make-dmg.sh` に `/Volumes/VoiceDock` の行を足す | `noScriptMentionsVolumes("scripts/make-dmg.sh")`、`makeDmgMountsOnlyOutsideVolumes` |
 | 15 | `scripts/make-app.sh` の 1 行目を `#!/bin/sh` にする | `everyScriptIsStrictBash("scripts/make-app.sh")` |
 | 16 | `scripts/make-app.sh` の `source "$root/identity.env"` を消して値を直書きする | `scriptsThatNeedTheIdentitySourceIt`、`scriptsDoNotHardcodeTheIdentifiers` |
 | 17 | `scripts/sign.sh` の証明書の絞り込みを `mapfile -t found < …` に戻す | `noScriptUsesBash4Features("scripts/sign.sh", "mapfile")` |
