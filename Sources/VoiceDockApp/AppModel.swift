@@ -63,6 +63,8 @@ final class AppModel {
     private(set) var deletionNotice: String?
     /// 無効化で失敗した段の名前（英語のまま。ログと突き合わせるため）
     private(set) var disableFailedStages: [String] = []
+    /// 有効化・根拠 B の直近の失敗（nil = 無い。Strings.enableFailed で出す）
+    private(set) var enableError: EnableError?
 
     @ObservationIgnored let services: any AppServices
     /// ModelSlot.llm(id) の項目を引く（T-31）
@@ -249,10 +251,17 @@ extension AppModel {
     /// パネルとメニューバーが読む値。tick / 走査 / 操作のたびに作り直す（設定エラー中は nil）
     var deletion: DeletionPanelState? { snapshot.deletion }
 
-    /// 「元音声の削除を有効にする」。confirmation はテキストフィールドの入力そのまま
+    /// 「元音声の削除を有効にする」。confirmation はテキストフィールドの入力そのまま（判定は DeletionEnabler）
     func enableDeletion(confirmation: String) async -> Result<Void, EnableError> {
         let r = await services.enableDeletion(confirmation: confirmation)
-        if case .success = r { deletionNotice = DeletionStrings.reinsertNotice }
+        switch r {
+        case .success:
+            enableError = nil
+            disableFailedStages = []
+            deletionNotice = DeletionStrings.reinsertNotice
+        case .failure(let e):
+            enableError = e
+        }
         await refresh()
         return r
     }
@@ -260,6 +269,10 @@ extension AppModel {
     /// 「無音・重複も消す」
     func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError> {
         let r = await services.enableSkippedDeletion(confirmation: confirmation)
+        switch r {
+        case .success: enableError = nil
+        case .failure(let e): enableError = e
+        }
         await refresh()
         return r
     }
@@ -269,6 +282,7 @@ extension AppModel {
         let failed = await services.disableDeletion()
         disableFailedStages = failed
         deletionNotice = nil
+        enableError = nil
         await refresh()
         return failed
     }
