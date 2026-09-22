@@ -28,14 +28,15 @@
 |---|---|
 | `Sources/VDPipeline/BacklogPlanner.swift` | `BacklogKind`・`BacklogSkip`・`BacklogPlan`・`BacklogExecution`・`BacklogFailure`・`BacklogAction`（public）、`BacklogPlanner`（internal） |
 | `Sources/VDPipeline/Worker.swift`（変更） | `WorkerJob` に `.backlog(BacklogAction)`・`.resolveAbsent(BacklogAction)` を足す |
-| `Sources/VDPipeline/Worker+Jobs.swift`（変更） | 仕事の振り分けに 2 つの case を足す |
+| `Sources/VDPipeline/Worker+Jobs.swift`（変更） | 仕事の振り分けに 2 つの case を足す。`replyUnavailable`・`replyStopped` にも 2 つの case を足す（§4.2） |
 | `Sources/VoiceDockApp/Panel/BacklogTexts.swift` | 文言（逐語）と整形 |
 | `Sources/VoiceDockApp/Panel/BacklogControls.swift` | 2 つのボタンとプレビュー・実行・結果の表示（SwiftUI） |
 | `Sources/VoiceDockApp/Panel/DetailsSection.swift`（変更） | `BacklogControls` を足す |
-| `Sources/VoiceDockApp/AppModel.swift`（変更） | `backlogState` と 3 つの操作 |
+| `Sources/VoiceDockApp/AppModel.swift`（変更） | `backlogState`・`backlogExecuting` と 3 つの操作 |
 | `Tests/VDPipelineTests/BacklogPlannerTests.swift` | |
 | `Tests/VDPipelineTests/BacklogJobTests.swift` | Worker の仕事として回す |
 | `Tests/VoiceDockAppTests/BacklogTextsTests.swift` | 文言 |
+| `Tests/VoiceDockAppTests/AppModelDiagnosticsTests.swift`（変更） | `WorkerJob` の `switch` 4 か所に `case .backlog, .resolveAbsent: Issue.record("DR-09 の仕事ではない")` を足す（case が増えて網羅でなくなるため。T-32 のテストの中身は変えない） |
 
 ## 4. 仕様
 
@@ -192,6 +193,21 @@ case .execute(let reply):
 ```
 （pendingJobs の段は snapshot の新鮮さによらず毎 tick 行う。新鮮でなければ計画は not_deletable / device_absent になるだけ）
 
+同じファイルの `replyUnavailable`（設定エラー中の tick）と `replyStopped`（停止要求の後）にも足す。文言は DR-09 と同じ定数を使う（CR-06）:
+```swift
+        case .backlog(let action), .resolveAbsent(let action): replyFailure(action, DiagnosticTexts.configMissing)   // replyUnavailable
+        case .backlog(let action), .resolveAbsent(let action): replyFailure(action, DiagnosticTexts.probeStopped)    // replyStopped
+
+    /// 後追いの仕事を実行せずに失敗で返事をする（設定エラー中・停止要求の後。文言は DR-09 と同じ）
+    static func replyFailure(_ action: BacklogAction, _ message: String) {
+        switch action {
+        case .preview(let reply): reply(.failure(BacklogFailure(message: message)))
+        case .execute(let reply): reply(.failure(BacklogFailure(message: message)))
+        }
+    }
+```
+（返事は必ず返す。返さないとパネルが「対象を調べています…」のまま固まる。T-32 §4 の `llmProbe` と同じ約束）
+
 ### 4.3 `BacklogTexts.swift`（VoiceDockApp。文言は逐語）
 
 ```swift
@@ -244,8 +260,10 @@ enum BacklogPanelState: Equatable {
     case failed(BacklogKind, String)
 }
 
-// AppModel に足す
-var backlogState: BacklogPanelState = .idle
+// AppModel に足す（T-40 の欄の後。書くのは同じファイルの extension だけ）
+private(set) var backlogState: BacklogPanelState = .idle
+/// working が実行の返事を待っているか（preview から入ったら真。「実行しています…」を出す）
+private(set) var backlogExecuting = false
 /// 1 回目の押下。working にして preview の仕事を入れる（working 中は何もしない）
 func previewBacklog(_ kind: BacklogKind)
 /// 2 回目の押下（preview の状態からだけ）。working にして execute の仕事を入れる
@@ -253,7 +271,8 @@ func executeBacklog(_ kind: BacklogKind)
 /// やめる・閉じる。idle に戻す
 func dismissBacklog()
 ```
-- 仕事は `await worker.enqueue(.backlog(.preview(reply: { result in Task { @MainActor in self.receive(kind, result) } })))`（resolveAbsent は `.resolveAbsent(…)`）。reply は Worker の文脈で呼ばれるので MainActor へ移してから状態を変える
+- 仕事は `Task { await services.enqueue(.backlog(.preview(reply: { [weak self] result in Task { @MainActor in self?.receive(kind, result) } }))) }`（resolveAbsent は `.resolveAbsent(…)`。AppModel は Worker を直接持たず、T-32 の `AppServices.enqueue(_:)` を通す）。reply は Worker の文脈で呼ばれるので MainActor へ移してから状態を変える
+- `previewBacklog` は `backlogExecuting = false`、`executeBacklog` は `backlogExecuting = true` にしてから `.working(kind)` に入れる。`dismissBacklog` は `false` に戻す
 - `receive`: `.success(plan)` → `.preview(kind, plan)`、`.success(execution)` → `.done(kind, execution)`、`.failure(f)` → `.failed(kind, f.message)`
 - 返事が来る前に `dismissBacklog()` されたら、届いた返事は捨てる（`backlogState` が `.working(kind)` のときだけ受け取る）
 
@@ -261,7 +280,7 @@ func dismissBacklog()
 
 `BacklogControls(model: AppModel)`（SwiftUI の `View`）:
 - `idle`・`done`・`failed` のとき: 2 つのボタン（`buttonTitle(.backlog)`・`buttonTitle(.resolveAbsent)`）。押すと `previewBacklog(kind)`
-- `working`: `ProgressView()` と、直前の押下が preview なら `working`、execute なら `executing` の文言（どちらかは AppModel が `working` に入れる前の状態で決める。`preview` からなら `executing`）
+- `working`: `ProgressView()` と、直前の押下が preview なら `working`、execute なら `executing` の文言（どちらかは AppModel が `working` に入れる前の状態で決め、`backlogExecuting` に持つ。`preview` からなら `executing`）
 - `preview(kind, plan)`: `previewLines` を 1 行ずつ `Text`。`plan.eligible` が空でなければ `executeTitle(kind, count:)` のボタン（押すと `executeBacklog(kind)`）。`cancel` のボタン（`dismissBacklog()`）
 - `done(kind, e)`: `resultLine`、`close` のボタン
 - `failed(_, message)`: `failureLine(message)`、`close` のボタン
@@ -299,7 +318,7 @@ func dismissBacklog()
 | `previewWritesNothing` | TEST-20 プレビューは何も書かない（対象 1 件以上で） | 過去分の舞台、`handle(.preview(reply:), kind: .backlog)`（reply を `Mutex` に記録） | reply が 1 回・`.success` で `eligible == [pk]`、`requests() == []`、Part COMPLETED、events の本数が変わらない、ログが増えない |
 | `executeRequestsAndTransitions` | 実行は ID → 要求 → COMPLETED→SOURCE_DELETING | `handle(.execute(reply:), kind: .backlog)` | `.success(BacklogExecution(plan: [pk] の計画, done: 1))`、要求 1 件（partkey と DB の ID が一致）、Part SOURCE_DELETING、最後の events が `COMPLETED→SOURCE_DELETING`、`delete_requested` のログ |
 | `executeFromPending` | PENDING からは SOURCE_DELETE_PENDING→SOURCE_DELETING | `planIncludesPendingParts` の舞台で execute | events の最後が `SOURCE_DELETE_PENDING→SOURCE_DELETING` |
-| `statusChangeDuringExecutionContinues` | DEL-19 計画の後に状態が変わった Part は status_changed で飛ばし、残りを続ける | 過去分の舞台に 10:00 の COMPLETED の兄弟（デバイスに在り、Raw に載せ `writeRawNote()`）。`plan = planBacklog()`（2 件）→ `store.recordPartTransition(partkey: pk, from: .completed, to: .sourceDeleting)` → `executeBacklog(plan)` | 戻り値 1、兄弟が SOURCE_DELETING で要求が在る、`source_delete_skipped recording_key=<pk> reason=status_changed`（WARNING） |
+| `statusChangeDuringExecutionContinues` | DEL-19 計画の後に状態が変わった Part は status_changed で飛ばし、残りを続ける | 過去分の舞台に 10:00 の COMPLETED の兄弟（デバイスに在り、Raw に載せ `writeRawNote()`。兄弟の relpath を載せるため ingest を `snapshot()` に差し替える）。`plan = planBacklog()`（2 件）→ `store.recordPartTransition(partkey: pk, from: .completed, to: .sourceDeleting)` → `executeBacklog(plan)` | 戻り値 1、兄弟が SOURCE_DELETING で要求が在る、`source_delete_skipped recording_key=<pk> reason=status_changed`（WARNING） |
 | `executedPartsAreCollected` | 後追いで SOURCE_DELETING にした Part も全件回収で完了する（voicedock の欠陥を直した） | execute → DELETED の結果 → ingest を `snapshot(generation: 2, relpaths: [])` → `ResultCollector(deps:).collectDeleteResults(reaperScanGeneration: 2)` | Part COMPLETED、`sourceDeletedAt` 在り（Session は COMPLETED のまま） |
 | `resolveAbsentPlansGoneFiles` | 手動で消した分: 新鮮な snapshot にデバイスが在り relpath が無い PENDING が対象 | 手動で消した分の舞台 | `eligible == [pk]` |
 | `resolveAbsentNeedsTheDevice` | デバイスが無い・snapshot が古い・無いなら device_absent（パラメータ化。未接続を「無い」と判定しない） | `snapshot(includeDevice: false)` / completedAt = now − 901 秒 / nil | `skipped == [(pk, device_absent)]` |
@@ -374,3 +393,4 @@ func dismissBacklog()
 2. `BacklogPlan.skipped` を `[(partkey: String, reason: String)]`（タプル。Equatable にできない）から `[BacklogSkip]` にする。`BacklogKind`・`BacklogExecution`・`BacklogFailure` を足す → 00-api-map §11 に反映済み（整合修正 M-3）
 3. `BacklogAction` の形を確定: `.preview(reply: @Sendable (Result<BacklogPlan, BacklogFailure>) -> Void)`・`.execute(reply: @Sendable (Result<BacklogExecution, BacklogFailure>) -> Void)`。`WorkerJob` の `.backlog` / `.resolveAbsent` の 2 ケースは T-41 が足す（T-32 は `.llmProbe` だけを宣言する）。**これらの型の定義は本チケット（`Sources/VDPipeline/BacklogPlanner.swift`）に置く** → 00-api-map §11 に反映済み（整合修正 M-3）
 4. PLAN §8.9.9 に「結果待ち（`delete_request_id` が在る。復旧で SOURCE_DELETE_PENDING に戻った Part は ID を持ったまま）は `not_deletable`（二重に要求しない）」「`source_path` が無い PENDING は `still_present`（無いと確かめられない）」「実行の時点で計画を立て直す」を足す
+5. 00-api-map §11 の `BacklogFailure` は `public enum BacklogFailure: Error, Equatable, Sendable`（case が書かれていない）だが、本チケットは `public struct BacklogFailure: Error, Equatable, Sendable { public let message: String; public init(message: String) }`（`ErrorText.describe(error)` の 1 行をパネルに出す）。実装は本チケットに合わせた。地図の行を `struct … { message: String }` に直し、`BacklogKind`（`public enum BacklogKind: String, Sendable, Equatable { case backlog, resolveAbsent }`）も同じ行に足す提案（T-41 の実装で発見）

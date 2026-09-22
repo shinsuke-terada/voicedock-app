@@ -15,6 +15,10 @@ extension Worker {
                     continue
                 }
                 reply(await LLMProbeCheck(ctx: ctx).run())
+            case .backlog(let action):
+                await BacklogPlanner(deps: DeletionDependencies(ctx: ctx)).handle(action, kind: .backlog)
+            case .resolveAbsent(let action):
+                await BacklogPlanner(deps: DeletionDependencies(ctx: ctx)).handle(action, kind: .resolveAbsent)
             }
         }
     }
@@ -23,6 +27,7 @@ extension Worker {
     static func replyUnavailable(_ job: WorkerJob) {
         switch job {
         case .llmProbe(let reply): reply(LLMProbeCheck.unavailable)
+        case .backlog(let action), .resolveAbsent(let action): replyFailure(action, DiagnosticTexts.configMissing)
         }
     }
 
@@ -30,6 +35,15 @@ extension Worker {
     static func replyStopped(_ job: WorkerJob) {
         switch job {
         case .llmProbe(let reply): reply(LLMProbeCheck.stopped)
+        case .backlog(let action), .resolveAbsent(let action): replyFailure(action, DiagnosticTexts.probeStopped)
+        }
+    }
+
+    /// 後追いの仕事を実行せずに失敗で返事をする（設定エラー中・停止要求の後。文言は DR-09 と同じ）
+    static func replyFailure(_ action: BacklogAction, _ message: String) {
+        switch action {
+        case .preview(let reply): reply(.failure(BacklogFailure(message: message)))
+        case .execute(let reply): reply(.failure(BacklogFailure(message: message)))
         }
     }
 }

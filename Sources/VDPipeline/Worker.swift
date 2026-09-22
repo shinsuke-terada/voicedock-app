@@ -10,7 +10,10 @@ import VDStore
 public enum WorkerJob: Sendable {
     /// DR-09。返事は Worker の文脈で呼ばれる（受け手が MainActor へ移す）
     case llmProbe(reply: @Sendable (DiagnosticResult) -> Void)
-    // T-41 が case backlog(BacklogAction) / case resolveAbsent(BacklogAction) を足す
+    /// 過去分を削除対象にする（PLAN §8.9.9。T-41）
+    case backlog(BacklogAction)
+    /// 手動で消した分を完了にする（PLAN §8.9.9。T-41）
+    case resolveAbsent(BacklogAction)
 }
 
 /// 状態機械を 1 本の直列ループで回す（PLAN §5.4）。
