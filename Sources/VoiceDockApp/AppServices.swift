@@ -115,11 +115,19 @@ struct LiveServices: AppServices {
         attention.vault = s.vault
         attention.reaper = await context.locks.reaperStatus()
         attention.snapshotMaxAgeSeconds = config?.device.snapshotMaxAgeSeconds ?? 900
-        s.attention = AttentionEvaluator.items(attention)
         // 開けない・投げたら .empty のまま（DB が無ければ全 0。PLAN §8.12）
-        if let ro = ReadOnlyStore.open(url: context.layout.database), let b = try? ro.backlog() {
-            s.backlog = BacklogCounts(count: b.count, seconds: b.seconds, unknownDuration: b.unknownDuration)
+        if let ro = ReadOnlyStore.open(url: context.layout.database) {
+            if let b = try? ro.backlog() {
+                s.backlog = BacklogCounts(count: b.count, seconds: b.seconds, unknownDuration: b.unknownDuration)
+            }
+            // 消せなかった録音（F-69。状態の詳細と同じ数え方）
+            if let settled = try? ro.completedParts(lastDetail: DeletionReason.notDeletable) {
+                let zone = ZonedTime(timeZone: config.flatMap { TimeZone(identifier: $0.timeZone) } ?? .current)
+                attention.undeletableSources =
+                    AttentionEvaluator.remainingUndeletable(settled, snapshot: s.device, zone: zone).count
+            }
         }
+        s.attention = AttentionEvaluator.items(attention)
         return s
     }
 

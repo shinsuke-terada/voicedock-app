@@ -70,6 +70,9 @@ public struct StatusReport: Equatable, Sendable {
     public let devices: [Device]
     /// false = まだ走査していない
     public let deviceSnapshotPresent: Bool
+    /// 消せないまま完了にした録音で、まだデバイスに残りうるものの partkey（最大 20 件。F-69）
+    public var undeletable: [String] = []
+    public var undeletableTotal = 0
 
     /// タプルの配列は自動で Equatable にならないので、欄ごとに比べる。
     public static func == (a: StatusReport, b: StatusReport) -> Bool {
@@ -79,7 +82,8 @@ public struct StatusReport: Equatable, Sendable {
             && a.maxAttempts == b.maxAttempts && a.deleteRequested == b.deleteRequested
             && a.awaitingDeleteResult == b.awaitingDeleteResult && a.stagingBytes == b.stagingBytes
             && a.stagingMaxBytes == b.stagingMaxBytes && a.inbox == b.inbox && a.devices == b.devices
-            && a.deviceSnapshotPresent == b.deviceSnapshotPresent
+            && a.deviceSnapshotPresent == b.deviceSnapshotPresent && a.undeletable == b.undeletable
+            && a.undeletableTotal == b.undeletableTotal
     }
 
     /// パネルに出す行（逐語。T-32 §4.9 の表）
@@ -104,14 +108,24 @@ public struct StatusReport: Equatable, Sendable {
             "inbox: 処理待ち " + String(inbox.pendingCount) + " 件 " + StatusTexts.gib(inbox.pendingBytes) + "、取り残し "
                 + String(inbox.leftoverCount) + " 件 " + StatusTexts.gib(inbox.leftoverBytes))
         out.append("デバイス: " + deviceLine)
-        guard failedTotal > 0 else { return out }
-        out.append("失敗した Part（" + String(failedTotal) + " 件）")
-        for p in failedParts {
-            out.append("  " + p.partkey)
-            out.append("    " + p.detail(maxAttempts: maxAttempts))
+        if failedTotal > 0 {
+            out.append("失敗した Part（" + String(failedTotal) + " 件）")
+            for p in failedParts {
+                out.append("  " + p.partkey)
+                out.append("    " + p.detail(maxAttempts: maxAttempts))
+            }
+            if failedTotal > failedParts.count {
+                out.append("  … ほか " + String(failedTotal - failedParts.count) + " 件")
+            }
         }
-        if failedTotal > failedParts.count {
-            out.append("  … ほか " + String(failedTotal - failedParts.count) + " 件")
+        if undeletableTotal > 0 {
+            out.append("消せなかった録音（" + String(undeletableTotal) + " 件。デバイスに残っています）")
+            for key in undeletable {
+                out.append("  " + key)
+            }
+            if undeletableTotal > undeletable.count {
+                out.append("  … ほか " + String(undeletableTotal - undeletable.count) + " 件")
+            }
         }
         return out
     }
@@ -151,6 +165,7 @@ public enum StatusReporter {
         var failedTotal = 0
         var awaiting = 0
         var leftoverPaths: [String] = []
+        var undeletable: [String] = []
         // 2.
         if let ro = ReadOnlyStore.open(url: layout.database) {
             if let c = try? ro.statusCounts() {
@@ -171,6 +186,10 @@ public enum StatusReporter {
             }
             awaiting = (try? ro.awaitingDeleteResultCount()) ?? 0
             leftoverPaths = (try? ro.inboxPaths(statuses: PartStates.inboxLeftover)) ?? []
+            // 要対応の件数と同じ数え方（F-69）
+            let settled = (try? ro.completedParts(lastDetail: DeletionReason.notDeletable)) ?? []
+            undeletable = AttentionEvaluator.remainingUndeletable(settled, snapshot: snapshot, zone: zone).map(
+                \.partkey)
         }
         // 3.
         let inbox = InboxScan.counts(layout: layout, leftoverRelativePaths: leftoverPaths)
@@ -184,7 +203,7 @@ public enum StatusReporter {
                 deviceID: $0, writability: DeviceWritability.observe(deviceID: $0, snapshot: snapshot),
                 freeBytes: snapshot?.devices[$0]?.freeBytes)
         }
-        return StatusReport(
+        var report = StatusReport(
             partCounts: partOrder.map { ($0, parts[$0] ?? 0) },
             sessionCounts: sessionOrder.map { ($0, sessions[$0] ?? 0) },
             backlog: backlog, failedParts: failedParts, failedTotal: failedTotal,
@@ -195,5 +214,8 @@ public enum StatusReporter {
             stagingBytes: InboxScan.directoryBytes(layout.staging),
             stagingMaxBytes: Int64(config?.audio.stagingMaxBytes ?? 0),
             inbox: inbox, devices: devices, deviceSnapshotPresent: snapshot != nil)
+        report.undeletable = Array(undeletable.prefix(failedLimit))
+        report.undeletableTotal = undeletable.count
+        return report
     }
 }

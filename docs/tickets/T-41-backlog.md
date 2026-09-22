@@ -1,5 +1,7 @@
 # T-41 後追い: 過去分を削除対象にする・手動で消した分を完了にする（プレビューと実行の 2 段）
 
+> （F-69・issue #98、2026-09-23。マージ後の追記）期限で消さずに完了した Part（RAW_SAVED→COMPLETED の detail `not_deletable`。T-38 §4.5 の手順 5a）も COMPLETED で `source_deleted_at` が nil なので「過去分を削除対象にする」の対象に入り、再び評価される（原因が直っていれば対象、直っていなければ対象外 `not_deletable`）。コードの変更は無い（PLAN §8.9.9。テストは T-38 §6.13 の `settledPartIsRetargetedByBacklog`）。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-41 |

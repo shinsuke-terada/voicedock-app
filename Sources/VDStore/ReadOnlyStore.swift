@@ -91,6 +91,20 @@ public final class ReadOnlyStore: Sendable {
         }
     }
 
+    /// COMPLETED で source_deleted_at が NULL、最後の遷移（events の id が最大の行）の detail が detail の Part（partkey 順）。
+    /// 消せないまま完了にした録音（F-69。detail `not_deletable`）を要対応と状態の詳細が数える
+    public func completedParts(lastDetail detail: String) throws -> [RecordingRow] {
+        try queue.read { db in
+            try Row.fetchAll(
+                db,
+                sql: "SELECT * FROM recordings WHERE status = ? AND source_deleted_at IS NULL AND ("
+                    + "SELECT detail FROM events WHERE entity_type = ? AND entity_key = recordings.partkey "
+                    + "ORDER BY id DESC LIMIT 1) = ? ORDER BY partkey",
+                arguments: [PartStatus.completed.rawValue, EntityType.recording.rawValue, detail]
+            ).map { row throws(StoreError) in try RecordingRow(row: row) }
+        }
+    }
+
     /// `Store.partkeys(statuses:)` と同じ SQL・束縛・並び（DR-15。T-32）
     public func partkeys(statuses: Set<PartStatus>) throws -> [String] {
         try queue.read { db in try Store.partkeys(db, statuses: statuses) }

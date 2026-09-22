@@ -3,6 +3,7 @@ import Darwin
 import VDCore
 import VDDevice
 import VDNotes
+import VDStore
 
 /// 要対応の項目に付ける操作ボタン（PLAN §8.11 の「操作ボタン」の列）。
 public enum AttentionAction: Equatable, Sendable {
@@ -20,6 +21,8 @@ public enum AttentionAction: Equatable, Sendable {
     case openDeletionFlow
     /// 「詳細」を開いて診断を実行する（whisper-cli / llama-server が無いとき。PLAN §8.11）
     case runDiagnostics
+    /// 「詳細・診断」を開く（消せなかった録音の一覧は状態の詳細に出る。F-69）
+    case openDetails
 }
 
 /// PLAN §8.11 の表の 1 行。宣言順 = 表示順。
@@ -39,6 +42,8 @@ public enum AttentionItem: Equatable, Sendable {
     case diskSpaceLow
     case lockMismatch
     case reaperUpdateRequired
+    /// 消せないまま完了にした録音で、まだデバイスに残りうるものの本数（F-69。1 以上）
+    case undeletableSources(Int)
 
     public enum ToolKind: String, Equatable, Sendable { case whisperCLI, llamaServer }
 
@@ -59,6 +64,7 @@ public enum AttentionItem: Equatable, Sendable {
         case .diskSpaceLow: 11
         case .lockMismatch: 12
         case .reaperUpdateRequired: 13
+        case .undeletableSources: 14
         }
     }
 
@@ -75,6 +81,7 @@ public enum AttentionItem: Equatable, Sendable {
         case .deviceNeedsReplug, .deviceNameInvalid: []
         case .ingestSilent, .diskSpaceLow, .lockMismatch: []
         case .reaperUpdateRequired: [.openDeletionFlow]
+        case .undeletableSources: [.openDetails]
         }
     }
 }
@@ -89,6 +96,8 @@ public struct AttentionInput: Equatable, Sendable {
     public var vault: VaultStatus = .notConfigured
     public var reaper: ReaperStatus = .notInstalled
     public var snapshotMaxAgeSeconds = 900
+    /// 消せないまま完了にした録音で、まだデバイスに残りうるものの本数（AttentionEvaluator.remainingUndeletable の件数。F-69）
+    public var undeletableSources = 0
     public var now: Instant
 
     public init(now: Instant) {
@@ -122,7 +131,18 @@ public enum AttentionEvaluator {
         if paused.contains(.diskSpaceLow) { items.append(.diskSpaceLow) }
         if input.violations.contains(where: { lockRules.contains($0.rule) }) { items.append(.lockMismatch) }
         if case .versionMismatch = input.reaper { items.append(.reaperUpdateRequired) }
+        if input.undeletableSources > 0 { items.append(.undeletableSources(input.undeletableSources)) }
         return items
+    }
+
+    /// 消せないまま完了にした録音（ReadOnlyStore.completedParts(lastDetail: not_deletable)）のうち、まだデバイスに残りうるもの（F-69）。
+    /// 元ファイルが無いと観測できたもの（F-64 と同じ観測。決着より後の走査で、接続中で列挙できた一覧に無い）は数えない（利用者が手で消した）。
+    /// 未接続・列挙できない・snapshot が無いときは残りうるとして数える。過去分の削除で消えたものは source_deleted_at が入り、そもそも渡されない
+    public static func remainingUndeletable(_ parts: [RecordingRow], snapshot: DeviceSnapshot?, zone: ZonedTime)
+        -> [RecordingRow]
+    {
+        guard let snapshot else { return parts }
+        return parts.filter { !DeletionRequester.sourceIsObservedAbsent($0, in: snapshot, zone: zone) }
     }
 
     /// 沈黙の検出（#117。コピー中に誤報しない）。テストから直接呼ぶ。

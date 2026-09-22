@@ -43,6 +43,10 @@ struct AttentionTextsTests {
             "アプリと reaper.conf の設定が合いません。「元音声の削除」を開いて無効化し直してください"
         ),
         (.reaperUpdateRequired, "削除モジュールの更新が必要です", "「元音声の削除」を開いて有効化をやり直してください"),
+        (
+            .undeletableSources(3), "消せなかった録音 3 本",
+            "削除の条件を満たさないまま時間がたったので、消さずに完了にしました。デバイスに残っています。「詳細・診断」の状態の詳細で一覧を見て、手で確かめて消してください"
+        ),
     ]
 
     @Test("題と説明が表と逐語で一致する")
@@ -63,23 +67,23 @@ struct AttentionTextsTests {
                 == "/v を読めません（errno 13）")
     }
 
-    @Test("ボタンの文言が 7 つとも逐語で一致する")
+    @Test("ボタンの文言が 8 つとも逐語で一致する")
     func buttonsMatchTheTable() {
         let expected: [(AttentionAction, String)] = [
             (.revealConfig, "設定ファイルを Finder で表示"), (.reloadConfig, "設定を読み直す"), (.chooseVault, "Vault を選び直す"),
             (.openSystemSettings, "システム設定を開く"), (.openModels, "モデルの節を開く"), (.openDeletionFlow, "有効化フローを開く"),
-            (.runDiagnostics, "診断を実行"),
+            (.runDiagnostics, "診断を実行"), (.openDetails, "詳細・診断を開く"),
         ]
         for (action, text) in expected {
             #expect(AttentionTexts.button(action) == text)
         }
     }
 
-    @Test("全ケースに題が在る（14 項目。F-61 で coexistenceBlocked を外した）")
+    @Test("全ケースに題が在る（15 項目。F-61 で coexistenceBlocked を外し、F-69 で undeletableSources を足した）")
     func everyItemHasATitle() {
         let kinds = Set(Self.table.map { $0.0.order })
-        #expect(kinds.count == 14)
-        #expect(kinds == Set(0..<14))
+        #expect(kinds.count == 15)
+        #expect(kinds == Set(0..<15))
         #expect(Self.table.allSatisfy { !AttentionTexts.title($0.0).isEmpty })
     }
 }
