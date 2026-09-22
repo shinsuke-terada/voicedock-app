@@ -120,11 +120,10 @@ struct LiveServices: AppServices {
             if let b = try? ro.backlog() {
                 s.backlog = BacklogCounts(count: b.count, seconds: b.seconds, unknownDuration: b.unknownDuration)
             }
-            // 消せなかった録音（F-69。状態の詳細と同じ数え方）
+            // 消せなかった録音のうち、デバイスの一覧にまだ在るもの（F-69）
             if let settled = try? ro.completedParts(lastDetail: DeletionReason.notDeletable) {
-                let zone = ZonedTime(timeZone: config.flatMap { TimeZone(identifier: $0.timeZone) } ?? .current)
                 attention.undeletableSources =
-                    AttentionEvaluator.remainingUndeletable(settled, snapshot: s.device, zone: zone).count
+                    AttentionEvaluator.undeletableStillListed(settled, snapshot: s.device).count
             }
         }
         s.attention = AttentionEvaluator.items(attention)

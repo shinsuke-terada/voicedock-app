@@ -44,6 +44,8 @@ public actor Worker {
     /// reaper の後に始まった走査の generation（PLAN §8.9.6。起動直後は 0。reaper は実行中ずっと reaper.lock を持つので、
     /// アプリが落ちて reaper だけが残っていても起動後の最初の走査はその後になる）
     var reaperScanGeneration: UInt64 = 0
+    /// 観測できた状態で消せなかった評価の連続回数（F-69。tick をまたいで持つ）
+    let undeletableStreaks = UndeletableStreaks()
 
     public init(deps: WorkerDependencies) {
         self.init(deps: deps, assertion: ProcessInfoSleepAssertion(), onStage: nil)
@@ -255,7 +257,8 @@ public actor Worker {
 
     func makeContext(_ config: AppConfig, _ zone: ZonedTime, snapshot: DeviceSnapshot?) -> TickContext {
         TickContext(
-            deps: deps, config: config, zone: zone, snapshot: snapshot, pauses: pauses, activity: board, stop: stop)
+            deps: deps, config: config, zone: zone, snapshot: snapshot, pauses: pauses, activity: board, stop: stop,
+            undeletableStreaks: undeletableStreaks)
     }
 
     /// 契機 1〜3（PLAN §5.4）。

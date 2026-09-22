@@ -15,6 +15,8 @@ struct TickContext: Sendable {
     let stop: StopFlag
     /// Worker が tick をまたいで持つ Vault 索引（linkTags が偽・未作成なら nil。PLAN §8.6 WikiLink）
     var vaultIndex: VaultIndex? = nil
+    /// 観測できた状態で消せなかった評価の連続回数（F-69）。Worker が tick をまたいで 1 つ持ち、makeContext で渡す
+    var undeletableStreaks = UndeletableStreaks()
     /// この tick で PENDING に落とした Part（DEL-11。tick ごとに新しい。複製した ctx は同じ集合を共有する）
     let pendedPartkeys = PendedPartkeys()
 

@@ -44,6 +44,26 @@ public struct StatusReport: Equatable, Sendable {
         }
     }
 
+    /// 消せないまま完了にした録音 1 件（F-69）
+    public struct UndeletablePart: Equatable, Sendable {
+        public let partkey: String
+        /// 原因の語（DeletionReason.cause*。Part の error_message。無ければ nil）
+        public let cause: String?
+        public let presence: SourcePresence
+
+        public init(partkey: String, cause: String?, presence: SourcePresence) {
+            self.partkey = partkey
+            self.cause = cause
+            self.presence = presence
+        }
+
+        /// 「<原因>、<デバイスでの在否>」
+        public var detail: String {
+            let causeText = cause.flatMap { StatusReporter.causeTexts[$0] } ?? "原因不明"
+            return causeText + "、" + (StatusReporter.presenceTexts[presence] ?? "")
+        }
+    }
+
     public struct Device: Equatable, Sendable {
         public let deviceID: String
         public let writability: DeviceWritability
@@ -70,8 +90,8 @@ public struct StatusReport: Equatable, Sendable {
     public let devices: [Device]
     /// false = まだ走査していない
     public let deviceSnapshotPresent: Bool
-    /// 消せないまま完了にした録音で、まだデバイスに残りうるものの partkey（最大 20 件。F-69）
-    public var undeletable: [String] = []
+    /// 消せないまま完了にした録音（F-69。partkey 順に最大 20 件）。手で消したものも含めて全部
+    public var undeletable: [UndeletablePart] = []
     public var undeletableTotal = 0
 
     /// タプルの配列は自動で Equatable にならないので、欄ごとに比べる。
@@ -119,9 +139,10 @@ public struct StatusReport: Equatable, Sendable {
             }
         }
         if undeletableTotal > 0 {
-            out.append("消せなかった録音（" + String(undeletableTotal) + " 件。デバイスに残っています）")
-            for key in undeletable {
-                out.append("  " + key)
+            out.append("消せなかった録音（" + String(undeletableTotal) + " 件。消さずに完了にしたもの）")
+            for p in undeletable {
+                out.append("  " + p.partkey)
+                out.append("    " + p.detail)
             }
             if undeletableTotal > undeletable.count {
                 out.append("  … ほか " + String(undeletableTotal - undeletable.count) + " 件")
@@ -153,6 +174,17 @@ public enum StatusReporter {
     /// エンティティごとの注記（**Part 用を Session へ流用しない**。voicedock status.py:78-90）
     public static let partNotes: [PartStatus: String] = [.failed: "次回接続時に再試行"]
     public static let sessionNotes: [SessionStatus: String] = [:]
+    /// 消せなかった録音の原因の語 → 表示（F-69）
+    public static let causeTexts: [String: String] = [
+        DeletionReason.causeSourceInfo: "元の情報（場所・サイズ・時刻）が無い",
+        DeletionReason.causePreIdentity: "事前確認で原本が合わない（サイズ・時刻・場所）",
+        DeletionReason.causeTranscript: "文字起こしが無いか読めない",
+        DeletionReason.causeRawNote: "Raw ノートの照合が合わない",
+    ]
+    /// 元ファイルの在否 → 表示（F-69）
+    public static let presenceTexts: [SourcePresence: String] = [
+        .listed: "デバイスに在る", .notListed: "デバイスの一覧に無い", .unobserved: "デバイスを観測できない",
+    ]
 
     public static func build(
         layout: HomeLayout, config: AppConfig?, snapshot: DeviceSnapshot?, now: Instant, zone: ZonedTime
@@ -165,7 +197,7 @@ public enum StatusReporter {
         var failedTotal = 0
         var awaiting = 0
         var leftoverPaths: [String] = []
-        var undeletable: [String] = []
+        var undeletable: [StatusReport.UndeletablePart] = []
         // 2.
         if let ro = ReadOnlyStore.open(url: layout.database) {
             if let c = try? ro.statusCounts() {
@@ -186,10 +218,13 @@ public enum StatusReporter {
             }
             awaiting = (try? ro.awaitingDeleteResultCount()) ?? 0
             leftoverPaths = (try? ro.inboxPaths(statuses: PartStates.inboxLeftover)) ?? []
-            // 要対応の件数と同じ数え方（F-69）
+            // 決着した Part を全部（F-69。要対応は、このうち一覧にまだ在るものだけ）
             let settled = (try? ro.completedParts(lastDetail: DeletionReason.notDeletable)) ?? []
-            undeletable = AttentionEvaluator.remainingUndeletable(settled, snapshot: snapshot, zone: zone).map(
-                \.partkey)
+            undeletable = settled.map {
+                StatusReport.UndeletablePart(
+                    partkey: $0.partkey, cause: $0.errorMessage,
+                    presence: AttentionEvaluator.sourcePresence($0, snapshot: snapshot))
+            }
         }
         // 3.
         let inbox = InboxScan.counts(layout: layout, leftoverRelativePaths: leftoverPaths)

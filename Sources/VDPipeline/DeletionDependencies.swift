@@ -17,12 +17,15 @@ struct DeletionDependencies: Sendable {
     let clock: any AppClock
     let log: AppLog
     let pended: PendedPartkeys
+    /// 観測できた状態で消せなかった評価の連続回数（F-69。Worker が tick をまたいで持つ）
+    let streaks: UndeletableStreaks
     let warn: @Sendable (any Error) -> Void
 
     init(
         layout: HomeLayout, store: Store, config: AppConfig, zone: ZonedTime, ingest: any IngestPort,
         locks: LockEvaluator, volumeOpener: any VolumeOpener, clock: any AppClock, log: AppLog,
-        pended: PendedPartkeys, warn: @escaping @Sendable (any Error) -> Void
+        pended: PendedPartkeys, streaks: UndeletableStreaks = UndeletableStreaks(),
+        warn: @escaping @Sendable (any Error) -> Void
     ) {
         self.layout = layout
         self.store = store
@@ -34,15 +37,17 @@ struct DeletionDependencies: Sendable {
         self.clock = clock
         self.log = log
         self.pended = pended
+        self.streaks = streaks
         self.warn = warn
     }
 
-    /// ctx.deps.layout / store / ingest / locks / volumeOpener / clock / log、ctx.config、ctx.zone、ctx.pendedPartkeys、warn = { ctx.warnStore($0) }
+    /// ctx.deps.layout / store / ingest / locks / volumeOpener / clock / log、ctx.config、ctx.zone、ctx.pendedPartkeys、ctx.undeletableStreaks、warn = { ctx.warnStore($0) }
     init(ctx: TickContext) {
         self.init(
             layout: ctx.deps.layout, store: ctx.deps.store, config: ctx.config, zone: ctx.zone,
             ingest: ctx.deps.ingest, locks: ctx.deps.locks, volumeOpener: ctx.deps.volumeOpener,
-            clock: ctx.deps.clock, log: ctx.deps.log, pended: ctx.pendedPartkeys, warn: { ctx.warnStore($0) })
+            clock: ctx.deps.clock, log: ctx.deps.log, pended: ctx.pendedPartkeys,
+            streaks: ctx.undeletableStreaks, warn: { ctx.warnStore($0) })
     }
 
     var reaper: ReaperRunner { locks.reaper }

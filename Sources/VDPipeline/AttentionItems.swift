@@ -5,6 +5,16 @@ import VDDevice
 import VDNotes
 import VDStore
 
+/// 元ファイルがいまデバイスに在るか（F-69。AttentionEvaluator.sourcePresence）。
+public enum SourcePresence: Equatable, Sendable {
+    /// 接続中で一覧に在る
+    case listed
+    /// 接続中で列挙できた一覧に無い
+    case notListed
+    /// 観測できない（snapshot が無い・抜いている・列挙できない・source_path が無い）
+    case unobserved
+}
+
 /// 要対応の項目に付ける操作ボタン（PLAN §8.11 の「操作ボタン」の列）。
 public enum AttentionAction: Equatable, Sendable {
     /// 設定ファイルを Finder で表示
@@ -42,7 +52,7 @@ public enum AttentionItem: Equatable, Sendable {
     case diskSpaceLow
     case lockMismatch
     case reaperUpdateRequired
-    /// 消せないまま完了にした録音で、まだデバイスに残りうるものの本数（F-69。1 以上）
+    /// 消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（F-69。1 以上）
     case undeletableSources(Int)
 
     public enum ToolKind: String, Equatable, Sendable { case whisperCLI, llamaServer }
@@ -96,7 +106,7 @@ public struct AttentionInput: Equatable, Sendable {
     public var vault: VaultStatus = .notConfigured
     public var reaper: ReaperStatus = .notInstalled
     public var snapshotMaxAgeSeconds = 900
-    /// 消せないまま完了にした録音で、まだデバイスに残りうるものの本数（AttentionEvaluator.remainingUndeletable の件数。F-69）
+    /// 消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（AttentionEvaluator.undeletableStillListed の件数。F-69）
     public var undeletableSources = 0
     public var now: Instant
 
@@ -135,14 +145,22 @@ public enum AttentionEvaluator {
         return items
     }
 
-    /// 消せないまま完了にした録音（ReadOnlyStore.completedParts(lastDetail: not_deletable)）のうち、まだデバイスに残りうるもの（F-69）。
-    /// 元ファイルが無いと観測できたもの（F-64 と同じ観測。決着より後の走査で、接続中で列挙できた一覧に無い）は数えない（利用者が手で消した）。
-    /// 未接続・列挙できない・snapshot が無いときは残りうるとして数える。過去分の削除で消えたものは source_deleted_at が入り、そもそも渡されない
-    public static func remainingUndeletable(_ parts: [RecordingRow], snapshot: DeviceSnapshot?, zone: ZonedTime)
-        -> [RecordingRow]
-    {
-        guard let snapshot else { return parts }
-        return parts.filter { !DeletionRequester.sourceIsObservedAbsent($0, in: snapshot, zone: zone) }
+    /// 元ファイルがいまデバイスに在るか（F-69。要対応と状態の詳細が共有する）。
+    /// snapshot が無い・デバイスが unavailable か devices に無い（抜いている・列挙できない）・source_path が無いか空 → .unobserved、
+    /// 一覧に在る（sameKey）→ .listed、無い → .notListed
+    public static func sourcePresence(_ part: RecordingRow, snapshot: DeviceSnapshot?) -> SourcePresence {
+        guard let snapshot, snapshot.unavailable[part.deviceID] == nil,
+            let observation = snapshot.devices[part.deviceID],
+            let relpath = part.sourcePath, !relpath.isEmpty
+        else { return .unobserved }
+        return observation.relpaths.contains(where: { DeletionPolicy.sameKey($0, relpath) }) ? .listed : .notListed
+    }
+
+    /// 消せないまま完了にした録音（ReadOnlyStore.completedParts(lastDetail: not_deletable)）のうち、
+    /// 最新の snapshot でデバイスが接続中で一覧にまだ在るもの（sourcePresence が .listed）だけ（F-69）。要対応の件数はこの数。
+    /// 抜いている間・一覧に無い（手で消した）・source_path が無いものは要対応に出さない（状態の詳細には出る）
+    public static func undeletableStillListed(_ parts: [RecordingRow], snapshot: DeviceSnapshot?) -> [RecordingRow] {
+        parts.filter { sourcePresence($0, snapshot: snapshot) == .listed }
     }
 
     /// 沈黙の検出（#117。コピー中に誤報しない）。テストから直接呼ぶ。
