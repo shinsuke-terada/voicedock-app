@@ -44,7 +44,7 @@ public actor Worker {
         ZonedTime(timeZone: TimeZone(identifier: config.timeZone) ?? TimeZone.current)
     }
 
-    /// 起動時に 1 回（PLAN §5.3・§5.4）。設定エラー中・共存ガード中は保留し、解除された最初の tick の先頭で行う。
+    /// 起動時に 1 回（PLAN §5.3・§5.4）。設定エラー中は保留し、解除された最初の tick の先頭で行う。
     /// 2 回目以降の呼び手は 1 回目の処理が終わるのを待ってから戻る（start の途中で tick が走らない）。
     public func start() async {
         if let running = startTask {
@@ -58,9 +58,7 @@ public actor Worker {
 
     /// start の本体（1 回だけ）。
     func startOnce() async {
-        let noConfig = await deps.config.current() == nil
-        let blocked = await deps.ingest.state() == .coexistenceBlocked
-        if noConfig || blocked {
+        if await deps.config.current() == nil {
             pendingStart = true
             return
         }
@@ -111,10 +109,6 @@ public actor Worker {
     public func tick() async {
         if let running = startTask { await running.value }
         guard let config = await deps.config.current() else {
-            board.set(.idle)
-            return
-        }
-        if await deps.ingest.state() == .coexistenceBlocked {
             board.set(.idle)
             return
         }

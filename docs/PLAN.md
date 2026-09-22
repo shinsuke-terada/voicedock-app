@@ -125,7 +125,7 @@ voicedock は 1,500 本超のテストと 56 版の仕様改訂で、多くの�
 ### 1.3 v1 に含めない（非目標）
 
 課金・ライセンス認証、自動アップデート、通知センター、話者識別、送信機 2 台の実機保証（コードは複数台を扱う）、
-受信機側ストレージ、Mac App Store 配布（サンドボックス下で 2-B が成立するか未検証）、Intel Mac、voicedock からの乗り換え（§8.13。F-60）。
+受信機側ストレージ、Mac App Store 配布（サンドボックス下で 2-B が成立するか未検証）、Intel Mac、voicedock からの乗り換え（§8.13。F-60）、voicedock との同時稼働（F-61）。
 
 ### 1.4 判断が割れたときの優先順位（voicedock §1.3 を継承）
 
@@ -164,7 +164,7 @@ VoiceDock.app（常駐・非サンドボックス・Hardened Runtime）
 - **llama-server は解析が要るときに初めて起動し、`processReadySessions` の終わりで必ず止める**（18 GB を常駐させない。次の tick の Part 工程とは重ならない）
 - デバイス上のファイルを削除できるのは reaper だけ（PR-16）。アプリ本体はデバイス上のファイルを unlink するコードを持たない（`SafeUnlink` は `<HOME>` と Vault の tmp だけ。CR-10）
 - reaper は実行中ずっと `<HOME>/state/reaper.lock` に排他の `flock` を掛ける（`LOCK_EX | LOCK_NB`。取れなければ何もせず終了コード 4）。IngestService は走査の前に同じロックを取る（`LOCK_NB` を 1 秒ごとに最大 130 回試す）。アプリが落ちて reaper だけが生き残った場合も「reaper の後の観測」を保証する（§8.9.6）。ロックは `FileLock`（VDContract）だけが扱い、ファイルが無ければ作る（0644）
-- **actor の中で長い同期処理をしない**: コピー・ハッシュ・16 kHz 変換・ディレクトリ走査のような数秒以上かかる同期 I/O は `BlockingIO.run { … }`（VDCore。専用の並行 DispatchQueue で実行し continuation で待つ）で行い、actor は状態だけを持つ。子プロセスの終了は `DispatchSource.makeProcessSource(identifier:eventMask: .exit)` と continuation で待ち（kqueue の登録より前に終わった子を取りこぼさないよう、`waitpid(WNOHANG)` の予備のタイマー（DispatchSourceTimer）も併用する。T-12）、`waitpid` で actor を止めない（whisper の実行中に diskutil や launchctl が待たされないようにする）
+- **actor の中で長い同期処理をしない**: コピー・ハッシュ・16 kHz 変換・ディレクトリ走査のような数秒以上かかる同期 I/O は `BlockingIO.run { … }`（VDCore。専用の並行 DispatchQueue で実行し continuation で待つ）で行い、actor は状態だけを持つ。子プロセスの終了は `DispatchSource.makeProcessSource(identifier:eventMask: .exit)` と continuation で待ち（kqueue の登録より前に終わった子を取りこぼさないよう、`waitpid(WNOHANG)` の予備のタイマー（DispatchSourceTimer）も併用する。T-12）、`waitpid` で actor を止めない（whisper の実行中に diskutil が待たされないようにする）
 
 ### 2.2 voicedock の構成要素との対応
 
@@ -600,12 +600,12 @@ Session（sessionRecovery。この順）: MERGING→READY, ANALYZING→MERGED, W
 ### 5.4 Worker のループ
 
 ```text
-start():   // 設定エラー中・共存ガード中は何もしない（pendingStart を立て、解除された最初の tick の先頭で行う）
+start():   // 設定エラー中は何もしない（pendingStart を立て、解除された最初の tick の先頭で行う）
   log service_started version=<VERSION> schema=<最後に適用したマイグレーション識別子>
   recoverInterrupted → closeStaleOpenSessions → removeInboxOrphans → requeueFailed(.startup)
 
 tick():   // 待ちは「IngestService からの通知」「パネルからの要求」「30 秒」の早い方。直列に実行
-  if 設定エラー状態 or 共存ガード中: return                         // §6.1 / §8.1。何もしない
+  if 設定エラー状態: return                                          // §6.1。何もしない
   snapshot = await ingest.latestSnapshot()                            // 起動直後は nil（まだ走査していない）
   groupNewParts
   requeueRecopied                                                     // 契機 4（下記）
@@ -1037,9 +1037,7 @@ CREATE TABLE imported_keys (
   自分の再マウントで起きるマウント／アンマウント通知もこれでまとまる（途中で 0 台の snapshot を作らない）
 
 **1 回の走査の手順**
-1. 共存ガード: `/bin/launchctl print gui/<uid>/com.voicedock.ingest` を実行し、終了コード 0（voicedock の Helper の LaunchAgent が**登録されている**。StartOnMount で起動されるので「今動いている」ではない）なら
-   走査せず `coexistence_blocked` を 1 回出し、状態を「共存ガード中」にする（Worker は取り込み・処理・削除をすべて止める）。
-   パネルに「voicedock の Helper が登録されています。voicedock のフォルダで `./helper/install.sh --uninstall` を実行してください」と出す
+1. （欠番。v1.1 の共存ガード（voicedock の Helper が登録されていたら走査しない）は F-61 で取り下げた。voicedock と同時には動かさない）
 2. `FileLock` で `<HOME>/state/reaper.lock` に `flock(LOCK_EX | LOCK_NB)` を掛ける。取れなければ 1 秒待って再試行し、130 回で諦めてこの回を見送る（`scanNow()` は nil を返す）。走査が終わるまで保持する
 3. `/Volumes` 直下を列挙し（`.` で始まる名前は黙って無視）、各エントリにデバイス判定（下記）を適用する
 4. 判定を通った各デバイスで、読み取り専用の確保（`mountMode == ro` のとき）→ `statfs` で `readOnly` と空き容量を観測 → ファイルの走査 → 安定性判定 → コピー
@@ -1060,7 +1058,6 @@ CREATE TABLE imported_keys (
 9. `DeviceID.isValid(name)`（§4.2。`:` を含む名前など）（`invalid_device_id`。本計画の追加。パネルに改名の案内を出す）
 
 - 対象外の理由は `volume_skipped name=… reason=…`（DEBUG）。規則 5・8・9 で外れたものは利用者の操作が要るので、snapshot の `unavailable` に載せる（規則 5 は errno も `notListableErrno` に載せる。DR-11 の「EPERM のときだけ TCC の案内」に使う）
-- 共存ガードの `launchctl` の起動に失敗した・タイムアウトした場合は「登録されていない」とみなす（「登録されている」扱いにすると原因の見えない沈黙になる）
 - 合格したものが「デバイス」。**device_id = エントリ名**
 
 **読み取り専用の確保（ロック 2-B の実施側）** — `mountMode == ro` のとき、各デバイスで（`Remounter` プロトコル経由。単体テストでは差し替える）:
@@ -1154,7 +1151,7 @@ public struct ProcessResult: Sendable {
     public let stdoutTail: Data      // 末尾 64 KiB（--help の検査用）
     public let stderrTail: Data      // 末尾 4 KiB
 }
-/// 完了まで待つ（whisper-cli・diskutil・launchctl・reaper・--help 検査）
+/// 完了まで待つ（whisper-cli・diskutil・reaper・--help 検査）
 func run(_ spec: ProcessSpec, timeout: Duration) async -> ProcessResult
 /// 起動して手放す（llama-server）。止めるのは RunningProcess.terminate
 func spawn(_ spec: ProcessSpec) async throws(SpawnError) -> RunningProcess
@@ -1169,7 +1166,7 @@ public final class RunningProcess: Sendable {
   - タイムアウト時: `kill(-pgid, SIGTERM)` → 5 秒待つ → `kill(-pgid, SIGKILL)`。**子だけでなく孫も殺す**（ASR-07。テストでは偽 whisper に孫を作らせ、孫も消えることを確かめる）
   - アプリ終了時は実行中の全グループに同じ手順を行う（`ProcessRunner.terminateAll(grace:)`）
 - 環境変数は呼び手が明示する（`ProcessSpec.environment` だけを子に渡す。親の環境を引き継がない）。既定の組は `ProcessEnvironment.standard` = `PATH=/usr/bin:/bin:/usr/sbin:/sbin`、`LANG=en_US.UTF-8`、
-  diskutil / launchctl は `ProcessEnvironment.cLocale` = 同じ PATH と `LC_ALL=C`
+  diskutil は `ProcessEnvironment.cLocale` = 同じ PATH と `LC_ALL=C`
 - stderr は最後の 4 KiB だけメモリに持ち、失敗時の `error_message` に使う（200 文字に切り詰まる）。whisper の失敗文言は voicedock と同じく stderr の末尾 1000 文字（§8.4）
 - `spawnFailed` は `posix_spawn` の戻り値（errno）。実行ファイルが無い・実行権が無いときにこれになる
 
@@ -1940,22 +1937,22 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | DR-01 | 1 | 設定が CV をすべて満たす（違反を 1 件 1 行で出す） | fail | ○ |
 | DR-16 | 2 | タイムゾーンが解決できる | fail | ○ |
 | DR-02 | 3 | DB: ファイルが在れば読み取り専用で開き `PRAGMA quick_check` が `ok`、適用済みマイグレーションが最新。無ければ notice「まだ作られていません」（作らない） | fail | ○ |
-| DR-13 | 4 | voicedock の Helper の LaunchAgent が登録されていない（`launchctl print` が 0 以外） | fail |  |
-| DR-03 | 5 | `<HOME>` の空き容量: `SpaceCheck`（設定値を使う）を duration 1800 秒で呼んで `.ok` | notice |  |
-| DR-04 | 6 | whisper-cli が在り、`--help` に VAD の 6 フラグが逐語で在る（VAD 無効なら無くても notice） | fail |  |
-| DR-05 | 7 | Whisper モデルが在り SHA-256 が一致 | fail |  |
-| DR-06 | 8 | VAD モデルが在り SHA-256 が一致。VAD 無効なら notice「無音から幻覚が生成され、13 倍以上遅くなります」（ASR-02） | fail / notice |  |
-| DR-07 | 9 | llama-server が在り、使うフラグがすべて `--help` に在る | fail |  |
-| DR-08 | 10 | LLM モデルが選ばれて在り SHA-256 が一致（custom は ID の SHA と一致するかだけ）、メモリが足りる（custom はメモリの目安が無いので `.ok` とし、詳細に「動作保証外のモデルです」と出す） | fail |  |
-| DR-10 | 11 | Vault: `VaultCheck` が `.available`（`.notReadable(EPERM)` は許可の案内）かつ `access(W_OK)`。**ファイルもフォルダも作らない**（NOTE-16）。「書けない」と「Vault でない」を別の文言で出す | fail |  |
-| DR-11 | 12 | 接続中のデバイスを列挙できる（snapshot の `unavailable` に `not_listable` が無い）。不可なら「システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム」を案内。**デバイス未接続なら skip** | fail |  |
-| DR-12 | 13 | ログイン項目の状態（`SMAppService.mainApp.status`）。`.enabled` 以外は notice | notice |  |
-| DR-15 | 14 | inbox の取り残し（`inboxLeftoverStates` の Part の inbox ファイルが残っている）。件数と合計サイズ。**自動では消さない** | notice |  |
-| DR-17 | 15 | アプリ自身の署名が有効で ad-hoc でない（Team ID を持つ）。ad-hoc なら「ビルドのたびにリムーバブルボリュームの許可が失効します」（voicedock DH-16 相当） | notice |  |
-| DR-14 | 16 | 三重ロックを個別に表示（§8.9.8 の表示。`LockEvaluator` を使い、式を書き直さない）。常に notice | notice | （必ず最後） |
+| ~~DR-13~~ | — | ~~取り下げ（F-61）: voicedock の Helper の LaunchAgent が登録されていない~~ | — |  |
+| DR-03 | 4 | `<HOME>` の空き容量: `SpaceCheck`（設定値を使う）を duration 1800 秒で呼んで `.ok` | notice |  |
+| DR-04 | 5 | whisper-cli が在り、`--help` に VAD の 6 フラグが逐語で在る（VAD 無効なら無くても notice） | fail |  |
+| DR-05 | 6 | Whisper モデルが在り SHA-256 が一致 | fail |  |
+| DR-06 | 7 | VAD モデルが在り SHA-256 が一致。VAD 無効なら notice「無音から幻覚が生成され、13 倍以上遅くなります」（ASR-02） | fail / notice |  |
+| DR-07 | 8 | llama-server が在り、使うフラグがすべて `--help` に在る | fail |  |
+| DR-08 | 9 | LLM モデルが選ばれて在り SHA-256 が一致（custom は ID の SHA と一致するかだけ）、メモリが足りる（custom はメモリの目安が無いので `.ok` とし、詳細に「動作保証外のモデルです」と出す） | fail |  |
+| DR-10 | 10 | Vault: `VaultCheck` が `.available`（`.notReadable(EPERM)` は許可の案内）かつ `access(W_OK)`。**ファイルもフォルダも作らない**（NOTE-16）。「書けない」と「Vault でない」を別の文言で出す | fail |  |
+| DR-11 | 11 | 接続中のデバイスを列挙できる（snapshot の `unavailable` に `not_listable` が無い）。不可なら「システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム」を案内。**デバイス未接続なら skip** | fail |  |
+| DR-12 | 12 | ログイン項目の状態（`SMAppService.mainApp.status`）。`.enabled` 以外は notice | notice |  |
+| DR-15 | 13 | inbox の取り残し（`inboxLeftoverStates` の Part の inbox ファイルが残っている）。件数と合計サイズ。**自動では消さない** | notice |  |
+| DR-17 | 14 | アプリ自身の署名が有効で ad-hoc でない（Team ID を持つ）。ad-hoc なら「ビルドのたびにリムーバブルボリュームの許可が失効します」（voicedock DH-16 相当） | notice |  |
+| DR-14 | 15 | 三重ロックを個別に表示（§8.9.8 の表示。`LockEvaluator` を使い、式を書き直さない）。常に notice | notice | （必ず最後） |
 | DR-09 | 別 | LLM に実リクエスト（別のボタン。Worker の直列ループに 1 件の仕事として入れ、`LlamaServerSupervisor` の単一インスタンスを使う。数十秒かかる）。結果「<model>（<秒 小数 1 桁>s）」 | fail |  |
 
-- 件数（16 + DR-09 = 17）は SPEC の表から数え、README と文書テストで突き合わせる（§10.3）
+- 件数（15 + DR-09 = 16。取り下げた DR-13 は数えない。F-61）は SPEC の表から数え、README と文書テストで突き合わせる（§10.3）
 
 **要対応（沈黙の検出を含む。`AttentionItem`）**（無人稼働で最も起きやすい故障は「何も起きない」。SM-24 / RK-23）— パネル上部と、アイコンの「要対応」表示に出す。
 **利用者の操作が要るものだけを「要対応」にする**（警告が鳴り続けると本物が埋もれる。OPS-12）:
@@ -1963,7 +1960,6 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | 項目 | 条件 | 操作ボタン |
 |---|---|---|
 | `configInvalid` | 設定エラー状態 | 設定ファイルを Finder で表示 / 読み直す |
-| `coexistenceBlocked` | 共存ガード中 | — |
 | `vaultNotConfigured` / `vaultUnavailable` | Vault のガード（§8.7） | Vault を選び直す / システム設定を開く（EPERM） |
 | `modelMissing(kind)` / `llmNotSelected` / `llmInsufficientMemory` | 文字起こし・解析のガード | モデルの節を開く |
 | `toolMissing(kind)` | whisper-cli か llama-server がバンドルに無い（`PauseReason.whisperMissing` / `llamaServerMissing`）。処理が完全に止まるので必ず出す | 診断を実行 |
@@ -2221,7 +2217,7 @@ reaper は偽物を作らず本物を起動する。本物は「結果を書い�
 | ND | 削除禁止（付録 B.1） | NoDeleteTests / ReaperTests |
 | PT | 静的検査（§9.4） | PolicyTests |
 | SPEC 同期 | `docs/SPEC.md` の表 ↔ 実装の enum・定数・テストの表示名 | 状態・遷移・復旧写像・エラーコード（宣言順）・CV・ND・RV・DR・ログイベント（登録順） |
-| 文書 | README / E2E.md の件数・手順・番号 | 「診断は 17 件」などの散文の数字も機械で見る（voicedock で古くなった箇所が多数あった） |
+| 文書 | README / E2E.md の件数・手順・番号 | 「診断は 16 件」などの散文の数字も機械で見る（voicedock で古くなった箇所が多数あった） |
 | 実機 | E2E（付録 B.3） | docs/E2E.md に手順・生の出力・判定 |
 
 **SPEC 同期の読み方**（voicedock `tests/spec_sync.py` と同じ規則）:
@@ -2456,7 +2452,7 @@ cmake --build build --config Release --target llama-server -j       # → build/
 | T-11 | VDStore: スキーマ・マイグレーション・backup・recordPartTransition / recordSessionTransition（normal / recovery）・insert・列更新・failedFrom・問い合わせ・読み取り専用 | Store | 楽観的制御の衝突、IllegalTransition、events、retry_count、updated_at、DB ファイルを作らない読み取り |
 | T-12 | VDProcess: ProcessRunner（run / spawn / terminateAll） | | 引数の配列渡し、タイムアウトで孫まで消える、環境変数、spawn の停止 |
 | **Phase 3: 取り込み** ||||
-| T-13 | VDDevice: デバイス判定（規則 1〜9）・MountInspector・列挙不可の区別・共存ガード | | 規則ごとのテスト、`._*` を黙って無視、symlink のボリューム除外、EACCES も not_listable |
+| T-13 | VDDevice: デバイス判定（規則 1〜9）・MountInspector・列挙不可の区別（共存ガードは F-61 で取り下げ） | | 規則ごとのテスト、`._*` を黙って無視、symlink のボリューム除外、EACCES も not_listable |
 | T-14 | VDDevice: ファイルの走査・安定性判定・コピー（SHA-256）・登録・needs_recopy・imported_keys の除外。VDAudio の `AudioProbe` もここで作る | | fast path、不一致で見送り、抜去で partial が消える、本体→記録の順（PT-16） |
 | T-15 | VDDevice: 再マウント（Remounter）・statfs 観測・snapshot（世代・connectEpoch）・IngestActivity・reaper.lock・通知のまとめ | | 既に ro なら何もしない、観測値だけを書く、0 台と不明の区別、0 件デバイス、途中で 0 台の snapshot を作らない |
 | **Phase 4: 変換と文字起こし** ||||
@@ -2481,7 +2477,7 @@ cmake --build build --config Release --target llama-server -j       # → build/
 | T-32 | 診断（DR）・要対応（沈黙の検出）・状態の詳細 | | DR ごとのテスト、診断が何も書かないこと（PT-17） |
 | T-33 | — 取り下げ（F-60。voicedock からの乗り換えは v1 で扱わない） | | — |
 | T-34 | make-app / sign / notarize / dmg / verify-bundle | scripts | verify-bundle が通る |
-| T-35 | 実機 E2E（削除 OFF）: E2E-01〜09, 12〜16 | docs/E2E.md | 付録 B.3 |
+| T-35 | 実機 E2E（削除 OFF）: E2E-01〜09, 12〜14, 16（E2E-15 は F-61 で取り下げ） | docs/E2E.md | 付録 B.3 |
 | **Phase 8: 削除（ゲートあり）** ||||
 | T-36 | canDeleteSource・LockEvaluator（readiness と観測）・事前確認 | | ND（アプリ層）と正の対照、式の形の固定 |
 | T-37 | reaper 実行ファイル（RV-00〜13） | voicedock-reaper | ND（reaper 層）と正の対照、`.diskImage` |
@@ -2690,7 +2686,7 @@ normalize_completed normalize_failed transcription_completed transcription_faile
 raw_note_saved raw_note_failed session_merged session_merge_failed session_empty session_reopened
 llm_completed llm_failed analysis_trimmed obsidian_saved obsidian_failed
 delete_requested source_deleted source_delete_skipped source_delete_pending disk_space_low
-scan_completed volume_skipped file_not_stable copy_completed copy_failed remount_failed coexistence_blocked
+scan_completed volume_skipped file_not_stable copy_completed copy_failed remount_failed
 inbox_orphans_removed imported_keys_added pipeline_paused pipeline_resumed
 llm_server_started llm_server_stopped reaper_run reaper_failed deletion_enabled deletion_disabled
 model_downloaded model_download_failed diagnostics_completed
@@ -2822,7 +2818,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | E2E-12 | 文字起こし中にアプリを強制終了（`kill -9`）→ 再起動で途中から再開し、**二重処理しない**（前後の件数表） | OFF |
 | E2E-13 | 処理中にスリープ → 復帰後に続行（処理中はアイドルスリープしない） | OFF |
 | E2E-14 | アプリが動いていない間に接続 → 起動後に取り込む | OFF |
-| E2E-15 | voicedock の Helper の LaunchAgent が登録されている → 取り込まない（共存ガード・DR-13） | OFF |
+| E2E-15 | — 取り下げ（F-61） | — |
 | E2E-16 | リムーバブルボリュームの許可を拒否 → パネルに案内が出る。許可後に取り込む | OFF |
 | E2E-17 | 削除を無効化（確認なし）→ 直ちに読み取り専用へ再マウントされ、以後削除されない | ON→OFF |
 | E2E-18 | — 取り下げ（F-60） | — |
@@ -3095,3 +3091,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-58 | 事 | §2.1・§6.1・00-api-map §2.2・§3 | （T-09・T-11・T-12 の実装で発見、利用者が承認）子の終了の待ちに `waitpid(WNOHANG)` の予備のタイマーを併用（kqueue の登録前に終わった子の取りこぼし）、`ConfigLoader.load`・`ConfigStore.update` のラベルは `reaperConfObservation:`（PT-11）、地図に `ConfigViolation: Error`・`NewSession: Equatable`・`EntityType: CaseIterable` を明記。整数の位置の小数の CV-39 の表示を「型が違います」に揃えた |
 | F-59 | 事 | §8.1 規則 5・§8.1（再マウント） | （P0-01・P0-02 の実測）`access(2)` は macOS 26.6 では TCC の拒否で EPERM になる（「成功する」は版による）。判定は従来どおり列挙で行う。実機の再マウントでは `-mountPoint` は使えない（アンマウントで `/Volumes/<名前>` が消える）ので本番は `useMountPoint: false` |
 | F-60 | 事 | §1.2・§1.3・§7.2・§8.12・§8.13・§12.3・付録 B.3 | （2026-09-22 に利用者が決定）voicedock からの乗り換えを v1 で扱わない。§8.13（`ImportedKeysScanner`）と T-33・E2E-18 を取り下げた（番号は詰めない）。`imported_keys` の表と IngestService の除外は実装済みのまま残り、空の表として無害。§8.8 は残す |
+| F-61 | 事 | §1.3・§2.1・§5.4・§8.1・§8.2・§8.11・§10.3・§12・付録 A.4・付録 B.3 | （2026-09-22 に利用者が決定）このアプリが完成したら voicedock は動かさないので、共存ガード（voicedock の Helper の LaunchAgent が登録されていたら取り込み・処理・削除を止める）を取り下げた。§8.1 の手順 1 は欠番、DR-13 は打ち消しの行、E2E-15 は取り下げ（番号は詰めない）。`coexistence_blocked`・要対応の `coexistenceBlocked` を消した。読み取り専用の再マウント・原本を `O_RDONLY` で開くことなど、ほかの取り込みの安全策は変えない |

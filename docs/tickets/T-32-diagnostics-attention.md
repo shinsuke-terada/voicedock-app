@@ -11,7 +11,7 @@
 
 3 つを作る。どれも**何も書き換えない**:
 
-1. **診断（DR-01〜17 の 16 件 ＋ DR-09）** — パネルの「詳細 → 診断を実行」。voicedock の `doctor` の実行規則（致命の fail 以降は skip・DR-14 は最後）をそのまま移す
+1. **診断（DR-01〜17 のうち 15 件 ＋ DR-09。DR-13 は取り下げ。PLAN F-61）** — パネルの「詳細 → 診断を実行」。voicedock の `doctor` の実行規則（致命の fail 以降は skip・DR-14 は最後）をそのまま移す
 2. **要対応（`AttentionItem`）** — 無人稼働で最も起きやすい故障「何も起きない」を検出する（SM-24 / RK-23）。**利用者の操作が要るものだけ**を出す（OPS-12）
 3. **状態の詳細（`StatusReport`）** — voicedock の `status` に当たる。**DB が無ければ全 0**、DB を作らない
 
@@ -34,7 +34,7 @@
 | `Sources/VDPipeline/Diagnostics/DiagnosticCheck.swift` | `DiagnosticCheck`（1 件の検査の定義）、`DiagnosticID` |
 | `Sources/VDPipeline/Diagnostics/DiagnosticsDependencies.swift` | `DiagnosticsDependencies`、`AppSignatureReading`、`AppSignatureInfo`、`SecAppSignatureReader` |
 | `Sources/VDPipeline/Diagnostics/Diagnostics.swift` | `Diagnostics`（登録表と実行規則とサマリ） |
-| `Sources/VDPipeline/Diagnostics/DiagnosticChecks.swift` | DR-01〜17 の 16 件の本体 |
+| `Sources/VDPipeline/Diagnostics/DiagnosticChecks.swift` | DR-01〜17 のうち 15 件の本体（DR-09 は別、DR-13 は取り下げ） |
 | `Sources/VDPipeline/Diagnostics/DiagnosticTexts.swift` | ラベルと文言（逐語） |
 | `Sources/VDPipeline/Diagnostics/LLMProbeCheck.swift` | DR-09 |
 | `Sources/VDPipeline/LockObserving.swift` | `LockObserving`・`DisabledLockObserver`・`LockObservation`・`LockDisplay`・`ReaperStatus`・`DeletionReadiness`・`DeviceWritability`（00-api-map §11。§4.11。**T-36 の `LockEvaluator` がこのプロトコルに準拠する**） |
@@ -137,7 +137,6 @@ public struct DiagnosticsDependencies: Sendable {
     public let ingest: any IngestPort
     public let locks: any LockObserving      // Phase 7 は DisabledLockObserver、T-36 が LockEvaluator に差し替える（§4.11）
     public let runner: any ProcessRunning
-    public let coexistence: CoexistenceGuard
     public let verificationCache: ModelVerificationCache
     public let signature: any AppSignatureReading
     public let bundleURL: URL
@@ -182,7 +181,7 @@ public struct SecAppSignatureReader: AppSignatureReading {
 // 診断（PLAN §8.11）。何も書き換えない（PT-17）。voicedock doctor.py:589-674 と同じ実行規則。
 public struct Diagnostics: Sendable {
     public init(deps: DiagnosticsDependencies)
-    /// 16 件を PLAN §8.11 の表の順に実行する。DR-09 は含まない（別のボタン）。
+    /// 15 件を PLAN §8.11 の表の順に実行する。DR-09 は含まない（別のボタン）。
     public func run(loginItemStatus: LoginItemStatus) async -> [DiagnosticResult]
     /// 「合格 <n>・失敗 <n>・注意 <n>」（**skip は数えない**）
     public static func summary(_ results: [DiagnosticResult]) -> String
@@ -199,21 +198,20 @@ public struct Diagnostics: Sendable {
 | 1 | `DR-01` | ○ | |
 | 2 | `DR-16` | ○ | |
 | 3 | `DR-02` | ○ | |
-| 4 | `DR-13` | | |
-| 5 | `DR-03` | | |
-| 6 | `DR-04` | | |
-| 7 | `DR-05` | | |
-| 8 | `DR-06` | | |
-| 9 | `DR-07` | | |
-| 10 | `DR-08` | | |
-| 11 | `DR-10` | | |
-| 12 | `DR-11` | | |
-| 13 | `DR-12` | | |
-| 14 | `DR-15` | | |
-| 15 | `DR-17` | | |
-| 16 | `DR-14` | | ○ |
+| 4 | `DR-03` | | |
+| 5 | `DR-04` | | |
+| 6 | `DR-05` | | |
+| 7 | `DR-06` | | |
+| 8 | `DR-07` | | |
+| 9 | `DR-08` | | |
+| 10 | `DR-10` | | |
+| 11 | `DR-11` | | |
+| 12 | `DR-12` | | |
+| 13 | `DR-15` | | |
+| 14 | `DR-17` | | |
+| 15 | `DR-14` | | ○ |
 
-- **欠番を作らない**（DR-01〜17 の 17 個のうち DR-09 だけが別。16 + 1 = 17。件数は SPEC の表から数え、README と文書テストで突き合わせる。PLAN §8.11 の最後）
+- **欠番は DR-13 だけ**（DR-01〜17 の 17 個のうち DR-09 は別、DR-13 は共存ガードとともに取り下げた。PLAN F-61。15 + 1 = 16。件数は SPEC の表から数え、README と文書テストで突き合わせる。PLAN §8.11 の最後）
 
 **`run(loginItemStatus:)` の手順**:
 1. `let config = await deps.config.current()`、`let violations = await deps.config.violations()`
@@ -234,7 +232,7 @@ public struct Diagnostics: Sendable {
 
 ---
 
-### 4.4 `DiagnosticChecks.swift`（16 件の本体）
+### 4.4 `DiagnosticChecks.swift`（15 件の本体）
 
 共通: ラベルは `DiagnosticTexts.label(id)`。詳細は `DiagnosticTexts` の関数（§4.5）。**すべて読むだけ**。
 
@@ -255,10 +253,7 @@ public struct Diagnostics: Sendable {
 4. `let applied = (try? ro.appliedMigrations()) ?? []`。`applied != Store.migrationIdentifiers` → `.fail`、details `[DiagnosticTexts.dbMigrations(applied: applied.last, expected: Store.migrationIdentifiers.last)]`
 5. `.ok`、details `[DiagnosticTexts.dbOK(applied.last ?? "")]`
 
-**DR-13 voicedock の Helper**
-1. `await ctx.deps.coexistence.isVoicedockHelperLoaded()` が真 → `.fail`、details `[DiagnosticTexts.coexistence]`
-2. 偽 → `.ok`、details `[DiagnosticTexts.coexistenceOK]`
-- `launchctl print` の起動失敗・タイムアウトは `CoexistenceGuard` が「登録されていない」と返す（PLAN §8.1）。**ここで判定を書き直さない**
+**DR-13**（取り下げ。PLAN F-61。作らない）
 
 **DR-03 空き容量**
 1. `guard let c = ctx.config else { … .fail(configMissing) }`
@@ -371,7 +366,6 @@ enum DiagnosticTexts {
 | `DR-10` | `Vault` |
 | `DR-11` | `デバイスの列挙` |
 | `DR-12` | `ログイン項目` |
-| `DR-13` | `voicedock の Helper` |
 | `DR-14` | `元音声の削除` |
 | `DR-15` | `inbox の取り残し` |
 | `DR-16` | `タイムゾーン` |
@@ -391,8 +385,6 @@ enum DiagnosticTexts {
 | `dbQuickCheck(_:)` | `PRAGMA quick_check が ok ではありません: <s>` |
 | `dbMigrations(applied:expected:)` | `適用済みのマイグレーションが <applied> です（最新は <expected>）` |
 | `dbOK(_:)` | `quick_check ok、マイグレーション <last>` |
-| `coexistence` | `voicedock の Helper が登録されています。voicedock のフォルダで ./helper/install.sh --uninstall を実行してください` |
-| `coexistenceOK` | `登録されていません` |
 | `spaceOK(_:)` | `空き <x.x> GiB`（`StatusTexts.gib`） |
 | `executableMissing(_:)` | `<path> がありません` |
 | `helpFailed(_:)` | `--help が失敗しました（<終了の説明>）`（`exited(n)` → `exit <n>`、`signaled(n)` → `signal <n>`、`timedOut` → `時間切れ`、`spawnFailed(e)` → `起動できません（errno <e>）`） |
@@ -524,7 +516,6 @@ public enum AttentionAction: Equatable, Sendable {
 /// PLAN §8.11 の表の 1 行。宣言順 = 表示順。
 public enum AttentionItem: Equatable, Sendable {
     case configInvalid
-    case coexistenceBlocked
     case vaultNotConfigured
     case vaultUnavailable(VaultStatus)
     case modelMissing(ModelKind)
@@ -548,7 +539,6 @@ public enum AttentionItem: Equatable, Sendable {
 public struct AttentionInput: Equatable, Sendable {
     public var configPresent = false
     public var violations: [ConfigViolation] = []
-    public var ingestState: IngestState = .idle
     public var ingestActivity: IngestActivity = .idle
     public var snapshot: DeviceSnapshot? = nil
     public var paused: [PauseReason] = []
@@ -572,7 +562,6 @@ public enum AttentionEvaluator {
 | 項目 | actions |
 |---|---|
 | `configInvalid` | `[.revealConfig, .reloadConfig]` |
-| `coexistenceBlocked` | `[]` |
 | `vaultNotConfigured` | `[.chooseVault]` |
 | `vaultUnavailable(.notReadable(EPERM))` | `[.chooseVault, .openSystemSettings]` |
 | `vaultUnavailable(その他)` | `[.chooseVault]` |
@@ -588,25 +577,24 @@ public enum AttentionEvaluator {
 | # | 項目 | 条件 |
 |---|---|---|
 | 1 | `configInvalid` | `!input.configPresent` |
-| 2 | `coexistenceBlocked` | `input.ingestState == .coexistenceBlocked` |
-| 3 | `vaultNotConfigured` | `input.paused.contains(.vaultNotConfigured)` |
-| 4 | `vaultUnavailable(input.vault)` | `input.paused.contains(.vaultUnavailable)` |
-| 5 | `modelMissing(.whisper)` | `input.paused.contains(.modelMissing)` |
-| 6 | `modelMissing(.vad)` | `input.paused.contains(.vadModelMissing)` |
-| 7 | `modelMissing(.llm)` | `input.paused.contains(.llmModelMissing)` |
-| 8 | `llmNotSelected` | `input.paused.contains(.llmNotSelected)` |
-| 9 | `llmInsufficientMemory` | `input.paused.contains(.llmInsufficientMemory)` |
-| 10 | `toolMissing(.whisperCLI)` | `input.paused.contains(.whisperMissing)` |
-| 11 | `toolMissing(.llamaServer)` | `input.paused.contains(.llamaServerMissing)` |
-| 12 | `deviceNotListable(name)` | `snapshot.unavailable` の値が `not_listable` の名前（バイト順に 1 件ずつ） |
-| 13 | `deviceNeedsReplug(name)` | 同じく `mount_name_mismatch` |
-| 14 | `deviceNameInvalid(name)` | 同じく `invalid_device_id` |
-| 15 | `ingestSilent` | `isIngestSilent(input)` |
-| 16 | `diskSpaceLow` | `input.paused.contains(.diskSpaceLow)` |
-| 17 | `lockMismatch` | `input.violations` に `rule == "CV-30"` か `"CV-33"` が在る |
-| 18 | `reaperUpdateRequired` | `if case .versionMismatch = input.reaper` |
+| 2 | `vaultNotConfigured` | `input.paused.contains(.vaultNotConfigured)` |
+| 3 | `vaultUnavailable(input.vault)` | `input.paused.contains(.vaultUnavailable)` |
+| 4 | `modelMissing(.whisper)` | `input.paused.contains(.modelMissing)` |
+| 5 | `modelMissing(.vad)` | `input.paused.contains(.vadModelMissing)` |
+| 6 | `modelMissing(.llm)` | `input.paused.contains(.llmModelMissing)` |
+| 7 | `llmNotSelected` | `input.paused.contains(.llmNotSelected)` |
+| 8 | `llmInsufficientMemory` | `input.paused.contains(.llmInsufficientMemory)` |
+| 9 | `toolMissing(.whisperCLI)` | `input.paused.contains(.whisperMissing)` |
+| 10 | `toolMissing(.llamaServer)` | `input.paused.contains(.llamaServerMissing)` |
+| 11 | `deviceNotListable(name)` | `snapshot.unavailable` の値が `not_listable` の名前（バイト順に 1 件ずつ） |
+| 12 | `deviceNeedsReplug(name)` | 同じく `mount_name_mismatch` |
+| 13 | `deviceNameInvalid(name)` | 同じく `invalid_device_id` |
+| 14 | `ingestSilent` | `isIngestSilent(input)` |
+| 15 | `diskSpaceLow` | `input.paused.contains(.diskSpaceLow)` |
+| 16 | `lockMismatch` | `input.violations` に `rule == "CV-30"` か `"CV-33"` が在る |
+| 17 | `reaperUpdateRequired` | `if case .versionMismatch = input.reaper` |
 
-- **ガードの判定を書き直さない**（3〜11・16 は `PauseReason`（Worker の `PauseBook`）をそのまま読む。§9.1 原則 2 / CR-06）。
+- **ガードの判定を書き直さない**（2〜10・15 は `PauseReason`（Worker の `PauseBook`）をそのまま読む。§9.1 原則 2 / CR-06）。
   `PauseReason.license` は要対応にしない（v1 は常に許可。PLAN §8.14）
 - **要対応にしないもの**（PLAN §8.11 の最後）: FAILED の Part / Session（状態の詳細に出す）、ログイン項目（「はじめに」で選んだ後は出さない）
 
@@ -755,14 +743,14 @@ public enum StatusReporter {
 `AppContext` に `locks: any LockObserving` と `diagnostics: DiagnosticsDependencies` を足す。`Bootstrap`（T-30 §4.2）の変更:
 
 - 手順 6（T-30 が「まだ作らない」と空けたところ）に `let locks: any LockObserving = DisabledLockObserver()` を入れる（§4.11。**何も読まない・何も起動しない**）
-- 手順 12 の後に `let diagnostics = DiagnosticsDependencies(layout: layout, paths: paths, catalog: catalog, config: config, ingest: ingest, locks: locks, runner: runner, coexistence: CoexistenceGuard(runner: runner, uid: getuid()), verificationCache: verificationCache, signature: SecAppSignatureReader(), bundleURL: Bundle.main.bundleURL, physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory, clock: clock, log: log.withCategory("pipeline"))` を組み立て、`AppContext` に渡す
+- 手順 12 の後に `let diagnostics = DiagnosticsDependencies(layout: layout, paths: paths, catalog: catalog, config: config, ingest: ingest, locks: locks, runner: runner, verificationCache: verificationCache, signature: SecAppSignatureReader(), bundleURL: Bundle.main.bundleURL, physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory, clock: clock, log: log.withCategory("pipeline"))` を組み立て、`AppContext` に渡す
 - **`observeReaperConf` は `{ .missing }` のまま**（T-30 §4.2 の 7）。reaper.conf を読むのは T-36 から
 
 `LiveServices.read` に足す（T-30 §4.8 の 6 の後）:
 ```swift
 s.attention = AttentionEvaluator.items(AttentionInput(
     configPresent: s.configPresent, violations: s.configViolations,
-    ingestState: s.ingestState, ingestActivity: s.ingestActivity, snapshot: s.device,
+    ingestActivity: s.ingestActivity, snapshot: s.device,
     paused: s.worker.paused, vault: s.vault,
     reaper: await context.locks.reaperStatus(),
     snapshotMaxAgeSeconds: config?.device.snapshotMaxAgeSeconds ?? 900, now: s.now))
@@ -794,7 +782,6 @@ s.attention = AttentionEvaluator.items(AttentionInput(
 | 項目 | `title` | `detail` |
 |---|---|---|
 | `configInvalid` | `設定にエラーがあります` | `設定ファイルを直してから「設定を読み直す」を押してください` |
-| `coexistenceBlocked` | `voicedock の Helper が登録されています` | `voicedock のフォルダで ./helper/install.sh --uninstall を実行してください` |
 | `vaultNotConfigured` | `Vault が選ばれていません` | `「保存先（Vault）」で Obsidian の Vault を選んでください` |
 | `vaultUnavailable(st)` | `Vault が使えません` | `st.message(path:marker:)`（`.notReadable(EPERM)` のときは ＋ 改行 ＋ `システム設定 → プライバシーとセキュリティ → ファイルとフォルダ で VoiceDock に許可してください`） |
 | `modelMissing(.whisper)` | `Whisper モデルがありません` | `「モデル」で入手してください` |
@@ -981,8 +968,8 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `orderIsTheSpecOrder` / 「16 件が PLAN §8.11 の順」 | 既定の `checks` | `map(\.id) == ["DR-01","DR-16","DR-02","DR-13","DR-03","DR-04","DR-05","DR-06","DR-07","DR-08","DR-10","DR-11","DR-12","DR-15","DR-17","DR-14"]` |
-| `countIs16` / 「DR-09 を除いて 16 件」 | 同上 | `checks.count == 16`、`DR-09` を含まない |
+| `orderIsTheSpecOrder` / 「15 件が PLAN §8.11 の順」 | 既定の `checks` | `map(\.id) == ["DR-01","DR-16","DR-02","DR-03","DR-04","DR-05","DR-06","DR-07","DR-08","DR-10","DR-11","DR-12","DR-15","DR-17","DR-14"]` |
+| `countIs15` / 「DR-09 を除いて 15 件」 | 同上 | `checks.count == 15`、`DR-09` と取り下げた `DR-13` を含まない |
 | `onlyDR14IsAlways` / 「always は DR-14 だけ」 | 同上 | `checks.filter(\.always).map(\.id) == ["DR-14"]` |
 | `fatalSetIsTheSpecSet` / 「致命は DR-01 / DR-16 / DR-02 の 3 つ」 | 同上 | `checks.filter(\.fatal).map(\.id) == ["DR-01","DR-16","DR-02"]` |
 | `fatalFailSkipsTheRest` / 「致命の fail 以降は skip」 | 2 番目が fatal で fail を返す偽の `checks` 4 件 | 3・4 番目が `.skip`、details が `["先行する致命的な検査が失敗"]` |
@@ -1007,8 +994,6 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `dr02NoticeWhenMissing` | DB ファイルが無い | `.notice` `["まだ作られていません"]`、**実行後も DB が無い** |
 | `dr02OK` | `Store` で 1 回作った DB | `.ok`、details が `quick_check ok、マイグレーション ` で始まる |
 | `dr02FailOnBadMigrations` | `appliedMigrations` が最新でない DB（`Store` の internal init で古い migrator を使う） | `.fail`、details が `適用済みのマイグレーションが ` で始まる |
-| `dr13OKWhenNotLoaded` | `ScriptedProcessRunner` が `launchctl` に exit 1 | `.ok` `["登録されていません"]` |
-| `dr13FailWhenLoaded` | exit 0 | `.fail`、details が逐語の案内 |
 | `dr03OK` | 空き容量が十分な一時ディレクトリ | `.ok`、details が `空き ` で始まる |
 | `dr03NoticeWhenStagingOverLimit` | `stagingMaxBytes` を 1 にする | `.notice`、details が `staging 使用量 ` で始まる（§8.3 の文言） |
 | `dr04FailWhenMissing` | `whisper-cli` を置かない | `.fail` `["<path> がありません"]` |
@@ -1083,7 +1068,6 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 |---|---|---|
 | `emptyInputHasNoItems` / 「TEST-28 何も無ければ 0 件」 | `AttentionInput(now:)` に `configPresent = true` | `[]` |
 | `configInvalid` | `configPresent = false` | `[.configInvalid]`、`actions == [.revealConfig, .reloadConfig]` |
-| `coexistenceBlocked` | `ingestState = .coexistenceBlocked` | 含む、`actions == []` |
 | `vaultNotConfiguredFromPause` | `paused = [.vaultNotConfigured]` | `[.vaultNotConfigured]`、`actions == [.chooseVault]` |
 | `vaultUnavailableCarriesStatus` | `paused = [.vaultUnavailable]`、`vault = .missingMarker` | `.vaultUnavailable(.missingMarker)` |
 | `vaultEPERMOffersSystemSettings` | `vault = .notReadable(errno: EPERM)` | `actions == [.chooseVault, .openSystemSettings]` |
@@ -1228,7 +1212,7 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 - [ ] `make test` が通り、§5 の全テストが在る
 - [ ] **PT-17 が通る**: `Sources/VDPipeline/Diagnostics/` に PT-01・PT-12 の API、`AtomicFile`、`Store(` が無い
 - [ ] `DiagnosticsNoWriteTests` の 5 本が通る（`<HOME>` と Vault が 1 バイトも変わらない）
-- [ ] 診断の件数が 16（DR-09 を入れて 17）で、`docs/SPEC.md` の表・README の散文・`Diagnostics.checks.count` の 3 か所が一致する（文書テスト。§10.3）
+- [ ] 診断の件数が 15（DR-09 を入れて 16。取り下げた DR-13 は数えない）で、`docs/SPEC.md` の表・README の散文・`Diagnostics.checks.count` の 3 か所が一致する（文書テスト。§10.3）
 - [ ] `AttentionItem` の全ケースに `AttentionTexts.title` と `actions` が在る（`switch` の網羅）
 - [ ] `StatusReport.lines` が §4.9 の表と逐語で一致する
 - [ ] `WorkerJob` に `.llmProbe` だけが在る（`.backlog` / `.resolveAbsent` は T-41）
@@ -1246,13 +1230,13 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 1. T-41 が `WorkerJob` に `.backlog` / `.resolveAbsent` を足し、`stagePendingJobs` の `switch` に 2 ケースを足す
 2. T-40 が `DetailsSection` の下に「元音声の削除」の有効化フローへの導線（`deletionHighlighted`）をつなぐ
-3. T-43（README）が診断の件数 17 を 1 か所だけに書き、文書テストがここと突き合わせる
+3. T-43（README）が診断の件数 16 を 1 か所だけに書き、文書テストがここと突き合わせる
 4. T-35 の E2E-04（診断）で、実機に DJI Mic 3 をつないだ状態の DR-11 が `.ok` になることを【利用者が行う】
 
 ## 10. API 地図への変更提案
 
 1. §11 の `Diagnostics/` の行を 7 ファイルに分ける: `DiagnosticResult.swift`（`DiagnosticStatus` / `DiagnosticResult`）、`DiagnosticCheck.swift`、`DiagnosticsDependencies.swift`（`DiagnosticsDependencies` / `AppSignatureReading` / `AppSignatureInfo` / `SecAppSignatureReader`）、`Diagnostics.swift`、`DiagnosticChecks.swift`、`DiagnosticTexts.swift`、`LLMProbeCheck.swift`。`Diagnostics.init(deps: DiagnosticsDependencies)` と `summary(_:)` / `counts(_:)` を載せる
-2. §11 の `AttentionItems.swift` を `AttentionItem`（15 ケース）・`AttentionAction`（6 ケース）・`AttentionInput`・`AttentionEvaluator.items(_:)` / `isIngestSilent(_:)` にする
+2. §11 の `AttentionItems.swift` を `AttentionItem`（14 ケース。`coexistenceBlocked` は取り下げ。PLAN F-61）・`AttentionAction`（6 ケース）・`AttentionInput`・`AttentionEvaluator.items(_:)` / `isIngestSilent(_:)` にする
 3. §11 の `StatusReport.swift` を §4.9 の形（`StatusReport` / `StatusReport.FailedPart` / `StatusReport.Device` / `StatusReporter.build(layout:config:snapshot:now:zone:)` / `partOrder` / `sessionOrder` / `partNotes` / `sessionNotes`）にする
 4. §11 に `InboxScan.swift`（`InboxCounts` / `InboxScan`。**作り手 T-32**、DR-15 と `StatusReporter` が使う）を足す。`InboxMaintenance.leftovers()` はこれを呼ぶよう T-18 側を直す（同じ数え方を 2 か所に持たない）
 5. （T-30 §4.10 の `StatusTexts.pauseWord(_:)` をそのまま使う。新しい提案は無い）

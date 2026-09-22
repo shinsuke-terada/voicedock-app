@@ -80,7 +80,7 @@ VoiceDock for Mac の実装タスクごとの詳細仕様。**誰が実装して
 | [T-09](T-09-config.md) | VDCore: 設定と CV・モデルカタログ | 2 | T-04, T-05, T-08, T-10, T-25 |
 | [T-11](T-11-store.md) | VDStore | 2 | T-08, T-10 |
 | [T-12](T-12-process-runner.md) | VDProcess | 2 | T-10 |
-| [T-13](T-13-device-detection.md) | VDDevice: デバイス判定・共存ガード | 3 | T-07, T-09, T-12 |
+| [T-13](T-13-device-detection.md) | VDDevice: デバイス判定・共存ガード（共存ガードは F-61 で外した） | 3 | T-07, T-09, T-12 |
 | [T-14](T-14-ingest-copy.md) | VDDevice: 走査・安定性判定・コピー・登録（＋ AudioProbe） | 3 | T-11, T-13 |
 | [T-15](T-15-remount-snapshot.md) | VDDevice: 再マウント・snapshot・IngestService | 3 | T-14 |
 | [T-16](T-16-audio.md) | VDAudio: 16 kHz 変換・検証・空き容量 | 4 | T-14 |

@@ -29,15 +29,6 @@ struct StatusLineTests {
             generation: 1, completedAt: now, connectEpoch: 1, devices: devices, unavailable: [:], notListableErrno: [:])
     }
 
-    @Test("共存ガード中は他の何より先に出す")
-    func coexistenceWinsOverEverything() {
-        var s = Self.snapshot()
-        s.ingestState = .coexistenceBlocked
-        s.configPresent = false
-        s.ingestActivity = IngestActivity(scanning: true, deviceID: "DJIMIC3", copied: 1, total: 2, lastActivityAt: nil)
-        #expect(StatusLine.make(s) == "取り込みを止めています（voicedock の Helper が登録されています）")
-    }
-
     @Test("設定エラーは取り込み・処理より先")
     func configInvalidBeatsActivity() {
         var s = Self.snapshot()

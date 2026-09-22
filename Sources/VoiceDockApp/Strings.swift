@@ -26,7 +26,6 @@ enum Strings {
     static let statusMerging = "文字起こしをまとめています"
     static func statusAnalyzing(_ day: String) -> String { "要約中 " + day }
     static func statusWritingDailyNote(_ day: String) -> String { "ノートを書いています " + day }
-    static let statusCoexistenceBlocked = "取り込みを止めています（voicedock の Helper が登録されています）"
     static let statusConfigInvalid = "設定にエラーがあります"
     /// PauseReason.allCases の順に並べる（渡された順ではない）
     static func statusPaused(_ reasons: [PauseReason]) -> String {

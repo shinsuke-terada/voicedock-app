@@ -135,7 +135,6 @@ enum Bootstrap {
                     runner: runner, inspector: SystemMountInspector(), useMountPoint: Bootstrap.useMountPoint),
                 mountEvents: WorkspaceMountEventSource(),
                 reader: DeviceReader(),
-                coexistence: CoexistenceGuard(runner: runner, uid: getuid()),
                 clock: clock, sleeper: TaskSleeper(), zone: zone,
                 log: log.withCategory("device"), volumesRoot: Contract.volumesRoot))
         // 12. Worker（verificationCache は 14 のモデルと共有する。WorkerDependencies へ足すチケットは未決）

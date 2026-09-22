@@ -7,7 +7,6 @@ import VDPipeline
 enum StatusLine {
     /// 上から順に判定し、最初に当たったものを返す。
     static func make(_ s: AppSnapshot) -> String {
-        if s.ingestState == .coexistenceBlocked { return Strings.statusCoexistenceBlocked }
         if !s.configPresent { return Strings.statusConfigInvalid }
         if s.ingestActivity.scanning && s.ingestActivity.total > 0 {
             return Strings.statusIngesting(

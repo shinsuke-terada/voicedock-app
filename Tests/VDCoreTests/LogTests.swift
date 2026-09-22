@@ -28,7 +28,7 @@ struct LogTests {
         return AppLog(sink: sink, level: level, unsafeContent: unsafe, zone: zone, clock: FixedClock(now: now))
     }
 
-    @Test("イベントは付録 A.4 の順（48 個）")
+    @Test("イベントは付録 A.4 の順（47 個）")
     func eventsMatchAppendixA4() {
         let expected = [
             "service_started", "service_stopping", "config_warning", "config_invalid", "recovery_completed",
@@ -39,13 +39,12 @@ struct LogTests {
             "llm_completed", "llm_failed", "analysis_trimmed", "obsidian_saved", "obsidian_failed",
             "delete_requested", "source_deleted", "source_delete_skipped", "source_delete_pending", "disk_space_low",
             "scan_completed", "volume_skipped", "file_not_stable", "copy_completed", "copy_failed", "remount_failed",
-            "coexistence_blocked",
             "inbox_orphans_removed", "imported_keys_added", "pipeline_paused", "pipeline_resumed",
             "llm_server_started", "llm_server_stopped", "reaper_run", "reaper_failed", "deletion_enabled",
             "deletion_disabled",
             "model_downloaded", "model_download_failed", "diagnostics_completed",
         ]
-        #expect(expected.count == 48)
+        #expect(expected.count == 47)
         #expect(LogEvent.allCases.map(\.rawValue) == expected)
     }
 

@@ -74,7 +74,7 @@ struct IngestCopyTests {
                 layout: layout, configProvider: { config }, store: store, inspector: FakeMountInspector(),
                 remounter: FakeRemounter(outcomes: [.alreadyReadOnly]), mountEvents: FakeMountEventSource(),
                 reader: DeviceReader(),
-                coexistence: CoexistenceGuard(runner: ScriptedProcessRunner(results: []), uid: 501), clock: clock,
+                clock: clock,
                 sleeper: sleeper(fake), zone: zone, log: log,
                 volumesRoot: fake.volumesRoot.path(percentEncoded: false))
             service = IngestService(deps: deps)
