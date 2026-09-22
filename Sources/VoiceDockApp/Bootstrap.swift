@@ -21,7 +21,7 @@ final class AppContext {
     let config: ConfigStore
     let store: Store
     let runner: ProcessRunner
-    /// ロックの観測（Phase 7 は DisabledLockObserver。T-36 が LockEvaluator に替える）
+    /// ロックの観測（本番は LockEvaluator。診断とパネルは LockObserving として読む）
     let locks: any LockObserving
     /// 診断の依存（書ける Store を持たない。PT-17）
     let diagnostics: DiagnosticsDependencies
@@ -89,8 +89,8 @@ enum BootFailure: Error, Equatable {
 enum Bootstrap {
     /// P0-02 で確定。実機では `-mountPoint` が使えない（docs/POC.md 章 3）。
     static let useMountPoint = false
-    /// os.Logger の subsystem（= BUNDLE_ID。identity.env と同じ値）。T-36 が AppIdentity.bundleID に替える。
-    static let logSubsystem = "io.github.shinsuke-terada.VoiceDock"
+    /// os.Logger の subsystem（= BUNDLE_ID。AppIdentity から。T-36 §4.1）
+    static let logSubsystem = AppIdentity.bundleID
 
     /// 本番の組み立て。PLAN §8.15 の順に行う。
     @MainActor static func build() async -> Result<AppContext, BootFailure> {
@@ -116,11 +116,14 @@ enum Bootstrap {
         var log = AppLog(sink: sink, level: .info, unsafeContent: false, zone: bootZone, clock: clock, category: "app")
         // 5. 子プロセス
         let runner = ProcessRunner()
-        // 6. ロックの観測（何も読まない・何も起動しない。Phase 8 の T-36 が LockEvaluator に替える）
-        let locks: any LockObserving = DisabledLockObserver()
-        // 7. 設定（無ければ既定を書く）。T-36 が observeReaperConf を locks.observeReaperConf() に替える
+        // 6. 三重ロックの評価（init は検証しない。署名の要件は AppIdentity から。T-36）
+        let locks = LockEvaluator(
+            layout: layout, verifier: CodeSignatureVerifier(requirement: ReaperSignature.production), runner: runner,
+            log: log.withCategory("pipeline"))
+        // 7. 設定（無ければ既定を書く）
         let config = ConfigStore(
-            layout: layout, catalog: catalog, log: log.withCategory("pipeline"), observeReaperConf: { .missing })
+            layout: layout, catalog: catalog, log: log.withCategory("pipeline"),
+            observeReaperConf: { await locks.observeReaperConf() })
         let loaded = await config.load()
         // 8. ログを設定で作り直す（ここから後のログだけが設定のレベルに従う）
         var zone = bootZone
@@ -168,7 +171,7 @@ enum Bootstrap {
                 },
                 clock: clock, sleeper: TaskSleeper(), log: log.withCategory("pipeline"),
                 license: AlwaysAllowLicenseGate(), catalog: catalog,
-                physicalMemoryBytes: physicalMemoryBytes))
+                physicalMemoryBytes: physicalMemoryBytes, locks: locks, volumeOpener: SystemVolumeOpener()))
         // 12 の後. 診断の依存（Worker とは別。書ける Store を渡さない。PT-17）
         let diagnostics = DiagnosticsDependencies(
             layout: layout, paths: paths, catalog: catalog, config: config, ingest: ingest, locks: locks,

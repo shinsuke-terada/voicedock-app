@@ -4,7 +4,7 @@
 |---|---|
 | ID | T-36 |
 | Phase | 8（削除） |
-| 前提 | T-29（Raw ノートの工程。`RawNote`・`NoteVerifier`・`VaultCheck` を工程が使う形）、T-07（`TargetIdentity`・`VolumeOpener`・`FakeVolumeOpener`）。間接に T-10（`SafeUnlink`・`FixedClock`・`CapturingLogSink`）、T-11（`Store`）、T-12（`ProcessRunning`）、T-13（`ScriptedProcessRunner`）、T-15（`DeviceSnapshot`）、T-18（`WorkerDependencies`・`PipelineWorld`・`FakeIngest`）、T-26 / T-28（`Frontmatter`・`NoteVerifier`）、T-30（`Bootstrap`） |
+| 前提 | T-29（Raw ノートの工程。`RawNote`・`NoteVerifier`・`VaultCheck` を工程が使う形）、T-07（`TargetIdentity`・`VolumeOpener`・`SystemVolumeOpener`・`FakeVolumeOpener`）、T-30（`Bootstrap` を差し替える）、T-32（`LockObserving`・`DisabledLockObserver`・`LockDisplay` に準拠する）。間接に T-10（`SafeUnlink`・`FixedClock`・`CapturingLogSink`）、T-11（`Store`）、T-12（`ProcessRunning`）、T-13（`ScriptedProcessRunner`）、T-15（`DeviceSnapshot`）、T-18（`WorkerDependencies`・`PipelineWorld`・`FakeIngest`）、T-26 / T-28（`Frontmatter`・`NoteVerifier`）、T-30（`Bootstrap`） |
 | 見積もり | Sources 約 650 行、Tests 約 1,300 行（TestSupport の `DeletionScene` を含む） |
 | 後続 | T-38（要求・削除段・回収）、T-39（根拠 B）、T-40（有効化と常時表示・DR-14）、T-41（後追い） |
 
@@ -49,6 +49,9 @@ PLAN §8.9.1 の削除の必要十分条件を**式の形のまま** Swift に�
 | `Tests/TestSupport/StorePaths.swift` | 遷移表の辺だけで Part / Session を任意の状態へ進める・`source_path` の直接書き換え |
 | `Tests/TestSupport/DeletionScene.swift` | 三重ロックを全部外した削除評価の舞台（T-38・T-39・T-41 も使う） |
 | `Tests/VDPipelineTests/PipelineFixtures.swift`（変更） | `PipelineWorld` に `locks` を持たせ、`deps` に `locks`・`volumeOpener` を渡す |
+| `Tests/VDPipelineTests/LLMProbeCheckTests.swift`（変更） | `WorkerDependencies(…)` を直接作っている所の末尾に `locks: w.locks, volumeOpener: FakeVolumeOpener()` を足すだけ（§4.8 で init の引数が増えるため） |
+| `Tests/VoiceDockAppTests/AppModelTests.swift`（変更） | `WorkerDependencies(…)` を直接作っている所の末尾に `locks: LockEvaluator(layout:, verifier: FakeSignatureVerifier(), runner: ScriptedProcessRunner(results: []), log:)`・`volumeOpener: FakeVolumeOpener()` を足すだけ（同上） |
+| `Tests/NoDeleteTests/TargetMarker.swift`（削除） | T-01 の目印。このモジュールに最初の実ファイル（`DeletionPolicyNDTests.swift`）を足すので消す（STATUS「実装で分かった共通の約束」） |
 | `Tests/NoDeleteTests/DeletionPolicyNDTests.swift` | 層 A の ND（§6.1） |
 | `Tests/VDPipelineTests/DeletionPolicyTests.swift` | 項ごとの単体（§6.2） |
 | `Tests/VDPipelineTests/DeletionSceneTests.swift` | 舞台そのもののテスト（TEST-05） |
@@ -136,19 +139,23 @@ public struct CodeSignatureVerifier: SignatureVerifier {
     public init(requirement: String) { self.requirement = requirement }
     public func verify(url: URL) -> Bool {
         var code: SecStaticCode?
-        guard SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &code) == errSecSuccess, let code else { return false }
+        guard SecStaticCodeCreateWithPath(url as CFURL, SecCSFlags(), &code) == errSecSuccess, let code else {
+            return false
+        }
         var compiled: SecRequirement?
         guard SecRequirementCreateWithString(requirement as CFString, SecCSFlags(), &compiled) == errSecSuccess,
             let compiled
         else { return false }
-        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), compiled) == errSecSuccess
+        return SecStaticCodeCheckValidity(code, SecCSFlags(rawValue: kSecCSCheckAllArchitectures), compiled)
+            == errSecSuccess
     }
 }
 
 public enum ReaperSignature {
     /// `anchor apple generic and identifier "<bundleID>.reaper" and certificate leaf[subject.OU] = "<teamID>"`（PLAN §8.9.3。定数はこの 1 つ）
     public static func requirement(bundleID: String, teamID: String) -> String {
-        "anchor apple generic and identifier \"" + bundleID + ".reaper\" and certificate leaf[subject.OU] = \"" + teamID + "\""
+        "anchor apple generic and identifier \"" + bundleID + ".reaper\" and certificate leaf[subject.OU] = \""
+            + teamID + "\""
     }
     /// 本番の要件（AppIdentity から）。Bootstrap が CodeSignatureVerifier に渡す
     public static var production: String { requirement(bundleID: AppIdentity.bundleID, teamID: AppIdentity.teamID) }
@@ -156,6 +163,7 @@ public enum ReaperSignature {
 ```
 
 - `SecCSFlags` の書き方は §2 の確認どおり。`kSecCSCheckAllArchitectures` を `Int` に変換しない
+- 折り返しは `swift format` の 120 桁に合わせたもの（トークンは同じ）
 - OSStatus の値は記録しない（検証の結果は真偽だけ。理由は `reaper_failed reason=signature` の 1 語）
 
 ### 4.4 `ReaperRunner.swift`（検証の部分。PT-11 の許可場所）
@@ -482,7 +490,7 @@ T-30（Phase 7）の Bootstrap は本チケットの型を 1 つも使わない�
    （`DiagnosticsDependencies` と `AppContext.locks` は `any LockObserving` を取るので、ここ 1 行の差し替えで両方が本物になる）
 2. ConfigStore の `observeReaperConf: { .missing }` を `observeReaperConf: { await locks.observeReaperConf() }` に替える（T-18 §10）
 3. `WorkerDependencies(…)` の末尾に `locks: locks, volumeOpener: SystemVolumeOpener()` を足す（T-30・T-32 はこの 2 つを渡していない。§4.8 の並び。T-18 の並びの後ろ）
-4. `SystemVolumeOpener` は本チケット（T-38 が使う `VolumeOpener` の本番実装）。T-30 は使わない
+4. `SystemVolumeOpener` は T-07 が `VDContract/TargetIdentity.swift` に作ってある（`VolumeOpener` の本番実装。T-38 も使う）。T-30 は使わない
 - os.Logger の subsystem が文字列で書かれていれば `AppIdentity.bundleID` に替える
 
 ### 4.10 TestSupport
@@ -529,7 +537,10 @@ import GRDB
 import VDCore
 @testable import VDStore
 
-public struct StorePathError: Error, CustomStringConvertible { public let description: String }
+public struct StorePathError: Error, CustomStringConvertible {
+    public let description: String
+    init(_ description: String)   // TestSupport の中だけで投げる（公開しない）
+}
 
 public enum StorePaths {
     /// DISCOVERED から status までの経路（最初の DISCOVERED を含まない）
@@ -580,6 +591,8 @@ import VDProcess
 import VDStore
 
 public final class DeletionScene: Sendable {
+    // static の鍵は偽のボリューム（FakeVolumeOpener）の既定。ディスクイメージは DJIMIC3 を名乗れない（PLAN §10.2）ので、
+    // Part を指すときはインスタンスの deviceID / partkey / sessionKey を使う
     public static let deviceID = "DJIMIC3"
     public static let folder = "TX_MIC001_20260912_090000"
     public static let fileName = "TX00_MIC001_20260912_090000_orig.wav"
@@ -596,11 +609,14 @@ public final class DeletionScene: Sendable {
     public static let now = Instant(epochMillis: 1_789_182_000_000)
     public static let transcriptText = "おはようございます。"
 
+    public let deviceID: String            // diskImage?.deviceID ?? DeletionScene.deviceID
+    public let partkey: String             // PartKey.make(deviceID:, relpath: DeletionScene.relpath)
+    public let sessionKey: String          // SessionKey.make(deviceID:, dayStamp: "20260912")
     public let tmp: TempDirectory
     public let layout: HomeLayout          // <tmp>/home（createDirectories 済み。bin も作る）
     public let vault: URL                  // <tmp>/vault（.obsidian を持つ）
     public let volumesRoot: URL            // <tmp>/Volumes、またはディスクイメージの volumesRoot
-    public let deviceRoot: URL             // <volumesRoot>/DJIMIC3
+    public let deviceRoot: URL             // diskImage?.mountPoint ?? <volumesRoot>/DJIMIC3
     public let store: Store                // layout.database
     public let clock: FixedClock           // now
     public let zone: ZonedTime             // Asia/Tokyo
@@ -629,29 +645,29 @@ public final class DeletionScene: Sendable {
     /// デバイスを実際に走査した snapshot（DeviceReader.scan の relpaths、SystemMountInspector の readOnly）。ディスクイメージの往復で使う
     public func scannedSnapshot(generation: UInt64) -> DeviceSnapshot
     public func context(snapshot: DeviceSnapshot?, locks: LockEvaluator? = nil, opener: (any VolumeOpener)? = nil, useCache: Bool = true) async -> DeletionContext
-    public func candidate(_ partkey: String = DeletionScene.partkey) throws -> DeletionCandidate
+    public func candidate(_ partkey: String? = nil) throws -> DeletionCandidate   // nil なら self.partkey
 
     // 組み立て
     /// 同じ Session に Part を足す。transcript が真なら transcripts/parts に置き transcript_path を書く。onDevice が真ならデバイスに置く。
     /// inRawNote が真なら Raw ノートに載せる対象にする（載せ直すのは writeRawNote）
     @discardableResult
     public func addPart(fileName: String, folder: String = DeletionScene.folder, startedAt: String, status: PartStatus,
-                        errorCode: ErrorCode? = nil, duplicateOf: String? = nil, sessionKey: String = DeletionScene.sessionKey,
+                        errorCode: ErrorCode? = nil, duplicateOf: String? = nil, sessionKey: String? = nil,
                         onDevice: Bool = true, transcript: Bool = true, inRawNote: Bool = true) throws -> String
     /// 別の日の Session を作る（OPEN）。重複の双子を別の日に置くため
     public func addSession(key: String, dayDate: String) throws
     /// Session の Raw ノートを書き直す（載せる対象の Part を RawNote.render で。DB の raw_output_path・raw_output_sha256 を更新）
-    public func writeRawNote(sessionKey: String = DeletionScene.sessionKey) throws
-    public func rawNoteURL(sessionKey: String = DeletionScene.sessionKey) throws -> URL
+    public func writeRawNote(sessionKey: String? = nil) throws
+    public func rawNoteURL(sessionKey: String? = nil) throws -> URL
     /// ノートの中の文字列を置き換える。updateSHA が真なら DB の raw_output_sha256 を新しい SHA にする（鍵の包含だけを壊す）
-    public func replaceInRawNote(_ target: String, with replacement: String, updateSHA: Bool, sessionKey: String = DeletionScene.sessionKey) throws
+    public func replaceInRawNote(_ target: String, with replacement: String, updateSHA: Bool, sessionKey: String? = nil) throws
     /// 末尾に追記する（SHA は更新しない。改竄）
-    public func appendToRawNote(_ text: String, sessionKey: String = DeletionScene.sessionKey) throws
+    public func appendToRawNote(_ text: String, sessionKey: String? = nil) throws
     public func transcriptURL(_ partkey: String) -> URL
     public func placeOnDevice(_ relpath: String) throws       // content を書き mtime を sourceMtime に（utimes）。deviceRelpaths に足す
     public func removeFromDevice(_ relpath: String) throws    // ファイルを消し deviceRelpaths から除く
     public func movePart(_ partkey: String, to status: PartStatus, errorCode: ErrorCode? = nil) throws   // StorePaths.advancePart
-    public func moveSession(to status: SessionStatus, sessionKey: String = DeletionScene.sessionKey) throws
+    public func moveSession(to status: SessionStatus, sessionKey: String? = nil) throws
     public func installReaperStub() throws                    // "#!/bin/sh\nexit 0\n"、0o755
     public func removeReaper() throws
     public func writeReaperConf(deleteSourceAudio: Bool) throws   // ReaperConf(deleteSourceAudio:, volumesRoot: p(volumesRoot)).render()
@@ -668,7 +684,7 @@ public final class DeletionScene: Sendable {
 `init` の手順（この順）:
 1. `tmp` を使う（nil なら `try TempDirectory()`）。`layout = HomeLayout(root: tmp.url.appendingPathComponent("home", isDirectory: true))`、`createDirectories()`、`FileManager.default.createDirectory(at: layout.binDirectory, withIntermediateDirectories: true)`（テストの舞台なので bin を作ってよい）
 2. `vault = tmp.url/vault`、`vault/.obsidian` を作る
-3. `volumesRoot = diskImage?.volumesRoot ?? tmp.url/Volumes`、`deviceRoot = volumesRoot/DJIMIC3`。ディスクイメージでなければ `deviceRoot` を作る
+3. `volumesRoot = diskImage?.volumesRoot ?? tmp.url/Volumes`、`deviceID = diskImage?.deviceID ?? DeletionScene.deviceID`、`deviceRoot = diskImage?.mountPoint ?? volumesRoot/<deviceID>`、`partkey = try PartKey.make(deviceID:, relpath: DeletionScene.relpath)`、`sessionKey = try SessionKey.make(deviceID:, dayStamp: "20260912")`。ディスクイメージでなければ `deviceRoot` を作る（`sessionKey: String? = nil` の引数は、nil なら `self.sessionKey`）
 4. `placeOnDevice(DeletionScene.relpath)`。置いた後に `lstat` した mtime を**実際の原本の mtime**として控える（FAT は 2 秒刻み。偽のボリュームでは `sourceMtime` のまま）
 5. `clock = FixedClock(now: DeletionScene.now)`、`zone = ZonedTime(timeZone: Asia/Tokyo)`（`TimeZone(identifier:)` の nil は `StorePathError` にして投げる）、`sink = CapturingLogSink()`、`log = AppLog(sink: sink, level: .debug, unsafeContent: false, zone: zone, clock: clock)`
 6. 設定: `AppConfig.defaults(timeZone: "Asia/Tokyo")` に `vault.path = p(vault)`、`cleanup.deleteSourceAudio = true`、`device.mountMode = "rw"`（`deleteSkippedSource` は既定の false）
@@ -679,8 +695,8 @@ public final class DeletionScene: Sendable {
 11. 既定の Part: `addPart(fileName: DeletionScene.fileName, startedAt: DeletionScene.startedAt, status: status, errorCode: errorCode, onDevice: false /* 4 で置いた */, transcript: true, inRawNote: true)`
 12. `writeRawNote()`、`moveSession(to: sessionStatus)`
 
-`addPart` の手順: `relpath = folder + "/" + fileName`、`pk = try PartKey.make(deviceID: "DJIMIC3", relpath:)`、`onDevice` なら `placeOnDevice(relpath)`、
-`NewRecording(partkey: pk, deviceID: "DJIMIC3", sourceFolder: folder, transmitterID: String(fileName.prefix(4)), micIndex: 1, startedAt:, durationSeconds: 60.0, endedAt: zone.iso(zone.parseISO(startedAt)! + 60 秒)（`guard let`）, sourcePath: relpath, sourceSize: 4096, sourceMtime: 4 で控えた mtime, sha256Helper: FileHasher.sha256(content), inboxPath: "inbox/DJIMIC3/" + relpath)` を `insertRecording` →
+`addPart` の手順: `relpath = folder + "/" + fileName`、`pk = try PartKey.make(deviceID: self.deviceID, relpath:)`、`onDevice` なら `placeOnDevice(relpath)`、
+`NewRecording(partkey: pk, deviceID: self.deviceID, sourceFolder: folder, transmitterID: String(fileName.prefix(4)), micIndex: 1, startedAt:, durationSeconds: 60.0, endedAt: zone.iso(zone.parseISO(startedAt)! + 60 秒)（`guard let`）, sourcePath: relpath, sourceSize: 4096, sourceMtime: 4 で控えた mtime, sha256Helper: FileHasher.sha256(content), inboxPath: "inbox/" + deviceID + "/" + relpath)` を `insertRecording` →
 `updateRecording(pk, [.sessionKey(sessionKey)] + (duplicateOf.map { [.duplicateOf($0)] } ?? []) + (transcript ? [.transcriptPath(layout.relativePath(of: layout.transcript(slug: KeySlug.of(pk))))] : []))` →
 `transcript` なら `PartTranscriptCodec.encode(PartTranscript(partkey: pk, language: "ja", durationSeconds: 60.0, startedAt: startedAt, text: transcriptText, segments: [TranscriptSegment(start: 0.0, end: 3.0, text: transcriptText)]))` を `layout.transcript(slug: KeySlug.of(pk))` に書く →
 `StorePaths.advancePart(store, partkey: pk, to: status, errorCode: errorCode)` → `inRawNote` なら載せる対象に足す（`Mutex<[String: [String]]>`、Session ごとに追加順）→ `pk` を返す。
@@ -691,13 +707,13 @@ public final class DeletionScene: Sendable {
 `url = folderURL.appendingPathComponent(RawNote.baseName(config: config.obsidian, day: day) + ".md")`、`sha = try NoteWriter.write(text, to: url)`、
 `updateSession(sessionKey, [.rawOutputPath(RawNote.folder(…) + "/" + RawNote.baseName(…) + ".md"), .rawOutputSHA256(sha)])`（既定の Session では `Daily/Voice/Raw/20260912/2026-09-12 raw.md`）。
 
-`snapshot(…)`: `DeviceSnapshot(generation:, completedAt: completedAt ?? clock.now(), connectEpoch: 1, devices: includeDevice ? ["DJIMIC3": DeviceObservation(deviceID: "DJIMIC3", mountPath: p(deviceRoot), deviceNode: "/dev/disk9", readOnly: readOnly, freeBytes: 1_000_000_000, relpaths: relpaths ?? deviceRelpaths)] : [:], unavailable: [:], notListableErrno: [:])`。
+`snapshot(…)`: `DeviceSnapshot(generation:, completedAt: completedAt ?? clock.now(), connectEpoch: 1, devices: includeDevice ? [deviceID: DeviceObservation(deviceID: deviceID, mountPath: p(deviceRoot), deviceNode: "/dev/disk9", readOnly: readOnly, freeBytes: 1_000_000_000, relpaths: relpaths ?? deviceRelpaths)] : [:], unavailable: [:], notListableErrno: [:])`。
 
 `scannedSnapshot(generation:)`: `relpaths = DeviceReader().scan(volumeRoot: p(deviceRoot), maxDepth: 3).relpaths`、`readOnly = SystemMountInspector().mountInfo(path: p(deviceRoot))?.readOnly`、ほかは `snapshot` と同じ。
 
 `context(snapshot:locks:opener:useCache:)`: `DeletionContext(config: config, locks: await (locks ?? self.locks).observe(config: config, snapshot: snapshot, useCache: useCache), layout: layout, volumeOpener: opener ?? self.opener)`。
 
-`writeResult`: `ContractJSON.encode(DeleteResult(requestID:, completedAt: zone.iso(clock.now()), reaperVersion: AppVersion.string, deviceID: "DJIMIC3", partkey:, status:, detail:))` を `layout.queueResult/<requestID>.json` に `Data.write`。
+`writeResult`: `ContractJSON.encode(DeleteResult(requestID:, completedAt: zone.iso(clock.now()), reaperVersion: AppVersion.string, deviceID: deviceID, partkey:, status:, detail:))` を `layout.queueResult/<requestID>.json` に `Data.write`。
 
 - 可変の状態（設定・デバイス上の relpath・Raw に載せる Part）は `Mutex` で持つ（`@unchecked Sendable` を使わない）
 - **`/Volumes` の下には触れない**（volumesRoot は必ず一時ディレクトリかディスクイメージの一時マウント点）
@@ -732,7 +748,7 @@ public final class DeletionScene: Sendable {
 | `nd03DuplicateKeptWhileLockBIsClosed` | ND-03 [A] 重複は deleteSkippedSource が偽なら消さない | 既定の Part を双子に、`addPart(fileName: "TX00_MIC002_20260912_093000_orig.wav", startedAt: "2026-09-12T09:30:00+09:00", status: .skipped, errorCode: .duplicateContent, duplicateOf: DeletionScene.partkey, transcript: false, inRawNote: false)` の candidate | 偽。対照: `updateConfig { $0.cleanup.deleteSkippedSource = true }` の後は真（twin が引けている） |
 | `nd04WhisperFailed` | ND-04 [A] whisper の失敗で FAILED の Part は消さない | `status: .failed, errorCode: .whisperFailed` | 偽、`deletionIsIdentified` 真 |
 | `nd05WhisperTimeout` | ND-05 [A] whisper のタイムアウトで FAILED の Part は消さない | `status: .failed, errorCode: .whisperTimeout` | 同上 |
-| `nd06NoSpeechKeptWhileLockBIsClosed` | ND-06 [A] 無音は deleteSkippedSource が偽なら消さない | `status: .skipped, errorCode: .noSpeechDetected` | 偽。対照: ロック B を開けると真 |
+| `nd06NoSpeechKeptWhileLockBIsClosed` | ND-06 [A] 無音は deleteSkippedSource が偽なら消さない | 既定の舞台に `addPart(fileName: "TX00_MIC001_20260912_100000_orig.wav", folder: "TX_MIC001_20260912_100000", startedAt: "2026-09-12T10:00:00+09:00", status: .skipped, errorCode: .noSpeechDetected, inRawNote: false)`（transcript のファイルは在る）、`updateRecording(pk, [.transcriptPath(nil)])` | その Part で偽。対照: ロック B を開けると真（根拠 B は実ファイルだけを見る。列で門前払いする退行を落とす）。既定の Part は真のまま |
 | `nd07MissingRawNotePath` | ND-07 [A] Raw ノートの書き込みに失敗（raw_output_path が NULL）なら消さない | `updateSession(sessionKey, [.rawOutputPath(nil)])` | 偽、`verifyRawNote == .notRecorded` |
 | `nd08RawNoteChangedAfterSaving` | ND-08 [A] 保存後に Raw ノートが消えた・改変されたら消さない（パラメータ化: 削除・追記） | (a) ノートを消す (b) `appendToRawNote("\n追記された行\n")` | (a) 偽、`.failed(["RN-1"])` (b) 偽、`.failed(["RN-4"])`、`frontmatterKeys` はまだ partkey を含む（verifyRawNote を単独で落とす） |
 | `nd09RawNoteWithoutThisKey` | ND-09 [A] Raw ノートの鍵に当該 Part が無ければ消さない | `replaceInRawNote(DeletionScene.partkey, with: "DJIMIC3/other/other.wav", updateSHA: true)` | 偽、`frontmatterKeys` が partkey を含まない |
@@ -758,15 +774,15 @@ public final class DeletionScene: Sendable {
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `fileAbsentFromSnapshotBlocks` | snapshot にファイルが無ければ事前確認が偽 | `snapshot(relpaths: [])` | `preIdentityCheck` 偽、`allReleased` 真 |
+| `fileAbsentFromSnapshotBlocks` | snapshot にファイルが無ければ事前確認が偽 | `snapshot(relpaths: [])` | `preIdentityCheck` 偽、`canDeleteSource` 偽、`allReleased` 真 |
 | `deviceAbsentFromSnapshotBlocks` | snapshot にデバイスが無ければ偽 | `snapshot(includeDevice: false)` | `preIdentityCheck` 偽、`writability == .absent` |
 | `nilSnapshotBlocks` | snapshot が無ければ偽 | `context(snapshot: nil)` | `canDeleteSource` 偽 |
-| `keyThatDisagreesWithPathBlocks` | 鍵と source_path が食い違えば偽 | `addPart(fileName: "TX00_MIC002_20260912_090000_orig.wav", …, inRawNote: false)` でデバイスと snapshot に置き、既定の Part の source_path をその relpath に `setSourcePath` | `preIdentityCheck` 偽 |
+| `keyThatDisagreesWithPathBlocks` | 鍵と source_path が食い違えば偽 | `addPart(fileName: "TX00_MIC002_20260912_090000_orig.wav", …, inRawNote: false)` でデバイスと snapshot に置き、既定の Part の source_path をその relpath に `setSourcePath` | `preIdentityCheck` 偽、`canDeleteSource` 偽 |
 | `unsafeRelpathBlocks` | 不健全な relpath は偽 | `setSourcePath(pk, "../" + DeletionScene.relpath)` | 偽 |
 | `missingSizeOrMtimeBlocks` | source_size / source_mtime が無ければ偽（パラメータ化） | `updateRecording(pk, [.sourceSize(nil)])` / `[.sourceMtime(nil)]` | 偽 |
-| `unopenableVolumeBlocks` | 事前確認でボリュームが開けなければ偽 | `writeReaperConf` の VOLUMES_ROOT を `<tmp>/NoVolumes` にした reaper.conf を `writeReaperConfRaw` | `ctx.locks.volumesRoot == <tmp>/NoVolumes`、`preIdentityCheck` 偽 |
-| `changedFileOnDeviceBlocks` | デバイス上のファイルのサイズが DB と違えば偽（withVerifiedTarget） | デバイスのファイルに 1 バイト追記し mtime を戻す | `preIdentityCheck` 偽（snapshot には在る） |
-| `copyTimestampIsRejected` | DEL-12 inbox のコピーの時刻（4 時間 34 分後）では事前確認が偽 | `updateRecording(pk, [.sourceMtime(DeletionScene.sourceMtime + 16_440)])` | `preIdentityCheck` 偽 |
+| `unopenableVolumeBlocks` | 事前確認でボリュームが開けなければ偽 | `writeReaperConf` の VOLUMES_ROOT を `<tmp>/NoVolumes` にした reaper.conf を `writeReaperConfRaw` | `ctx.locks.volumesRoot == <tmp>/NoVolumes`、`preIdentityCheck` 偽、`canDeleteSource` 偽 |
+| `changedFileOnDeviceBlocks` | デバイス上のファイルのサイズが DB と違えば偽（withVerifiedTarget） | デバイスのファイルに 1 バイト追記し mtime を戻す | `preIdentityCheck` 偽、`canDeleteSource` 偽（snapshot には在る） |
+| `copyTimestampIsRejected` | DEL-12 inbox のコピーの時刻（4 時間 34 分後）では事前確認が偽 | `updateRecording(pk, [.sourceMtime(DeletionScene.sourceMtime + 16_440)])` | `preIdentityCheck` 偽、`canDeleteSource` 偽 |
 | `verifierPassesWhenNoteMatches` | Raw ノートが一致すれば passed | 既定 | `.passed` |
 | `verifierNeedsRecordedSHA` | raw_output_sha256 が無ければ notRecorded | `updateSession(key, [.rawOutputSHA256(nil)])` | `.notRecorded` |
 | `verifierNeedsConfiguredVault` | vault.path が nil なら vaultUnavailable | `updateConfig { $0.vault.path = nil }` | `.vaultUnavailable` |
@@ -789,6 +805,9 @@ public final class DeletionScene: Sendable {
 | `lockOneAlsoStopsGroundB` | ロック 1 は根拠 B にも掛かる | 無音の舞台、ロック B を開け `deleteSourceAudio = false` | 偽（共通項が落とす） |
 | `readOnlyAlsoStopsGroundB` | ロック 2-B も根拠 B に掛かる | 無音の舞台、ロック B、`snapshot(readOnly: true)` | 偽 |
 | `everyDeletableSkipReasonHasABasis` | 許可リストの全理由に根拠の分岐がある（TEST-08） | `for code in SkipReasons.deletable`: `.noSpeechDetected` → 無音の舞台、`.duplicateContent` → 重複の舞台、それ以外 → `Issue.record("\(code) の舞台が無い")`。ロック B を開ける | 各 `skipReasonIsBacked` が真（許可リストにだけ足して分岐を書き忘れると落ちる） |
+| `frontmatterKeysAloneBlocksWhenExpectedIsEmpty` | Raw ノートに当該の鍵が無ければ、RN-6 が空集合で通っても偽 | 重複（指名は既定の partkey）を足しロック B を開け、`replaceInRawNote(scene.partkey, with: scene.deviceID + "/other/other.wav", updateSHA: true)`、`DeletionCandidate(part: dup, session:, parts:, twin: TwinPart(part: 既定の Part, session:, parts: []))` | `verifyRawNote(session, [], ctx) == .passed`、`canDeleteSource` 偽。対照: `writeRawNote()` で戻すと真 |
+| `partFromAnotherSessionIsNotIdentified` | Part の session_key と渡された Session が食い違えば同定しない | `addSession(key: "DJIMIC3:20260911", dayDate: "2026-09-11")`、その日に Part を RAW_SAVED で足し `writeRawNote(sessionKey: "DJIMIC3:20260911")`、DB の session_key だけを既定の Session に変え、`DeletionCandidate(part:, session: 20260911 の Session, parts: [part], twin: nil)` | `textIsPreserved` 真、`deletionIsIdentified` 偽、`canDeleteSource` 偽 |
+| `twinSessionMismatchIsNotBacked` | 双子の session_key と双子の Session が食い違えば根拠が無い | 双子を 20260911 に RAW_SAVED で足し Raw を書き、重複を既定の日に、ロック B。双子の行の session_key だけを既定の Session に変え、`TwinPart(part: 変えた行, session: 20260911 の Session, parts: [変えた行])` | `textIsPreserved(双子)` 真、`skipReasonIsBacked` 偽。対照: 変える前の行で作った TwinPart なら真 |
 
 ### 6.3 `Tests/VDPipelineTests/DeletionSceneTests.swift`（`@Suite("DeletionScene")`。偽物そのもののテスト。TEST-05）
 
@@ -821,7 +840,8 @@ public final class DeletionScene: Sendable {
 | `changedFileInvalidatesCache` | ファイルが変われば検証し直す（パラメータ化: mtime・size・置き換え（新しい inode）） | 1 回評価 → (a) `utimes` で mtime +10 秒 (b) 1 バイト追記 (c) 別ファイルを書いて rename で置き換え → もう一度 | 署名検証 2 回・--version 2 回 |
 | `cacheKeepsTheFailure` | 失敗もキャッシュし、ログは検証したときだけ | 署名 NG で 3 回 | `reaper_failed reason=signature` の行が 1 本、署名検証 1 回 |
 | `versionMismatchIsLogged` | 版の不一致をログに出す | 版 `"0.9.0\n"` | `reaper_failed reason=version_mismatch` が 1 本、`reaperStatus() == .versionMismatch(found: "0.9.0")` |
-| `removedReaperClearsCache` | 消えたら未導入に戻り、置き直せば検証し直す | 評価 → 消す → 評価 → 置き直す → 評価 | `.configured` → `reaper_not_installed` → `.configured`、署名検証 2 回 |
+| `removedReaperClearsCache` | 消えたら未導入に戻り、置き直せば検証し直す | 評価 → 消す → 評価 → 置き直す → 評価 | `.configured` → `reaper_not_installed` → `.configured`、署名検証 2 回（消えた時点で cache を空にし、置き直したファイルは鍵も変わる二重の防御。cache = nil だけは次の行が固定する） |
+| `cacheIsClearedWhenReaperDisappears` | 消えたらキャッシュを捨てる（同じファイルを rename で戻しても検証し直す） | 評価（`.configured`）→ reaper を `bin/aside` へ rename → 評価 → `verifier.setValid(false)` → 元の名前へ rename で戻す（inode・size・mtime は同じ）→ 評価 | `.configured` → `reaper_not_installed` → `reaper_invalid` |
 | `writabilityObservesSnapshot` | 観測の 4 値（パラメータ化） | snapshot nil / デバイス無し / readOnly false / true / nil | `.absent`・`.absent`・`.writable`・`.readOnly`・`.unknown` |
 | `writabilityIgnoresMountModeSetting` | 設定値 mountMode を観測に使わない | 設定 `mountMode = "ro"`、観測 readOnly false | `writability == .writable`（readiness は `mount_mode_ro`） |
 | `allReleasedNeedsBoth` | allReleased は準備と観測の両方（パラメータ化） | (configured, writable) / (configured, unknown) / (configured, readOnly) / (disabled, writable) / (configured, absent) | 真・偽・偽・偽・偽 |
@@ -853,6 +873,7 @@ T-32 §5.10 は `DisabledLockObserver` の 3 行だけを見る。ここは `Rea
 | `unsignedFileFails` | 署名の無いファイルは偽 | `<tmp>/s.sh` に `"#!/bin/sh\necho hi\n"`、`anchor apple` | 偽 |
 | `brokenRequirementFails` | 壊れた要件は偽（例外にしない） | `requirement: "not a requirement ((("` | 偽 |
 | `requirementIsVerbatim` | 要件の文字列（逐語） | `ReaperSignature.requirement(bundleID: "io.github.shinsuke-terada.VoiceDock", teamID: "ABCDE12345")` | `anchor apple generic and identifier "io.github.shinsuke-terada.VoiceDock.reaper" and certificate leaf[subject.OU] = "ABCDE12345"` |
+| `productionRequirementIsVerbatim` | 本番の要件の文字列（逐語。Team ID で束縛する） | `ReaperSignature.production` | `anchor apple generic and identifier "io.github.shinsuke-terada.VoiceDock.reaper" and certificate leaf[subject.OU] = "ZCWP35H248"` |
 | `productionUsesAppIdentity` | 本番の要件は AppIdentity から作る | `ReaperSignature.production` | `requirement(bundleID: AppIdentity.bundleID, teamID: AppIdentity.teamID)` と等しく、`AppIdentity.reaperIdentifier` を含む |
 | `fakeRecordsCalls` | 偽物は呼ばれた URL を記録し setValid に従う（TEST-05） | `FakeSignatureVerifier()` → verify → `setValid(false)` → verify | 真・偽、`verifiedURLs.count == 2` |
 
@@ -891,14 +912,15 @@ struct DeletionFormulaTests {
     /// 期待する本体（PLAN §8.9.1 の式を Swift に写したもの）。トークンを並べ、識別子・数値が隣り合う所だけ空白 1 つを挟んだ形。
     /// 振る舞いでは落とせない項と、その理由:
     /// - canDeleteSource の `&&(…||…)`: 根拠 B 単独のテストは `||` が外に出ても通る（共通項を迂回した形でも根拠 B の正の対照は真のまま）
-    /// - deletionIsIdentified の `sameKey(c.part.sessionKey,c.session.sessionKey)`: 別の Session を渡すと RN-5 か鍵の包含が先に偽になる
     /// - 同 `c.part.sourcePath!=nil` と `c.part.sourcePath?.isEmpty==false`: preIdentityCheck が同じ値を先に偽にする
     /// - textIsPreserved の `session.rawOutputPath!=nil`: verifyRawNote が .notRecorded で先に偽にする
-    /// - 同 `frontmatterKeys(…).contains(…)`: RN-6 が同じ鍵の集合を見ている（ND-09 はどちらでも落ちる）
     /// - skipReasonIsBacked の `!sameKey(twin.part.partkey,c.part.partkey)`: 自分を双子にすると SKIPPED は deletable に無く根拠 A が偽
-    /// - 同 `sameKey(twin.part.sessionKey,twin.session.sessionKey)`: 別の Session を渡すと RN-5 が先に偽
     /// - 同 `default:return false`: 許可リストに無い理由は nothingToPreserve の SkipReasons.deletable が先に落とす
     /// - 双子に deletionIsIdentified を要求しないこと: 双子の元音声は通常もう無いので、要求すると根拠 B が永久に偽（振る舞いは T-39 の正の対照が見る）
+    /// 振る舞いでも落とせる項（形でも固定する。落とすテストは DeletionPolicyTests）:
+    /// - deletionIsIdentified の `sameKey(c.part.sessionKey,c.session.sessionKey)`: partFromAnotherSessionIsNotIdentified
+    /// - textIsPreserved の `frontmatterKeys(…).contains(…)`: frontmatterKeysAloneBlocksWhenExpectedIsEmpty（期待する鍵が空集合なら RN-6 は通る）
+    /// - skipReasonIsBacked の `sameKey(twin.part.sessionKey,twin.session.sessionKey)`: twinSessionMismatchIsNotBacked
     static let expected: [String: String] = [
         "canDeleteSource":
             "deletionIsIdentified(c,ctx)&&(textIsPreserved(c.part,c.session,c.parts,ctx)||nothingToPreserve(c,ctx))",
@@ -975,17 +997,17 @@ struct DeletionFormulaTests {
 | # | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|---|
 | 1 | canDeleteSource を `deletionIsIdentified(c, ctx) && textIsPreserved(…) \|\| nothingToPreserve(c, ctx)`（`\|\|` を外へ） | `formulaShapeIsFixed(canDeleteSource)` |
-| 2 | `ctx.locks.allReleased(…)` の項を消す | `nd22EitherSideOfLockOneBlocks`、`nd23ReadOnlyObservedBlocks`、`nd26ReaperNotInstalledBlocks`、`nd41InvalidReaperBlocks`、`nd45UnknownReaperConfBlocks`、`lockOneAlsoStopsGroundB`、`formulaShapeIsFixed(deletionIsIdentified)` |
+| 2 | `ctx.locks.allReleased(…)` の項を消す | `nd22EitherSideOfLockOneBlocks`、`nd23ReadOnlyObservedBlocks`、`nd26ReaperNotInstalledBlocks`、`nd41InvalidReaperBlocks`、`lockOneAlsoStopsGroundB`、`readOnlyAlsoStopsGroundB`、`formulaShapeIsFixed(deletionIsIdentified)`（`nd45UnknownReaperConfBlocks` は落ちない: reaper.conf が不明なら `volumesRoot` が nil で、`preIdentityCheck` の手順 6 も偽にする） |
 | 3 | `c.parts.count >= 1` を消す | `nd21EmptyPartsIsNotDeletable`、`formulaShapeIsFixed(deletionIsIdentified)` |
 | 4 | `c.part.sourcePath?.isEmpty == false` を消す | `formulaShapeIsFixed(deletionIsIdentified)`（振る舞いでは落ちない。番犬） |
-| 5 | `preIdentityCheck` の項を消す | `fileAbsentFromSnapshotBlocks`、`nd23ReadOnlyVolumeHandleBlocks`、`changedFileOnDeviceBlocks`、`copyTimestampIsRejected`、`formulaShapeIsFixed` |
+| 5 | `preIdentityCheck` の項を消す | `nd23ReadOnlyVolumeHandleBlocks`、`unsafeRelpathBlocks`、`missingSizeOrMtimeBlocks`、`fileAbsentFromSnapshotBlocks`、`keyThatDisagreesWithPathBlocks`、`unopenableVolumeBlocks`、`changedFileOnDeviceBlocks`、`copyTimestampIsRejected`（この 5 本は `canDeleteSource` の偽も見る）、`formulaShapeIsFixed(deletionIsIdentified)` |
 | 6 | preIdentityCheck の snapshot の relpath の確認を消す | `fileAbsentFromSnapshotBlocks` |
 | 7 | preIdentityCheck の `volume.readOnly == false` を消す | `nd23ReadOnlyVolumeHandleBlocks` |
 | 8 | preIdentityCheck の `withVerifiedTarget` を消す（常に真） | `changedFileOnDeviceBlocks`、`copyTimestampIsRejected` |
 | 9 | preIdentityCheck の PartKey の照合を消す | `keyThatDisagreesWithPathBlocks` |
 | 10 | `verifyRawNote(…) == .passed` を消す | `nd08RawNoteChangedAfterSaving`(b)、`formulaShapeIsFixed(textIsPreserved)` |
-| 11 | verifyRawNote の VaultCheck を消す | `nd36EmptyVaultBlocks`、`verifierNeedsConfiguredVault` |
-| 12 | verifyRawNote の期待する鍵を `parts.map(\.partkey)`（RawNoteMembership を使わない）にする | `expectedKeysFollowRawNoteMembership`、`nd32BrokenPartTranscriptBlocks`(b)(c) |
+| 11 | verifyRawNote の VaultCheck を消す | `nd36EmptyVaultBlocks`（`verifierNeedsConfiguredVault` は落ちない: vault.path が nil なら `ctx.vaultRoot` も nil で `.vaultUnavailable` のまま） |
+| 12 | verifyRawNote の期待する鍵を `parts.map(\.partkey)`（RawNoteMembership を使わない）にする | `expectedKeysFollowRawNoteMembership`、`unfinishedSiblingDoesNotBlock`、`nd03DuplicateKeptWhileLockBIsClosed`、`onlyTheRecordedTwinIsAccepted`、`duplicateWithoutDuplicateOfIsNotBacked`、`everyDeletableSkipReasonHasABasis`（`nd32BrokenPartTranscriptBlocks`(b)(c) は落ちない: 壊した Part の鍵はノートに載ったままなので RN-6 の包含は真） |
 | 13 | `PartStates.deletable.contains(part.status)` を消す | `nd01PartStillNormalizing`、`nd02…`、`nd04…`、`nd05…` |
 | 14 | `part.transcriptPath != nil` を消す | `nd32BrokenPartTranscriptBlocks`(a) |
 | 15 | partTranscriptIsValid を `part.transcriptPath != nil` にする（ファイルを読まない） | `nd32BrokenPartTranscriptBlocks`(b)(c)、`transcriptValidityReadsTheFile` |
@@ -997,13 +1019,18 @@ struct DeletionFormulaTests {
 | 21 | sameKey を `==`（正準等価）にする | `keysCompareByScalars` |
 | 22 | readiness の 2 と 3 を入れ替える | `readinessOrderAndWords`(b) |
 | 23 | reaperStatus で署名より先に --version を実行する | `versionRunsAfterSignature`、`nd41InvalidReaperBlocks`(a) |
-| 24 | キャッシュの鍵の比較を消す（常にキャッシュを使う） | `changedFileInvalidatesCache`、`removedReaperClearsCache` |
+| 24 | キャッシュの鍵の比較を消す（常にキャッシュを使う） | `changedFileInvalidatesCache`（`removedReaperClearsCache` は落ちない: 消えた時点で手順 1 がキャッシュを空にするので、置き直した後は鍵を比べずとも検証し直す） |
 | 25 | `useCache` を無視する | `useCacheFalseVerifiesAgain` |
 | 26 | `DeviceWritability.observe` で readOnly nil を `.writable` にする | `writabilityObservesSnapshot`、`allReleasedNeedsBoth` |
 | 27 | LockDisplay で devices `[]` を `観測=不明` にする | `defaultLines` |
 | 28 | `ReaperSignature.requirement` の `.reaper` を消す | `requirementIsVerbatim` |
 | 29 | CodeSignatureVerifier の `SecStaticCodeCheckValidity` の結果を見ずに真を返す | `wrongRequirementFails`、`unsignedFileFails` |
-| 30 | `AppIdentity.teamID` を 1 文字変える | `matchesIdentityEnv` |
+| 30 | `AppIdentity.teamID` を 1 文字変える | `matchesIdentityEnv`、`productionRequirementIsVerbatim` |
+| 31 | textIsPreserved の `frontmatterKeys(…).contains(…)` の項を消す | `frontmatterKeysAloneBlocksWhenExpectedIsEmpty`、`formulaShapeIsFixed(textIsPreserved)` |
+| 32 | deletionIsIdentified の `sameKey(c.part.sessionKey, c.session.sessionKey)` を消す | `partFromAnotherSessionIsNotIdentified`、`formulaShapeIsFixed(deletionIsIdentified)` |
+| 33 | skipReasonIsBacked の `sameKey(twin.part.sessionKey, twin.session.sessionKey)` を消す | `twinSessionMismatchIsNotBacked`、`formulaShapeIsFixed(skipReasonIsBacked)` |
+| 34 | reaperStatus の手順 1 の `cache = nil` を消す | `cacheIsClearedWhenReaperDisappears` |
+| 35 | skipReasonIsBacked の無音の分岐に `c.part.transcriptPath != nil &&` を足す（列で門前払い） | `nd06NoSpeechKeptWhileLockBIsClosed`、`formulaShapeIsFixed(skipReasonIsBacked)` |
 
 ## 8. 受け入れ条件
 
@@ -1012,7 +1039,7 @@ struct DeletionFormulaTests {
 - [ ] `reaperConf`・`reaperExecutable` の語が VDPipeline では `LockEvaluator.swift`・`ReaperRunner.swift` にしか無い（PT-11。`LockObserving.swift` の欄は `confState`）。`VolumeHandle(` が Sources に無い（PT-22）
 - [ ] 層 A の ND（ND-01〜09・21・22・23・26・31・32・36・41・45）の `[A]` のテストがあり、正の対照が真
 - [ ] `make test` が通る（`SignatureVerifierTests` は CI の macOS でも走る）
-- [ ] 破壊による証明の 30 項目で表のテストが落ちることを確かめ、PR 本文に貼った
+- [ ] 破壊による証明の 35 項目で表のテストが落ちることを確かめ、PR 本文に貼った
 - [ ] `AppIdentity` の値が identity.env と一致し、Bootstrap が `ReaperSignature.production` と `locks.observeReaperConf()` を渡している
 
 ## 9. SPEC の変更
@@ -1023,6 +1050,7 @@ struct DeletionFormulaTests {
 
 - 00-api-map §11・§15 を §11 の提案どおりに直す（同じ PR で直せなかった分）
 - T-38 は `LockEvaluator.reaper` に `run()` を足し、`DeletionScene` を使って要求・回収のテストを書く
+- T-38 は reaper を起動する直前に `observe(config:snapshot:useCache: false)`（または `readiness(config:useCache: false)`）で署名と版を検証し直すことを確かめる（キャッシュの鍵は (inode, size, mtime) で ctime を含まない。§11 の記録 4）
 
 ## 11. API 地図への変更提案
 
@@ -1037,3 +1065,10 @@ struct DeletionFormulaTests {
 9. `DeletionReason`（VDPipeline。削除の経路の reason 語と後追いの対象外の語）を足す
 10. `LockDisplay`（`lines` の逐語は T-32 §4.11）は **T-32** が `LockObserving.swift` に作る。T-40 のパネルと DR-14 はこれを表示する。**PT-11 のため欄の名前は `confState`**（`reaperConf` ではない）。T-40 §4 の `display.reaperConf` の参照も `display.confState` に直す必要がある（T-40 の担当へ）
 11. §15 に `DeletionScene`・`StorePaths`・`ScriptedProcessRunner.version(_:)`（作り手 T-36、使う T-38・T-39・T-41）を足す。`FakeSignatureVerifier` は `final class`（`setValid(_:)`・`verifiedURLs`）
+
+### 記録（レビューで見つけ、このチケットでは直さないもの）
+
+1. `LockEvaluator.observe(config:snapshot:useCache:)` は reaper.conf を 2 回読む（`readiness` の手順 2 と、`volumesRoot`・`confState` を作る手順 2）。2 回の間に書き換わると、readiness と volumesRoot が別の版の reaper.conf から来うる。どちらの版でも食い違えば事前確認が偽になる側（消さない側）に倒れるので直さない
+2. `DeletionPolicy.preIdentityCheck` の手順 4 の `ctx.snapshot?.devices[part.deviceID]` は Swift の辞書の引き当てなので、device_id を正準等価で比べる（relpath はスカラー列で比べている）。device_id はボリューム名で、正規化の違う 2 台が同時につながる状況は想定しないので直さない
+3. T-07 の `TargetIdentity.openVolume` の `mnton != path` は Swift の String の比較（正準等価）で、コメントの「バイト列の完全一致」と食い違う。T-07 の担当で確かめる
+4. 署名と版のキャッシュの鍵は (inode, size, mtime) で ctime を含まない。同じ inode のまま中身を書き換えて mtime を戻すと、キャッシュが古い検証結果を返しうる。reaper を起動する直前は `useCache: false` にすることで防ぐ（T-38 で確かめる。§10）

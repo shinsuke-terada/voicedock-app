@@ -29,6 +29,9 @@ struct PipelineWorld {
     let chat: FakeChatTransport
     let llm: FakeLLMServer
     let physicalMemoryBytes: UInt64
+    /// 三重ロックの評価（T-36）。reaper.conf も reaper も置かない（readiness は評価しない限り検証しない）
+    let locks: LockEvaluator
+    let verifier: FakeSignatureVerifier
 
     var deps: WorkerDependencies { deps() }
 
@@ -42,7 +45,7 @@ struct PipelineWorld {
             layout: layout, paths: paths, store: store, config: configStore, ingest: ingest ?? self.ingest,
             runner: ProcessRunner(), llama: llm, chatTransportFactory: { _, _ in chat }, clock: clock,
             sleeper: sleeper ?? self.sleeper, log: log, license: license, catalog: TestCatalogs.minimal,
-            physicalMemoryBytes: physicalMemoryBytes)
+            physicalMemoryBytes: physicalMemoryBytes, locks: locks, volumeOpener: FakeVolumeOpener())
     }
 
     /// config を設定して ConfigStore に書き、load する（検証を通らなければテストを落とす）。
@@ -70,10 +73,15 @@ struct PipelineWorld {
         try AtomicFile.write(ConfigLoader.encode(config), to: layout.configFile)
         let loaded = await configStore.load()
         guard case .valid = loaded else { throw PipelineFixtureError.invalidConfig("\(loaded)") }
+        let verifier = FakeSignatureVerifier(valid: true)
+        let locks = LockEvaluator(
+            layout: layout, verifier: verifier,
+            runner: ScriptedProcessRunner(results: [ScriptedProcessRunner.version()]),
+            log: log)
         return PipelineWorld(
             tmp: tmp, layout: layout, paths: paths, store: store, configStore: configStore, ingest: FakeIngest(),
             clock: clock, sleeper: RecordingSleeper(), sink: sink, log: log, assertion: RecordingSleepAssertion(),
-            chat: chat, llm: llm, physicalMemoryBytes: physicalMemoryBytes)
+            chat: chat, llm: llm, physicalMemoryBytes: physicalMemoryBytes, locks: locks, verifier: verifier)
     }
 
     /// 今の設定で TickContext を作る（pauses は新しい PauseBook、activity は assertion を使う ActivityBoard）。

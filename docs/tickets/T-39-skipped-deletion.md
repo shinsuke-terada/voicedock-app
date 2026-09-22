@@ -164,7 +164,7 @@ struct SkippedSettler {
 | `rejectedNoSpeechIsNotRetriedAtOnce` | 往復: 拒否されたら SKIPPED のまま ID を外し、同じ周回で再要求しない | MISMATCH `size_mismatch`、ingest は既定の snapshot（ファイル在り）。同じ deps で collect → settle | SKIPPED・`errorCode == .noSpeechDetected`・ID nil・`sourceDeletedAt == nil`、`reason=size_mismatch`、settle は 0、`requests() == []`。対照: 新しい deps で `advance(60)` → settle 1 |
 | `stillInInventoryKeepsSkipped` | 往復: DELETED なのに走査に在れば SKIPPED のまま ID を外す | DELETED の結果、`snapshot(generation: 2)`（ファイル在り） | SKIPPED、ID nil、`reason=still_in_inventory` |
 | `unansweredNoSpeechRequestExpires` | 往復: 結果が来ないまま期限を過ぎたら取り下げる（reaper が居ないときの正常な姿） | 要求ファイルを消さずに `advance(3601)`、`RequestExpirer(deps:).expireDeleteRequests()` | SKIPPED・`errorCode == .noSpeechDetected`・ID nil、`requests() == []` |
-| `realReaperDeletesANoSpeechPart` | 往復（本物の reaper × FAT32）: 無音の元音声が消え、SKIPPED のまま記録される（`.diskImage`） | `.enabled(if: TestEnvironment.diskTests)`。T-38 §6.10 の準備を無音の舞台（`DeletionScene(status: .skipped, errorCode: .noSpeechDetected, in: tmp, diskImage: image)`）で。ロック B、`advance(60)`、settle → `runReaperIfNeeded(reaperScanGeneration: 0)` | イメージ上のファイルが無い、SKIPPED・`sourceDeletedAt` 在り・ID nil |
+| `realReaperDeletesANoSpeechPart` | 往復（本物の reaper × FAT32）: 無音の元音声が消え、SKIPPED のまま記録される（`.diskImage`） | `.enabled(if: TestEnvironment.diskTests)`。T-38 §6.10 の準備（`DiskImageVolume(in: tmp, deviceID: DiskImageVolume.uniqueName(), filesystem: .fat32)`。`DJIMIC3` は使わない）を無音の舞台（`DeletionScene(status: .skipped, errorCode: .noSpeechDetected, in: tmp, diskImage: image)`）で。Part は `scene.partkey` で指す。ロック B、`advance(60)`、settle → `runReaperIfNeeded(reaperScanGeneration: 0)` | イメージ上のファイルが無い、SKIPPED・`sourceDeletedAt` 在り・ID nil |
 
 （時計: 往復の準備で `advance(60)` しているので、回収の時刻は `12:01:00+09:00`）
 

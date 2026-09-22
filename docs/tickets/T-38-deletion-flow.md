@@ -706,7 +706,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 
 ### 6.10 `Tests/VDPipelineTests/DeletionRoundTripTests.swift`（`@Suite("削除の往復", .serialized, .enabled(if: TestEnvironment.diskTests))`）
 
-準備: `tmp = TempDirectory()`、`image = DiskImageVolume(in: tmp, deviceID: "DJIMIC3", filesystem: .fat32)`（`<tmp>/Volumes/DJIMIC3`。**`/Volumes` の下には決して attach しない**）、
+準備: `tmp = TempDirectory()`、`image = DiskImageVolume(in: tmp, deviceID: DiskImageVolume.uniqueName(), filesystem: .fat32)`（`<tmp>/Volumes/VDT…`。**`/Volumes` の下には決して attach しない**。ボリューム名に `DJIMIC3` を使わない。PLAN §10.2・`DiskImageVolume` がコードで拒む）。Part と Session は `scene.partkey`・`scene.sessionKey`・`scene.deviceID`（インスタンスの値。T-36 §4.10）で指し、static の `DeletionScene.partkey` は使わない、
 `scene = DeletionScene(in: tmp, diskImage: image)`、`scene.installRealReaper()`、`locks = LockEvaluator(layout:, verifier: FakeSignatureVerifier(), runner: ProcessRunner(), log: scene.log)`、
 `ingest = ScriptedIngest(snapshot: scene.scannedSnapshot(generation: 1))`、`ingest.setScanner { scene.scannedSnapshot(generation: $0) }`、`deps = scene.deletionDependencies(ingest: ingest, locks: locks)`。
 

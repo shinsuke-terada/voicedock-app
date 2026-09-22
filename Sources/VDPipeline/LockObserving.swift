@@ -172,9 +172,8 @@ extension LockObserving {
 
 /// Phase 7 の既定（削除の機能がまだ無い間）。常に「削除は無効」。何も読まない・何も起動しない。
 public struct DisabledLockObserver: LockObserving {
-    /// T-36 の `DeletionReason.deleteSourceAudioDisabled` と同じ語。T-36 がこのファイルを変更して
-    /// `DeletionReason.deleteSourceAudioDisabled` を参照するように直す（CR-06。T-36 §4.2）。
-    public static let disabledReason = "delete_source_audio_disabled"
+    /// readiness の 1 段目の語（同じ語を 2 か所に書かない。CR-06）
+    public static let disabledReason = DeletionReason.deleteSourceAudioDisabled
 
     public init() {}
 

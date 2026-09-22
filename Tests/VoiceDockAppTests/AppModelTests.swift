@@ -291,7 +291,11 @@ struct AppModelTests {
                         factory: EphemeralSessionFactory())
                 },
                 clock: clock, sleeper: RecordingSleeper(), log: log, license: AlwaysAllowLicenseGate(),
-                catalog: catalog, physicalMemoryBytes: 16 * 1024 * 1024 * 1024))
+                catalog: catalog, physicalMemoryBytes: 16 * 1024 * 1024 * 1024,
+                locks: LockEvaluator(
+                    layout: layout, verifier: FakeSignatureVerifier(), runner: ScriptedProcessRunner(results: []),
+                    log: log),
+                volumeOpener: FakeVolumeOpener()))
         let downloader = ModelDownloader(
             layout: layout, factory: EphemeralDownloadSessionFactory(), log: log, hashChunkBytes: 1_048_576)
         let models = ModelManager(
