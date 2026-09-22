@@ -997,9 +997,11 @@ final class RecordingSleepAssertion: SleepAssertion {
 
 | 関数名 / 表示名 | 期待 |
 |---|---|
-| `tickOrderIsVerbatim` / 「tick の順がチケット §9 のブロックと一致」 | §9 の `text` ブロック（テストに固定値で持つ）を空白で分けた列 == `TickStage.allCases.map(\.rawValue)` |
+| `tickOrderMatchesSpec` / 「tick の段が SPEC S13 の表と同じ順」 | SPEC S13（PLAN §5.4 の tick の段の表）の「段」の列 == `TickStage.allCases.map(\.rawValue)`（#18 で固定値から替えた） |
+| `freshSnapshotStagesMatchSpec` / 「snapshot が新鮮なときだけ行う段が SPEC S13 の条件の列と同じ」 | S13 の「条件」が `snapshot が新鮮` の段の集合 == `TickStage.requiresFreshSnapshot`（#18 で足した） |
 
 **実装の注記（T-18 の実装時）**: 当初は `tickOrderMatchesSpec`（`SpecDocument` の「Worker の tick の順」の節と照合）だったが、`docs/SPEC.md` は `tools/spec/make-spec.py` が PLAN の決まった節（S1〜S9）から作る生成物で（「手で直さない」）、PLAN に tick の順の `text` ブロックが無いため節を足せない（T-17 §9 と同じ事情。GitHub issue #18）。当面は §9 のブロックを固定値で照合する。PLAN §5.4 にブロックを足して `make-spec.py` に S10 を足すなら、このテストを SPEC との照合に替える
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: PLAN §5.4 に「tick の段」の表（`| # | 段 | 上の擬似コードの行 | 条件 |`）を置き、SPEC の `S13. Worker の tick の段` に写した。テストは上の 2 行（`tickOrderMatchesSpec`・`freshSnapshotStagesMatchSpec`）に替えた
 
 ### 6.13 `ConfigEffectPending.swift`（PolicyTests）
 
@@ -1010,7 +1012,7 @@ final class RecordingSleepAssertion: SleepAssertion {
 | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|
 | tick で groupNewParts と processPendingParts を入れ替える | `tickFollowsThePlanOrder` |
-| TickStage の宣言で groupNewParts と processPendingParts を入れ替える | `tickOrderIsVerbatim` |
+| TickStage の宣言で groupNewParts と processPendingParts を入れ替える | `tickOrderMatchesSpec` |
 | 新鮮さの比較を `<` にする（900 秒ちょうどを古いとする） | `freshnessBoundaryIsInclusive` |
 | requeueFailed で needs_recopy の除外を消す | `requeueSkipsNeedsRecopy` |
 | requeueRecopied で `needsRecopy == false` の条件を消す | `requeueRecopiedOnlyAfterRecopy` |
@@ -1076,6 +1078,7 @@ final class RecordingSleepAssertion: SleepAssertion {
 ## 9. SPEC の変更
 
 **実装の注記（T-18 の実装時）**: 次の節は足していない。`docs/SPEC.md` は `tools/spec/make-spec.py` の生成物で、PLAN に写す元のブロックが無い（§6.12 の注記。GitHub issue #18）。下のブロックは `tickOrderIsVerbatim` が固定値として持つ。
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: 下のブロックではなく PLAN §5.4 の表を SPEC の `S13.` に写した（§6.12）。`tickOrderIsVerbatim` は `tickOrderMatchesSpec` に替えた
 
 当初の案: `docs/SPEC.md` に次の節を足す:
 

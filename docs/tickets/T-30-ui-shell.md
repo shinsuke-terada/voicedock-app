@@ -1062,6 +1062,7 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | `processingWhenWorkerBusy` / 「Worker が動いていれば処理中」 | `false, false, true` | `.processing`・`text.bubble` |
 | `idleOtherwise` / 「何も無ければ待機中」 | `false, false, false` | `.idle`・`waveform` |
 | `symbolNamesAreDistinct` / 「4 つの記号名が全部違う」 | `IconState.allCases` | `Set(symbolName).count == 4`、`trash` はそのどれとも違う |
+| `symbolsMatchSpec` / 「記号名が SPEC S21 の表と同じ（case ごとの記号と、並べて出す trash）」（#18 で足した） | SPEC S21 | 「IconState」の列の case の並び == `IconState.allCases`、各行の記号 == `symbolName`、case でない行は `trashSymbolName` の 1 つだけ |
 
 ### 5.3 `AppModelTests.swift`（`@Suite("AppModel")`）
 
@@ -1205,6 +1206,7 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 2. `## S21. メニューバーのアイコン` — PLAN §8.12 の表を `| 状態 | シンボル |` で写し、`trash` の行を足す（`IconStateTests` が SPEC から読んで `IconState.symbolName` と突き合わせる）
 
 **実装の注記（T-30 の実装時）**: この節は T-30 の PR では実装していない。issue #18（SPEC 同期の拡張）に切り出した。S20 は PLAN §8.12 のパネルが箇条書きで「チケット」の列が PLAN に無く、写し方の判断が要る。当面は `IconStateTests` がシンボル名を固定値で照合する
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: (1) S20 は F-65 の後の PLAN §8.12 に合わせ、「チケット」の列をやめて `| # | 節 | 主画面 | 画面 |`（主画面での出し方と、別の画面の `PanelScreen` の case）の表を PLAN に置き、SPEC の `S20. パネルの節と画面` に写した。`Tests/PolicyTests/PanelStructureTests.swift` の `mainOrderMatchesSpec`（「主画面の節の並びが SPEC S20 の主画面の行の順と同じ」。`PanelView.swift` の `var main` の中で各節の語が最初に出る順）と `Tests/VoiceDockAppTests/PanelScreenTests.swift` の `screensMatchSpec`（「PanelScreen は main と SPEC S20 の画面の列の case だけ」）が照合する。(2) S21 は PLAN の表に「IconState」の列（case 名。`trash` の行は —）を足して `| 状態 | IconState | シンボル |` にし、SPEC の `S21. メニューバーのアイコン` に写した。状態名 → case の対応表は PLAN の列が持つ。`IconStateTests.symbolsMatchSpec` が照合する
 
 ## 9. マージ後にやること
 

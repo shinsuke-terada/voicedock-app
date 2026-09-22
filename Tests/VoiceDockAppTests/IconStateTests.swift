@@ -1,4 +1,5 @@
 // IconState（メニューバーのアイコンの状態）のテスト（T-30 §5.2）。
+import TestSupport
 import Testing
 
 @testable import VoiceDockApp
@@ -39,5 +40,19 @@ struct IconStateTests {
         #expect(names.count == 4)
         #expect(!names.contains(IconState.trashSymbolName))
         #expect(IconState.trashSymbolName == "trash")
+    }
+
+    /// SPEC 同期は issue #18 で足した（T-30 §8。PLAN F-68）
+    @Test("記号名が SPEC S21 の表と同じ（case ごとの記号と、並べて出す trash）")
+    func symbolsMatchSpec() throws {
+        let rows = try SpecDocument.load().iconRows()
+        let caseRows = rows.filter { $0.state != nil }
+        #expect(caseRows.compactMap(\.state) == IconState.allCases.map(\.rawValue))
+        for row in caseRows {
+            let state = try #require(IconState(rawValue: row.state ?? ""), "\(row.label) の case が無い")
+            #expect(state.symbolName == row.symbol, "\(row.label)")
+        }
+        // case でない行は並べて出す記号 1 つだけ
+        #expect(rows.filter { $0.state == nil }.map(\.symbol) == [IconState.trashSymbolName])
     }
 }

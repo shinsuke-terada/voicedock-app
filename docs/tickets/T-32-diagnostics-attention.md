@@ -1266,6 +1266,8 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 2. `## S25. 要対応` — PLAN §8.11 の要対応の表を `| 項目 | 条件 | 操作ボタン |` で写す。`AttentionEvaluatorTests` が case の集合と順を突き合わせる
 3. `## S26. 状態の詳細` — §4.9 の `lines` の書式を ```text ブロックで写す。`StatusReporterTests` が `spec_section_code` 相当（`SpecDocument.codeBlock(heading:language:)`）で突き合わせる
 
+→ **issue #18（SPEC 同期の拡張。PLAN F-68）で検討し、足さなかった**: S24 は既存の `S6.` と同じ（照合は済んでいる）。S25 は PLAN §8.11 に表が在るが、1 行に複数の case（`vaultNotConfigured` / `vaultUnavailable`）と付随値（`modelMissing(kind)`）を持ち、`AttentionItem` は付随値を持つので case を列挙できない（テストの側に見本の列を手で持つと、case を足しても落ちない）。照合するなら `Sources/VDPipeline` に case の名前の列（例 `AttentionItem.Kind: CaseIterable`）を足す別の PR で行う。S26 は PLAN §8.12 の状態の詳細が散文の箇条書きで、書式の原本は本チケット §4.9 に在り PLAN に無い（機械的に写せない）。SPEC の番号 S24〜S26 は空けたまま（#18 は S10〜S13・S20〜S23 を使った）
+
 ## 9. マージ後にやること
 
 1. T-41 が `WorkerJob` に `.backlog` / `.resolveAbsent` を足し、`stagePendingJobs` の `switch` に 2 ケースを足す

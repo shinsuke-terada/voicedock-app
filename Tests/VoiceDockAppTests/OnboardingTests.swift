@@ -1,5 +1,6 @@
 // 「はじめに」の 5 項目（OnboardingEvaluator）のテスト（T-31 §5.2）。
 import Foundation
+import TestSupport
 import Testing
 import VDCore
 import VDDevice
@@ -28,14 +29,15 @@ struct OnboardingTests {
             notListableErrno: [:])
     }
 
-    @Test("5 項目は PLAN の ①〜⑤ の順")
-    func orderIsTheSpecOrder() {
+    /// 順と題は SPEC S22（PLAN §8.12 の表）から読む（SPEC 同期は issue #18 で足した。PLAN F-68）
+    @Test("5 項目は SPEC S22 の ①〜⑤ の順と題")
+    func orderIsTheSpecOrder() throws {
+        let spec = try SpecDocument.load().onboardingSteps()
+        #expect(spec.map(\.mark) == ["①", "②", "③", "④", "⑤"])
         let items = OnboardingEvaluator.items(AppSnapshot(now: Self.fixed))
-        #expect(items.map(\.step) == [.vault, .whisperModel, .llmModel, .loginItem, .deviceName])
-        #expect(
-            items.map(\.title) == [
-                "Vault を選ぶ", "Whisper モデルを入手する", "LLM を選んで入手する", "ログイン時に起動する", "デバイスの名前を変える",
-            ])
+        #expect(items.map(\.step.rawValue) == spec.map(\.step))
+        #expect(OnboardingStep.allCases.map(\.rawValue) == spec.map(\.step))
+        #expect(items.map(\.title) == spec.map(\.title))
     }
 
     @Test("Vault は .available で完了")

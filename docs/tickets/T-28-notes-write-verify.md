@@ -266,7 +266,7 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 
 | 表示名 | 関数名 | 準備 → 期待 |
 |---|---|---|
-| `RN と DN の件数` | `ruleCounts` | 正しいノートで Raw の `results` の rule が `RN-1`〜`RN-6`、Daily が `DN-1`〜`DN-9`（件数は SPEC の表から読む） |
+| `RN と DN の件数（SPEC S12 の表と同じ）` | `ruleCounts` | 正しいノートで Raw の `results` の rule が `RN-1`〜`RN-6`、Daily が `DN-1`〜`DN-9`（SPEC S12 の表から読む。#18） |
 | `正しいノートは全部通る` | `validNotePasses` | Raw・Daily とも `passed` |
 | `RN-1 / DN-1 ファイルが無い` | `rule1Missing` | 存在しないパス → `failedRules == ["RN-1"]`（Daily は `["DN-1"]`）、`results.count == 1` |
 | `RN-1 / DN-1 symlink を拒む` | `rule1Symlink` | 正しいノートへの symlink → 規則 1 だけが評価されて偽 |
@@ -277,14 +277,14 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 | `DN-5 frontmatter の区切りが無い` | `dn5RequiresBlock` | 本文だけ → DN-5 が偽 |
 | `DN-5 閉じの区切りが無い` | `dn5RequiresClosing` | `"---\na: 1\n"` → DN-5 が偽 |
 | `Raw に DN-5 は無い` | `rawHasNoDN5` | Raw の結果に 5 番の「区切り」規則が無い（`RN-5` は session_key） |
-| `session_key が違う` | `sessionKeyMismatch` | Raw → `RN-5` が偽、Daily → `DN-6` が偽 |
-| `session_key が無い` | `sessionKeyMissing` | frontmatter に鍵が無い → 同上 |
-| `session_key が文字列でない` | `sessionKeyNotString` | `voicedock_session_key: 123` → 偽 |
+| `RN-5 / DN-6 session_key が違う` | `sessionKeyMismatch` | Raw → `RN-5` が偽、Daily → `DN-6` が偽 |
+| `RN-5 / DN-6 session_key が無い` | `sessionKeyMissing` | frontmatter に鍵が無い → 同上 |
+| `RN-5 / DN-6 session_key が文字列でない` | `sessionKeyNotString` | `voicedock_session_key: 123` → 偽 |
 | `YAML が読めなくても残りの規則を報告する` | `unparseableReportsRules` | `"---\na: [unclosed\n---\n…"`: Raw → `RN-5`・`RN-6` が偽で `results` は 6 件。Daily → `DN-6`・`DN-7` が偽、`DN-8`・`DN-9` も評価され 9 件 |
 | `RN-6 は包含` | `rn6ContainmentOnly` | ノートの鍵 `[keyA, keyB, keyC]`、期待 `[keyA, keyB]` → RN-6 が真 |
 | `RN-6 は欠けると偽` | `rn6MissingKeyFails` | ノート `[keyA]` → RN-6 が偽 |
 | `DN-7 は完全一致` | `dn7ExactEquality` | ノート `[keyA, keyB, keyC]` → DN-7 が偽、`[keyB, keyA]`（順が違う）→ 真 |
-| `鍵の欄が無い` | `keysFieldMissing` | Raw → RN-6 が偽、Daily → DN-7 が偽 |
+| `RN-6 / DN-7 鍵の欄が無い` | `keysFieldMissing` | Raw → RN-6 が偽、Daily → DN-7 が偽 |
 | `DN-8 見出しの下に本文が要る` | `dn8RequiresContent` | `## Summary\n\n## Timeline\n…` → DN-8 が偽、本文ありで真 |
 | `DN-8 見出しが無い` | `dn8MissingHeading` | `## Summary` が無い → 偽 |
 | `DN-8 設定の見出しを使う` | `dn8UsesConfiguredHeading` | summaryHeading `## 要約` で `## 要約\n\n本文` → 真、`## Summary\n\n本文` だけ → 偽 |
@@ -349,7 +349,7 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 - [ ] 5 章のテストが全部通る
 - [ ] VDNotes のソースに PT-01（削除）・PT-12（`AtomicFile` 以外の書き込み）の違反が無い
 - [ ] `VaultCheck` は Vault のルートを作らない（テストで確かめた）
-- [ ] 保存検証の規則 ID が SPEC の RN / DN の表と一致する（SPEC 同期）→ **T-28 の PR では行わない。GitHub issue #18 に回した**（下の §8。当面は `ruleCounts` が PLAN §8.7 の固定の列と照合する）
+- [ ] 保存検証の規則 ID が SPEC の RN / DN の表と一致する（SPEC 同期）→ **T-28 の PR では行わない。GitHub issue #18 に回した**（下の §8。当面は `ruleCounts` が PLAN §8.7 の固定の列と照合する）→ **SPEC 同期は #18 で足した**（PLAN F-68）
 - [ ] 破壊による証明の結果を PR 本文に貼った
 
 ## 8. SPEC の変更
@@ -357,6 +357,7 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 - `docs/SPEC.md` に RN-1〜RN-6 と DN-1〜DN-9 の表（PLAN §8.7 の表を ID が先頭の列になるように 2 つの表に分けたもの）を足し、SPEC 同期の対象に RN / DN を加える（`NoteVerifierTests` の表示名は `RN-n` / `DN-n` で始める）
 
 **実装の注記（T-28 の実装時）**: T-28 の PR では行わない。T-05 の持ち物（`docs/SPEC.md`・`Tests/TestSupport/Spec/SpecDocument.swift` の `SpecIDKind`・`Tests/PolicyTests/SpecSync/SpecCoverage.swift` の `activated`）を直す必要があり、§3 に無い。GitHub issue #18（SPEC 同期の拡張。T-06・T-07・T-17 の分と同じ）に回した。RN / DN を有効にするときは、`TestNameIndex` が表示名の先頭の ID 1 つしか拾わないので、DN-1〜4・RN-5・DN-6 を先頭に持つテストの表示名の付け直し（または分割）も要る
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: 表は 2 つに分けず、PLAN §8.7 の表をそのまま SPEC の `S12. 保存検証 RN / DN` に写した（ID は「#」の列に RN- / DN- を付けたもの。— の欄は無い。`SpecDocument.noteRules(_:)`）。`SpecIDKind` には足さず（S12 の行は `| RN-n |` の形でないので `ids(_:)` では読めない）、網羅は `Tests/PolicyTests/SpecSync/NoteRuleCoverageTests.swift` が見る。表示名の先頭は `RN-5 / DN-6 …` のように ` / ` で ID を並べてよい（PLAN §10.3）。付け直したのは `sessionKeyMismatch`・`sessionKeyMissing`・`sessionKeyNotString`（`RN-5 / DN-6`）と `keysFieldMissing`（`RN-6 / DN-7`）。`ruleCounts` は S12 と照合する
 
 ## 9. マージ後にやること
 

@@ -496,14 +496,14 @@ extension SystemLoginItem {
 | `brokenJSONGivesDefaults` / 「壊れた JSON は既定」 | `"{"` を書く | 既定 |
 | `futureSchemaGivesDefaults` / 「将来の schema は解釈しない」 | `{"schema": 2, "loginItemDecided": true}` | 既定（`loginItemDecided == false`） |
 | `unknownKeysAreIgnored` / 「未知のキーは無視する」 | `{"schema":1,"loginItemDecided":true,"x":1}` | `loginItemDecided == true` |
-| `savedFileHasOnlyTwoKeys` / 「書くのは 2 キーだけ」 | `save` の後に JSON を読む | 鍵集合が `["loginItemDecided", "schema"]` |
+| `savedFileHasOnlyTwoKeys` / 「書くのは SPEC S23 の 2 キーだけ（型も表のとおり）」 | `save` の後に JSON を読む | 鍵集合が SPEC S23 の鍵（`["loginItemDecided", "schema"]`）、`schema` は整数・`loginItemDecided` は真偽、S23 の `schema` の値が `UIState.currentSchema`（#18 で SPEC との照合に替えた） |
 | `saveFailureReturnsFalse` / 「書けなければ false」 | 読み取り専用のディレクトリ（`chmod 0o500`） | `save == false`（投げない） |
 
 ### 5.2 `OnboardingTests.swift`（`@Suite("Onboarding")`）
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `orderIsTheSpecOrder` / 「5 項目は PLAN の ①〜⑤ の順」 | 既定の `AppSnapshot` | `items.map(\.step) == [.vault, .whisperModel, .llmModel, .loginItem, .deviceName]` |
+| `orderIsTheSpecOrder` / 「5 項目は SPEC S22 の ①〜⑤ の順と題」 | 既定の `AppSnapshot` | S22 の「#」が ①〜⑤、`items` の step と `OnboardingStep.allCases` が S22 の「OnboardingStep」の列、`items` の題が「項目」の列（#18 で SPEC との照合に替えた） |
 | `vaultDoneWhenAvailable` / 「Vault は .available で完了」 | `vault = .available` | ① が `done` |
 | `vaultNotDoneWhenMarkerMissing` / 「目印が無ければ未完了」 | `vault = .missingMarker` | ① が未完了 |
 | `whisperDoneNeedsVADWhenEnabled` / 「VAD 有効なら VAD も要る」 | `whisperPresent: true, vadEnabled: true, vadPresent: false` | ② 未完了 |
@@ -642,6 +642,7 @@ extension SystemLoginItem {
 2. `## S23. ui-state.json` — 鍵と型の表（`schema: 整数（1）`、`loginItemDecided: 真偽`）。`UIStateTests` が `savedFileHasOnlyTwoKeys` で突き合わせる
 
 **実装の注記（T-31 の実装時）**: この節は T-31 の PR では実装していない。`docs/SPEC.md` は `tools/spec/make-spec.py` が PLAN から作る（手で直さない）もので、見出しの登録・`SpecDocument` の読み手はどれも T-05 の持ち物で §3 に無い。T-30 の S20 / S21 と同じく issue #18（SPEC 同期の拡張）に回す。当面は `OnboardingTests.orderIsTheSpecOrder` が 5 項目の順と題を、`UIStateTests.savedFileHasOnlyTwoKeys` が鍵を固定値で照合する
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: PLAN §8.12 に `| # | 項目 | OnboardingStep | 完了の条件 |`（項目はパネルの文言。`OnboardingStep` の列を足した）と `| 鍵 | 型 | 値 |` の表を置き、SPEC の `S22. はじめに`・`S23. ui-state.json` に写した。`orderIsTheSpecOrder` と `savedFileHasOnlyTwoKeys` を SPEC との照合に替えた（§5.1・§5.2）
 
 ## 9. マージ後にやること
 

@@ -1,23 +1,22 @@
-// tick の順の逐語の照合（T-18 §6.12・§9）。
-// docs/SPEC.md は tools/spec/make-spec.py が PLAN の決まった節から作る生成物で、PLAN に tick の順のブロックが無いため
-// 「Worker の tick の順」の節を足せない（T-17 §9 と同じ事情。GitHub issue #18）。当面は §9 のブロックを固定値で照合する。
+// tick の段と docs/SPEC.md S13（PLAN §5.4 の表）の照合（T-18 §6.12・§9。SPEC 同期は issue #18 で足した。PLAN F-68）。
+import TestSupport
 import Testing
 
 @testable import VDPipeline
 
 @Suite("SpecSyncTickOrder")
 struct SpecSyncTickOrderTests {
-    /// T-18 §9 の `text` ブロック（逐語）。
-    static let block = """
-        manualRequeue groupNewParts requeueRecopied closeIdleSessions processPendingParts refreshVaultIndex \
-        processReadySessions collectDeleteResults expireDeleteRequests evaluateDeletions settleSkippedDeletions \
-        runReaperIfNeeded pendingJobs requeueOnConnect
-        """
+    @Test("tick の段が SPEC S13 の表と同じ順")
+    func tickOrderMatchesSpec() throws {
+        let stages = try SpecDocument.load().tickStages()
+        #expect(!stages.isEmpty)
+        #expect(TickStage.allCases.map(\.rawValue) == stages.map(\.name))
+    }
 
-    @Test("tick の順がチケット §9 のブロックと一致")
-    func tickOrderIsVerbatim() {
-        let words = Self.block.split(whereSeparator: { $0 == " " || $0 == "\n" }).map(String.init)
-        #expect(words.count == 14)
-        #expect(TickStage.allCases.map(\.rawValue) == words)
+    @Test("snapshot が新鮮なときだけ行う段が SPEC S13 の条件の列と同じ")
+    func freshSnapshotStagesMatchSpec() throws {
+        let fresh = try SpecDocument.load().tickStages().filter { $0.condition == "snapshot が新鮮" }.map(\.name)
+        #expect(!fresh.isEmpty)
+        #expect(Set(TickStage.requiresFreshSnapshot.map(\.rawValue)) == Set(fresh))
     }
 }
