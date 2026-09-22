@@ -514,7 +514,7 @@ enum AcceptanceReport {
 | `longDay` で最後の要素を切り詰める | `longDayKeepsWholeSegments` | 同上 |
 | `longDay` の連結の順を `Set` にする | `longDayIsDeterministic` | 同上 |
 | `s05-planning.json` に `[[テスト]]` を 1 か所入れる | `noWikiLinkMarkersInFixtures` | `make test-policy` |
-| `s01-standup.json` の `id` を変える | `eachFixtureHasTheRequiredKeys`、`nineFixturesExist` | 同上 |
+| `s01-standup.json` の `id` を変える | `eachFixtureHasTheRequiredKeys`（`nineFixturesExist` はファイル名を見るので落ちない。ファイル名を変えたときに落ちる） | 同上 |
 | `Resources/ModelCatalog.json` の sha256 を 1 文字変える | `scripts/check-catalog.sh` が `MISMATCH` で終了コード 1（出力を PR に貼る） | 手で |
 
 ## 7. 受け入れ条件
