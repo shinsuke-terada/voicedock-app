@@ -20,8 +20,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = false
         popover.contentViewController = NSHostingController(rootView: PanelView(model: model))
-        // 高さは SwiftUI が決める
-        popover.contentSize = NSSize(width: Self.panelWidth, height: 1)
+        // 高さは PanelView が固定する（PanelStyle.maxHeight）。1 にすると ScrollView が潰れて開けない
+        popover.contentSize = NSSize(width: Self.panelWidth, height: PanelStyle.maxHeight)
         super.init()
         popover.delegate = self
         item.button?.target = self

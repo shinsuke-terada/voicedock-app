@@ -23,7 +23,7 @@ struct PanelView: View {
             .padding(PanelStyle.padding)
             .frame(width: PanelStyle.width, alignment: .leading)
         }
-        .frame(width: PanelStyle.width)
-        .frame(maxHeight: PanelStyle.maxHeight)
+        // ScrollView は自分の高さを持たないので、高さを固定する（maxHeight だけだと popover が 1pt に潰れる）
+        .frame(width: PanelStyle.width, height: PanelStyle.maxHeight)
     }
 }
