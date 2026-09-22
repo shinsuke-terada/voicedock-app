@@ -151,6 +151,8 @@ PY
 
 `verified: false` の項目は一覧に出ない（`ModelCatalog.listedLLMs`）。T-24 の PR では **1 つ以上の LLM が `verified: true`** になっていること（そうでないと利用者が LLM を選べない）。
 
+**利用者の決定（2026-09-22）**: T-24 は試験の仕組み（コード・fixture・判定・スクリプト）だけで先にマージし、本物の llama-server とモデルでの受け入れ試験と `verified: true` への変更は、**後でカタログだけを直す別の PR** で行う（モデルは 30B が約 18.6 GB・4B が約 2.5 GB、試験は利用者が行う）。それまで一覧に出る LLM は 0 本で、T-31 の LLM の選択は空になる。**v1.0（T-44）の前に必ず行う**
+
 ### 4.3 transcript の fixture（10 本）
 
 voicedock には LLM 応答の fixture が 2 本あるだけで、transcript の fixture は無い（PLAN §10.6）。**ここで作る。**
@@ -189,23 +191,30 @@ voicedock には LLM 応答の fixture が 2 本あるだけで、transcript の
 **書き方の規則**（PolicyTests が機械で確かめる。§5.4）:
 - 実在の個人名・団体名・住所・電話番号・メールアドレスを書かない。話者は `Aさん` `Bさん` のように呼ぶ
 - `[[` と `]]` を**入れない**（判定 3 の入力側を汚さない）
-- 日付を明示するのは `maxTasksWithDue` の数だけ。それ以外の依頼には「近いうちに」「来週あたり」のようにぼかした言い方だけを使う
+- 日付を明示するのは `maxTasksWithDue` の数だけ。それ以外の依頼には「近いうちに」「そのうち」「手が空いたら」のようにぼかした言い方だけを使う。「今日中」「明日」「今週」「来週」「来月」「今月中」「月末」「週末」「週明け」曜日、「〜までに」（「ここまでに」「ところまでに」を除く）は、日付を明示した要素の外に書かない（期限として読めるため。§5.4 `deadlinesOnlyInDatedSegments`）
 - 文は句点（`。`）で終える（whisper-cli の日本語の出力に似せる）。フィラー（`えーと` `はい`）を 1 割ほど混ぜる
 - 作り方: 人が書くか、LLM に下書きさせて**人が読み**、上の規則を満たすまで直す。**アプリのコードから生成しない**（実装を呼んで期待値を作らない。TEST-01）
 
 **長文 1 本**（`L01-longday`。約 350,000 文字。**ファイルにしない。生成する**）:
-- `AcceptanceFixture.longDay()`: 9 本を `id` の昇順に連結した `segments` を、合計が 350,000 スカラーに**達するまで**繰り返し、超えた最後の 1 要素を捨てる（切り詰めない。文の途中で切らない）
-- `startedAt = 2026-08-29T07:00:00+09:00`、`segmentSeconds = 12`、`expected.maxTasksWithDue` = 9 本の合計 × 繰り返し回数
+- `AcceptanceFixture.longDay()`: 9 本を `id` の昇順に連結した `segments` を、要素ごとに足していき、合計が 350,000 スカラーに**達した時点で止める**。最後に足した要素も丸ごと入れる（切り詰めない。文の途中で切らない）。1 要素は 200 スカラー以下なので、合計は 350,000 以上 350,200 未満になる（§5.3 `longDayIsDeterministic`）
+- `startedAt = 2026-08-29T07:00:00+09:00`、`segmentSeconds = 12`、`expected.maxTasksWithDue` = 9 本の合計 × 繰り返し回数（途中まで使った回も 1 回と数える）
 - リポジトリに 1 MB の fixture を置かないためであり、**決定的**（同じ 9 本から同じ長文ができる）
 
 **利用者の実録音から作る場合**（PLAN §10.6）:
 - リポジトリに入れない。`~/VoiceDockAcceptance/` に同じ形の JSON を置き、`VOICEDOCK_LLM_FIXTURES=~/VoiceDockAcceptance` を渡す
-- そのディレクトリの `*.json` を `id` の昇順に読み、**10 本に満たなければ**合成の 9 本で埋める（長文は必ず生成する）
+- そのディレクトリの `*.json` を `id` の昇順に読み、**10 本に満たなければ**合成の 9 本で埋める（長文は必ず生成する）。`*.json` が 0 本なら失敗にせず全部を合成の 9 本にする（`AcceptanceFixture.jsonCount(directory:)` が 0。ディレクトリが読めない・JSON が読めないときは失敗）
 
 ### 4.4 `Tests/LLMAcceptance/` の構成
 
 ```swift
 // AcceptanceFixture.swift
+/// `Result` の Failure は `Error` でなければならない（`String` は使えない）ので、メッセージを包む。
+struct AcceptanceError: Error, Equatable, Sendable, CustomStringConvertible, ExpressibleByStringInterpolation {
+    let message: String
+    init(stringLiteral value: String)
+    var description: String { message }
+}
+
 struct AcceptanceFixture: Sendable {
     let id: String
     let dayDate: LocalDate
@@ -215,24 +224,35 @@ struct AcceptanceFixture: Sendable {
     let segments: [String]
     let maxTasksWithDue: Int
     var scalarCount: Int                    // segments の TextLimit.scalarCount の合計
-    /// PLAN §5.6 の形。blocks は BlockComputer.blocks(…, gapSeconds: config.session.gapSeconds)。
+    /// PLAN §5.6 の形。blocks は BlockComputer.blocks(…, gapSeconds: config.session.blockGapSeconds)。録音は 1 本として塊を求める。
     func transcript(gapSeconds: Int) -> SessionTranscript
-    static func load(_ url: URL) -> Result<AcceptanceFixture, String>
+    static func load(_ url: URL) -> Result<AcceptanceFixture, AcceptanceError>
     /// ディレクトリの *.json を id の昇順に読む（読めないものは Result の失敗にする）。
-    static func loadAll(directory: URL) -> Result<[AcceptanceFixture], String>
+    static func loadAll(directory: URL) -> Result<[AcceptanceFixture], AcceptanceError>
+    /// ディレクトリの *.json の数（読めなければ nil）。
+    static func jsonCount(directory: URL) -> Int?
     /// 9 本から約 350,000 スカラーの 1 本を作る（§4.3）。
     static func longDay(_ base: [AcceptanceFixture]) -> AcceptanceFixture
     static let longTargetScalars = 350_000
+    static let longID = "L01-longday"
+    static let longStartedAt = "2026-08-29T07:00:00+09:00"
+    static let longSegmentSeconds = 12
+    static let longTimeZone = "Asia/Tokyo"
 }
 
 // AcceptanceHarness.swift
 struct AcceptanceHarness {
+    /// リポジトリの Resources と Vendor/build/bin（手順 1）。
+    static var paths: AppPaths
+    /// 手順 3 のモデルの場所（本番の <HOME> を読むだけ。ファイルが無ければ失敗）。報告の sha256 にも使う。
+    static func modelURL(modelID: String, paths: AppPaths) -> Result<URL, AcceptanceError>
     /// llama-server を 1 回だけ起動し、10 本を順に流す。終わったら必ず stop する。
-    static func run(modelID: String, fixtures: [AcceptanceFixture]) async -> Result<[AcceptanceRun], String>
+    static func run(modelID: String, fixtures: [AcceptanceFixture]) async -> Result<[AcceptanceRun], AcceptanceError>
 }
 struct AcceptanceRun: Sendable {
     let fixtureID: String
     let scalarCount: Int
+    let maxTasksWithDue: Int  // fixture の expected.maxTasksWithDue（J3 の判定は runs だけを受け取るので、ここに持たせる）
     let outcome: AnalyzeOutcome
     let calls: Int            // 本体の要求（user が空でないもの）
     let repairedCalls: Int    // 修復が 1 回以上入った本体の要求
@@ -246,6 +266,8 @@ final class CountingChatTransport: ChatTransport, Sendable {
     func complete(system: String, user: String) async -> ChatResult
     /// 送った順の記録（true = 修復の要求）。
     func record() -> [Bool]
+    /// 記録から (calls, repairedCalls, repairs) を数える（手順 7）。
+    static func count(_ record: [Bool]) -> (calls: Int, repairedCalls: Int, repairs: Int)
 }
 ```
 
@@ -258,12 +280,12 @@ final class CountingChatTransport: ChatTransport, Sendable {
 4. `config = AppConfig.defaults(timeZone: "Asia/Tokyo")`（既定値で走らせる。**利用者の config.json を読まない**）
 5. `supervisor = LlamaServerSupervisor(runner: ProcessRunner(), paths: paths, layout: layout, clock: SystemClock(), sleeper: TaskSleeper(), log: AppLog(sink: CapturingLogSink(), level: .info, unsafeContent: false, zone:, clock:), factory: EphemeralSessionFactory())`
    `handle = await supervisor.ensureRunning(model: modelURL, modelID: modelID, config: config.llm)`。失敗なら `.failure(<StageFailure.message>)`
-   `defer { await supervisor.stop() }`
+   終わったら（失敗でも）`await supervisor.stop()`（`defer` の中では `await` できないので、起動から手順 7 までを別の関数にし、その後で呼ぶ）
 6. `prompts = try Prompts.load(directory: paths.promptsDirectory)`
 7. 各 fixture について（**順に 1 本ずつ**。並行に投げない）:
    - `counting = CountingChatTransport(LoopbackChatTransport(endpoint: handle.endpoint, apiKey: handle.apiKey, modelID: handle.modelID, config: config.llm, factory: EphemeralSessionFactory()))`
    - `analyzer = Analyzer(transport: counting, prompts: prompts, config: config.llm)`
-   - `clock = ContinuousClock()`、`start = clock.now`、`outcome = await analyzer.analyze(f.transcript(gapSeconds: config.session.gapSeconds))`、`elapsed = clock.now - start`
+   - `clock = ContinuousClock()`、`start = clock.now`、`outcome = await analyzer.analyze(f.transcript(gapSeconds: config.session.blockGapSeconds))`、`elapsed = clock.now - start`
    - `record = counting.record()` から `calls`（`false` の数）・`repairs`（`true` の数）・`repairedCalls`（`false` の直後に `true` が 1 つ以上続く回数）を数える
 8. `.success([AcceptanceRun])`
 
@@ -304,10 +326,12 @@ enum AcceptanceJudge {
 | J3 | `wikiLinkHits.isEmpty` **かつ** `badDue.isEmpty` |
 | J4 | `longSeconds <= 1_800` |
 
-- `repairFreeRate = Double(calls - repairedCalls の合計) / Double(calls の合計)`。`repairedRate = Double(最終的に成功した本体の要求) / Double(calls)`（`.failure` で終わった本体の要求があれば 1.0 未満になり、J1 も落ちる）
+- `repairFreeRate = Double(calls - repairedCalls の合計) / Double(calls の合計)`。`repairedRate = Double(最終的に成功した本体の要求) / Double(calls)`（`.failure` で終わった本体の要求があれば 1.0 未満になり、J1 も落ちる）。
+  最終的に成功した本体の要求 = `.success` の run は `calls`、`.failure` の run は `max(0, calls - 1)`（`Analyzer` は最初の失敗で止まるので、落ちたのは最後の 1 要求）。`calls == 0` なら 0.0
 - `wikiLinkHits`: `strings(result)` と `partials` の全文字列のどれかがスカラー列として `[[` を含めば、`"<fixtureID>: <先頭 40 スカラー>"` を入れる
 - `badDue`: `tasks` の `due` が `nil` でなく `duePattern` に一致しない、または `due != nil` の数が `fixture.maxTasksWithDue` を超える
-- `longSeconds` = `longID` の `elapsed` を秒にしたもの（`Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18`）
+- `longSeconds` = `longID` の `elapsed` を秒にしたもの（`Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18`）。`longID` の run が無ければ `+∞`（J4 を落とす）
+- `passed` と J1〜J4 は `AcceptanceVerdict` の計算プロパティ（`j1`〜`j4`。報告の判定の表にも使う）
 - **時間の判定は長文 1 本だけ**（9 本の合計は見ない）
 
 ### 4.6 `TestEnvironment` への追加（`Tests/TestSupport/TestEnvironment+LLMAcceptance.swift`）
@@ -351,6 +375,24 @@ acceptance-selftest: build
 
 章の本体（`AcceptanceReport.render(...)` が同じ形の Markdown を作り、それを貼る）:
 
+```swift
+// AcceptanceReport.swift
+struct AcceptanceReportContext: Sendable {
+    let date: String          // yyyy-MM-dd
+    let modelID: String
+    let file: String
+    let sha256: String        // FileHasher.sha256(of:chunkBytes: 1_048_576)
+    let machine: String       // sysctl machdep.cpu.brand_string
+    let memoryBytes: UInt64   // sysctl hw.memsize
+    let llamaRef: String      // Vendor/versions.env の LLAMA_CPP_REF
+}
+enum AcceptanceReport {
+    static func context(modelID: String, modelURL: URL, date: String) -> AcceptanceReportContext
+    /// 15.1 は scripts/check-catalog.sh の出力を人が貼るので、`<出力をそのまま>` と `⬜ 未実施` のまま出す。
+    static func render(_ c: AcceptanceReportContext, runs: [AcceptanceRun], verdict: AcceptanceVerdict) -> String
+}
+```
+
 ````markdown
 ## 15. LLM 受け入れ試験（PLAN §10.6）
 
@@ -372,7 +414,7 @@ acceptance-selftest: build
 |---|---|
 | モデル | `<id>` |
 | ファイル | `<file>` |
-| sha256 | `<64 桁>`（`FileHasher.sha256(of:chunkBytes: 1_048_576)` の実測。カタログの値と一致） |
+| sha256 | `<64 桁>`（`FileHasher.sha256(of:chunkBytes: 1_048_576)` の実測） |
 | 機種 / メモリ | `<machdep.cpu.brand_string>` / `<hw.memsize>` |
 | llama.cpp | `<LLAMA_CPP_REF>`（`Vendor/versions.env`） |
 | コマンド | `make llm-acceptance MODEL=<id>` |
@@ -398,10 +440,12 @@ acceptance-selftest: build
 ## 5. テスト
 
 `Tests/LLMAcceptance/` は `import Testing`、`import VDCore`、`import VDContract`、`import VDLLM`、`import TestSupport`（**`VDModels` は import しない**。`LLMAcceptance` の依存は T-01 の `VDPipeline` / `VDLLM` / `TestSupport` のまま）。
+`AcceptanceHarness.swift` だけは `ProcessRunner` のために `import VDProcess`（`VDPipeline` の依存として見える）と、`CountingChatTransport` の `Mutex` のために `import Synchronization` を足す。`AcceptanceReport.swift` は `sysctlbyname` のために `import Darwin`。
 
 ### 5.1 `AnalysisAcceptanceTests.swift`（`@Suite("LLM 受け入れ試験", .serialized)`）
 
 すべて `.enabled(if: TestEnvironment.llmModel != nil)`、`.tags(.realTools, .slow)`。スイート全体で **llama-server を 1 回だけ**起動するため、`static let runs` を `Task` で 1 回だけ作る（`@Suite` の `init` で `AcceptanceHarness.run` を呼び、10 本ぶんの結果を持つ）。
+`static let runs = Task<AcceptanceSession?, Never> { await AcceptanceSession.make() }`。`AcceptanceSession`（同じファイル）は `modelID`・`runs: Result<[AcceptanceRun], AcceptanceError>`・`verdict` を持ち、`fixtures()` で §4.3 の 10 本（`llmFixtureDirectory` の *.json を id の昇順・9 本に満たなければ合成の fixture で埋める・最後に `longDay`）を組む。§5.2 も同じ `AnalysisAcceptanceTests.runs` を待つ（起動は 1 回）。
 
 | 関数名 / 表示名 | 期待 |
 |---|---|
@@ -442,7 +486,8 @@ acceptance-selftest: build
 |---|---|---|
 | `loadsTheNineFixtures` | 既定のディレクトリ | 9 本、`id` が §4.3 の表と同じ・昇順 |
 | `segmentsBecomeAbsoluteTimes` | `s01` | 最初の `AbsoluteSegment.at` が `startedAt`、i 番目が `startedAt + i × segmentSeconds`、`endAt - at == segmentSeconds × 1000` |
-| `longDayIsDeterministic` | `longDay` を 2 回 | 同じ `segments`、`scalarCount >= 350_000` かつ `< 350_000 + 200` |
+| `longDayIsDeterministic` | `longDay` を 2 回と、入力を逆順にして 1 回 | 3 つとも同じ `segments`、先頭が 9 本を §4.3 の表の `id` の順に連結したもの、`scalarCount >= 350_000` かつ `< 350_000 + 200` |
+| `longDayCountsDues` | `longDay` | `maxTasksWithDue == 18`（9 本の合計 1+0+1+2+3+0+0+0+2 = 9 × 繰り返し 2 回。9 本で約 201,000 スカラー） |
 | `longDayKeepsWholeSegments` | `longDay` | どの要素も元の 9 本のどれかの要素と**完全に一致**（途中で切らない） |
 | `badJSONIsAnError` | キーが足りない JSON | `.failure`、メッセージにファイル名が入る |
 | `emptyDirectoryIsAnError` | 空のディレクトリ（TEST-28） | `.failure` |
@@ -459,6 +504,7 @@ acceptance-selftest: build
 | `segmentsAreSentences` | 各要素が 10〜200 スカラー、空でない、末尾が `。` `？` `！` のどれか |
 | `noWikiLinkMarkersInFixtures` | どの要素にも `[[` と `]]` が無い |
 | `noObviousPersonalData` | `@` を含む要素が無い、`0[0-9]{1,3}-[0-9]{2,4}-[0-9]{4}` に一致する部分が無い |
+| `deadlinesOnlyInDatedSegments` | 日付（`[0-9]+月[0-9]+日`）を含まない要素に §4.3 の期限として読める語と「までに」（`(?<!ここ)(?<!ところ)までに`）が無い。日付を含む要素の数が `maxTasksWithDue` と等しい |
 | `startedAtParses` | `ZonedTime(timeZone: TimeZone(identifier: timeZone)!).parseISO(startedAt)` が nil でなく、`dayDate` と同じ日 |
 
 ## 6. 破壊による証明
@@ -474,14 +520,15 @@ acceptance-selftest: build
 | `longDay` で最後の要素を切り詰める | `longDayKeepsWholeSegments` | 同上 |
 | `longDay` の連結の順を `Set` にする | `longDayIsDeterministic` | 同上 |
 | `s05-planning.json` に `[[テスト]]` を 1 か所入れる | `noWikiLinkMarkersInFixtures` | `make test-policy` |
-| `s01-standup.json` の `id` を変える | `eachFixtureHasTheRequiredKeys`、`nineFixturesExist` | 同上 |
+| `s07-field-note.json` の要素に「明日の朝に出す」を入れる | `deadlinesOnlyInDatedSegments` | `make test-policy` |
+| `s01-standup.json` の `id` を変える | `eachFixtureHasTheRequiredKeys`（`nineFixturesExist` はファイル名を見るので落ちない。ファイル名を変えたときに落ちる） | 同上 |
 | `Resources/ModelCatalog.json` の sha256 を 1 文字変える | `scripts/check-catalog.sh` が `MISMATCH` で終了コード 1（出力を PR に貼る） | 手で |
 
 ## 7. 受け入れ条件
 
 - [ ] `scripts/check-catalog.sh` の生の出力を `docs/POC.md` 章 15.1 に貼り、`MISMATCH` が無い（または直した）
 - [ ] `Resources/ModelCatalog.json` の 4 項目が §4.1 の表と一致し、T-09 の `bundledCatalogLoads` / `bundledURLsArePinned` が緑
-- [ ] LLM のうち**少なくとも 1 つ**が `verified: true`。`true` にしたものは §4.5 の 4 判定にすべて合格している
+- [ ] LLM のうち**少なくとも 1 つ**が `verified: true`。`true` にしたものは §4.5 の 4 判定にすべて合格している（→ 利用者の決定で別の PR。§4.2 の注記）
 - [ ] 9 本の fixture が `Tests/Fixtures/llm-acceptance/` に在り、`make test-policy` が緑
 - [ ] `make acceptance-selftest` が緑（モデルが無くても走る）
 - [ ] `make llm-acceptance MODEL=<id>` が緑で、報告が `docs/POC.md` 章 15.2 に貼られている（機種・メモリ・llama.cpp の版・モデルの sha256 を含む）
@@ -495,12 +542,16 @@ acceptance-selftest: build
 2. **仕様の読み替え**（PLAN §10.6 の 1）: 「10 セッション分の transcript fixture をすべて ANALYZED にできる」を `Analyzer.analyze` が `.success` を返すことで判定する。`LLMAcceptance` ターゲットは `VDPipelineTests`（`PipelineWorld`・`installVault` など）を import できず、DB と Vault を組むと試験がモデルの品質以外で落ちるため。Session の遷移そのものは T-22 / T-29 が偽物で確かめている
 3. `Analyzer` は修復の回数を返さない（`AnalyzeOutcome` に無い）。本チケットは `CountingChatTransport` で要求の列から数える（修復の要求は `user == ""`。T-19 §4.8）。`AnalyzeOutcome` に `repairs` を足す案は採らない（本番のコードを試験のために変えない）
 4. `LlamaServerSupervisor` を**本番のファクトリ**（`EphemeralSessionFactory`）で使う唯一のテストであることを 00-api-map §14 の `LLMAcceptance` の行に注記する
+5. （実装で追加）00-api-map §15 の T-24 の行に、同じ `Tests/LLMAcceptance/` 内の補助の型 `AcceptanceError`（`Result` の Failure。`String` は `Error` でないため）・`AcceptanceRun`・`AcceptanceVerdict`・`AcceptanceReportContext`・`AcceptanceSession` を足す。どれも internal で、ほかのターゲットからは使わない（実装に不可欠ではない。索引の網羅のため）
+6. （実装で追加）CI に `make acceptance-selftest` を足す。いまの `make test` は `--skip "…|LLMAcceptance"` でターゲットごと外すので、判定の式と fixture の読み込みの自己テスト（モデル不要）も CI で走らない（`.github/workflows/` と `Makefile` の `test` は T-02 / T-01 の持ち物なので、本チケットでは変えない）
 
 ## 9. SPEC の変更
 
 なし（受け入れ試験は規範の表を持たない。結果は `docs/POC.md`）
 
 ## 10. マージ後にやること
+
+- **【利用者が行う】受け入れ試験（docs/POC.md 章 15 の手順 1〜5）を行い、合格した LLM を `verified: true` にするカタログだけの PR を出す。v1.0（T-44）の前に必ず**
 
 - `verified: false` のまま残った LLM は一覧に出ない。後で合格したら**カタログだけ**を直す PR を出し、そのときも章 15 に追記する（測定日・機種・sha256 を必ず書く）
 - T-31 は `ModelCatalog.listedLLMs` だけを一覧に出す（`verified` を見ない実装にしない）
