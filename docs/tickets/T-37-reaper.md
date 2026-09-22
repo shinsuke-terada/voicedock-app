@@ -788,7 +788,7 @@ struct ReaperBench {
 | 7 | `nd38InnerRequestIDMismatchGoesToRejected`、`rv02bNonStringRequestIDGoesToRejected` |
 | 8 | `replayedDoesNotOverwriteAnExistingResult` |
 | 9 | `nd44PartkeyMismatchIsRefused`、`nd44DeviceIDMismatchIsRefused` |
-| 10・12・13 | **未実施**（層 R3。ディスクイメージが要る。実機を抜いてから `make test-disk` で利用者が行う） |
+| 10・12・13 | **未実施**（層 R3。ディスクイメージが要る）。【利用者が行う】実機を抜いてから、壊す → build → `VOICEDOCK_DISK_TESTS=1 swift test --filter ReaperDiskImageTests` → 戻す を 10a（fstatat の確認だけ消す。落ちない見込み）・10b（加えて unlinkat をスタブに）・12・13 の順に行い、最後に壊していない層 R3 を通すスクリプトを用意した（PR 本文に場所と結果を貼る）。各変異がちょうど 1 か所に当たりビルドが通ることは、ディスクイメージのテストを回さずに確かめた |
 | 11 | `rv06AbsentDeviceLeavesTheRequest` |
 | 14 | `nonASCIINamesAreProcessedInByteOrder`（ASCII の名前の `namesAreProcessedInByteOrder` は落ちない） |
 | 15 | `sigtermStopsBetweenRequests` |
