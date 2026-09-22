@@ -96,6 +96,16 @@ struct NoteWriterTests {
         #expect(try NoteFolder.ensure(relative: "", vault: temp.url) == temp.url)
     }
 
+    @Test("Vault のルートが消えていたら作り直さない（確認の後に外付けの Vault が外れた場合）")
+    func folderNeverRecreatesAMissingVaultRoot() throws {
+        let temp = try TempDirectory()
+        let vault = temp.url.appendingPathComponent("GoneVault", isDirectory: true)
+        #expect(throws: (any Error).self) {
+            _ = try NoteFolder.ensure(relative: "Daily/Voice/Raw/20260829", vault: vault)
+        }
+        #expect(!FileManager.default.fileExists(atPath: path(vault)))
+    }
+
     @Test("危ないフォルダ名は作らない", arguments: ["../x", "/abs", ".hidden/x"])
     func folderRejectsUnsafe(_ relative: String) throws {
         let temp = try TempDirectory()

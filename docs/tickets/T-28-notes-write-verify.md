@@ -115,9 +115,8 @@ public enum NoteErrorText {
 
 **`NoteFolder.ensure(relative:vault:)`**:
 1. `relative` が空でなく、`RelPath.isSafe(relative)` でなければ `NoteFolderError.unsafeRelative` を投げる（テンプレートが `..` を含まないことは CV-11 が保証するが、ここでも確かめる）。空なら `vault` をそのまま返す
-2. `dir = vault.appendingPathComponent(relative, isDirectory: true)`
-3. `FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)`（Vault のルートは呼び手の `VaultCheck` で在ることが確かめ済み。ここで作るのはその下だけ）
-4. `dir` を返す
+2. `relative` を `/` で分けた要素ごとに、`vault` から 1 段ずつ `createDirectory(at:, withIntermediateDirectories: false)`（既にディレクトリなら飛ばす）。Vault のルートは呼び手の `VaultCheck` で在ることが確かめ済みで、ここで作るのはその下だけ。**確認の後に Vault のルートが消えていても（外付けの Vault が外れた等）、最初の段が ENOENT で失敗し、ルートやその上の階層を作り直さない**（T-29 のレビューで判明。`withIntermediateDirectories: true` だとルートを作り直してノートを本体のディスクに書いてしまう）
+3. 最後の段の `dir` を返す
 - `public enum NoteFolderError: Error, Equatable, Sendable { case unsafeRelative }`
 
 **`NoteErrorText.describe(e)`** = `"\(type(of: e)): \(e)"`（例 `AtomicFileError: open(errno: 13)`）。DB で 200 文字に切り詰められる
@@ -257,6 +256,7 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 | `書けないときは既存のノートを変えない` | `failureLeavesExistingIntact` | `d` を chmod 555（既存 `a.md` あり）→ `AtomicFileError` を投げ、`a.md` は元のまま、tmp は無い（root ならスキップ） |
 | `空の内容も書ける` | `emptyContentWritten` | `""` → 0 バイトのファイル（検証は RN-2 で落ちるが書き込みは成功） |
 | `フォルダを中間ごと作る` | `folderCreatesIntermediates` | `NoteFolder.ensure(relative: "Daily/Voice/Raw/20260829", vault: v)` → ディレクトリができる |
+| `Vault のルートが消えていたら作り直さない（確認の後に外付けの Vault が外れた場合）` | `folderNeverRecreatesAMissingVaultRoot` | 無い Vault の URL を渡す → 例外を投げ、Vault のルートは作られない（T-29 のレビューで追加） |
 | `危ないフォルダ名は作らない` | `folderRejectsUnsafe` | `"../x"`・`"/abs"`・`".hidden/x"` → `NoteFolderError.unsafeRelative`、何も作られない |
 | `エラーの文言` | `errorText` | `NoteErrorText.describe(AtomicFileError.open(errno: 13))` == `"AtomicFileError: open(errno: 13)"` |
 
