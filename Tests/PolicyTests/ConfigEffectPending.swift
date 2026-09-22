@@ -4,13 +4,6 @@
 /// まだ ConfigEffect のテストが無いキー → 書く予定のチケット。空になったら網羅完了（T-43 の受け入れ条件）。
 enum ConfigEffectPending {
     static let owners: [String: String] = [
-        "timeZone": "T-22",
-        "session.blockGapSeconds": "T-22",
-        "session.idleCloseSeconds": "T-22",
-        "session.allowReopen": "T-22",
-        "session.maxParts": "T-22",
-        "session.maxDurationSeconds": "T-22",
-        "llm.modelID": "T-22",
         "device.snapshotMaxAgeSeconds": "T-38",
         "cleanup.deleteSourceAudio": "T-38",
         "cleanup.deleteEvaluationBackoffSeconds": "T-38",

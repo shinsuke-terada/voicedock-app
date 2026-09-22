@@ -375,13 +375,14 @@ public actor FakeLLMServer: LLMServerControl {
 
 - `PipelineWorld.make(configure:chat:llm:physicalMemoryBytes:)`: `chat: FakeChatTransport = FakeChatTransport(responses: [])`、`llm: FakeLLMServer = FakeLLMServer()`、`physicalMemoryBytes: UInt64 = 1 << 40`。
   deps の `chatTransportFactory` は `{ _, _ in chat }`
-- `func installLLM() throws`: `TestCatalogs.minimal` の `test-llm` のファイルを `ModelFiles.url` に `entry.bytes` の 0 で置き、`paths.llamaServer` に `#!/bin/sh\nexit 0\n`（0755）を置き、`update { $0.llm.modelID = "test-llm" }`
+- `func installLLM() async throws`（`ConfigStore.update` が async のため）: `TestCatalogs.minimal` の `test-llm` のファイルを `ModelFiles.url` に `entry.bytes` の 0 で置き、`paths.llamaServer` に `#!/bin/sh\nexit 0\n`（0755）を置き、`update { $0.llm.modelID = "test-llm" }`
 - `func addSessionPart(hour: Int, status: PartStatus = .rawSaved, text: String? = "おはようございます。", sessionKey: String = "DJIMIC3:20260912", day: String = "20260912") throws -> String`（voicedock test_session_analysis `add_part`）:
   relpath `TX_MIC001_<day>_<hh>0000/TX00_MIC001_<day>_<hh>0000_orig.wav`、started `<yyyy-MM-dd>T<hh>:00:00+09:00`、duration 60、ended `<hh>:01:00`。
   `insertRecording` の後、`forcePart(pk, status:, sessionKey:)`。`text` が nil でなければ `PartTranscriptCodec.encode(PartTranscript(partkey: pk, language: "ja", durationSeconds: 60.0, startedAt: started, text: text, segments: [TranscriptSegment(start: 0.0, end: 3.0, text: text)]))` を `layout.transcript(slug:)` に書く
 - `func addSession(key: String = "DJIMIC3:20260912", day: String = "2026-09-12", status: SessionStatus, regenerated: Int = 0) throws`: `insertSession` → `forceSession(key, status:, regeneratedCount:)`
 - `func registerRow(folder: String = "TX_MIC001_20260912_120950", name: String = "TX00_MIC001_20260912_120950_orig.wav", started: String = "2026-09-12T12:09:50+09:00", duration: Double? = 1800.0, device: String = "DJIMIC3", status: PartStatus = .discovered) throws -> String`
   （voicedock test_session_group `part`）: `relpath = RelPath.join([folder, name])`（folder が空なら name）、`NewRecording(… transmitterID: <name の先頭 4 文字>, micIndex: 1, startedAt: started, durationSeconds: duration, endedAt: duration の分を足した ISO（nil なら nil）, sourcePath: relpath, sourceSize: 1, sourceMtime: 1.0, sha256Helper: "a" × 64, inboxPath: <layout.inboxFile の HOME 相対>)`。inbox のファイルは作らない。`status` が DISCOVERED 以外なら `forcePart`
+- `func addTimedPart(time:stamp:duration:ended:status:segments:sessionKey:day:) throws -> String`: 任意の時刻（`hh:mm:ss`）に始まる Part（`addSessionPart` はこれを呼ぶ）。`segments` が nil なら transcript を書かない、`ended` が偽なら ended_at は NULL（§6.4 の 09:00:05 開始・ended NULL などに使う）
 - `forcePart` / `forceSession`: `@testable import VDStore` の `store.pool.write` で `UPDATE recordings SET status = ?, session_key = ? WHERE partkey = ?` / `UPDATE sessions SET status = ?, regenerated_count = ? WHERE session_key = ?`（テストだけの近道。Tests/ は PT-05 の対象外。**本番のコードは使わない**）
 - `ANALYSIS`（voicedock test_session_analysis の固定値。1 行の JSON 文字列）:
   `{"title": "開発の一日", "summary": "削除条件を整理した。", "key_points": ["論理式に落とした"], "tasks": [{"text": "ND テストを書く", "due": null}], "decisions": [], "ideas": [], "tags": ["VoiceDock"]}`
@@ -464,7 +465,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `excludesFailedAndSkipped` / 「FAILED / SKIPPED を除外する」 | 09 時 RAW_SAVED（「朝」）・10 時 FAILED（「昼」）・11 時 SKIPPED（「夜」）、どれも transcript 在り | segments の text `["朝"]`、excludedPartkeys `[10 時, 11 時]` |
-| `absoluteTimes` / 「TIME-01 絶対時刻 = started_at + offset」 | segment (1.5, 3.2) | at = `2026-09-12T09:00:01+09:00` の Instant + 500 ms、endAt = +3200 ms（`epochMillis` で比べる） |
+| `absoluteTimes` / 「TIME-01 絶対時刻 = started_at + offset」 | 09:00:00 開始の Part に segment (1.0, 1.2)・(1.5, 3.2)（前の segment に足し込む壊れ方でも値が変わるよう、先に 1 つ置く） | (1.5, 3.2) の at = `2026-09-12T09:00:01+09:00` の Instant + 500 ms、endAt = 09:00:00 + 3200 ms（`epochMillis` で比べる） |
 | `textIsStrippedAndEmptyDropped` / 「text を Python 互換 strip し空を捨てる」 | segments `" a "`, `"\u{3000}"`, `"\u{1c}b\u{1f}"` | `["a", "b"]` |
 | `sortedByAtThenEndAt` / 「(at, end_at) で安定ソート」 | 09:00 の Part に (10, 20, "x")、09:00:05 開始の Part に (0, 30, "y")・(5, 8, "z") | text の順 `["y", "z", "x"]`（y は 09:00:05。z と x は同じ 09:00:10 で end の早い z が先） |
 | `unreadableTranscriptIsSkipped` / 「読めない transcript は飛ばすが Block には数える」 | 09 時（読める）と 09:30（transcript 無し） | segments は 1 件、blocks は 1 つで end が 09:31:00 |
@@ -490,7 +491,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | `missingFingerprintReanalyzes` / 「指紋が無ければ作り直す」（voicedock :388） | analysis.json だけ | chat 1 回 |
 | `differentTranscriptReanalyzes` / 「別の transcript の解析は作り直す」（:408） | .source.json の sha が別の値 | chat 1 回 |
 | `brokenAnalysisReanalyzes` / 「壊れた解析は作り直す」（:444） | analysis.json が `{` | chat 1 回 |
-| `staleAnalysisFromAnalyzed` / 「★ ANALYZED で指紋が違えば ANALYZED→ANALYZING（stale_analysis）」 | 09 時の Part で解析済み（ANALYZED、正しいファイル）→ 10 時の RAW_SAVED の Part を足す → `ensureAnalysis` | events `(ANALYZED, ANALYZING, "stale_analysis")`・`(ANALYZING, ANALYZED)`、chat 1 回、.source.json の segments 2 |
+| `staleAnalysisFromAnalyzed` / 「★ ANALYZED で指紋が違えば ANALYZED→ANALYZING（stale_analysis）」 | 09 時の Part で解析済み（ANALYZED、正しいファイル）→ 09:30 開始の RAW_SAVED の Part を足す（10 時だと 09:00:00〜10:00:03 が `maxSecondsPerRequest` 3600 を超えて 2 チャンクになり、chat が Map 2 回 ＋ Reduce 1 回になる）→ `ensureAnalysis` | events `(ANALYZED, ANALYZING, "stale_analysis")`・`(ANALYZING, ANALYZED)`、chat 1 回、.source.json の segments 2 |
 | `staleAnalysisFromWriting` / 「★ WRITING でも同じ（WRITING→ANALYZING）」 | 同上で WRITING | `(WRITING, ANALYZING, "stale_analysis")` |
 | `brokenAnalysisInAnalyzedIsRedone` / 「ANALYZED で解析 JSON が読めなければ作り直す（FAILED にしない）」 | ANALYZED、analysis.json が `{` | ANALYZED、FAILED を経ない |
 | `matchingAnalyzedIsKept` / 「ANALYZED で一致すれば何もしない」 | ANALYZED、正しいファイル | true、events 増えない、chat 0 |
@@ -500,7 +501,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | `analysisWriteFailureLeavesNoFingerprint` / 「解析を書けなければ LLM_FAILED で指紋は書かない」（:727） | `layout.analysis` を 0o555 に | FAILED(LLM_FAILED)、message が `AtomicFileError: ` で始まる、.source.json が無い |
 | `sourceWriteFailureIsLLMFailed` / 「指紋を書けなければ LLM_FAILED」 | `.source.json` の位置にディレクトリを置く | FAILED(LLM_FAILED)、次の `ensureAnalysis`（FAILED→ANALYZING に戻した後）で chat がもう一度呼ばれる |
 | `trimmedIsLogged` / 「切り詰めを記録する」 | ANALYSIS の tags を 20 個に | ログ `analysis_trimmed session_key=… fields="tags: 20 -> 15"` |
-| `reopenedSessionIsReanalyzed` / 「再オープン後は再解析」（:754） | chat は `ANALYSIS` を 2 回。1 回処理して ANALYZED → SAVED に強制 → 10 時の RAW_SAVED の Part を足し `reopenSession` → `process` | chat 2 回目が呼ばれる |
+| `reopenedSessionIsReanalyzed` / 「再オープン後は再解析」（:754） | chat は `ANALYSIS` を 2 回。1 回処理して ANALYZED → SAVED に強制 → 09:30 開始の RAW_SAVED の Part を足し（1 チャンクに収める。`staleAnalysisFromAnalyzed` と同じ理由）`reopenSession` → `process` | chat 2 回目が呼ばれる |
 | `unchangedReopenIsReused` / 「新しい segment が無ければ再解析しない」（:780） | 1 回処理 → SAVED に強制 → SKIPPED の Part を足し `reopenSession` → `process` | chat は 1 回のまま、`analysis_reused` |
 | `guardFailureDoesNotTransition` / 「ガードで止まれば遷移しない」 | llm.modelID nil、MERGED | false、MERGED のまま、`pipeline_paused reason=llm_not_selected`、chat 0 |
 | `staleWaitsOnGuard` / 「古い解析もガードで待つ（遷移しない）」 | ANALYZED・指紋違い・llama-server を消す | ANALYZED のまま、`paused` に `.llamaServerMissing` |

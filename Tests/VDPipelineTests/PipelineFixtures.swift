@@ -1,15 +1,17 @@
 // VDPipeline のテストの世界の組み立て（T-18 §6.0。後続チケットが足す）。
 import Foundation
+import GRDB
 import Synchronization
 import TestSupport
 import Testing
 import VDContract
 import VDCore
 import VDDevice
+import VDLLM
 import VDProcess
-import VDStore
 
 @testable import VDPipeline
+@testable import VDStore
 
 /// テストの世界（一時ディレクトリの HOME・DB・ConfigStore・偽の取り込み・固定の時計・記録するログ）。
 struct PipelineWorld {
@@ -24,6 +26,9 @@ struct PipelineWorld {
     let sink: CapturingLogSink
     let log: AppLog
     let assertion: RecordingSleepAssertion
+    let chat: FakeChatTransport
+    let llm: FakeLLMServer
+    let physicalMemoryBytes: UInt64
 
     var deps: WorkerDependencies { deps() }
 
@@ -32,14 +37,20 @@ struct PipelineWorld {
         sleeper: (any Sleeper)? = nil, license: any LicenseGate = AlwaysAllowLicenseGate(),
         ingest: (any IngestPort)? = nil
     ) -> WorkerDependencies {
-        WorkerDependencies(
+        let chat = self.chat
+        return WorkerDependencies(
             layout: layout, paths: paths, store: store, config: configStore, ingest: ingest ?? self.ingest,
-            runner: ProcessRunner(), clock: clock, sleeper: sleeper ?? self.sleeper, log: log, license: license,
-            catalog: TestCatalogs.minimal)
+            runner: ProcessRunner(), llama: llm, chatTransportFactory: { _, _ in chat }, clock: clock,
+            sleeper: sleeper ?? self.sleeper, log: log, license: license, catalog: TestCatalogs.minimal,
+            physicalMemoryBytes: physicalMemoryBytes)
     }
 
     /// config を設定して ConfigStore に書き、load する（検証を通らなければテストを落とす）。
-    static func make(configure: (inout AppConfig) -> Void = { _ in }) async throws -> PipelineWorld {
+    /// chat は chatTransportFactory が返す偽物、llm は llama の偽物（T-22 §6.0）。
+    static func make(
+        configure: (inout AppConfig) -> Void = { _ in }, chat: FakeChatTransport = FakeChatTransport(responses: []),
+        llm: FakeLLMServer = FakeLLMServer(), physicalMemoryBytes: UInt64 = 1 << 40
+    ) async throws -> PipelineWorld {
         let tmp = try TempDirectory()
         let layout = HomeLayout(root: tmp.url.appendingPathComponent("home", isDirectory: true))
         try layout.createDirectories()
@@ -61,7 +72,8 @@ struct PipelineWorld {
         guard case .valid = loaded else { throw PipelineFixtureError.invalidConfig("\(loaded)") }
         return PipelineWorld(
             tmp: tmp, layout: layout, paths: paths, store: store, configStore: configStore, ingest: FakeIngest(),
-            clock: clock, sleeper: RecordingSleeper(), sink: sink, log: log, assertion: RecordingSleepAssertion())
+            clock: clock, sleeper: RecordingSleeper(), sink: sink, log: log, assertion: RecordingSleepAssertion(),
+            chat: chat, llm: llm, physicalMemoryBytes: physicalMemoryBytes)
     }
 
     /// 今の設定で TickContext を作る（pauses は新しい PauseBook、activity は assertion を使う ActivityBoard）。
@@ -283,4 +295,181 @@ final class StageRecorder: Sendable {
     var recorded: [TickStage] { stages.withLock { $0 } }
 
     func count(_ stage: TickStage) -> Int { recorded.filter { $0 == stage }.count }
+}
+
+// MARK: - LLM と Session の部品（T-22 §6.0）
+
+extension PipelineFixtures {
+    /// voicedock test_session_analysis の ANALYSIS（1 行の JSON 文字列）。
+    static let analysis =
+        #"{"title": "開発の一日", "summary": "削除条件を整理した。", "key_points": ["論理式に落とした"], "#
+        + #""tasks": [{"text": "ND テストを書く", "due": null}], "decisions": [], "ideas": [], "tags": ["VoiceDock"]}"#
+
+    /// ANALYSIS を既定の最終形で保存したときの analysis.json（末尾に改行 1 つ）。
+    static let analysisFile = """
+        {
+          "title": "開発の一日",
+          "summary": "削除条件を整理した。",
+          "key_points": [
+            "論理式に落とした"
+          ],
+          "tasks": [
+            {
+              "text": "ND テストを書く",
+              "due": null
+            }
+          ],
+          "decisions": [],
+          "ideas": [],
+          "tags": [
+            "VoiceDock"
+          ]
+        }
+
+        """
+
+    /// 既定の Session の鍵
+    static let sessionKey = "DJIMIC3:20260912"
+}
+
+extension PipelineWorld {
+    /// TestCatalogs.minimal の test-llm のファイルを entry.bytes の 0 で置き、llama-server（exit 0 の sh）を 0755 で置き、
+    /// llm.modelID = "test-llm" にする。
+    func installLLM() async throws {
+        for entry in TestCatalogs.minimal.entries(kind: .llm) where entry.id == "test-llm" {
+            let url = ModelFiles.url(kind: .llm, entry: entry, layout: layout)
+            try FileManager.default.createDirectory(
+                at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data(count: Int(entry.bytes)).write(to: url)
+        }
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: paths.llamaServer)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: 0o755], ofItemAtPath: paths.llamaServer.path(percentEncoded: false))
+        let result = await configStore.update { $0.llm.modelID = "test-llm" }
+        guard case .success = result else { throw PipelineFixtureError.invalidConfig("\(result)") }
+    }
+
+    /// ISO の started_at（`<yyyy-MM-dd>T<hh:mm:ss>+09:00`）。day は `yyyyMMdd`。
+    static func iso(day: String, time: String) -> String {
+        let d = Array(day)
+        return String(d[0..<4]) + "-" + String(d[4..<6]) + "-" + String(d[6..<8]) + "T" + time + "+09:00"
+    }
+
+    /// hour 時ちょうどに始まる 60 秒の Part（voicedock test_session_analysis add_part）。partkey を返す。
+    @discardableResult
+    func addSessionPart(
+        hour: Int, status: PartStatus = .rawSaved, text: String? = "おはようございます。",
+        sessionKey: String = PipelineFixtures.sessionKey, day: String = "20260912"
+    ) throws -> String {
+        let hh = String(format: "%02d", hour)
+        return try addTimedPart(
+            time: hh + ":00:00", stamp: hh + "0000", status: status,
+            segments: text.map { [TranscriptSegment(start: 0.0, end: 3.0, text: $0)] }, sessionKey: sessionKey,
+            day: day)
+    }
+
+    /// 任意の時刻（hh:mm:ss）に始まる Part。segments が nil なら transcript を書かない。ended が偽なら ended_at は NULL。
+    @discardableResult
+    func addTimedPart(
+        time: String, stamp: String, duration: Double? = 60, ended: Bool = true, status: PartStatus = .rawSaved,
+        segments: [TranscriptSegment]?, sessionKey: String? = PipelineFixtures.sessionKey, day: String = "20260912"
+    ) throws -> String {
+        let folder = "TX_MIC001_\(day)_\(stamp)"
+        let relpath = RelPath.join([folder, "TX00_MIC001_\(day)_\(stamp)_orig.wav"])
+        let pk = try PartKey.make(deviceID: "DJIMIC3", relpath: relpath)
+        let started = Self.iso(day: day, time: time)
+        guard let start = PipelineFixtures.zone.parseISO(started),
+            let inboxRel = layout.relativePath(of: layout.inboxFile(deviceID: "DJIMIC3", relpath: relpath))
+        else { throw PipelineFixtureError.badFixture(started) }
+        let endedAt: String? =
+            ended ? duration.map { PipelineFixtures.zone.iso(start.adding(milliseconds: Int64($0 * 1000))) } : nil
+        try store.insertRecording(
+            NewRecording(
+                partkey: pk, deviceID: "DJIMIC3", sourceFolder: folder, transmitterID: "TX00", micIndex: 1,
+                startedAt: started, durationSeconds: duration, endedAt: endedAt, sourcePath: relpath, sourceSize: 1,
+                sourceMtime: 1.0, sha256Helper: String(repeating: "a", count: 64), inboxPath: inboxRel))
+        try forcePart(pk, status: status, sessionKey: sessionKey)
+        if let segments {
+            let text = segments.map(\.text).joined()
+            try AtomicFile.write(
+                PartTranscriptCodec.encode(
+                    PartTranscript(
+                        partkey: pk, language: "ja", durationSeconds: duration, startedAt: started, text: text,
+                        segments: segments)),
+                to: layout.transcript(slug: KeySlug.of(pk)))
+        }
+        return pk
+    }
+
+    /// insertSession → forceSession。
+    func addSession(
+        key: String = PipelineFixtures.sessionKey, day: String = "2026-09-12", status: SessionStatus,
+        regenerated: Int = 0
+    ) throws {
+        try store.insertSession(NewSession(sessionKey: key, dayDate: day, deviceID: "DJIMIC3"))
+        try forceSession(key, status: status, regeneratedCount: regenerated)
+    }
+
+    /// 行だけを入れる（inbox のファイルは作らない。voicedock test_session_group part）。partkey を返す。
+    @discardableResult
+    func registerRow(
+        folder: String = "TX_MIC001_20260912_120950", name: String = "TX00_MIC001_20260912_120950_orig.wav",
+        started: String = "2026-09-12T12:09:50+09:00", duration: Double? = 1800.0, device: String = "DJIMIC3",
+        status: PartStatus = .discovered
+    ) throws -> String {
+        let relpath = folder.isEmpty ? name : RelPath.join([folder, name])
+        let pk = try PartKey.make(deviceID: device, relpath: relpath)
+        guard let start = PipelineFixtures.zone.parseISO(started),
+            let inboxRel = layout.relativePath(of: layout.inboxFile(deviceID: device, relpath: relpath))
+        else { throw PipelineFixtureError.badFixture(started) }
+        let endedAt = duration.map { PipelineFixtures.zone.iso(start.adding(milliseconds: Int64($0 * 1000))) }
+        try store.insertRecording(
+            NewRecording(
+                partkey: pk, deviceID: device, sourceFolder: folder, transmitterID: String(name.prefix(4)),
+                micIndex: 1, startedAt: started, durationSeconds: duration, endedAt: endedAt, sourcePath: relpath,
+                sourceSize: 1, sourceMtime: 1.0, sha256Helper: String(repeating: "a", count: 64), inboxPath: inboxRel))
+        if status != .discovered {
+            try forcePart(pk, status: status, sessionKey: try part(pk).sessionKey)
+        }
+        return pk
+    }
+
+    /// テストだけの近道（Tests/ は PT-05 の対象外。本番のコードは使わない）。
+    func forcePart(_ pk: String, status: PartStatus, sessionKey: String?) throws {
+        try store.pool.write { db in
+            try db.execute(
+                sql: "UPDATE recordings SET status = ?, session_key = ? WHERE partkey = ?",
+                arguments: [status.rawValue, sessionKey, pk])
+        }
+    }
+
+    /// テストだけの近道（Tests/ は PT-05 の対象外。本番のコードは使わない）。
+    func forceSession(_ key: String, status: SessionStatus, regeneratedCount: Int = 0) throws {
+        try store.pool.write { db in
+            try db.execute(
+                sql: "UPDATE sessions SET status = ?, regenerated_count = ? WHERE session_key = ?",
+                arguments: [status.rawValue, regeneratedCount, key])
+        }
+    }
+
+    func session(_ key: String = PipelineFixtures.sessionKey) throws -> SessionRow {
+        guard let row = try store.session(key) else { throw PipelineFixtureError.missingRow(key) }
+        return row
+    }
+
+    func sessionEvents(_ key: String = PipelineFixtures.sessionKey) throws -> [EventRow] {
+        try store.events(entity: .session, key: key)
+    }
+
+    /// ANALYSIS_FILE を置き、fingerprint が nil でなければ .source.json も置く。
+    func writeAnalysis(key: String = PipelineFixtures.sessionKey, fingerprint: String?, segments: Int = 1) throws {
+        let slug = KeySlug.of(key)
+        try AtomicFile.write(Data(PipelineFixtures.analysisFile.utf8), to: layout.analysisJSON(sessionSlug: slug))
+        if let fingerprint {
+            let source =
+                "{\n  \"schema\": 1,\n  \"transcript_sha256\": \"" + fingerprint + "\",\n  \"segments\": "
+                + String(segments) + ",\n  \"blocks\": 1\n}\n"
+            try AtomicFile.write(Data(source.utf8), to: layout.sourceJSON(sessionSlug: slug))
+        }
+    }
 }
