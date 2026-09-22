@@ -187,6 +187,9 @@ struct RunbookTests {
     /// `/Volumes/` を含む行に現れてはならない語（デバイスへ書く・マウントを変える）。
     static let deviceWriteWords = ["diskutil", "hdiutil", "rm ", "mv ", "touch ", "> "]
 
+    /// 写す・書き出すコマンド（最後の引数が書き込み先。T-42 §3）。`/Volumes/` から写すのはよく、`/Volumes/` へ写すのは拒む。
+    static let copyCommands: Set<String> = ["ditto", "cp", "rsync", "tee"]
+
     static func runbook() throws -> Runbook { try Runbook.load() }
 
     static func fullText() throws -> String { try runbook().document.lines.joined(separator: "\n") }
@@ -235,10 +238,56 @@ struct RunbookTests {
         return lines[(start + 1)...].joined(separator: "\n")
     }
 
-    /// デバイスへ書く手順が無い行か（`/Volumes/` を含む行に書き込み・マウント操作の語が無い）。
+    /// デバイスへ書く手順が無い行か（`/Volumes/` を含む行に書き込み・マウント操作の語が無く、`/Volumes/` へ写すコマンドも無い）。
     static func isSafeForTheDevice(_ line: String) -> Bool {
         guard line.contains("/Volumes/") else { return true }
-        return !deviceWriteWords.contains { line.contains($0) }
+        return !deviceWriteWords.contains { line.contains($0) } && !copiesIntoTheDevice(line)
+    }
+
+    /// `ditto`・`cp`・`rsync`・`tee` の最後の引数が `/Volumes/` を含むか（デバイスへ書く向き）。
+    static func copiesIntoTheDevice(_ line: String) -> Bool {
+        commandSegments(line).contains { tokens in
+            guard let first = tokens.first, copyCommands.contains(first), tokens.count >= 2, let last = tokens.last
+            else { return false }
+            return last.contains("/Volumes/")
+        }
+    }
+
+    /// 行をコマンドの区切り（`|`・`;`・`&`・括弧・バッククォート）で分け、それぞれを空白で語に分ける（引用符の中は分けない。引用符は除く）。
+    /// 表の中の `\|` は `|` として扱う。
+    static func commandSegments(_ line: String) -> [[String]] {
+        let text = line.replacingOccurrences(of: "\\|", with: "|")
+        var segments: [[String]] = []
+        var tokens: [String] = []
+        var current = ""
+        var quote: Character?
+        func endToken() {
+            if !current.isEmpty {
+                tokens.append(current)
+                current = ""
+            }
+        }
+        func endSegment() {
+            endToken()
+            if !tokens.isEmpty {
+                segments.append(tokens)
+                tokens = []
+            }
+        }
+        for ch in text {
+            if let q = quote {
+                if ch == q { quote = nil } else { current.append(ch) }
+                continue
+            }
+            switch ch {
+            case "\"", "'": quote = ch
+            case "|", ";", "&", "(", ")", "`": endSegment()
+            case " ", "\t": endToken()
+            default: current.append(ch)
+            }
+        }
+        endSegment()
+        return segments
     }
 
     static func matches(_ pattern: String, _ text: String) throws -> Bool {
@@ -397,6 +446,20 @@ struct RunbookTests {
     func theSafetyCheckWouldCatchIt() {
         #expect(!Self.isSafeForTheDevice(#"rm -rf "/Volumes/$DEV/x""#))
         #expect(Self.isSafeForTheDevice(#"find "/Volumes/$DEV" -type f"#))
+    }
+
+    @Test("陽性対照: デバイスへ写す向きを拒み、デバイスから写す向きは通す")
+    func theCopyDirectionIsChecked() {
+        #expect(Self.isSafeForTheDevice(#"`ditto "/Volumes/$DEV" "$HOME/VoiceDockE2E/device-backup"`"#))
+        #expect(!Self.isSafeForTheDevice(#"`ditto "$HOME/VoiceDockE2E/device-backup" "/Volumes/$DEV"`"#))
+        #expect(!Self.isSafeForTheDevice(#"`cp a.wav "/Volumes/$DEV/"`"#))
+        #expect(!Self.isSafeForTheDevice(#"`rsync -a x/ "/Volumes/$DEV/y"`"#))
+        #expect(!Self.isSafeForTheDevice(#"`find "/Volumes/$DEV" -type f \| tee "/Volumes/$DEV/list.txt"`"#))
+        #expect(
+            Self.isSafeForTheDevice(
+                #"`find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/a.txt"`"#))
+        #expect(Self.isSafeForTheDevice(""))
+        #expect(Self.commandSegments("").isEmpty)
     }
 
     @Test("## 1. 前提 の共通コマンドが使われている", arguments: try commandNames())

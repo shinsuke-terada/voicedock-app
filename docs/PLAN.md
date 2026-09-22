@@ -2814,7 +2814,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | E2E-08 | 1 本だけ文字起こしを失敗させる: その Part が NORMALIZED になった直後に `staging/<slug>/audio16k.wav` を壊れたデータで上書き → WHISPER_FAILED、他は進み、Daily に警告行。その後 16 kHz 音声を消して再接続 → NORMALIZED_MISSING → 再コピー → 再評価で完走する | OFF |
 | E2E-09 | 保存後に同じ日の Part を追加 → 再オープンで作り直す（ファイルが増えない） | OFF |
 | E2E-10 | 削除 ON で通し（Raw の検証を通った分だけ元音声が消え、空き容量が戻る。無音は根拠 B を有効にしない限り残る） | ON |
-| E2E-11 | 過去分の削除・手動で消した分の完了（削除 OFF の期間の Part も Raw の検証を経ているので**対象は 0 件にならない**。voicedock の「`--backlog` は 0 件が正しい」は当時 Raw 検証を経ていなかったため。対象外は理由を表示） | ON |
+| E2E-11 | 過去分の削除・手動で消した分の完了（削除 OFF の期間の Part も Raw の検証を経ているので**対象は 0 件にならない**。voicedock の「`--backlog` は 0 件が正しい」は当時 Raw 検証を経ていなかったため。対象外は理由を表示）。**手動で消した分の完了は実機では確かめない**（`SOURCE_DELETE_PENDING` を手の操作で確実に作れない。T-41 の `BacklogPlannerTests` の resolveAbsent 系の単体テストで代え、運用中に `SOURCE_DELETE_PENDING` が出たら E2E.md に記録する。F-63） | ON |
 | E2E-12 | 文字起こし中にアプリを強制終了（`kill -9`）→ 再起動で途中から再開し、**二重処理しない**（前後の件数表） | OFF |
 | E2E-13 | 処理中にスリープ → 復帰後に続行（処理中はアイドルスリープしない） | OFF |
 | E2E-14 | アプリが動いていない間に接続 → 起動後に取り込む | OFF |
@@ -3093,3 +3093,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-60 | 事 | §1.2・§1.3・§7.2・§8.12・§8.13・§12.3・付録 B.3 | （2026-09-22 に利用者が決定）voicedock からの乗り換えを v1 で扱わない。§8.13（`ImportedKeysScanner`）と T-33・E2E-18 を取り下げた（番号は詰めない）。`imported_keys` の表と IngestService の除外は実装済みのまま残り、空の表として無害。§8.8 は残す |
 | F-61 | 事 | §1.3・§2.1・§5.4・§8.1・§8.2・§8.11・§10.3・§12・付録 A.4・付録 B.3 | （2026-09-22 に利用者が決定）このアプリが完成したら voicedock は動かさないので、共存ガード（voicedock の Helper の LaunchAgent が登録されていたら取り込み・処理・削除を止める）を取り下げた。§8.1 の手順 1 は欠番、DR-13 は打ち消しの行、E2E-15 は取り下げ（番号は詰めない）。`coexistence_blocked`・要対応の `coexistenceBlocked` を消した。読み取り専用の再マウント・原本を `O_RDONLY` で開くことなど、ほかの取り込みの安全策は変えない |
 | F-62 | 事 | §11.3 | （2026-09-22 に利用者が決定）dmg の作成を `hdiutil create -srcfolder`（内部でイメージを既定の場所に attach しうる）から、空の HFS+ イメージを `hdiutil attach -nobrowse -mountpoint` で `dist/` の中にだけマウントして `ditto` で書き、detach して `convert -format UDZO` する方式に変えた。マウントを伴わない `makehybrid -hfs` は全ファイルに `com.apple.FinderInfo` を付けて `.app` の署名が `codesign --strict` で落ち、`-udf` は `/Applications` への symlink が壊れるので却下した |
+| F-63 | 事 | 付録 B.3 | （2026-09-22 に利用者が決定）E2E-11 の後半「手動で消した分の完了」を実機の試験から外し、T-41 の単体テスト（`BacklogPlannerTests` の resolveAbsent 系）で代えた。対象の `SOURCE_DELETE_PENDING` は reaper の拒否・期限切れ（`no_result`）・`still_in_inventory` でしか生じず、要求を書いてから reaper が動くまでが同じ tick の中にあるので、手の操作で確実に作れない。運用中に `SOURCE_DELETE_PENDING` が出たら docs/E2E.md §3.11 に記録する。E2E-11 は前半（過去分を削除対象にする）が PASS なら PASS とし、削除のゲート（§12.4 の 2）もそれで満たす |
