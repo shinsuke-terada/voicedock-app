@@ -129,7 +129,8 @@ public struct LockDisplay: Equatable, Sendable {
         case .notInstalled: module = "未導入"
         case .signatureInvalid: module = "導入済み（署名 NG）"
         case .valid(let v): module = "導入済み（署名 OK, 版 " + v + "）"
-        case .versionMismatch(let f): module = "導入済み（署名 OK, 版 " + (f ?? "不明") + "）。削除モジュールの更新が必要です"
+        case .versionMismatch(let f):
+            module = "導入済み（署名 OK, 版 " + (f ?? "不明") + "）。" + DeletionStrings.reaperUpdateNotice
         }
         let observed: String
         if let devices {

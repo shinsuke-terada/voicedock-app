@@ -28,6 +28,13 @@ struct AppModelTests {
         return s
     }
 
+    /// 削除が有効な「元音声の削除」の値（T-40。trash の条件は DeletionPanelState.showsTrash）
+    static let deletionOn = DeletionPanelState(
+        display: LockDisplay(
+            appEnabled: true, confState: .enabled, reaper: .notInstalled, mountMode: "rw", devices: nil,
+            readiness: .disabled(DeletionReason.reaperNotInstalled)),
+        deleteSkippedSource: false)
+
     /// quit が呼ばれた回数（@MainActor のクロージャから数える）
     final class QuitCounter {
         var count = 0
@@ -94,7 +101,7 @@ struct AppModelTests {
         await model.refresh()
         #expect(observed.withLock { $0 } == false)
         var trashOn = s
-        trashOn.deletionEnabled = true
+        trashOn.deletion = Self.deletionOn
         fake.set(trashOn)
         await model.refresh()
         model.stop()
@@ -106,7 +113,7 @@ struct AppModelTests {
     @Test("削除が有効なら trash を常時出す")
     func showsTrashFollowsDeletionEnabled() async {
         var s = Self.present()
-        s.deletionEnabled = true
+        s.deletion = Self.deletionOn
         let fake = FakeServices(s)
         let model = Self.makeModel(fake)
         await model.refresh()
@@ -309,6 +316,9 @@ struct AppModelTests {
         let context = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,
             runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
+            enabler: DeletionEnabler(
+                layout: layout, paths: paths, config: config, verifier: FakeSignatureVerifier(), ingest: ingest,
+                log: log),
             models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
             physicalMemoryBytes: 16 * 1024 * 1024 * 1024)

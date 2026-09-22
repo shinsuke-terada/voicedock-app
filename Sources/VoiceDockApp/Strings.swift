@@ -130,6 +130,30 @@ enum Strings {
         "設定に書けませんでした: " + violations.map(\.rendered).joined(separator: "、")
     }
 
+    // T-40: 元音声の削除（PLAN §8.9.8・§8.12 の 7）。事前確認・確認語・挿し直しの案内は DeletionStrings
+    static let buttonEnableDeletion = "有効にする"
+    static let buttonEnableSkippedDeletion = "無音・重複も消す"
+    static let buttonDisableDeletion = "無効にする"
+    static func disableFailed(_ stages: [String]) -> String {
+        "無効にできなかった段: " + stages.joined(separator: ", ")
+    }
+    /// 有効化・根拠 B の失敗（T-40 §4.5 の表）
+    static func enableFailed(_ e: EnableError) -> String {
+        "有効にできませんでした: " + enableFailureReason(e)
+    }
+    static func enableFailureReason(_ e: EnableError) -> String {
+        switch e {
+        case .notConfirmed: "ENABLE と入力してください"
+        case .install(let m): "削除モジュールを置けません（" + m + "）"
+        case .signature: "削除モジュールの署名を確かめられません"
+        case .reaperConfWrite(let m): "reaper.conf を書けません（" + m + "）"
+        case .config(let v) where v.isEmpty: "元音声の削除が有効になっていません"
+        case .config(let v): "設定に書けません（" + v.map(\.rendered).joined(separator: "、") + "）"
+        case .configNotLoaded: "設定が読み込まれていません"
+        case .rollback(let stages): "元に戻せなかった段があります（" + stages.joined(separator: ", ") + "）"
+        }
+    }
+
     // T-32: 要対応と詳細（PLAN §8.12 の 2 と 8）
     static let buttonRunDiagnostics = "診断を実行"
     static let buttonRunLLMProbe = "LLM の疎通確認"

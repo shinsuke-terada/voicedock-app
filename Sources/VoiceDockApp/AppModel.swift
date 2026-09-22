@@ -58,6 +58,15 @@ final class AppModel {
     var modelsHighlighted = false
     /// 要対応の「有効化フローを開く」（T-40 が使う）
     var deletionHighlighted = false
+    // T-40（書くのは下の extension だけ）
+    /// 有効化が成功した後に出す案内（PLAN §8.9.8 の 5）
+    private(set) var deletionNotice: String?
+    /// 無効化で失敗した段の名前（英語のまま。ログと突き合わせるため）
+    private(set) var disableFailedStages: [String] = []
+    /// 有効化・根拠 B の直近の失敗（nil = 無い。Strings.enableFailed で出す）
+    private(set) var enableError: EnableError?
+    /// 削除の操作の実行中（ボタンを押せなくする。二度押し対策）
+    private(set) var deletionBusy = false
 
     @ObservationIgnored let services: any AppServices
     /// ModelSlot.llm(id) の項目を引く（T-31）
@@ -101,7 +110,7 @@ final class AppModel {
             hasAttention: hasAttention, ingesting: snapshot.ingestActivity.scanning,
             processing: snapshot.worker.activity != .idle)
     }
-    var showsTrash: Bool { snapshot.deletionEnabled }
+    var showsTrash: Bool { IconState.showsTrash(deletion, residual: snapshot.deletionResidual) }
     var statusLine: String { StatusLine.make(snapshot) }
     var lastConnectedLine: String { StatusLine.lastConnected(snapshot, zone: zone) }
     var deviceFreeLine: String? { StatusLine.deviceFree(snapshot) }
@@ -170,6 +179,8 @@ final class AppModel {
         let attention = !snapshot.attention.isEmpty
         if attention != hasAttention { hasAttention = attention }
         if (iconState, showsTrash) != before { iconContinuation?.yield(()) }
+        // 挿し直しの案内は、読み書きできるデバイスを観測したら消す（PLAN §8.9.8 の 5）
+        if deletionNotice != nil, Self.observesWritableDevice(snapshot.device) { deletionNotice = nil }
     }
 
     /// 状態の詳細を差し込む（AppModel+Diagnostics が使う。snapshot を書くのはこのファイルだけ）
@@ -237,4 +248,63 @@ final class AppModel {
     static let fastIntervalSeconds = 1
     /// 閉じている間（Worker の周期と同じ。PLAN §8.15「常時ポーリングしない」）
     static let slowIntervalSeconds = 30
+}
+
+// T-40: 「元音声の削除」への口（PLAN §8.9.8）
+extension AppModel {
+    /// パネルとメニューバーが読む値。tick / 走査 / 操作のたびに作り直す（設定エラー中は nil）
+    var deletion: DeletionPanelState? { snapshot.deletion }
+
+    /// 「無効にする」を出すか: 消える可能性がある間（trash と同じ）と、前回の無効化に失敗した段がある間
+    var showsDisableButton: Bool { showsTrash || !disableFailedStages.isEmpty }
+
+    /// 「元音声の削除を有効にする」。confirmation はテキストフィールドの入力そのまま（判定は DeletionEnabler）
+    func enableDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        deletionBusy = true
+        defer { deletionBusy = false }
+        let r = await services.enableDeletion(confirmation: confirmation)
+        switch r {
+        case .success:
+            enableError = nil
+            disableFailedStages = []
+            deletionNotice = DeletionStrings.reinsertNotice
+        case .failure(let e):
+            enableError = e
+        }
+        await refresh()
+        return r
+    }
+
+    /// 「無音・重複も消す」
+    func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        deletionBusy = true
+        defer { deletionBusy = false }
+        let r = await services.enableSkippedDeletion(confirmation: confirmation)
+        switch r {
+        case .success: enableError = nil
+        case .failure(let e): enableError = e
+        }
+        await refresh()
+        return r
+    }
+
+    /// 「削除を無効にする」（確認なし）。失敗した段の名前をパネルに出す
+    func disableDeletion() async -> [String] {
+        deletionBusy = true
+        defer { deletionBusy = false }
+        let failed = await services.disableDeletion()
+        disableFailedStages = failed
+        deletionNotice = nil
+        enableError = nil
+        await refresh()
+        return failed
+    }
+
+    /// snapshot に読み書きできる（観測）デバイスが 1 台以上あるか
+    static func observesWritableDevice(_ snapshot: DeviceSnapshot?) -> Bool {
+        guard let snapshot else { return false }
+        return snapshot.devices.keys.contains {
+            DeviceWritability.observe(deviceID: $0, snapshot: snapshot) == .writable
+        }
+    }
 }

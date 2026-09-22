@@ -1,6 +1,7 @@
 // 本番の依存を組み立てる唯一の場所（PLAN §8.15 の起動手順）。ここ以外で本番の実装を new しない。
 import AppKit
 import Foundation
+import Synchronization
 import VDContract
 import VDCore
 import VDDevice
@@ -28,6 +29,8 @@ final class AppContext {
     let llama: LlamaServerSupervisor
     let ingest: IngestService
     let worker: Worker
+    /// 削除の有効化・無効化・ロック 1 の修復（T-40）
+    let enabler: DeletionEnabler
     let models: ModelManager
     /// ModelManager に渡したもの（T-31）
     let downloader: ModelDownloader
@@ -43,7 +46,8 @@ final class AppContext {
         layout: HomeLayout, paths: AppPaths, clock: any AppClock, log: AppLog, catalog: ModelCatalog,
         config: ConfigStore, store: Store, runner: ProcessRunner, locks: any LockObserving,
         diagnostics: DiagnosticsDependencies, llama: LlamaServerSupervisor, ingest: IngestService,
-        worker: Worker, models: ModelManager, downloader: ModelDownloader, loginItem: any LoginItemControlling,
+        worker: Worker, enabler: DeletionEnabler, models: ModelManager, downloader: ModelDownloader,
+        loginItem: any LoginItemControlling,
         uiState: UIStateStore, physicalMemoryBytes: UInt64
     ) {
         self.layout = layout
@@ -59,6 +63,7 @@ final class AppContext {
         self.llama = llama
         self.ingest = ingest
         self.worker = worker
+        self.enabler = enabler
         self.models = models
         self.downloader = downloader
         self.loginItem = loginItem
@@ -124,7 +129,15 @@ enum Bootstrap {
         let config = ConfigStore(
             layout: layout, catalog: catalog, log: log.withCategory("pipeline"),
             observeReaperConf: { await locks.observeReaperConf() })
-        let loaded = await config.load()
+        // 7 の中. ロック 1 の修復口を挿してから読む（起動時の CV-30 を 1 回目の読み込みで直す。PLAN §6.1・T-40）。
+        // IngestService は読み込んだ設定の時刻帯とログで 11 に作るので、DeletionEnabler には中継を渡して 11 でつなぐ
+        let enablerIngest = LateBoundIngest()
+        let enabler = DeletionEnabler(
+            layout: layout, paths: paths, config: config,
+            verifier: CodeSignatureVerifier(requirement: ReaperSignature.production),
+            ingest: enablerIngest, log: log.withCategory("pipeline"))
+        await config.setLock1Reconciler { [enabler] in await enabler.reconcileLock1() }
+        let loaded = await config.load()  // 修復口を挿した後に読む
         // 8. ログを設定で作り直す（ここから後のログだけが設定のレベルに従う）
         var zone = bootZone
         var loadedConfig: AppConfig?
@@ -157,6 +170,7 @@ enum Bootstrap {
                 reader: DeviceReader(),
                 clock: clock, sleeper: TaskSleeper(), zone: zone,
                 log: log.withCategory("device"), volumesRoot: Contract.volumesRoot))
+        enablerIngest.bind(ingest)
         // 12. Worker（verificationCache は 14 のモデルと共有する。WorkerDependencies へ足すチケットは未決）
         let verificationCache = ModelVerificationCache()
         let physicalMemoryBytes = ProcessInfo.processInfo.physicalMemory
@@ -178,7 +192,7 @@ enum Bootstrap {
             runner: runner, verificationCache: verificationCache, signature: SecAppSignatureReader(),
             bundleURL: Bundle.main.bundleURL, physicalMemoryBytes: physicalMemoryBytes, clock: clock,
             log: log.withCategory("pipeline"))
-        // 13. ロック 1 の修復をつなぐ（T-40 が `await config.setLock1Reconciler { await enabler.reconcileLock1() }` を書く）
+        // 13. ロック 1 の修復は 7 でつないだ（load() より前に挿す。T-40）
         // 14. モデル
         let hashChunkBytes =
             (loadedConfig?.audio.hashChunkBytes) ?? AppConfig.defaults(timeZone: "UTC").audio.hashChunkBytes
@@ -192,7 +206,7 @@ enum Bootstrap {
         let ctx = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,
             runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
-            models: models, downloader: downloader,
+            enabler: enabler, models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
             physicalMemoryBytes: physicalMemoryBytes)
         ctx.workerTask = await startServices(
@@ -215,4 +229,24 @@ enum Bootstrap {
         await ingestStart()
         return task
     }
+}
+
+/// DeletionEnabler を IngestService より先に作るための中継（T-40）。
+/// 修復口は最初の `config.load()` より前に挿す（PLAN §6.1）が、IngestService は読み込んだ設定の時刻帯とログで作るため。
+/// `bind` の前の呼び出しは「観測なし・見送り」を返す（起動が終わる前に無効化は呼ばれない）。
+final class LateBoundIngest: IngestPort {
+    private let target = Mutex<IngestService?>(nil)
+
+    func bind(_ ingest: IngestService) { target.withLock { $0 = ingest } }
+
+    func latestSnapshot() async -> DeviceSnapshot? { await target.withLock { $0 }?.latestSnapshot() }
+
+    func state() async -> IngestState { await target.withLock { $0 }?.state() ?? .idle }
+
+    func updates() async -> AsyncStream<Void> {
+        guard let ingest = target.withLock({ $0 }) else { return AsyncStream { $0.finish() } }
+        return await ingest.updates()
+    }
+
+    func scanNow() async -> UInt64? { await target.withLock { $0 }?.scanNow() }
 }

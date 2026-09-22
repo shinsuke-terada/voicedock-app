@@ -105,3 +105,23 @@ enum DeleteQueue {
         return data
     }
 }
+
+extension DeleteQueue {
+    /// 無効化のときに `queue/delete` の要求を全部取り下げる（PLAN §8.9.8）。
+    /// `.` で始まらない `*.json` を全部消す（中身は読まない。読めない要求も消す）。
+    /// 結果（`queue/result`）は消さない。DB の `delete_request_id` は触らない（RequestExpirer が期限で取り下げる）。
+    /// 戻り値は (消した数, 消せなかった数)
+    static func withdrawAllRequests(layout: HomeLayout) -> (removed: Int, failed: Int) {
+        var removed = 0
+        var failed = 0
+        for name in names(in: layout.queueDelete) {
+            let url = layout.queueDelete.appendingPathComponent(name)
+            if (try? SafeUnlink.remove(url, under: .queueDelete, layout: layout)) != nil {
+                removed += 1
+            } else {
+                failed += 1
+            }
+        }
+        return (removed, failed)
+    }
+}

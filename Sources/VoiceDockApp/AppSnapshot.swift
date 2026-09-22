@@ -23,7 +23,6 @@ struct AppSnapshot: Equatable, Sendable {
     var backlog: BacklogCounts = .empty
     var vault: VaultStatus = .notConfigured
     var vaultPath: String? = nil
-    var deletionEnabled: Bool = false
     var version: String = AppVersion.string
     // T-31
     /// 設定の vault.marker の写し（Vault を選ぶときの VaultCheck に渡す）
@@ -46,7 +45,11 @@ struct AppSnapshot: Equatable, Sendable {
     var attention: [AttentionItem] = []
     /// 「詳細」を開いている間だけ作る（毎回 inbox を走査しない）
     var statusReport: StatusReport? = nil
-    // T-40 が lockDisplay を足す
+    // T-40
+    /// 「元音声の削除」の 3 行・注意書き・trash（設定エラー中は nil）
+    var deletion: DeletionPanelState? = nil
+    /// 設定エラー中（deletion が nil）でも消す能力が残っているか（reaper.conf が有効か reaper が在る。PLAN §8.9.8 の常時表示）
+    var deletionResidual: Bool = false
 
     init(now: Instant) {
         self.now = now
