@@ -64,7 +64,7 @@ extension LlamaServerSupervisor: LLMServerControl {}
 public typealias ChatTransportFactory = @Sendable (LlamaServerHandle, LLMConfig) -> any ChatTransport
 ```
 
-`WorkerDependencies` の末尾に足す（init の引数も同じ順で末尾に）:
+`WorkerDependencies` に足す（並びは 00-api-map §11 の相対順が正。`llama`・`chatTransportFactory` は `runner` の後に挿し、`physicalMemoryBytes` は `catalog` の後に置く。init の引数も同じ順）:
 ```swift
     public let llama: any LLMServerControl
     public let chatTransportFactory: ChatTransportFactory
