@@ -278,6 +278,7 @@
 | `UIState.swift` | `ui-state.json` の読み書き |
 | `Panel/*.swift` | SwiftUI のビュー（`PanelView`、`StatusSection`、`AttentionSection`、`OnboardingSection`、`VaultSection`、`ModelsSection`、`GeneralSection`、`DeletionSection`、`DetailsSection`）。F-65 で足した部品: `PanelStyle`（`SectionBox` のカード）、`SubScreen`（popover の中の別の画面の枠。「‹ 戻る」。スクロールはここだけ）、`PanelRow`（別の画面へ移る 1 行）、`HoldToConfirmButton`（3 秒の長押しで確かめる赤いボタン。`holdDuration`・`progress(elapsed:duration:)`・`Tracker`。作り手 T-40） |
 | `PanelScreen.swift` | （F-65）`enum PanelScreen { main, attention, deletion, details, settings }`。`AppModel.screen` と `AppModel.show(_:)`（`AppModel+Navigation.swift`。作り手 T-30） |
+| `AppModel+SummarizeNow.swift` | （F-66）`AppModel.SummarizeNowState { idle, running, succeeded(Int), failed(String) }`、`AppModel.requestSummarizeNow()`（`AppServices.enqueue(.summarizeNow(reply:))` を 1 回。実行中は入れない）、`summarizeNowNotice`（通知の文言）。状態の見出しの「今すぐ要約」ボタンが使う（PLAN §8.12 の 1。作り手 T-30） |
 
 ---
 

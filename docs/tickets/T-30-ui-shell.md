@@ -3,6 +3,8 @@
 > （F-65 でパネルをカード型に作り直した。2026-09-23、利用者の決定）主画面は**スクロールしない**。長い中身（元音声の削除・詳細と診断・要対応の多数・一般）は popover の中の別の画面（`PanelScreen`・`AppModel.show(_:)`。§4.11b）に切り替え、見出しに「‹ 戻る」を置く（`SubScreen`）。
 > 高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の 640pt と `PanelStyle.maxHeight` をやめた。§4.6）。§4.13 のコードは F-65 の形に直した。主画面に ScrollView が無いことは `PanelLayoutPolicyTests` が固定する。
 
+> （F-66 の今すぐ要約のボタンを足した。2026-09-23、利用者の決定）状態の見出し（`StatusSection`）の文言の下に、小さな「今すぐ要約」のボタン（SF Symbol `sparkles`）と返事の短い通知を置く。押すと `services.enqueue(.summarizeNow(reply:))`（`WorkerJob.summarizeNow`。PLAN §5.4）。口は `AppModel+SummarizeNow.swift`（§4.11c）、文言は §4.12 の F-66 の表、テストは §5.8、証明は §6 の 26〜28。要約の契機は、最後の録音から `idleCloseSeconds` たった自動の要約と、この手動の要約の 2 つだけ。
+
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`CoexistenceGuard(...)` の注入・`StatusLine` の最優先の分岐・`Strings.statusCoexistenceBlocked`・`coexistenceWinsOverEverything` は外した。以下の本文の共存ガードの記述は記録として残す。
 
 | 項目 | 内容 |
@@ -58,6 +60,7 @@
 | `Sources/VoiceDockApp/AppModel+Navigation.swift` | （F-65）`AppModel.show(_:)`（§4.11b） |
 | `Sources/VoiceDockApp/Panel/SubScreen.swift` | （F-65）別の画面の枠（「‹ 戻る」と題。中身が長いときだけスクロール） |
 | `Sources/VoiceDockApp/Panel/PanelRow.swift` | （F-65）押すと別の画面へ移る 1 行 |
+| `Sources/VoiceDockApp/AppModel+SummarizeNow.swift` | （F-66）`AppModel.SummarizeNowState`・`requestSummarizeNow()`・返事の受け取り・通知の文言（§4.11c）。`StatusSection` にボタンを置く |
 | `Sources/VDPipeline/StatusTexts.swift` | 未処理の 1 行・観測の表示語・GiB の整形（T-32 の `StatusReporter` と共有） |
 | `Sources/VDCore/ModelMemory.swift` | `ModelMemory`（メモリの条件。T-31 の `Picker` と T-32 の DR-08 が共有。§4.10b） |
 | `Sources/VoiceDockApp/LoginItem.swift` | `LoginItemControlling`、`SystemLoginItem`（このチケットは `status()` だけ。操作は T-31 が足す） |
@@ -71,6 +74,7 @@
 | `Tests/VoiceDockAppTests/StringsTests.swift` | `Strings` の全項目を §4.12 の表と逐語で固定する（§7 の受け入れ条件） |
 | `Tests/VoiceDockAppTests/AppModelNavigationTests.swift` | （F-65）画面の切り替えと状態の詳細の読み書き（§5.5） |
 | `Tests/VoiceDockAppTests/PanelPartsTests.swift` | （F-65）要対応の件数の切り方・Vault の名前・状態の色（§5.6） |
+| `Tests/VoiceDockAppTests/AppModelSummarizeNowTests.swift` | （F-66）今すぐ要約の口（§5.8） |
 | `Tests/PolicyTests/PanelLayoutPolicyTests.swift` | （F-65）主画面（`PanelView.swift`）に ScrollView・List・Form が無く、パネルで ScrollView を使うのは `SubScreen.swift` だけ（§5.7） |
 | `Tests/VDPipelineTests/StatusTextsTests.swift` | |
 | `Tests/VDCoreTests/ModelMemoryTests.swift` | §4.10b |
@@ -762,6 +766,32 @@ extension AppModel {
 - 要対応の操作（T-32 の `perform`）: `.openModels` は `modelsHighlighted = true` と `show(.main)`、`.openDeletionFlow` は `deletionHighlighted = true` と `show(.deletion)`、`.runDiagnostics` は `show(.details)` の後に `runDiagnostics()`
 - 画面は popover の中だけで切り替える（窓を作らない。D-7）
 
+### 4.11c `AppModel+SummarizeNow.swift`（F-66）
+
+```swift
+// AppModel.swift に: var summarizeNow: SummarizeNowState = .idle
+//                   @ObservationIgnored var summarizeNowGeneration = 0（押すたび・閉じるたびに 1 増やす）
+extension AppModel {
+    enum SummarizeNowState: Equatable {
+        case idle, running
+        case succeeded(Int)   // 閉じた Session の数（0 = 未要約の録音が無い）
+        case failed(String)   // SummarizeNowFailure.message のまま
+    }
+    static let summarizeNowNoticeSeconds = 4
+    var summarizeNowNotice: String? { get }
+    func requestSummarizeNow() async
+    func receiveSummarizeNow(_ r: Result<Int, SummarizeNowFailure>, generation: Int)
+    func dismissSummarizeNowNotice(_ shown: SummarizeNowState)
+}
+```
+
+1. **`requestSummarizeNow()`**: `summarizeNow == .running` なら何もしない（二重押しを防ぐ）→ `summarizeNow = .running` → `summarizeNowGeneration += 1` して控える → `await services.enqueue(.summarizeNow(reply:))`。reply は Worker の文脈で呼ばれるので `Task { @MainActor in self?.receiveSummarizeNow(r, generation:) }` で移す（DR-09 の `runLLMProbe` と同じ形）
+2. **`receiveSummarizeNow`**: `summarizeNow == .running` かつ世代が一致するときだけ受け取る（閉じた後の返事・前の世代の返事は捨てる）。`.success(n)` → `.succeeded(n)`、`.failure(f)` → `.failed(f.message)`
+3. **`summarizeNowNotice`**: `.succeeded(n)` は n > 0 なら `Strings.summarizeNowStarted(n)`、0 なら `Strings.summarizeNowNothing`。`.failed(m)` は `m` をそのまま。`.idle` / `.running` は nil
+4. **`dismissSummarizeNowNotice(shown)`**: `shown` が結果（`.succeeded` / `.failed`）で、いまも `summarizeNow == shown` のときだけ `.idle` に戻す。`StatusSection` が `.task(id: summarizeNow)` で `TaskSleeper` の `summarizeNowNoticeSeconds` 秒の眠りの後に呼ぶ（押し直せば id が変わってタスクは取り消される）
+5. **`panelDidClose()`** に足す: `summarizeNow = .idle`、`summarizeNowGeneration += 1`
+6. **ボタン**（`StatusSection`）: 状態の文言・最終接続・空き容量の下の行に `Label(Strings.buttonSummarizeNow, systemImage: "sparkles")`（`.bordered`・`.small`）。`.running` の間は `.disabled` にして小さな `ProgressView` を並べ、通知はその右に caption（失敗は橙）。主画面はスクロールしないまま（`PanelLayoutPolicyTests`）
+
 ---
 
 ### 4.12 `Strings.swift`（逐語。**このチケットが作る分**）
@@ -838,6 +868,14 @@ F-65 で足した文言（カード型のパネルと長押しの有効化。`ho
 | `onboardingProgress(done:total:)` | `<done>/<total>` |
 | `statusDetailLine(lastConnected:backlog:)` | `最終接続 <lastConnected> · <backlog>` |
 | `deviceFreeLine(_:)` | `デバイスの空き容量 <value>` |
+
+F-66 で足した文言（今すぐ要約。§4.11c）:
+
+| 名前 | 文言 |
+|---|---|
+| `buttonSummarizeNow` | `今すぐ要約` |
+| `summarizeNowStarted(_:)` | `<n> 日分を要約します` |
+| `summarizeNowNothing` | `未要約の録音はありません` |
 
 `PauseReason` の表示語（**`StatusTexts.pauseWord(_:)`（VDPipeline。§4.10）に置く**。VDPipeline 側（要対応・DR-09）も同じ語を使うため。`Strings` に写さない）:
 
@@ -1087,6 +1125,20 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | `mainScreenDoesNotScroll` / 「主画面（PanelView.swift）に ScrollView・List・Form が無い」 | `SourceTree.load()` の `VoiceDockApp/Panel/PanelView.swift` の識別子のトークン（コメントと文字列は数えない） | `VStack`・`StatusSection` が在り（空振りしない）、`ScrollView`・`List`・`Form` が 1 つも無い |
 | `onlySubScreenScrolls` / 「パネルの中で ScrollView を使ってよいのは SubScreen.swift だけ」 | `VoiceDockApp/Panel/` の全ファイル | `SubScreen.swift` には `ScrollView` が在り（陽性対照）、ほかのファイルには 3 つとも無い |
 
+### 5.8 `AppModelSummarizeNowTests.swift`（`@Suite("AppModel+SummarizeNow")`。F-66）
+
+| 関数名 / 表示名 | 準備 | 期待 |
+|---|---|---|
+| `pressEnqueuesOneJob` / 「押したら enqueue に .summarizeNow が 1 回入り、返事を待つ間は running」 | `requestSummarizeNow()` | 仕事 1 件で `.summarizeNow`、`.running`、通知 nil |
+| `successWithDaysShowsCount` / 「成功で n > 0 なら「n 日分を要約します」」 | reply `.success(2)` | `.succeeded(2)`、`2 日分を要約します` |
+| `successWithZeroShowsNothingToDo` / 「成功で 0 なら「未要約の録音はありません」（TEST-28）」 | reply `.success(0)` | `.succeeded(0)`、`未要約の録音はありません` |
+| `failureShowsMessageVerbatim` / 「失敗なら failure.message をそのまま出す」 | reply `.failure("LLM が未選択")` | `.failed`、`LLM が未選択` |
+| `pressWhileRunningIsIgnored` / 「実行中は二重に入らない（返事の後はもう一度押せる）」 | 3 回押す → 返事 → もう一度 | 仕事 1 件 → 返事の後は 2 件 |
+| `lateReplyAfterCloseIsDropped` / 「閉じた後に届いた返事は捨てる」 | 押す → `panelDidClose()` → reply | `.idle`、通知 nil |
+| `staleReplyAfterReopenIsDropped` / 「閉じて押し直した後に届いた古い返事は捨て、新しい返事だけを出す」 | 押す → 閉じる → 押す → 古い reply → 新しい reply | 古い返事では `.running` のまま、新しい返事で `.succeeded(0)` |
+| `dismissOnlyClearsTheShownNotice` / 「通知は出したときの状態のままなら消え、別の状態を出していたときの消去は効かない」 | `.running` と別の結果で消す → 同じ結果で消す | 前 2 つは変わらず、最後に `.idle` |
+| `noticeSecondsIsFixed` / 「通知を出しておく目安は 4 秒」 | — | 4 |
+
 ### 5.4 `Tests/VDPipelineTests/StatusTextsTests.swift`（`@Suite("StatusTexts")`）
 
 | 関数名 / 表示名 | 準備 | 期待 |
@@ -1127,6 +1179,9 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | 23 | （F-65）`show(_:)` で details を出るときに `toggleDetails()` を呼ばない | `detailsScreenLoadsAndDropsTheReport`、`leavingDetailsForAnotherScreenDropsTheReport` |
 | 24 | （F-65）`panelDidClose` の `screen = .main` を消す | `closingThePanelReturnsToMain` |
 | 25 | （F-65）`AttentionSection.split` で `limit` を無視する | `mainShowsTheFirstTwo` |
+| 26 | （F-66）`requestSummarizeNow` の `.running` の guard を外す | `pressWhileRunningIsIgnored` |
+| 27 | （F-66）`receiveSummarizeNow` の世代の照合を外す | `staleReplyAfterReopenIsDropped` |
+| 28 | （F-66）`Strings.summarizeNowNothing` の文言を変える | `successWithZeroShowsNothingToDo`、`StringsTests` の `summarizeNowNothing` |
 | 18 | `LiveServices.read` で `ReadOnlyStore.open` の nil のとき `BacklogCounts(count: 1, …)` を返す | `bootWithoutDatabaseShowsZero`（`emptyServicesProduceIdlePanel` は `FakeServices` を通すので `LiveServices` を見ない） |
 
 ## 7. 受け入れ条件
