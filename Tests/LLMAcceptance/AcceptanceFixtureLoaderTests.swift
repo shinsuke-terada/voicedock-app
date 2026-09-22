@@ -75,6 +75,13 @@ struct AcceptanceFixtureLoaderTests {
         #expect(long.segments.allSatisfy { originals.contains($0) })
     }
 
+    @Test("長文の maxTasksWithDue は 9 本の合計 × 繰り返し回数（9 × 2 = 18）")
+    func longDayCountsDues() throws {
+        // 9 本の maxTasksWithDue の合計は 1+0+1+2+3+0+0+0+2 = 9。9 本で約 201,000 スカラーなので 2 周目の途中で 350,000 に達する
+        let long = AcceptanceFixture.longDay(try Self.nine())
+        #expect(long.maxTasksWithDue == 18)
+    }
+
     @Test("キーが足りない JSON は失敗になり、メッセージにファイル名が入る")
     func badJSONIsAnError() throws {
         let tmp = try TempDirectory()

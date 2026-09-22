@@ -80,6 +80,13 @@ struct AcceptanceFixture: Sendable {
                 segments: segments, maxTasksWithDue: maxDue))
     }
 
+    /// ディレクトリの *.json の数（ディレクトリが読めなければ nil）。
+    static func jsonCount(directory: URL) -> Int? {
+        let path = directory.path(percentEncoded: false)
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: path) else { return nil }
+        return names.filter { $0.hasSuffix(".json") }.count
+    }
+
     /// ディレクトリの *.json を id の昇順に読む（読めないものは Result の失敗にする）。
     static func loadAll(directory: URL) -> Result<[AcceptanceFixture], AcceptanceError> {
         let path = directory.path(percentEncoded: false)

@@ -21,10 +21,14 @@ struct AcceptanceSession: Sendable {
     /// 最後に長文を足す（10 本）。
     static func fixtures() -> Result<[AcceptanceFixture], AcceptanceError> {
         let synthetic = PackageRoot.url.appendingPathComponent("Tests/Fixtures/llm-acceptance", isDirectory: true)
-        var base: [AcceptanceFixture]
-        switch AcceptanceFixture.loadAll(directory: TestEnvironment.llmFixtureDirectory) {
-        case .failure(let message): return .failure(message)
-        case .success(let loaded): base = loaded
+        var base: [AcceptanceFixture] = []
+        let directory = TestEnvironment.llmFixtureDirectory
+        // *.json が 0 本なら失敗にせず、合成の 9 本で埋める（§4.3）。ディレクトリや JSON が読めなければ失敗にする
+        if AcceptanceFixture.jsonCount(directory: directory) != 0 {
+            switch AcceptanceFixture.loadAll(directory: directory) {
+            case .failure(let message): return .failure(message)
+            case .success(let loaded): base = loaded
+            }
         }
         if base.count < AnalysisAcceptanceTests.baseCount {
             switch AcceptanceFixture.loadAll(directory: synthetic) {

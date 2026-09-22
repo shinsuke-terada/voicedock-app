@@ -189,7 +189,7 @@ voicedock には LLM 応答の fixture が 2 本あるだけで、transcript の
 **書き方の規則**（PolicyTests が機械で確かめる。§5.4）:
 - 実在の個人名・団体名・住所・電話番号・メールアドレスを書かない。話者は `Aさん` `Bさん` のように呼ぶ
 - `[[` と `]]` を**入れない**（判定 3 の入力側を汚さない）
-- 日付を明示するのは `maxTasksWithDue` の数だけ。それ以外の依頼には「近いうちに」「来週あたり」のようにぼかした言い方だけを使う
+- 日付を明示するのは `maxTasksWithDue` の数だけ。それ以外の依頼には「近いうちに」「そのうち」「手が空いたら」のようにぼかした言い方だけを使う。「今日中」「明日」「今週」「来週」「来月」「今月中」「月末」「週末」「週明け」曜日、「〜までに」（「ここまでに」「ところまでに」を除く）は、日付を明示した要素の外に書かない（期限として読めるため。§5.4 `deadlinesOnlyInDatedSegments`）
 - 文は句点（`。`）で終える（whisper-cli の日本語の出力に似せる）。フィラー（`えーと` `はい`）を 1 割ほど混ぜる
 - 作り方: 人が書くか、LLM に下書きさせて**人が読み**、上の規則を満たすまで直す。**アプリのコードから生成しない**（実装を呼んで期待値を作らない。TEST-01）
 
@@ -200,7 +200,7 @@ voicedock には LLM 応答の fixture が 2 本あるだけで、transcript の
 
 **利用者の実録音から作る場合**（PLAN §10.6）:
 - リポジトリに入れない。`~/VoiceDockAcceptance/` に同じ形の JSON を置き、`VOICEDOCK_LLM_FIXTURES=~/VoiceDockAcceptance` を渡す
-- そのディレクトリの `*.json` を `id` の昇順に読み、**10 本に満たなければ**合成の 9 本で埋める（長文は必ず生成する）
+- そのディレクトリの `*.json` を `id` の昇順に読み、**10 本に満たなければ**合成の 9 本で埋める（長文は必ず生成する）。`*.json` が 0 本なら失敗にせず全部を合成の 9 本にする（`AcceptanceFixture.jsonCount(directory:)` が 0。ディレクトリが読めない・JSON が読めないときは失敗）
 
 ### 4.4 `Tests/LLMAcceptance/` の構成
 
@@ -227,6 +227,8 @@ struct AcceptanceFixture: Sendable {
     static func load(_ url: URL) -> Result<AcceptanceFixture, AcceptanceError>
     /// ディレクトリの *.json を id の昇順に読む（読めないものは Result の失敗にする）。
     static func loadAll(directory: URL) -> Result<[AcceptanceFixture], AcceptanceError>
+    /// ディレクトリの *.json の数（読めなければ nil）。
+    static func jsonCount(directory: URL) -> Int?
     /// 9 本から約 350,000 スカラーの 1 本を作る（§4.3）。
     static func longDay(_ base: [AcceptanceFixture]) -> AcceptanceFixture
     static let longTargetScalars = 350_000
@@ -410,7 +412,7 @@ enum AcceptanceReport {
 |---|---|
 | モデル | `<id>` |
 | ファイル | `<file>` |
-| sha256 | `<64 桁>`（`FileHasher.sha256(of:chunkBytes: 1_048_576)` の実測。カタログの値と一致） |
+| sha256 | `<64 桁>`（`FileHasher.sha256(of:chunkBytes: 1_048_576)` の実測） |
 | 機種 / メモリ | `<machdep.cpu.brand_string>` / `<hw.memsize>` |
 | llama.cpp | `<LLAMA_CPP_REF>`（`Vendor/versions.env`） |
 | コマンド | `make llm-acceptance MODEL=<id>` |
@@ -483,6 +485,7 @@ enum AcceptanceReport {
 | `loadsTheNineFixtures` | 既定のディレクトリ | 9 本、`id` が §4.3 の表と同じ・昇順 |
 | `segmentsBecomeAbsoluteTimes` | `s01` | 最初の `AbsoluteSegment.at` が `startedAt`、i 番目が `startedAt + i × segmentSeconds`、`endAt - at == segmentSeconds × 1000` |
 | `longDayIsDeterministic` | `longDay` を 2 回と、入力を逆順にして 1 回 | 3 つとも同じ `segments`、先頭が 9 本を §4.3 の表の `id` の順に連結したもの、`scalarCount >= 350_000` かつ `< 350_000 + 200` |
+| `longDayCountsDues` | `longDay` | `maxTasksWithDue == 18`（9 本の合計 1+0+1+2+3+0+0+0+2 = 9 × 繰り返し 2 回。9 本で約 201,000 スカラー） |
 | `longDayKeepsWholeSegments` | `longDay` | どの要素も元の 9 本のどれかの要素と**完全に一致**（途中で切らない） |
 | `badJSONIsAnError` | キーが足りない JSON | `.failure`、メッセージにファイル名が入る |
 | `emptyDirectoryIsAnError` | 空のディレクトリ（TEST-28） | `.failure` |
@@ -499,6 +502,7 @@ enum AcceptanceReport {
 | `segmentsAreSentences` | 各要素が 10〜200 スカラー、空でない、末尾が `。` `？` `！` のどれか |
 | `noWikiLinkMarkersInFixtures` | どの要素にも `[[` と `]]` が無い |
 | `noObviousPersonalData` | `@` を含む要素が無い、`0[0-9]{1,3}-[0-9]{2,4}-[0-9]{4}` に一致する部分が無い |
+| `deadlinesOnlyInDatedSegments` | 日付（`[0-9]+月[0-9]+日`）を含まない要素に §4.3 の期限として読める語と「までに」（`(?<!ここ)(?<!ところ)までに`）が無い。日付を含む要素の数が `maxTasksWithDue` と等しい |
 | `startedAtParses` | `ZonedTime(timeZone: TimeZone(identifier: timeZone)!).parseISO(startedAt)` が nil でなく、`dayDate` と同じ日 |
 
 ## 6. 破壊による証明
@@ -514,6 +518,7 @@ enum AcceptanceReport {
 | `longDay` で最後の要素を切り詰める | `longDayKeepsWholeSegments` | 同上 |
 | `longDay` の連結の順を `Set` にする | `longDayIsDeterministic` | 同上 |
 | `s05-planning.json` に `[[テスト]]` を 1 か所入れる | `noWikiLinkMarkersInFixtures` | `make test-policy` |
+| `s07-field-note.json` の要素に「明日の朝に出す」を入れる | `deadlinesOnlyInDatedSegments` | `make test-policy` |
 | `s01-standup.json` の `id` を変える | `eachFixtureHasTheRequiredKeys`（`nineFixturesExist` はファイル名を見るので落ちない。ファイル名を変えたときに落ちる） | 同上 |
 | `Resources/ModelCatalog.json` の sha256 を 1 文字変える | `scripts/check-catalog.sh` が `MISMATCH` で終了コード 1（出力を PR に貼る） | 手で |
 
@@ -536,6 +541,7 @@ enum AcceptanceReport {
 3. `Analyzer` は修復の回数を返さない（`AnalyzeOutcome` に無い）。本チケットは `CountingChatTransport` で要求の列から数える（修復の要求は `user == ""`。T-19 §4.8）。`AnalyzeOutcome` に `repairs` を足す案は採らない（本番のコードを試験のために変えない）
 4. `LlamaServerSupervisor` を**本番のファクトリ**（`EphemeralSessionFactory`）で使う唯一のテストであることを 00-api-map §14 の `LLMAcceptance` の行に注記する
 5. （実装で追加）00-api-map §15 の T-24 の行に、同じ `Tests/LLMAcceptance/` 内の補助の型 `AcceptanceError`（`Result` の Failure。`String` は `Error` でないため）・`AcceptanceRun`・`AcceptanceVerdict`・`AcceptanceReportContext`・`AcceptanceSession` を足す。どれも internal で、ほかのターゲットからは使わない（実装に不可欠ではない。索引の網羅のため）
+6. （実装で追加）CI に `make acceptance-selftest` を足す。いまの `make test` は `--skip "…|LLMAcceptance"` でターゲットごと外すので、判定の式と fixture の読み込みの自己テスト（モデル不要）も CI で走らない（`.github/workflows/` と `Makefile` の `test` は T-02 / T-01 の持ち物なので、本チケットでは変えない）
 
 ## 9. SPEC の変更
 

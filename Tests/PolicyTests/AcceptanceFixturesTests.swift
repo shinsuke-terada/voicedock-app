@@ -86,6 +86,36 @@ struct AcceptanceFixturesTests {
         }
     }
 
+    /// 暦の日付（「9月4日」）。期限つきの依頼だけがこれを持つ（§4.3）。
+    static let datePattern = "[0-9]+月[0-9]+日"
+    /// 期限として読める語。日付を明示した要素の外に置かない（§4.3「それ以外の依頼にはぼかした言い方だけ」）。
+    static let deadlineWords = [
+        "今日中", "本日中", "明日", "明後日", "あさって", "今週", "来週", "再来週", "今月中", "来月", "月末", "週末", "週明け",
+        "月曜", "火曜", "水曜", "木曜", "金曜", "土曜", "日曜",
+    ]
+    /// 「〜までに」（「ここまでにしましょう」「ところまでにしよう」は期限ではないので除く）。
+    static let untilPattern = "(?<!ここ)(?<!ところ)までに"
+
+    @Test("期限として読める語は日付を明示した要素の中だけで、日付の要素は maxTasksWithDue 個", arguments: targets.map(\.id))
+    func deadlinesOnlyInDatedSegments(_ id: String) throws {
+        let top = try Self.object(id)
+        let maxDue = try #require((top["expected"] as? [String: Any])?["maxTasksWithDue"] as? Int)
+        let date = try NSRegularExpression(pattern: Self.datePattern)
+        let until = try NSRegularExpression(pattern: Self.untilPattern)
+        var dated = 0
+        for segment in try Self.segments(id) {
+            let range = NSRange(location: 0, length: segment.utf16.count)
+            if date.firstMatch(in: segment, range: range) != nil {
+                dated += 1
+                continue
+            }
+            let words = Self.deadlineWords.filter { segment.contains($0) }
+            #expect(words.isEmpty, "\(id): \(words): \(segment)")
+            #expect(until.firstMatch(in: segment, range: range) == nil, "\(id): までに: \(segment)")
+        }
+        #expect(dated == maxDue, "\(id): 日付の要素 \(dated) 個")
+    }
+
     @Test("startedAt が読め、dayDate と同じ日", arguments: targets.map(\.id))
     func startedAtParses(_ id: String) throws {
         let top = try Self.object(id)
