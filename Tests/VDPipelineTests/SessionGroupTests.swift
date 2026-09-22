@@ -151,6 +151,17 @@ struct SessionGroupTests {
         let s = try w.session(Self.key)
         #expect(s.status == .ready)
         #expect(s.partCount == 2)
+        // 再オープンできる状態（SAVED）でも、分組では再オープンしない（契機は RAW_SAVED / FAILED / SKIPPED）
+        try w.forceSession(Self.key, status: .saved)
+        let pk3 = try w.registerRow(
+            folder: "TX_MIC001_20260912_170000", name: "TX00_MIC001_20260912_170000_orig.wav",
+            started: "2026-09-12T17:00:00+09:00")
+        try await Self.group(w)
+        #expect(try w.part(pk3).sessionKey == Self.key)
+        #expect(try w.sessionEvents(Self.key).count == before)
+        let saved = try w.session(Self.key)
+        #expect(saved.status == .saved)
+        #expect(saved.regeneratedCount == 0)
     }
 
     @Test("未分組が無ければ何もしない")

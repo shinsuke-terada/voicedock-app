@@ -421,7 +421,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | `onlyUngroupedParts` / 「対象は session_key が NULL の Part だけ」 | 2 回呼ぶ | 2 回目は events が増えない |
 | `columnsAreRecounted` / 「集計列を数え直す」 | 600 秒の Part と、16:00 開始 1200 秒の SKIPPED の Part | part_count 2、failed_part_count 1、recorded_seconds 1800.0、started_at `2026-09-12T12:09:50+09:00`、ended_at `2026-09-12T16:20:00+09:00`、day_date `2026-09-12` |
 | `addingToOpenIsATransition` / 「SM-02 OPEN への追加は OPEN→OPEN」 | 2 件 | events `[(nil, OPEN, nil), (OPEN, OPEN, <pk1>), (OPEN, OPEN, <pk2>)]`（from, to, detail） |
-| `addingToClosedWritesNoEvent` / 「閉じた Session への追加は events を書かず再オープンしない」 | 1 件で分組 → OPEN→READY → 2 件目で分組 | 2 件目の session_key が同じ、events 増えない、READY のまま、part_count 2 |
+| `addingToClosedWritesNoEvent` / 「閉じた Session への追加は events を書かず再オープンしない」 | 1 件で分組 → OPEN→READY → 2 件目で分組 → SAVED に強制 → 3 件目で分組（READY は再オープン元でないので、「分組で再オープンする」壊し方は SAVED でしか見えない） | 2 件目の session_key が同じ、events 増えない、READY のまま、part_count 2。3 件目も同じ鍵、events 増えない、SAVED のまま、regenerated_count 0 |
 | `emptyGroupsNothing` / 「未分組が無ければ何もしない」（TEST-28） | Part 0 件 | Session 0 件 |
 
 上限（時計 `1_789_257_600_000` = 2026-09-13T09:00+09:00。voicedock test_session_reopen `add_part`: 09:00 から 1 分ずつ、60 秒。`K = "DJIMIC3:20260912"`）:
