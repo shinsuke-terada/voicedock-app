@@ -51,6 +51,12 @@ final class FakeServices: AppServices {
         var report: StatusReport?
         var statusReportCount = 0
         var openPrivacyCount = 0
+        // T-40
+        var enableResult: Result<Void, EnableError> = .success(())
+        var enableConfirmations: [String] = []
+        var skippedConfirmations: [String] = []
+        var disableResult: [String] = []
+        var disableCount = 0
     }
 
     private let state: Mutex<State>
@@ -261,6 +267,37 @@ final class FakeServices: AppServices {
     }
 
     func openSystemSettingsPrivacyFilesAndFolders() { state.withLock { $0.openPrivacyCount += 1 } }
+
+    // MARK: T-40 の差し替えと記録
+
+    /// enableDeletion / enableSkippedDeletion が返す結果
+    func setEnableResult(_ r: Result<Void, EnableError>) { state.withLock { $0.enableResult = r } }
+    /// disableDeletion が返す段の名前
+    func setDisableResult(_ stages: [String]) { state.withLock { $0.disableResult = stages } }
+    var enableConfirmations: [String] { state.withLock { $0.enableConfirmations } }
+    var skippedConfirmations: [String] { state.withLock { $0.skippedConfirmations } }
+    var disableCount: Int { state.withLock { $0.disableCount } }
+
+    func enableDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        state.withLock {
+            $0.enableConfirmations.append(confirmation)
+            return $0.enableResult
+        }
+    }
+
+    func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        state.withLock {
+            $0.skippedConfirmations.append(confirmation)
+            return $0.enableResult
+        }
+    }
+
+    func disableDeletion() async -> [String] {
+        state.withLock {
+            $0.disableCount += 1
+            return $0.disableResult
+        }
+    }
 
     /// DB も snapshot も無い <HOME> の状態の詳細（存在しないパスを読むだけ。何も作らない）
     static let emptyReport = StatusReporter.build(

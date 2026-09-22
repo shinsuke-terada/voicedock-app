@@ -58,6 +58,11 @@ final class AppModel {
     var modelsHighlighted = false
     /// 要対応の「有効化フローを開く」（T-40 が使う）
     var deletionHighlighted = false
+    // T-40（書くのは下の extension だけ）
+    /// 有効化が成功した後に出す案内（PLAN §8.9.8 の 5）
+    private(set) var deletionNotice: String?
+    /// 無効化で失敗した段の名前（英語のまま。ログと突き合わせるため）
+    private(set) var disableFailedStages: [String] = []
 
     @ObservationIgnored let services: any AppServices
     /// ModelSlot.llm(id) の項目を引く（T-31）
@@ -101,7 +106,7 @@ final class AppModel {
             hasAttention: hasAttention, ingesting: snapshot.ingestActivity.scanning,
             processing: snapshot.worker.activity != .idle)
     }
-    var showsTrash: Bool { snapshot.deletionEnabled }
+    var showsTrash: Bool { IconState.showsTrash(deletion) }
     var statusLine: String { StatusLine.make(snapshot) }
     var lastConnectedLine: String { StatusLine.lastConnected(snapshot, zone: zone) }
     var deviceFreeLine: String? { StatusLine.deviceFree(snapshot) }
@@ -237,4 +242,34 @@ final class AppModel {
     static let fastIntervalSeconds = 1
     /// 閉じている間（Worker の周期と同じ。PLAN §8.15「常時ポーリングしない」）
     static let slowIntervalSeconds = 30
+}
+
+// T-40: 「元音声の削除」への口（PLAN §8.9.8）
+extension AppModel {
+    /// パネルとメニューバーが読む値。tick / 走査 / 操作のたびに作り直す（設定エラー中は nil）
+    var deletion: DeletionPanelState? { snapshot.deletion }
+
+    /// 「元音声の削除を有効にする」。confirmation はテキストフィールドの入力そのまま
+    func enableDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        let r = await services.enableDeletion(confirmation: confirmation)
+        if case .success = r { deletionNotice = DeletionStrings.reinsertNotice }
+        await refresh()
+        return r
+    }
+
+    /// 「無音・重複も消す」
+    func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        let r = await services.enableSkippedDeletion(confirmation: confirmation)
+        await refresh()
+        return r
+    }
+
+    /// 「削除を無効にする」（確認なし）。失敗した段の名前をパネルに出す
+    func disableDeletion() async -> [String] {
+        let failed = await services.disableDeletion()
+        disableFailedStages = failed
+        deletionNotice = nil
+        await refresh()
+        return failed
+    }
 }

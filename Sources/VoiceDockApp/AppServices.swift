@@ -44,6 +44,13 @@ protocol AppServices: Sendable {
     func statusReport() async -> StatusReport
     /// 要対応の「システム設定を開く」（ファイルとフォルダの許可）
     func openSystemSettingsPrivacyFilesAndFolders()
+    // T-40
+    /// 「元音声の削除を有効にする」（PLAN §8.9.8。DeletionEnabler.enable）
+    func enableDeletion(confirmation: String) async -> Result<Void, EnableError>
+    /// 「無音・重複も消す」（DeletionEnabler.enableSkippedDeletion）
+    func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError>
+    /// 「削除を無効にする」（確認なし。DeletionEnabler.disable。失敗した段の名前）
+    func disableDeletion() async -> [String]
 }
 
 /// 本番の AppServices（Bootstrap が作った AppContext を読むだけ）。
@@ -58,7 +65,6 @@ struct LiveServices: AppServices {
         s.configViolations = await context.config.violations()
         if let c = config {
             s.timeZone = c.timeZone
-            s.deletionEnabled = c.cleanup.deleteSourceAudio
             s.vaultPath = c.vault.path
             // stat と opendir だけで、何も作らない（NOTE-16）
             s.vault = VaultCheck.evaluate(path: c.vault.path, marker: c.vault.marker)
@@ -87,6 +93,12 @@ struct LiveServices: AppServices {
         s.device = await context.ingest.latestSnapshot()
         s.lastConnectedAt = (s.device?.devices.isEmpty == false) ? s.device?.completedAt : lastConnectedAt
         s.renameCandidates = OnboardingEvaluator.renameCandidates(s.device)
+        // T-40: 3 行の個別表示（式は LockObserving.display の 1 か所。書き直さない）
+        if let c = config {
+            s.deletion = DeletionPanelState(
+                display: await context.locks.display(config: c, snapshot: s.device),
+                deleteSkippedSource: c.cleanup.deleteSkippedSource)
+        }
         s.worker = await context.worker.status()
         // T-32: 要対応（ガードの判定は Worker の PauseReason をそのまま読む。CR-06）
         var attention = AttentionInput(now: s.now)
@@ -170,6 +182,18 @@ struct LiveServices: AppServices {
         components.query = filesAndFoldersAnchor
         return components.url
     }
+
+    // T-40
+
+    func enableDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        await context.enabler.enable(confirmation: confirmation)
+    }
+
+    func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError> {
+        await context.enabler.enableSkippedDeletion(confirmation: confirmation)
+    }
+
+    func disableDeletion() async -> [String] { await context.enabler.disable() }
 
     static let systemSettingsScheme = "x-apple.systempreferences"
     static let securityPane = "com.apple.preference.security"
