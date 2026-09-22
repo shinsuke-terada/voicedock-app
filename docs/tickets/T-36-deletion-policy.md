@@ -1000,7 +1000,7 @@ struct DeletionFormulaTests {
 | 2 | `ctx.locks.allReleased(…)` の項を消す | `nd22EitherSideOfLockOneBlocks`、`nd23ReadOnlyObservedBlocks`、`nd26ReaperNotInstalledBlocks`、`nd41InvalidReaperBlocks`、`lockOneAlsoStopsGroundB`、`readOnlyAlsoStopsGroundB`、`formulaShapeIsFixed(deletionIsIdentified)`（`nd45UnknownReaperConfBlocks` は落ちない: reaper.conf が不明なら `volumesRoot` が nil で、`preIdentityCheck` の手順 6 も偽にする） |
 | 3 | `c.parts.count >= 1` を消す | `nd21EmptyPartsIsNotDeletable`、`formulaShapeIsFixed(deletionIsIdentified)` |
 | 4 | `c.part.sourcePath?.isEmpty == false` を消す | `formulaShapeIsFixed(deletionIsIdentified)`（振る舞いでは落ちない。番犬） |
-| 5 | `preIdentityCheck` の項を消す | `nd23ReadOnlyVolumeHandleBlocks`、`unsafeRelpathBlocks`、`missingSizeOrMtimeBlocks`、`formulaShapeIsFixed(deletionIsIdentified)`（`fileAbsentFromSnapshotBlocks`・`changedFileOnDeviceBlocks`・`copyTimestampIsRejected` は `preIdentityCheck` を直接呼ぶので、式から項を消しても落ちない。それぞれ 6・8 で落ちる） |
+| 5 | `preIdentityCheck` の項を消す | `nd23ReadOnlyVolumeHandleBlocks`、`unsafeRelpathBlocks`、`missingSizeOrMtimeBlocks`、`fileAbsentFromSnapshotBlocks`、`keyThatDisagreesWithPathBlocks`、`unopenableVolumeBlocks`、`changedFileOnDeviceBlocks`、`copyTimestampIsRejected`（この 5 本は `canDeleteSource` の偽も見る）、`formulaShapeIsFixed(deletionIsIdentified)` |
 | 6 | preIdentityCheck の snapshot の relpath の確認を消す | `fileAbsentFromSnapshotBlocks` |
 | 7 | preIdentityCheck の `volume.readOnly == false` を消す | `nd23ReadOnlyVolumeHandleBlocks` |
 | 8 | preIdentityCheck の `withVerifiedTarget` を消す（常に真） | `changedFileOnDeviceBlocks`、`copyTimestampIsRejected` |
@@ -1025,7 +1025,12 @@ struct DeletionFormulaTests {
 | 27 | LockDisplay で devices `[]` を `観測=不明` にする | `defaultLines` |
 | 28 | `ReaperSignature.requirement` の `.reaper` を消す | `requirementIsVerbatim` |
 | 29 | CodeSignatureVerifier の `SecStaticCodeCheckValidity` の結果を見ずに真を返す | `wrongRequirementFails`、`unsignedFileFails` |
-| 30 | `AppIdentity.teamID` を 1 文字変える | `matchesIdentityEnv` |
+| 30 | `AppIdentity.teamID` を 1 文字変える | `matchesIdentityEnv`、`productionRequirementIsVerbatim` |
+| 31 | textIsPreserved の `frontmatterKeys(…).contains(…)` の項を消す | `frontmatterKeysAloneBlocksWhenExpectedIsEmpty`、`formulaShapeIsFixed(textIsPreserved)` |
+| 32 | deletionIsIdentified の `sameKey(c.part.sessionKey, c.session.sessionKey)` を消す | `partFromAnotherSessionIsNotIdentified`、`formulaShapeIsFixed(deletionIsIdentified)` |
+| 33 | skipReasonIsBacked の `sameKey(twin.part.sessionKey, twin.session.sessionKey)` を消す | `twinSessionMismatchIsNotBacked`、`formulaShapeIsFixed(skipReasonIsBacked)` |
+| 34 | reaperStatus の手順 1 の `cache = nil` を消す | `cacheIsClearedWhenReaperDisappears` |
+| 35 | skipReasonIsBacked の無音の分岐に `c.part.transcriptPath != nil &&` を足す（列で門前払い） | `nd06NoSpeechKeptWhileLockBIsClosed`、`formulaShapeIsFixed(skipReasonIsBacked)` |
 
 ## 8. 受け入れ条件
 
@@ -1034,7 +1039,7 @@ struct DeletionFormulaTests {
 - [ ] `reaperConf`・`reaperExecutable` の語が VDPipeline では `LockEvaluator.swift`・`ReaperRunner.swift` にしか無い（PT-11。`LockObserving.swift` の欄は `confState`）。`VolumeHandle(` が Sources に無い（PT-22）
 - [ ] 層 A の ND（ND-01〜09・21・22・23・26・31・32・36・41・45）の `[A]` のテストがあり、正の対照が真
 - [ ] `make test` が通る（`SignatureVerifierTests` は CI の macOS でも走る）
-- [ ] 破壊による証明の 30 項目で表のテストが落ちることを確かめ、PR 本文に貼った
+- [ ] 破壊による証明の 35 項目で表のテストが落ちることを確かめ、PR 本文に貼った
 - [ ] `AppIdentity` の値が identity.env と一致し、Bootstrap が `ReaperSignature.production` と `locks.observeReaperConf()` を渡している
 
 ## 9. SPEC の変更
