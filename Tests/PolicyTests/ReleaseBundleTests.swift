@@ -230,11 +230,11 @@ struct ReleaseBundleTests {
         })
     func makeAppInstallsEveryManifestEntry(_ entry: String) throws {
         let makeApp = try Self.text("scripts/make-app.sh")
-        let basename = String(entry.split(separator: "/").last ?? "")
-        #expect(!basename.isEmpty)
-        let installedDirectly = makeApp.contains(basename)
+        #expect(!entry.isEmpty)
+        let installedDirectly = makeApp.contains("\"$app/\(entry)\"")
         let installedByPromptLoop =
             entry.hasPrefix("Contents/Resources/prompts/") && makeApp.contains("Resources/prompts/*.txt")
+            && makeApp.contains("\"$app/Contents/Resources/prompts/")
         #expect(installedDirectly || installedByPromptLoop)
     }
 
@@ -256,11 +256,20 @@ struct ReleaseBundleTests {
         #expect(sign.contains("--entitlements \"$root/Resources/reaper.entitlements\""))
     }
 
-    @Test("ad-hoc 署名をしない（DR-17）")
+    @Test("DR-17 ad-hoc 署名をしない")
     func signNeverUsesAdhoc() throws {
         let sign = try Self.text("scripts/sign.sh")
         #expect(!sign.contains("--sign -"))
         #expect(sign.contains("--options runtime"))
+    }
+
+    @Test("dmg の作成でイメージをマウントしない")
+    func makeDmgNeverMounts() throws {
+        let makeDmg = try Self.text("scripts/make-dmg.sh")
+        #expect(!makeDmg.contains("-srcfolder"))
+        #expect(!makeDmg.contains("hdiutil attach"))
+        #expect(makeDmg.contains("hdiutil makehybrid"))
+        #expect(makeDmg.contains("hdiutil convert"))
     }
 
     @Test("公証はプロファイルを使い `--wait` する")

@@ -17,6 +17,8 @@ dmg="${2:-}"
 
 # shellcheck source=../identity.env
 source "$root/identity.env"
+: "${BUNDLE_ID:?identity.env に BUNDLE_ID がありません}"
+: "${TEAM_ID:?identity.env に TEAM_ID がありません}"
 version="$(tr -d '[:space:]' < "$root/VERSION")"
 
 status=0
@@ -24,7 +26,7 @@ ok()   { echo "  OK   $1"; }
 ng()   { echo "  NG   $1" >&2; status=1; }
 step() { echo "== $1"; }
 
-# V-1 中身の一覧が Resources/bundle-manifest.txt と完全一致
+# V-1 中身の一覧が Resources/bundle-manifest.txt と完全一致（ディレクトリは一覧の各行の親から導き、空のディレクトリも見つける）
 step "V-1 バンドルの中身"
 expected="$(grep -v -e '^#' -e '^$' "$root/Resources/bundle-manifest.txt" | LC_ALL=C sort)"
 actual="$(cd "$app" && find . -type f -o -type l | sed 's|^\./||' | LC_ALL=C sort)"
@@ -33,6 +35,14 @@ if [ "$expected" = "$actual" ]; then
 else
   ng "一覧が一致しません"
   diff <(echo "$expected") <(echo "$actual") >&2 || true
+fi
+expected_dirs="$(awk -F/ '{ p = ""; for (i = 1; i < NF; i++) { p = (i == 1) ? $i : p "/" $i; print p } }' <<<"$expected" | LC_ALL=C sort -u)"
+actual_dirs="$(cd "$app" && find . -mindepth 1 -type d | sed 's|^\./||' | LC_ALL=C sort)"
+if [ "$expected_dirs" = "$actual_dirs" ]; then
+  ok "ディレクトリ $(wc -l <<<"$expected_dirs" | tr -d ' ') 個が一致"
+else
+  ng "ディレクトリが一致しません（空のディレクトリか、一覧に無い場所があります）"
+  diff <(echo "$expected_dirs") <(echo "$actual_dirs") >&2 || true
 fi
 
 # V-2 Info.plist の必須キー
@@ -81,23 +91,32 @@ codesign --verify --deep --strict --verbose=2 "$app" && ok "署名が有効" || 
 # V-6 本体の識別子・Team ID・Hardened Runtime
 step "V-6 本体の署名の中身"
 info="$(codesign -dvvv "$app" 2>&1 || true)"
-grep -qx "Identifier=$BUNDLE_ID" <<<"$info" && ok "Identifier=$BUNDLE_ID" || ng "Identifier が $BUNDLE_ID でない"
-grep -qx "TeamIdentifier=$TEAM_ID" <<<"$info" && ok "TeamIdentifier=$TEAM_ID" || ng "TeamIdentifier が $TEAM_ID でない"
+grep -qxF "Identifier=$BUNDLE_ID" <<<"$info" && ok "Identifier=$BUNDLE_ID" || ng "Identifier が $BUNDLE_ID でない"
+grep -qxF "TeamIdentifier=$TEAM_ID" <<<"$info" && ok "TeamIdentifier=$TEAM_ID" || ng "TeamIdentifier が $TEAM_ID でない"
 grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\(.*runtime.*\)' <<<"$info" && ok "Hardened Runtime" || ng "Hardened Runtime でない"
 grep -q 'Authority=Developer ID Application' <<<"$info" && ok "Developer ID Application で署名" || ng "Developer ID Application でない"
 
 # V-7 reaper の識別子（PLAN §3.1・§8.9.3）
 step "V-7 reaper の署名"
 rinfo="$(codesign -dvvv "$app/Contents/Helpers/voicedock-reaper" 2>&1 || true)"
-grep -qx "Identifier=$BUNDLE_ID.reaper" <<<"$rinfo" && ok "Identifier=$BUNDLE_ID.reaper" || ng "reaper の Identifier が違う"
-grep -qx "TeamIdentifier=$TEAM_ID" <<<"$rinfo" && ok "TeamIdentifier=$TEAM_ID" || ng "reaper の TeamIdentifier が違う"
+grep -qxF "Identifier=$BUNDLE_ID.reaper" <<<"$rinfo" && ok "Identifier=$BUNDLE_ID.reaper" || ng "reaper の Identifier が違う"
+grep -qxF "TeamIdentifier=$TEAM_ID" <<<"$rinfo" && ok "TeamIdentifier=$TEAM_ID" || ng "reaper の TeamIdentifier が違う"
 codesign --verify -R "=anchor apple generic and identifier \"$BUNDLE_ID.reaper\" and certificate leaf[subject.OU] = \"$TEAM_ID\"" \
   "$app/Contents/Helpers/voicedock-reaper" && ok "アプリが使う要件文字列を満たす" || ng "要件文字列を満たさない"
 
-# V-8 エンタイトルメント（サンドボックス無し・例外無し）
+# V-8 エンタイトルメント（サンドボックス無し・例外無し）。本体と reaper の両方が空の dict であること
 step "V-8 エンタイトルメント"
-ents="$(codesign -d --entitlements - --xml "$app" 2>/dev/null | plutil -convert xml1 -o - - 2>/dev/null || echo '')"
-grep -q 'com.apple.security' <<<"$ents" && ng "エンタイトルメントが空でない: $ents" || ok "エンタイトルメントは空"
+check_entitlements() {
+  local target="$1" name="$2" raw ents
+  if ! raw="$(codesign -d --entitlements - --xml "$target" 2>/dev/null)"; then
+    ng "${name} のエンタイトルメントを読めません"
+    return
+  fi
+  ents="$(plutil -convert json -o - - <<<"$raw" 2>/dev/null || echo "<読めない>")"
+  [ "$ents" = "{}" ] && ok "${name} のエンタイトルメントは空の dict" || ng "${name} のエンタイトルメントが空の dict でない（${ents}）"
+}
+check_entitlements "$app" "本体"
+check_entitlements "$app/Contents/Helpers/voicedock-reaper" "reaper"
 
 # V-9 公証（Gatekeeper の判定）
 step "V-9 spctl と staple"

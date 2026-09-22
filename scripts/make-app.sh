@@ -32,7 +32,7 @@ bin="$(swift build --package-path "$root" -c "$conf" --arch arm64 --show-bin-pat
 for tool in whisper-cli llama-server; do
   [ -x "$root/Vendor/build/bin/$tool" ] || { echo "ERROR: Vendor/build/bin/$tool がありません（make vendor を先に実行してください）" >&2; exit 1; }
 done
-[ -f "$root/Resources/AppIcon.icns" ] || { echo "ERROR: Resources/AppIcon.icns がありません（T-30）" >&2; exit 1; }
+[ -f "$root/Resources/AppIcon.icns" ] || { echo "ERROR: Resources/AppIcon.icns がありません（作り方は T-34 §4.10）" >&2; exit 1; }
 
 # 3. 組み立て（毎回まっさらから作る）
 app="$root/dist/VoiceDock.app"

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 配布用の dmg を作る（PLAN §11.3 の 3）。
+# 配布用の dmg を作る（PLAN §11.3 の 3）。作成中にイメージをマウントしない（makehybrid → convert）。
 # 使い方: scripts/make-dmg.sh <VoiceDock.app>
 set -euo pipefail
 
@@ -13,10 +13,13 @@ version="$(tr -d '[:space:]' < "$root/VERSION")"
 dmg="$root/dist/VoiceDock-$version.dmg"
 rm -f "$dmg"
 
+mkdir -p "$root/dist"
 stage="$(mktemp -d "$root/dist/.dmg-stage.XXXXXX")"
-trap 'rm -rf "$stage"' EXIT
+hybrid="$stage.hybrid.dmg"
+trap 'rm -rf "$stage"; rm -f "$hybrid"' EXIT
 ditto "$app" "$stage/VoiceDock.app"
 ln -s /Applications "$stage/Applications"
 
-hdiutil create -volname VoiceDock -srcfolder "$stage" -format UDZO -fs HFS+ -ov "$dmg"
+hdiutil makehybrid -hfs -hfs-volume-name VoiceDock -o "$hybrid" "$stage"
+hdiutil convert "$hybrid" -format UDZO -o "$dmg"
 echo "OK: $dmg"

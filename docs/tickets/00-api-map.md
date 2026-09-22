@@ -360,5 +360,5 @@
 | VDStore | `ReadOnlyStore.inboxPaths(statuses:)`、`Store.migrationIdentifiers`（DR-02 が最新版を判定する） | T-32 |
 | VoiceDockApp | `AppSnapshot` / `AppServices` / `StatusLine` / `StatusIconImage` / `PanelStyle` / `Onboarding` / `ModelChoices` / `FolderChooser` / `DownloadState` / `AppModel+*` / `AttentionTexts`、`Bootstrap.build() async -> Result<AppContext, BootFailure>` | T-30・T-31・T-32 |
 | voicedock-reaper | `ReaperIO.swift`（`PosixIO` が internal なので reaper 側に同じものを置く）、`main.swift` は `ReaperMain.run(arguments:)` の返す `ReaperExit` を出力して exit | T-37 |
-| 資源 | `Resources/bundle-manifest.txt`（T-34。バンドルに入ってよいファイルの唯一の出所）、`Resources/AppIcon.icns`（**T-30 が作る**） | T-34・T-30 |
+| 資源 | `Resources/bundle-manifest.txt`（T-34。バンドルに入ってよいファイルの唯一の出所）、`Resources/AppIcon.icns`（**T-34（仮アイコン。利用者の決定）**） | T-34 |
 

@@ -2381,7 +2381,7 @@ cmake --build build --config Release --target llama-server -j       # → build/
    - reaper は `--identifier <BUNDLE_ID>.reaper` と `reaper.entitlements`（空）。**アプリ本体にも `--identifier <BUNDLE_ID>` を明示する**（`CFBundleIdentifier` と署名の識別子の食い違いに気づけるように）
    - アプリ本体は `VoiceDock.entitlements`（Hardened Runtime のみ。サンドボックスなし。追加の例外エンタイトルメントなし）
 2. `.app` を `ditto -c -k --keepParent` で zip → `xcrun notarytool submit --keychain-profile VOICEDOCK_NOTARY --wait` → `xcrun stapler staple VoiceDock.app`
-3. dmg: 一時フォルダに `VoiceDock.app` と `/Applications` への symlink を置き、`hdiutil create -volname VoiceDock -srcfolder <tmp> -format UDZO VoiceDock-<ver>.dmg`
+3. dmg: 一時フォルダに `VoiceDock.app` と `/Applications` への symlink を置き、`hdiutil makehybrid -hfs -hfs-volume-name VoiceDock -o <中間>.dmg <tmp>` → `hdiutil convert <中間>.dmg -format UDZO -o VoiceDock-<ver>.dmg`（**作成中にイメージをマウントしない**。`-srcfolder` は使わない。F-62）
    → dmg に署名 → 公証 → staple
 4. `scripts/verify-bundle.sh`（リリースの必須ゲート）:
    - `codesign --verify --deep --strict --verbose=2 VoiceDock.app`
@@ -3092,3 +3092,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-59 | 事 | §8.1 規則 5・§8.1（再マウント） | （P0-01・P0-02 の実測）`access(2)` は macOS 26.6 では TCC の拒否で EPERM になる（「成功する」は版による）。判定は従来どおり列挙で行う。実機の再マウントでは `-mountPoint` は使えない（アンマウントで `/Volumes/<名前>` が消える）ので本番は `useMountPoint: false` |
 | F-60 | 事 | §1.2・§1.3・§7.2・§8.12・§8.13・§12.3・付録 B.3 | （2026-09-22 に利用者が決定）voicedock からの乗り換えを v1 で扱わない。§8.13（`ImportedKeysScanner`）と T-33・E2E-18 を取り下げた（番号は詰めない）。`imported_keys` の表と IngestService の除外は実装済みのまま残り、空の表として無害。§8.8 は残す |
 | F-61 | 事 | §1.3・§2.1・§5.4・§8.1・§8.2・§8.11・§10.3・§12・付録 A.4・付録 B.3 | （2026-09-22 に利用者が決定）このアプリが完成したら voicedock は動かさないので、共存ガード（voicedock の Helper の LaunchAgent が登録されていたら取り込み・処理・削除を止める）を取り下げた。§8.1 の手順 1 は欠番、DR-13 は打ち消しの行、E2E-15 は取り下げ（番号は詰めない）。`coexistence_blocked`・要対応の `coexistenceBlocked` を消した。読み取り専用の再マウント・原本を `O_RDONLY` で開くことなど、ほかの取り込みの安全策は変えない |
+| F-62 | 事 | §11.3 | （2026-09-22 に利用者が決定）dmg の作成を `hdiutil create -srcfolder`（内部でイメージを `/Volumes` の下に attach する）から `hdiutil makehybrid -hfs` → `hdiutil convert -format UDZO` に変えた。作成中に何もマウントしないので、実機の DJI Mic 3 が挿さっていても `/Volumes` に触れない |

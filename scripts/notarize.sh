@@ -13,6 +13,7 @@ target="$1"
 if [ "${target##*.}" = "app" ]; then
   upload="$root/dist/$(basename "$target" .app)-notarize.zip"
   rm -f "$upload"
+  trap 'rm -f "$upload"' EXIT   # 公証用の zip は送ったら要らない（.app の側を staple する）
   ditto -c -k --keepParent "$target" "$upload"
 else
   upload="$target"

@@ -63,4 +63,13 @@ codesign --force --options runtime $timestamp --sign "$identity" \
   "$target"
 
 codesign --verify --deep --strict --verbose=2 "$target"
-echo "OK: $target を署名しました"
+
+# 開発でも配布でも、署名した証明書の Team ID が identity.env と同じであること（TCC の許可と reaper の要件文字列が Team ID で決まる）
+for signed in "$target" "$target/Contents/Helpers/voicedock-reaper"; do
+  info="$(codesign -dvvv "$signed" 2>&1 || true)"
+  if ! grep -qxF "TeamIdentifier=$TEAM_ID" <<<"$info"; then
+    echo "ERROR: ${signed} の TeamIdentifier が ${TEAM_ID} でありません（identity.env と別のチームの証明書で署名しました）" >&2
+    exit 1
+  fi
+done
+echo "OK: $target を署名しました（TeamIdentifier=${TEAM_ID}）"
