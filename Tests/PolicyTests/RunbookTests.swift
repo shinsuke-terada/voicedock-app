@@ -364,6 +364,13 @@ struct RunbookTests {
         #expect(lines.contains { $0.hasPrefix(target + ":") }, "Makefile に \(target): が無い")
     }
 
+    @Test("陽性対照: make のターゲットを拾える")
+    func theMakeTargetExtractionWorks() {
+        #expect(Runbook.makeTargets("make e2e") == ["e2e"])
+        #expect(Runbook.makeTargets("`make app` の前に `make vendor`") == ["app", "vendor"])
+        #expect(Runbook.makeTargets("").isEmpty)
+    }
+
     @Test("消えたスクリプト名を書いていない")
     func theRunbookNamesNoRemovedScript() throws {
         let text = try Self.fullText()

@@ -23,6 +23,10 @@
 
 ## 1. 前提
 
+> **実施は T-38・T-39 のマージ後に行う。**この文書（T-35）が develop に入った時点では、削除の段（T-38 の削除フロー・T-39 の SKIPPED の後始末）がまだ空である。
+> そのため Part は `RAW_SAVED`、Session は `SAVED` で止まって `COMPLETED` にならず、`source_delete_skipped` も出ない。
+> E2E-03・07・08 などの「`COMPLETED`」「`source_delete_skipped reason=delete_source_audio_disabled`」の期待は、T-38・T-39 が入るまで観測できない。
+
 - `make app` で組み立てた `VoiceDock.app`（T-34）を使う。**ad-hoc 署名では行わない**（TCC の許可がビルドのたびに失効する）。
   署名の確認: `codesign -dvvv <VoiceDock.app のパス> 2>&1 | grep -E 'Identifier=|TeamIdentifier='`
 - **削除は OFF のまま行う**（E2E-10 / E2E-11 / E2E-17 を除く）。パネルの「元音声の削除」で三重ロックが 3 つとも掛かっていることを確かめてから始める
@@ -57,14 +61,14 @@ export DEV="<デバイスのボリューム名。例 DJIMIC3>"
 
 ### 実機を使う前にやること【利用者が行う】
 
-試験の日の最初に、次の 4 つを順に行う。**1 は実機を挿す前に行う。**デバイスに対しては読み取りだけで、書き込むのはホームの下だけである。
+試験の日の最初に、次の 3 つを順に行う。**1 は実機を挿す前に行う。**デバイスに対しては読み取りだけで、書き込むのはホームの下だけである。
 
 1. **voicedock（参照実装）が動いていないことを確かめる。**このアプリは voicedock との共存を見張らない（PLAN F-61 で共存ガードを取り下げた）。
    voicedock の Helper が登録されたままだと、同じデバイスを 2 つのアプリが同時に扱う。確かめ方は読み取りだけ:
 
    ```bash
    launchctl print "gui/$(id -u)/com.voicedock.ingest" > /dev/null 2>&1; echo "exit=$?"
-   command -v docker && docker ps --format '{{.Names}}' | grep -i voicedock
+   command -v docker && docker ps --format '{{.Names}}' 2>/dev/null | grep -i voicedock
    ```
 
    期待: 1 行目が `exit=0` **でない**（Helper の LaunchAgent が登録されていない）。2 行目は docker のパスのほかに何も出ない（docker が無ければ何も出さずに終わる）。
@@ -73,25 +77,36 @@ export DEV="<デバイスのボリューム名。例 DJIMIC3>"
 2. **このアプリで下準備の接続を 1 回行う。**このアプリは voicedock の取り込み済みの記録を引き継がない（PLAN F-60）ので、
    最初の接続ではデバイスに残っている以前の録音も**すべて**取り込まれる（削除 OFF なので 1 本も消えない）。
    以前の録音の処理が各シナリオに混ざらないように、E2E-01 の前にいちど挿して、パネルが「待機中」に戻るまで待つ。
-   以前の録音のノートが `$VAULT` に書かれる。普段の Vault を汚したくなければ、試験用の Vault を作って「保存先（Vault）」に選んでおく
+   以前の録音のノートが `$VAULT` に書かれる。普段の Vault を汚したくなければ、試験用の Vault を作って「保存先（Vault）」に選んでおく。
+   この接続の途中で、次の段を行う:
 
-3. **デバイスの全ファイルの一覧を退避する。**下準備の接続のあいだ（`[C-8]` に `read-only` が出たあと）に取る。
-   `[C-7]` は `.wav` だけを見るので、ここでは種類を問わず全ファイルを取る:
+   - **デバイスの全ファイルの一覧を退避する。**`[C-8]` に `read-only` が出たあとに取る。
+     `[C-7]` は `.wav` だけを見るので、ここでは種類を問わず全ファイルを取る:
 
-   ```bash
-   mkdir -p "$HOME/VoiceDockE2E"
-   find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before.txt"
-   wc -l "$HOME/VoiceDockE2E/device-all-before.txt"
-   ```
+     ```bash
+     mkdir -p "$HOME/VoiceDockE2E"
+     find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before.txt"
+     wc -l "$HOME/VoiceDockE2E/device-all-before.txt"
+     ```
 
-   試験をすべて終えたら、同じ `find` の出力を `device-all-after.txt` に取り、`comm -23` で**前にあって後に無い行**が 0 行であることを確かめる
-   （削除 OFF の 13 件では録音は 1 本も消えない。後には新しく録った分が増えているだけになる）:
+     試験をすべて終えたら、同じ `find` の出力を `device-all-after.txt` に取り、`comm -23` で**前にあって後に無い行**が 0 行であることを確かめる
+     （削除 OFF の 13 件では録音は 1 本も消えない。後には新しく録った分が増えているだけになる）:
 
-   ```bash
-   comm -23 "$HOME/VoiceDockE2E/device-all-before.txt" "$HOME/VoiceDockE2E/device-all-after.txt"
-   ```
+     ```bash
+     comm -23 "$HOME/VoiceDockE2E/device-all-before.txt" "$HOME/VoiceDockE2E/device-all-after.txt"
+     ```
 
-4. 下準備の接続が終わったら、以後の各シナリオはそのシナリオの `#### 前提` どおりに録音を足して挿す
+3. 下準備の接続が終わったら、以後の各シナリオはそのシナリオの `#### 前提` どおりに録音を足して挿す
+
+### ログの数え方
+
+`app.log` は大きくなると `app.log.1` へ 1 世代だけ回転する。**前後で件数を比べるときは 2 つを合わせて数える**:
+
+```bash
+cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '<イベント名>'
+```
+
+後の件数が前より少なければ、あいだで 2 回以上回転して古い行が落ちている。そのときは件数を比べずに、時刻が試験の開始より後の行だけを貼る。
 
 ### 手順の実在確認
 
@@ -172,10 +187,10 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 
 1. [C-1]・[C-5] を取る
 2. デバイスを挿す
-3. [C-8] に `read-only` が出たら [C-7] を取り、**ファイルに保存する**（[C-7] のコマンドの末尾に `> /tmp/e2e02-before.txt` を足す）
+3. [C-8] に `read-only` が出たら [C-7] を取り、**ファイルに保存する**（[C-7] のコマンドの末尾に `| tee "$HOME/VoiceDockE2E/e2e02-before.txt"` を足す）
 4. パネルが「取り込み中 n/3」の間に、**コピーが始まってから 30 秒待って抜く**
 5. [C-5]・[C-2] を取る
-6. もう一度挿し、[C-8] に `read-only` が出たら [C-7] を `/tmp/e2e02-after.txt` に取り、`diff /tmp/e2e02-before.txt /tmp/e2e02-after.txt; echo "exit=$?"` を打つ
+6. もう一度挿し、[C-8] に `read-only` が出たら [C-7] を同じく `| tee "$HOME/VoiceDockE2E/e2e02-after.txt"` で取り、`diff "$HOME/VoiceDockE2E/e2e02-before.txt" "$HOME/VoiceDockE2E/e2e02-after.txt"; echo "exit=$?"` を打つ
 7. 最後まで待つ
 8. [C-1]・[C-5]・[C-7]・[C-10] を取る
 
@@ -188,7 +203,7 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 **inbox に取り残しが出ない**（パネルの「状態の詳細」の inbox が「処理待ち n 件」だけで「取り残し」が 0 件。voicedock #120）。
 
 #### 記録
-6 の `diff` の**全文**（空なら `（差分なし）` と書いてコマンドと終了コードを貼る）、[C-5] の前後、`copy_failed` の行、[C-10] の inbox の 2 つの件数。
+6 の `diff` の**全文**（空なら `（差分なし）` と書いてコマンドと終了コードを貼る）、[C-5] の前後、`copy_failed` の行（`grep copy_failed "$VD_HOME/logs/app.log"`）、[C-10] の inbox の 2 つの件数。
 
 ```text
 ```
@@ -218,7 +233,7 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 元音声が残る（[C-7] の前後が一致）。
 
 #### 記録
-[C-1]（後）、[C-4] の当該 Part の遷移、`source_delete_skipped` の行、[C-6]、[C-7] の前後の `diff`。
+[C-1]（後）、[C-4] の当該 Part の遷移、`source_delete_skipped` の行（`grep source_delete_skipped "$VD_HOME/logs/app.log"`）、[C-6]、[C-7] の前後の `diff`。
 
 ```text
 ```
@@ -252,7 +267,7 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 7: **再起動なしで** `pipeline_resumed reason=vault_unavailable` が出て、Raw / Daily が書かれる。
 
 #### 記録
-5 の `diff /tmp/e2e04-before.txt <(…)` の全文、`pipeline_paused` と `pipeline_resumed` の行、4 と 8 の [C-10]。
+5 の `diff /tmp/e2e04-before.txt <(…)` の全文、`pipeline_paused` と `pipeline_resumed` の行（`grep -E 'pipeline_paused|pipeline_resumed' "$VD_HOME/logs/app.log"`）、4 と 8 の [C-10]。
 
 ```text
 ```
@@ -268,18 +283,19 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 #### 手順
 【利用者が行う】
 
-1. [C-1] と `grep -c -E 'part_discovered|copy_completed|file_not_stable' "$VD_HOME/logs/app.log"` を取る（前）
-2. 挿す → [C-8] に `read-only` が出る → パネルが「待機中」のままであることを見る → 抜く、を **6 回**繰り返す（各回の [C-8] を取る）
+1. [C-1] と `cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E 'part_discovered|copy_completed'` を取る（前。§1「ログの数え方」）
+2. 挿す → [C-8] に `read-only` が出る → パネルの「状態」を見る → 「待機中」に戻ったら抜く、を **6 回**繰り返す（各回の [C-8] と、各回に見えた「状態」の文言を取る）
 3. [C-1] と 1 と同じ `grep -c` を取る（後）
 
 #### 期待
 Part と Session の件数が**1 件も増えない**（[C-1] の前後が完全一致）。
 各回に [C-8] に `read-only` が出る（アプリが毎回デバイスを見つけ、読み取り専用へ再マウントした）。
-`part_discovered`・`copy_completed`・`file_not_stable` の件数が前後で同じ。
-`scan_completed devices=1 copied=0` はコピーが 0 件なので DEBUG であり、既定（`logging.level` が `INFO`）の `app.log` には出ない（PLAN 付録 A.4）。
+各回、走査のあいだだけ「状態」が一瞬「デバイスを調べています」になり、すぐ「待機中」に戻る（「取り込み中」にはならない）。
+`part_discovered`・`copy_completed` の件数が前後で同じ。
+`scan_completed devices=1 copied=0` と `file_not_stable` は DEBUG であり、既定（`logging.level` が `INFO`）の `app.log` には出ないので数えない（PLAN 付録 A.4）。
 
 #### 記録
-[C-1] の前後の表、1 と 3 の `grep -c` の出力、6 回分の [C-8]。
+[C-1] の前後の表、1 と 3 の `grep -c` の出力、6 回分の [C-8] と「状態」の文言。
 
 ```text
 ```
@@ -309,7 +325,7 @@ Part と Session の件数が**1 件も増えない**（[C-1] の前後が完全
 
 #### 記録
 3 と 4 の時刻と差、`sqlite3 "$VD_DB" "SELECT session_key, part_count, failed_part_count, recorded_seconds, status FROM sessions;"`、
-`transcription_completed` の `rtf=` の一覧（`grep -o 'rtf=[0-9.]*'`）。
+`transcription_completed` の `rtf=` の一覧（`grep transcription_completed "$VD_HOME/logs/app.log" | grep -o 'rtf=[0-9.]*'`）。
 
 ```text
 ```
@@ -331,7 +347,7 @@ Part と Session の件数が**1 件も増えない**（[C-1] の前後が完全
 4. [C-1]・[C-3]・[C-4]・Daily ノートの警告の節
 
 #### 期待
-止まらない。無音の Part は `SKIPPED`（`NO_SPEECH`）、もう 1 本は `COMPLETED`。Daily の警告行に**「無音」**と出る。
+止まらない。無音の Part は `SKIPPED`（`NO_SPEECH_DETECTED`）、もう 1 本は `COMPLETED`。Daily の警告行に**「無音」**と出る。
 **`⚠` が付かない**（`⚠` は許可リストで判定する。voicedock #140 は SKIPPED に「再試行されます」と書いていた）。
 **無音の元音声は残る**（根拠 B は既定 false）。
 
@@ -359,18 +375,25 @@ Daily ノートの警告の節を**行ごとそのまま**、[C-1]、`grep 'part
 5. [C-1]・[C-4]・Daily の警告の節
 6. `rm "$VD_HOME/staging/<slug>/audio16k.wav"`
 7. 抜いてから、**もう一度挿す**
-8. 完走を待って [C-1]・[C-4]
+8. [C-4] で、壊した Part が `FAILED`（`NORMALIZED_MISSING`）になったことを見る
+9. **挿したまま待つ。**次の走査（`device.scanIntervalSeconds` の既定 300 秒ごと）でデバイスから再コピーされる。待てなければ、抜いてもう一度挿してもよい
+10. 完走を待って [C-1]・[C-4]
 
 **落とし穴**: **モデルのファイルを消して失敗させない**（起動時の前提の確認に引っかかって別の経路になる。voicedock #131）。
 **壊すのは 16 kHz 音声だけ**。FAILED になった Part の 16 kHz 音声を**勝手に消さない**のが正しい動き（voicedock #133 の逆）。
+inbox の原本は触らない（`audio.inboxRetain` の既定 `normalized` では、変換が済んだ時点でアプリが消している）。
 
 #### 期待
-5: その Part が `FAILED`（`WHISPER_FAILED`）、他の Part は進み、Daily に警告行が出る。
+5: その Part が `FAILED`（`WHISPER_FAILED`。工程内リトライで 3 回試したあと）、他の Part は進み、Daily に警告行が出る。
 **`error_message` がヘルプ全文になっていない**（voicedock #135。`sqlite3 "$VD_DB" "SELECT length(error_message) FROM recordings WHERE status='FAILED';"` が数百文字以内）。
-8: 16 kHz 音声が無いので `NORMALIZED_MISSING` → **再コピー** → 再評価で完走して `COMPLETED`。
+8: 接続の立ち上がりで再評価され（`FAILED→TRANSCRIBING`、detail `requeue`。`recovery_completed requeued=1`）、16 kHz 音声も inbox の原本も無いので `TRANSCRIBING→NORMALIZING→FAILED`（`NORMALIZED_MISSING`）になる。
+`normalize_failed` が `reason=input` で出る。この接続の走査は再評価より先に済んでいるので、ここではまだ再コピーされない。
+9〜10: 次の走査で**再コピー**され（`copy_completed … recopy=true`）、再コピーの完了を契機に `FAILED→NORMALIZING`（detail `recopied`）、`recovery_completed requeued=1`。
+変換し直して（`normalize_completed` が 2 回目）完走し `COMPLETED`。
 
 #### 記録
-5 と 8 の [C-1]・[C-4]、`error_message` の全文と長さ、`normalize_completed` が 2 回出ていること。
+5 と 10 の [C-1]・[C-4]、8 の [C-4]、`error_message` の全文と長さ、
+`grep -E 'normalize_completed|normalize_failed|copy_completed|recovery_completed' "$VD_HOME/logs/app.log"`（`normalize_completed` が当該 Part で 2 回出ていること）。
 
 ```text
 ```
@@ -398,7 +421,7 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 `session_reopened` が毎回出て、`llm_completed` も毎回出る（**再オープンで解析をやり直す**。voicedock #108 はやり直していなかった）。Raw ノートも同じ 1 ファイル。
 
 #### 記録
-[C-9] の前後（4 回分のファイル数）、`grep -c session_reopened`、`grep -c llm_completed`。
+[C-9] の前後（4 回分のファイル数）、`cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c session_reopened`、同じく `grep -c llm_completed`（1 回目の前と 4 回目の後。§1「ログの数え方」）。
 
 ```text
 ```
@@ -457,10 +480,10 @@ PLAN 付録 B.3 の E2E-11 の行。
 
 #### 期待
 起動時の復旧で途中の状態が巻き戻り、**途中から再開**する。
-**二重処理しない**（[C-1] の Part の合計が前後で同じ、`part_discovered` が本数ぶんだけ）。`recovery_completed rolled_back=<n>` が 1 件出る。
+**二重処理しない**（[C-1] の Part の合計が前後で同じ、`part_discovered` が本数ぶんだけ）。`grep 'recovery_completed rolled_back' "$VD_HOME/logs/app.log"` が 1 行（`rolled_back=<n>`）。
 
 #### 記録
-[C-1] の前後、4 の出力、`recovery_completed` の行、[C-4] の巻き戻しの遷移。
+[C-1] の前後、4 の出力、`grep 'recovery_completed rolled_back' "$VD_HOME/logs/app.log"` の出力、[C-4] の巻き戻しの遷移。
 
 ```text
 ```
@@ -499,7 +522,7 @@ PLAN 付録 B.3 の E2E-11 の行。
 ### 3.14 E2E-14 — アプリが動いていない間に接続
 
 #### 前提
-削除 OFF。1 分程度の録音 1 本。**アプリを終了しておく**（パネルの「終了」）。
+削除 OFF。1 分程度の録音 1 本。**アプリを終了しておく**（パネルの「VoiceDock を終了」）。
 
 #### 手順
 【利用者が行う】
@@ -514,7 +537,7 @@ PLAN 付録 B.3 の E2E-11 の行。
 3 の間は何も起きない。4 の起動後の最初の走査で取り込まれ、最後まで通る（`service_started` → `scan_completed copied=1`）。
 
 #### 記録
-[C-1]（前後）、`service_started` と最初の `scan_completed` の行と時刻。
+[C-1]（前後）、`service_started` と最初の `scan_completed` の行と時刻（`grep -E 'service_started|scan_completed' "$VD_HOME/logs/app.log" | tail -n 5`）。
 
 ```text
 ```
