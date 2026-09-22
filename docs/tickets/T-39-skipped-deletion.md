@@ -35,6 +35,8 @@
 | `Tests/VDPipelineTests/SkippedDeletionRoundTripTests.swift` | 根拠 B の往復（回収・拒否・期限切れ。1 本は `.diskImage` で本物の reaper） |
 | `Tests/VDPipelineTests/DeletionStagesWiringTests.swift`（行を足す） | tick の中で根拠 B の要求を書く |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | 1 キーを消す（§6.5） |
+| `Tests/PolicyTests/SkippedSettlerShapeTests.swift` | 「デバイスに在るもの」の絞り込みの形を固定する（§6.6。TEST-30） |
+| `Tests/PolicyTests/SpecSync/SpecCoverageTests.swift`（行を足す） | `activated` が `.cv`・`.dr`・`.nd` を含むこと（§6.7） |
 
 ## 4. 仕様
 
@@ -92,7 +94,7 @@ struct SkippedSettler {
 
 ### 4.3 `SpecCoverage.swift`（T-05 のファイルの変更）
 
-`static let activated: Set<SpecIDKind>` に `.nd` を足す（既に在る `.cv`・`.dr` は残す。`.rv` は T-05 §4 で T-37 の持ち分とされたが develop に無く、RV-01・02・05 の表示名のテストが無いので、このチケットでは足さない。実装時に確認）。コメントの「T-39 が `.nd` を足す」をそのまま残す。
+`static let activated: Set<SpecIDKind>` に `.nd` を足す（既に在る `.cv`・`.dr` は残す。`.rv` は T-05 §4 で T-37 の持ち分とされたが develop に無く、RV-01・02・05 の表示名のテストが無いので、このチケットでは足さない。実装時に確認）。コメントは「T-09 が `.cv`、T-32 が `.dr`、T-39 が `.nd` を足した」と「`.rv` は T-37 の積み残し。RV-01・02・05 の ID で始まるテストが無い。別の issue で扱う。」の 2 行にする（事実に合わせる）。
 
 これで `activatedKindsMatchSpec`（SPEC の ND の集合 = テストの表示名の ND の集合）と `ndLayersAreCovered`（付録 B.1 の層ごとに 1 本以上）が効く。マージの時点の対応（確かめてから有効にする）:
 
@@ -152,6 +154,7 @@ struct SkippedSettler {
 | `queueWriteFailureKeepsSkipped` | ② が書けなければ ID を外して SKIPPED のまま | queue/delete を `chmod 0o555` | 0、ID nil、SKIPPED、`reason=queue_write_failed error_code=DELETE_QUEUE_FAILED` |
 | `duplicateWithoutRecordedTwinIsNotRequested` | duplicate_of が nil の重複は要求しない（v5.55 以前の重複） | 重複を `duplicateOf: nil` で足す | 0 |
 | `twinInAnotherSessionIsUsed` | 双子が別の日でも双子の Session で根拠 A を見る | `addSession(key: "DJIMIC3:20260911", dayDate: "2026-09-11")`、双子（`TX_MIC001_20260911_090000/TX00_MIC001_20260911_090000_orig.wav`）をその日に RAW_SAVED で足し `writeRawNote(sessionKey: "DJIMIC3:20260911")`、重複の `duplicateOf` をその双子に | 1 |
+| `readsTheRowAgainBeforeRequesting` | 一覧の後に決着した Part には要求しない（読み直し） | 無音の SKIPPED を 2 本（既定と、10:00 の `addPart(…, status: .skipped, errorCode: .noSpeechDetected)`。どちらもデバイスに在る）、ロック B、間引きを越える。`FakeVolumeOpener` を包み、最初の `open` のときに `updateRecording(pk2, [.sourceDeletedAt("2026-09-12T12:00:30+09:00")])` を書く VolumeOpener（テストの中で定義）を `deletionDependencies(ingest:opener:)` に渡す | 1、要求の partkey は既定の Part だけ、`pk2` の `deleteRequestID` は nil |
 | `emptySkippedListDoesNothing` | SKIPPED が無ければ 0（TEST-28） | 既定の舞台、ロック B | 0 |
 
 ### 6.3 `Tests/VDPipelineTests/SkippedDeletionRoundTripTests.swift`（`@Suite("根拠 B の往復")`）
@@ -179,21 +182,37 @@ struct SkippedSettler {
 
 `cleanup.deleteSkippedSource` の 1 行を消す（CE テストは §6.2 の `lockBClosedReadsNothing`）。
 
+### 6.6 `Tests/PolicyTests/SkippedSettlerShapeTests.swift`（`@Suite("SkippedSettlerShape")`）
+
+§7 の #2 は振る舞いでは落とせない（式の事前確認が同じ条件を見る）ので、形で固定する（TEST-30。`DeletionFormulaTests` と同じく `OrderingPolicy.body` と `DeletionFormulaTests.normalized` を使う）。
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `deviceFilterPrecedesTheLoop` | TEST-30 SkippedSettler は要求のループの前に snapshot.devices[ でデバイスに在るものへ絞り込む | `Sources/VDPipeline/SkippedSettler.swift` の `settleSkippedDeletions` の本体 | `snapshot.devices[` を含み、§4.1 手順 5 の `present = skipped.filter { … }` が `for stale in present {` より前にある |
+| `checkerRejectsMissingOrLateFilter` | 検査自体の対照: 絞り込みが無いか、ループの後にあれば偽（前にあれば真） | ループだけのソース／絞り込みがループの後にあるソース／前にあるソース | 偽・偽・真 |
+| `emptySourceHasNoBody` | 空のソースには関数が無い（TEST-28） | `""` | nil |
+
+### 6.7 `Tests/PolicyTests/SpecSync/SpecCoverageTests.swift`（行を足す）
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `activatedKeepsTheCheckedKinds` | 有効にした種類は .cv・.dr・.nd を含む（外すと集合の一致の検査が黙って止まる。T-39） | なし | `SpecCoverage.activated.isSuperset(of: [.cv, .dr, .nd])` |
+
 ## 7. 破壊による証明
 
 | # | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|---|
 | 1 | `deleteSkippedSource` の早期の return を消す（式の項は残る） | `lockBClosedReadsNothing`（readiness を評価する）。ND-03 / ND-06 は T-36 の式の項が受け止める（多重防御。PR に書く） |
-| 2 | 手順 5 の「デバイスに在るもの」の絞り込みを消す | 落ちない（式の事前確認が同じ条件を見るので結果は同じ。これは費用の規則: 過去の SKIPPED の件数に比例して読まない）。壊したのに通ったことを PR に書き、レビュー項目として残す |
+| 2 | 手順 5 の「デバイスに在るもの」の絞り込みを消す | `deviceFilterPrecedesTheLoop`（§6.6。振る舞いのテストは式の事前確認が同じ条件を見るので落ちない。これは費用の規則: 過去の SKIPPED の件数に比例して読まない） |
 | 3 | 間引きの `first` を `min()` にする | `backoffUsesTheFirstElementNotTheMinimum` |
 | 4 | 間引きを消す | `recentSkipWaitsForTheFirstBackoff`、`rejectedNoSpeechIsNotRetriedAtOnce`（pended も消したとき） |
-| 5 | 読み直しを消す（一覧の行を使う） | 落ちない（直列の Worker の中では一覧と読み直しの間に行が変わらない。voicedock と同じ防御）。① の `updateRecordingIfStatus(status: .skipped)` が状態の変化を捕まえることは T-38 の `writerRefusesAStaleRow` が見る。PR に書く |
+| 5 | 読み直しを消す（一覧の行を使う） | `readsTheRowAgainBeforeRequesting`（① の `updateRecordingIfStatus(status: .skipped)` が捕まえるのは status の変化だけで、`source_deleted_at`・`delete_request_id` の変化は捕まえない。status の変化の側は T-38 の `writerRefusesAStaleRow` が見る） |
 | 6 | `deleteRequestID == nil` の確認を消す | `awaitingPartIsNotRequestedAgain` |
 | 7 | `sourceDeletedAt == nil` の確認を消す | `alreadyDeletedIsNotRequested`（事前確認がデバイスに在ることで通るように、ファイルを置いたまま） |
 | 8 | pended の確認を消す | `pendedThisTickIsNotRequested` |
 | 9 | 要求の後に `recordPartTransition(.skipped → …)` を足す | `staysSkippedAndKeepsItsReason`（IllegalTransition か error_code の上書き） |
 | 10 | twin を nil で渡す | `duplicateActuallyRequestedWhenTwinIsPreserved`、`twinInAnotherSessionIsUsed` |
-| 11 | `SpecCoverage.activated` から `.nd` を外す | （外すと検査が止まるだけで落ちない。逆に ND のテストを 1 本消して `activatedKindsMatchSpec`・`ndLayersAreCovered` が落ちることを確かめる） |
+| 11 | `SpecCoverage.activated` から `.nd` を外す | `activatedKeepsTheCheckedKinds`（§6.7）。加えて ND のテストを 1 本消して `activatedKindsMatchSpec`・`ndLayersAreCovered` が落ちることを確かめる |
 | 12 | `stageSettleSkippedDeletions` の本体を空に戻す | `tickSettlesSkippedParts` |
 
 ## 8. 受け入れ条件

@@ -2,6 +2,7 @@
 // 舞台は三重ロックを全部外した DeletionScene。/Volumes には触れない（volumesRoot は TempDirectory）。
 import Darwin
 import Foundation
+import Synchronization
 import TestSupport
 import Testing
 import VDContract
@@ -10,6 +11,26 @@ import VDDevice
 import VDStore
 
 @testable import VDPipeline
+
+/// 最初の open のときに一度だけ side を呼ぶ VolumeOpener（中身は FakeVolumeOpener）。一覧の後・読み直しの前に行が変わる姿を作る
+final class SideEffectVolumeOpener: VolumeOpener {
+    private let inner = FakeVolumeOpener()
+    private let fired = Mutex(false)
+    private let side: @Sendable () -> Void
+
+    init(side: @escaping @Sendable () -> Void) {
+        self.side = side
+    }
+
+    func open(volumesRoot: String, deviceID: String) -> VolumeOpenResult {
+        let first = fired.withLock { done in
+            defer { done = true }
+            return !done
+        }
+        if first { side() }
+        return inner.open(volumesRoot: volumesRoot, deviceID: deviceID)
+    }
+}
 
 @Suite("SkippedSettler")
 struct SkippedSettlerTests {
@@ -249,6 +270,25 @@ struct SkippedSettlerTests {
         scene.clock.advance(seconds: 60)
         #expect(await Self.settle(Self.deps(scene)) == 1)
         #expect(try Self.requestedPartkeys(scene) == [dup])
+    }
+
+    @Test("一覧の後に決着した Part には要求しない（読み直し）")
+    func readsTheRowAgainBeforeRequesting() async throws {
+        let scene = try Self.noSpeechScene()
+        let pk2 = try scene.addPart(
+            fileName: "TX00_MIC001_20260912_100000_orig.wav", folder: "TX_MIC001_20260912_100000",
+            startedAt: "2026-09-12T10:00:00+09:00", status: .skipped, errorCode: .noSpeechDetected)
+        Self.openLockB(scene)
+        scene.clock.advance(seconds: 60)
+        let store = scene.store
+        // 既定の Part の事前確認で最初に open したとき、2 本目の行を決着済みにする（一覧はもう取ってある）
+        let opener = SideEffectVolumeOpener {
+            _ = try? store.updateRecording(pk2, [.sourceDeletedAt("2026-09-12T12:00:30+09:00")])
+        }
+        let deps = scene.deletionDependencies(ingest: ScriptedIngest(snapshot: scene.snapshot()), opener: opener)
+        #expect(await Self.settle(deps) == 1)
+        #expect(try Self.requestedPartkeys(scene) == [DeletionScene.partkey])
+        #expect(try Self.part(scene, pk2).deleteRequestID == nil)
     }
 
     @Test("SKIPPED が無ければ 0（TEST-28）")
