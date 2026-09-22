@@ -26,14 +26,21 @@ final class AppContext {
     let ingest: IngestService
     let worker: Worker
     let models: ModelManager
+    /// ModelManager に渡したもの（T-31）
+    let downloader: ModelDownloader
     let loginItem: any LoginItemControlling
+    /// <HOME>/ui-state.json（T-31）
+    let uiState: UIStateStore
+    /// ProcessInfo.processInfo.physicalMemory（Worker と同じ値。T-31）
+    let physicalMemoryBytes: UInt64
     /// Worker.run() を回しているタスク（終了で待つ）
     var workerTask: Task<Void, Never>?
 
     init(
         layout: HomeLayout, paths: AppPaths, clock: any AppClock, log: AppLog, catalog: ModelCatalog,
         config: ConfigStore, store: Store, runner: ProcessRunner, llama: LlamaServerSupervisor, ingest: IngestService,
-        worker: Worker, models: ModelManager, loginItem: any LoginItemControlling
+        worker: Worker, models: ModelManager, downloader: ModelDownloader, loginItem: any LoginItemControlling,
+        uiState: UIStateStore, physicalMemoryBytes: UInt64
     ) {
         self.layout = layout
         self.paths = paths
@@ -47,7 +54,10 @@ final class AppContext {
         self.ingest = ingest
         self.worker = worker
         self.models = models
+        self.downloader = downloader
         self.loginItem = loginItem
+        self.uiState = uiState
+        self.physicalMemoryBytes = physicalMemoryBytes
     }
 }
 
@@ -139,6 +149,7 @@ enum Bootstrap {
                 log: log.withCategory("device"), volumesRoot: Contract.volumesRoot))
         // 12. Worker（verificationCache は 14 のモデルと共有する。WorkerDependencies へ足すチケットは未決）
         let verificationCache = ModelVerificationCache()
+        let physicalMemoryBytes = ProcessInfo.processInfo.physicalMemory
         let worker = Worker(
             deps: WorkerDependencies(
                 layout: layout, paths: paths, store: store, config: config, ingest: ingest,
@@ -150,7 +161,7 @@ enum Bootstrap {
                 },
                 clock: clock, sleeper: TaskSleeper(), log: log.withCategory("pipeline"),
                 license: AlwaysAllowLicenseGate(), catalog: catalog,
-                physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory))
+                physicalMemoryBytes: physicalMemoryBytes))
         // 13. ロック 1 の修復をつなぐ（T-40 が `await config.setLock1Reconciler { await enabler.reconcileLock1() }` を書く）
         // 14. モデル
         let hashChunkBytes =
@@ -164,7 +175,9 @@ enum Bootstrap {
         // 15. Worker.start()（復旧）を終えてから Worker のループと IngestService.start()（走査）を始める（PLAN §8.15）
         let ctx = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,
-            runner: runner, llama: llama, ingest: ingest, worker: worker, models: models, loginItem: SystemLoginItem())
+            runner: runner, llama: llama, ingest: ingest, worker: worker, models: models, downloader: downloader,
+            loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
+            physicalMemoryBytes: physicalMemoryBytes)
         ctx.workerTask = await startServices(
             workerStart: { await worker.start() }, workerRun: { await worker.run() },
             ingestStart: { await ingest.start() })

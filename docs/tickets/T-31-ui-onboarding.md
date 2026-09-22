@@ -27,8 +27,8 @@ GUI で変えられる設定は 4 つだけ（PLAN §6.3）——Vault の場所
 |---|---|
 | `Sources/VoiceDockApp/UIState.swift` | `UIState`、`UIStateStore` |
 | `Sources/VoiceDockApp/Onboarding.swift` | `OnboardingStep`、`OnboardingItem`、`OnboardingEvaluator` |
-| `Sources/VoiceDockApp/ModelChoices.swift` | `LLMChoice`、`ModelChoices`、`ModelPresence` |
-| `Sources/VoiceDockApp/FolderChooser.swift` | `FolderChooser`（プロトコル）、`OpenPanelFolderChooser`、`FileChooser`・`OpenPanelFileChooser` |
+| `Sources/VoiceDockApp/ModelChoices.swift` | `LLMChoice`、`ModelChoices` |
+| `Sources/VoiceDockApp/FolderChooser.swift` | `FolderChooser`（プロトコル）、`OpenPanelFolderChooser`、`FileChooser`・`OpenPanelFileChooser`（拡張子の絞り込みは private の `ExtensionFilter`） |
 | `Sources/VoiceDockApp/DownloadState.swift` | `DownloadState`、`ModelSlot` |
 | `Sources/VoiceDockApp/AppModel+Vault.swift` | Vault の選択 |
 | `Sources/VoiceDockApp/AppModel+Models.swift` | モデルの入手・選択・取り込み・キャンセル |
@@ -37,12 +37,16 @@ GUI で変えられる設定は 4 つだけ（PLAN §6.3）——Vault の場所
 | 変更 `Sources/VoiceDockApp/Panel/VaultSection.swift` | §8.12 の 4（T-30 が作った空の節の本体を書く） |
 | 変更 `Sources/VoiceDockApp/Panel/ModelsSection.swift` | §8.12 の 5（T-30 が作った空の節の本体を書く） |
 | 変更 `Sources/VoiceDockApp/Panel/GeneralSection.swift` | §8.12 の 6（T-30 が作った空の節の本体を書く） |
-| 変更 `Sources/VoiceDockApp/LoginItem.swift` | `register` / `unregister` / `openSystemSettingsLoginItems` を足す |
+| 変更 `Sources/VoiceDockApp/LoginItem.swift` | `LoginItemResult`、`register` / `unregister` / `openSystemSettingsLoginItems` を足す |
 | 変更 `Sources/VoiceDockApp/AppSnapshot.swift` | §4.1 のフィールドを足す |
 | 変更 `Sources/VoiceDockApp/AppServices.swift` | §4.2 の口を足す |
-| 変更 `Sources/VoiceDockApp/AppModel.swift` | `downloads`・`vaultError`・`modelError` と導出を足す |
+| 変更 `Sources/VoiceDockApp/AppModel.swift` | `downloads`・`vaultError`・`modelError`・`modelNotice`・`loginItemError`・`uiStateSaveFailed` と、init の `catalog`・`chooser`・`fileChooser`・`presentModal` を足す |
 | 変更 `Sources/VoiceDockApp/Bootstrap.swift` | `AppContext` に `downloader`・`uiState`・`physicalMemoryBytes` を足す |
 | 変更 `Sources/VoiceDockApp/Strings.swift` | §4.10 の文言 |
+| 変更 `Sources/VoiceDockApp/AppDelegate.swift` | `AppModel` の init に `catalog`・`OpenPanelFolderChooser()`・`OpenPanelFileChooser()`・`presentModal`（`StatusItemController.runModal`）を渡す（§4.6） |
+| 変更 `Tests/VoiceDockAppTests/FakeServices.swift` | §4.2 の口の偽物（呼び出しの記録・結果の差し替え・ダウンロードの保留）と `FakeFolderChooser` / `FakeFileChooser` |
+| 変更 `Tests/VoiceDockAppTests/AppModelTests.swift` | `AppModel` / `AppContext` の init に足した引数を渡す（T-30 のテストの中身は変えない） |
+| `Tests/PolicyTests/PanelPolicyTests.swift` | §7 の `PanelPolicyTests` |
 | `Tests/VoiceDockAppTests/UIStateTests.swift` | |
 | `Tests/VoiceDockAppTests/OnboardingTests.swift` | |
 | `Tests/VoiceDockAppTests/ModelChoicesTests.swift` | |
@@ -95,8 +99,8 @@ T-30 §4.0 の全体の規則を適用する。**このチケットのコード�
     /// 利用者が選んだ .gguf を読み込む（PLAN §8.10「ファイルから読み込む」）。
     func importGGUF(from source: URL) async -> Result<(id: String, url: URL), ModelError>
     /// ログイン項目の操作（PLAN §8.12 の 6）。
-    func registerLoginItem() -> Result<Void, String>
-    func unregisterLoginItem() -> Result<Void, String>
+    func registerLoginItem() -> LoginItemResult
+    func unregisterLoginItem() -> LoginItemResult
     func openSystemSettingsLoginItems()
     /// 「今はしない」などの記録。
     func saveUIState(_ state: UIState) -> Bool
@@ -250,11 +254,15 @@ struct OpenPanelFileChooser: FileChooser { … }
    `panel.message = message`、`panel.prompt = prompt`
 3. `return panel.runModal() == .OK ? panel.url : nil`
 
-`OpenPanelFileChooser.chooseFile`: `canChooseFiles = true`、`canChooseDirectories = false`、`canCreateDirectories = false`、
-`panel.allowedContentTypes = allowedExtensions.compactMap { UTType(filenameExtension: $0) }`（`.gguf` は登録が無いので、空になったら制限しない）
+`OpenPanelFileChooser.chooseFile`: `canChooseFiles = true`、`canChooseDirectories = false`、`allowsMultipleSelection = false`、`canCreateDirectories = false`、`showsHiddenFiles = false`、`message` / `prompt`、
+拡張子の絞り込みは下の実装の注記（`UTType` は使わない）
 
 - **`runModal` を呼ぶ側**（`AppModel`）は `StatusItemController.runModal { … }`（T-30 §4.6）で包む。popover が閉じて、選び終わったら開き直る
-- `AppModel` には `chooser: any FolderChooser` / `fileChooser: any FileChooser` と、`presentModal: @MainActor (() -> Void) -> Void`（`StatusItemController.runModal` を差す）を注入する。テストは全部偽物
+- `AppModel` には `catalog: ModelCatalog`（§4.7 の `entryFor`）、`chooser: any FolderChooser` / `fileChooser: any FileChooser` と、`presentModal: @MainActor (@MainActor () -> URL?) -> URL?`（`StatusItemController.runModal` を差す）を注入する。テストは全部偽物
+  - init: `AppModel(services:openFinder:layout:catalog:chooser:fileChooser:presentModal:sleeper:now:quit:)`（新しい 4 つに既定値を置かない。テストが本物の `NSOpenPanel` を出さないため）
+  - `presentModal` の型を `URL?` を返す形にするのは、`@MainActor` の関数型が `Sendable` で、Void の本体に選んだ値を捕まえた `var` で持ち出せないため（Swift 6。実装時に確認）。呼び出しは `let picked = presentModal { … }` のまま
+  - `AppDelegate` は `presentModal: { [weak self] body in guard let controller = self?.statusItem else { return body() }; return controller.runModal(body) }` を渡す（`StatusItemController` は `AppModel` の後に作るので、呼ばれた時点のものを使う）
+- **実装の注記**: `UTType` は `UniformTypeIdentifiers` の型で、VoiceDockApp の import 許可リスト（PT-07）に無く、AppKit / SwiftUI からは見えない。`allowedContentTypes` の代わりに `NSOpenSavePanelDelegate` の `panel(_:shouldEnable:)` でディレクトリと指定の拡張子（大小を区別しない）だけを選べるようにする（private の `ExtensionFilter`。`panel.delegate` は weak なので `runModal` の間 `withExtendedLifetime` で生かす）。`allowedExtensions` が空なら絞らない
 
 ### 4.7 `DownloadState.swift` と `AppModel+Models.swift`
 
@@ -273,10 +281,13 @@ enum DownloadState: Equatable, Sendable {
 
 `AppModel` に足す状態と操作:
 ```swift
-    private(set) var downloads: [ModelSlot: DownloadState] = [:]
-    private(set) var vaultError: String?
-    private(set) var modelError: String?
-    private(set) var uiStateSaveFailed = false
+    // 別ファイルの拡張（AppModel+Vault / +Models / +LoginItem）が書くので private(set) にできない（Swift の private は同じファイルの中だけ）
+    var downloads: [ModelSlot: DownloadState] = [:]
+    var vaultError: String?
+    var modelError: String?
+    var modelNotice: String?
+    var loginItemError: String?
+    var uiStateSaveFailed = false
 
     // Vault
     func chooseVault() async
@@ -292,41 +303,46 @@ enum DownloadState: Equatable, Sendable {
 ```
 
 **`fetchModel(_:)`**（PLAN §8.10 のダウンロード）:
-1. `guard downloads[slot] == nil || downloads[slot] == .idle else { return }`（二重に始めない）
+AppModel の状態に、枠ごとの世代 `downloadGenerations: [ModelSlot: Int]` と、まだ返っていない download `downloadTasks: [ModelSlot: Task<Result<URL, ModelError>, Never>]` を足す（どちらも internal・`@ObservationIgnored`）。
+
+1. `guard !isBusy(slot) else { return }`（進行中——`.running` か `.importing`——なら始めない。**`.failed` の後はもう一度始められる**）
 2. `guard let (kind, entry) = entryFor(slot) else { return }`（`entryFor`: `.whisper` → `snapshot.whisperEntry`、`.vad` → `snapshot.vadEntry`、`.llm(id)` → `catalog.entry(kind: .llm, id: id)`。custom は入手できないので nil）
-3. `downloads[slot] = .running(received: 0, total: entry.bytes)`、`modelError = nil`
-4. `let r = await services.download(kind: kind, entry: entry) { received, total in Task { @MainActor in self.progress(slot, received, total) } }`
-5. `switch r`:
+3. `let generation = (downloadGenerations[slot] ?? 0) + 1`、`downloadGenerations[slot] = generation`、`downloads[slot] = .running(received: 0, total: entry.bytes)`、`modelError = nil`
+4. `if let previous = downloadTasks[slot] { _ = await previous.value }`（やめた直後の入手し直し: 前の download が `ModelManager` から抜けるまで待つ。抜ける前に呼ぶと `ModelManager` が内部の文字列 `already_downloading` で断り、それが利用者に出る）→ `guard downloadGenerations[slot] == generation else { return }`
+5. `let task = Task { await services.download(kind: kind, entry: entry) { received, total in Task { @MainActor in self.progress(slot, generation, received, total) } } }`、`downloadTasks[slot] = task`、`let r = await task.value`、`if downloadTasks[slot] == task { downloadTasks[slot] = nil }`
+6. `downloadGenerations[slot] == generation` かつ `downloads[slot]` が `.running` のときだけ `switch r`:
    - `.success`: `downloads[slot] = .idle`
    - `.failure(let e)`: `downloads[slot] = .failed(Strings.modelError(e))`、`modelError = Strings.modelError(e)`
-6. `await refresh()`（在否を読み直す）
+7. `await refresh()`（在否を読み直す）
 
-- `progress(_:_:_:)`: `guard case .running = downloads[slot] else { return }`（キャンセル後の遅れた通知を捨てる）→ `downloads[slot] = .running(received:total:)`
-- `cancelModel(_:)`: `guard case .running = downloads[slot], let (_, entry) = entryFor(slot) else { return }` → `downloads[slot] = .idle` → `await services.cancelDownload(id: entry.id)`
-  （**先に `.idle` にしてから取り消す**。`download` の返り値 `.failure(.cancelled)` は 5 の `.failed` を書かない——`downloads[slot]` が `.running` でなければ 5 を飛ばす）
+- `progress(_:_:_:_:)`（private）: `guard downloadGenerations[slot] == generation, case .running(let shown, _) = downloads[slot] else { return }`（やめた後・前の入手の遅れた通知を捨てる）→ `guard received >= shown else { return }`（通知ごとの Task の実行順が入れ替わっても値を戻さない）→ `downloads[slot] = .running(received:total:)`
+- `entryFor(_:)`・`isBusy(_:)` も private
+- `cancelModel(_:)`: `guard case .running = downloads[slot], let (_, entry) = entryFor(slot) else { return }` → `downloads[slot] = .idle` → 世代を 1 進める → `await services.cancelDownload(id: entry.id)`
+  （**先に `.idle` にして世代を進めてから取り消す**。`download` の返り値 `.failure(.cancelled)` は 6 の `.failed` を書かない——世代が違えば 6 を飛ばす）
 - 失敗の文言 `Strings.modelError(_ e: ModelError)`（逐語。§4.10）
 
 **`selectLLM(_:)`**:
 1. `guard let choice = snapshot.llmChoices.first(where: { $0.id == id }), choice.selectable else { return }`
 2. `let r = await services.updateConfig { $0.llm.modelID = id }`
-3. `.failure(let v)` → `modelError = Strings.configRejected(v)`。`.success` → `modelError = nil`
+3. `.failure(let v)` → `modelError = Strings.configRejected(v)`。`.success` → `modelError = nil`、`modelNotice = nil`
 4. `await refresh()`
 
 **`importLLMFromFile()`**（PLAN §8.10「ファイルから読み込む」）:
+0. `guard !isBusy(.customImport) else { return }`（取り込み中はもう一度読み込まない）
 1. `let picked = presentModal { fileChooser.chooseFile(message: Strings.chooseGGUFMessage, prompt: Strings.chooseGGUFPrompt, allowedExtensions: ["gguf"]) }`
 2. `guard let url = picked else { return }`
 3. `downloads[.llm(CustomModelID.make(sha256: ""))]` は使えない（ID が決まる前）。**取り込み中は専用の枠 `ModelSlot.llm("custom")` を使う**（定数 `ModelSlot.customImport`）。`downloads[.customImport] = .importing`
 4. `let r = await services.importGGUF(from: url)`
 5. `.failure(let e)` → `downloads[.customImport] = .failed(Strings.modelError(e))`、`modelError = …`、`return`
-6. `.success(let got)` → `downloads[.customImport] = .idle` → `_ = await services.updateConfig { $0.llm.modelID = got.id }`（CV-42 が `custom:<64 桁>` を通す）→ `await refresh()`
-7. メモリの確認は**警告だけ**（PLAN §8.10）: 取り込んだ後、`modelError` ではなく `modelNotice = Strings.customModelUnsupported` を出す（`modelNotice` も `AppModel` の状態）
+6. `.success(let got)` → `downloads[.customImport] = .idle` → `await services.updateConfig { $0.llm.modelID = got.id }`（CV-42 が `custom:<64 桁>` を通す）。`.failure(let v)` なら捨てずに `modelError = Strings.configRejected(v)` → `await refresh()` → `return`（7 の注意は出さない）。成功なら `modelError = nil` → 7 → `await refresh()`
+7. メモリの確認は**警告だけ**（PLAN §8.10）: 取り込んだ後、`modelError` ではなく `modelNotice = Strings.customModelUnsupported` を出す（`modelNotice` も `AppModel` の状態。`selectLLM` の成功と `panelDidClose()` で消す）
 
 ### 4.8 `AppModel+Vault.swift`
 
 **`chooseVault()`**（PLAN §8.12 の 4）:
 1. `let picked = presentModal { chooser.chooseFolder(message: Strings.chooseVaultMessage, prompt: Strings.chooseVaultPrompt) }`
 2. `guard let url = picked else { return }`
-3. `let path = url.path(percentEncoded: false)`
+3. `var trimmed = url.path(percentEncoded: false)`、`while trimmed.count > 1 && trimmed.hasSuffix("/") { trimmed.removeLast() }`、`let path = trimmed`（NSOpenPanel が返すディレクトリの URL は末尾に `/` が付く。設定と文言には付けない。ルートの `/` は残す）
 4. `let marker = snapshot.vaultMarker`（`AppSnapshot` に `var vaultMarker = ".obsidian"` を足す。設定から写す）
 5. `let status = VaultCheck.evaluate(path: path, marker: marker)`
 6. `guard status == .available else { vaultError = status.message(path: path, marker: marker); return }`（**`.available` でなければ拒否し、設定を書かない**。PLAN §8.12 の 4）
@@ -342,20 +358,26 @@ enum DownloadState: Equatable, Sendable {
 ### 4.9 `LoginItem.swift`（T-30 のファイルへの追加）と `AppModel+LoginItem.swift`
 
 ```swift
+/// `Result` の失敗側は `Error` を要り String は `Error` でないため包み型にする（ConfigUpdateResult と同じ形。ケース名は `Result` と同じ）
+enum LoginItemResult: Equatable, Sendable {
+    case success
+    case failure(String)
+}
+
 protocol LoginItemControlling: Sendable {
     func status() -> LoginItemStatus
     /// 成功なら .success、失敗なら表示する文言
-    func register() -> Result<Void, String>
-    func unregister() -> Result<Void, String>
+    func register() -> LoginItemResult
+    func unregister() -> LoginItemResult
     func openSystemSettings()
 }
 
 extension SystemLoginItem {
-    func register() -> Result<Void, String> {
-        do { try SMAppService.mainApp.register(); return .success(()) }
+    func register() -> LoginItemResult {
+        do { try SMAppService.mainApp.register(); return .success }
         catch { return .failure(ErrorText.describe(error)) }
     }
-    func unregister() -> Result<Void, String> { …同じ形で SMAppService.mainApp.unregister()… }
+    func unregister() -> LoginItemResult { …同じ形で SMAppService.mainApp.unregister()… }
     func openSystemSettings() { SMAppService.openSystemSettingsLoginItems() }
 }
 ```
@@ -398,7 +420,7 @@ extension SystemLoginItem {
 | `buttonCancelDownload` | `やめる` |
 | `modelPresent` | `入手済み` |
 | `modelAbsent` | `未入手` |
-| `modelProgress(received:total:)` | `<x.x> GiB / <y.y> GiB`（`StatusTexts.gib`） |
+| `modelProgress(received:total:)` | `<x.x> GiB / <y.y> GiB`（`StatusTexts.gib`）。`total <= 0`（全体が不明）なら `<x.x> GiB` だけ |
 | `labelWhisperModel` | `Whisper モデル` |
 | `labelVADModel` | `VAD モデル` |
 | `labelLLMModel` | `LLM モデル` |
@@ -410,7 +432,7 @@ extension SystemLoginItem {
 | `labelLoginItem` | `ログイン時に起動` |
 | `buttonOpenLoginItemSettings` | `システム設定を開く` |
 | `loginItemRequiresApproval` | `システム設定で許可が要ります` |
-| `loginItemNotFound` | `アプリの場所が不明です（`/Applications` に置いてから試してください）` |
+| `loginItemNotFound` | `アプリの場所が不明です（/Applications に置いてから試してください）` |
 | `uiStateSaveFailed` | `選択を記録できませんでした（<HOME>/ui-state.json に書けません）` |
 | `configRejected(_:)` | `設定に書けませんでした: ` ＋ 違反の `rendered` を `"、"` でつないだもの |
 | `modelError(_:)` | 下の表 |
@@ -484,7 +506,7 @@ extension SystemLoginItem {
 | `loginItemDoneWhenEnabled` / 「オンなら完了」 | `loginItem = .enabled` | ④ 完了 |
 | `loginItemDoneWhenDecided` / 「今はしないでも完了」 | `loginItem = .notRegistered`、`uiState.loginItemDecided = true` | ④ 完了 |
 | `deviceNameHiddenWithoutCandidates` / 「改名が要らなければ出さない」 | `renameCandidates = []` | ⑤ の `visible == false` |
-| `deviceNameNeverDone` / 「⑤ は完了にならない」 | `renameCandidates = ["NO NAME"]` | ⑤ の `visible == true`、`done == false` |
+| `deviceNameNeverDone` / 「⑤ は完了にならない」 | `renameCandidates = ["NO NAME"]` / `[]` | `["NO NAME"]` なら ⑤ の `visible == true`、`done == false`。`[]` でも `done == false`（破壊による証明 6 を落とすため） |
 | `renameCandidatesFromBothMaps` / 「devices と unavailable の両方から集める」 | `devices: ["NO NAME": …]`、`unavailable: ["NO NAME": "invalid_device_id"]` | `["NO NAME"]`（重複なし） |
 | `renameCandidatesIgnoreOtherNames` / 「NO NAME 以外は案内しない」 | `devices: ["DJIMIC3": …]` | `[]` |
 | `completeWhenAllDone` / 「全部終われば節を出さない」 | 4 項目 done、`renameCandidates` 空 | `isComplete == true` |
@@ -500,7 +522,7 @@ extension SystemLoginItem {
 | `catalogOrderIsKept` / 「カタログの順のまま」 | 2 件 | `map(\.id)` がカタログの順 |
 | `insufficientMemoryIsNotSelectable` / 「メモリ不足は選べない」 | `minMemoryGB: 32`、`physicalMemoryBytes = 16 GiB` | `selectable == false`、`note == メモリが足りません（32 GB 以上が必要。この Mac は 16 GB）` |
 | `exactMemoryIsSelectable` / 「ちょうどなら選べる」 | `minMemoryGB: 16`、`16 GiB` ちょうど | `selectable == true`、`note == nil` |
-| `noMinMemoryIsSelectable` / 「minMemoryGB が無ければ選べる」 | `minMemoryGB: nil`、`0` バイト | `selectable == true` |
+| `noMinMemoryIsSelectable` / 「minMemoryGB が無ければ選べる」 | `minMemoryGB: nil`、`0` バイト（カタログの llm は `minMemoryGB` が必須なので、nil になる custom の行で見る） | `selectable == true` |
 | `insufficientStaysInTheList` / 「選べなくても一覧から消さない」 | 全件メモリ不足 | 件数が減らない |
 | `customIsAppendedLast` / 「custom は末尾に足す」 | `currentID = "custom:<64 hex>"` | 最後の要素が `isCustom`、`note == 動作保証外のモデルです` |
 | `customNameShowsShortSHA` / 「custom の名前は SHA 先頭 8」 | 同上 | `読み込んだモデル（<先頭 8>）` |
@@ -523,6 +545,8 @@ extension SystemLoginItem {
 | `scansAfterChoosing` / 「選んだら走査を促す」 | 同上 | `fake.scanCount == 1` |
 | `configRejectionIsShown` / 「設定に弾かれたら文言を出す」 | `updateConfig` が `.failure([v])` | `vaultError` が `設定に書けませんでした: ` で始まる |
 | `closingClearsMessages` / 「閉じたら消える」 | 失敗の後 `panelDidClose()` | `vaultError == nil` |
+| `directoryURLIsStoredWithoutTrailingSlash` / 「フォルダの URL の末尾の / を設定に書かない」 | chooser が `URL(fileURLWithPath: path, isDirectory: true)`（本番と同じ形）、`.obsidian/` 在り | `vault.path` が末尾に `/` の無い `path` |
+| `directoryURLErrorHasNoTrailingSlash` / 「フォルダの URL でも文言に末尾の / を付けない」 | 同じ形の URL、`.obsidian` 無し | `vaultError == <path> に .obsidian/ がありません（…）`（`path` は末尾の `/` 無し） |
 | `modalIsWrapped` / 「popover を閉じてから開き直す」 | `presentModal` の呼び出しを記録する偽物 | `presentModal` が 1 回呼ばれ、その中で chooser が呼ばれる |
 
 ### 5.5 `AppModelModelsTests.swift`（`@Suite("AppModel のモデル")`）
@@ -530,7 +554,7 @@ extension SystemLoginItem {
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `fetchReportsProgress` / 「進捗を出す」 | `download` が `(1, 10)` `(5, 10)` を進捗に流してから成功 | 途中で `downloads[.whisper] == .running(received: 5, total: 10)`、終わりで `.idle` |
-| `fetchIsNotStartedTwice` / 「二重に始めない」 | 進行中にもう一度 `fetchModel` | `download` の呼び出しは 1 回 |
+| `fetchIsNotStartedTwice` / 「二重に始めない」 | 進行中にもう一度 `fetchModel`（別の Task で押し、その後 1 本目を返させる） | `download` の呼び出しは 1 回 |
 | `fetchFailureShowsMessage` / 「失敗の文言」 | `.failure(.sha256Mismatch)` | `downloads[.whisper] == .failed(SHA-256 が一致しません（壊れています。もう一度入手してください）)` |
 | `httpFailureShowsCode` / 「HTTP のコードを出す」 | `.failure(.http(404))` | `配布元が HTTP 404 を返しました` |
 | `cancelStopsAndDoesNotShowError` / 「やめたらエラーにしない」 | 進行中に `cancelModel` → `download` が `.failure(.cancelled)` を返す | `downloads[.whisper] == .idle`、`modelError == nil`、`cancelDownload` が `entry.id` で 1 回 |
@@ -543,6 +567,12 @@ extension SystemLoginItem {
 | `importFailureShowsMessage` / 「読み込みの失敗」 | `.failure(.io("EIO"))` | `ファイルを扱えません: EIO` |
 | `importCancelChangesNothing` / 「ファイルを選ばなければ何もしない」 | `fileChooser` が nil | `importGGUF` が呼ばれない |
 | `emptyChoicesDoNothing` / 「TEST-28 選択肢が 0 件」 | `llmChoices == []` | `selectLLM("a")` で `updateConfig` が呼ばれない |
+| `fetchCanBeRetriedAfterFailure` / 「失敗の後にもう一度入手できる」 | 1 回目 `.failure(.network)`、2 回目成功 | 1 回目の後 `.failed(ネットワークに接続できません)`、2 回目で `download` が計 2 回・`.idle`・`modelError == nil` |
+| `refetchRightAfterCancelShowsNoInternalText` / 「やめて直後に入手し直しても内部の文字列が出ない」 | 偽物は `ModelManager` と同じく、同じ ID の download が返る前の 2 本目を `.io("already_downloading")` で断る。1 本目を止めたまま `cancelModel` → すぐ `fetchModel` → 1 本目を `.failure(.cancelled)` で返す | `modelError == nil`、`downloads[.whisper] == .idle`、`download` が計 2 回 |
+| `staleProgressDoesNotLeakIntoNewDownload` / 「古い progress が新しい枠に混ざらない」 | 1 本目をやめて返させた後、2 本目を止めたまま 1 本目の progress に `(9, 10)` を流す | `downloads[.whisper] == .running(received: 0, total: entry.bytes)` のまま |
+| `progressNeverGoesBackwards` / 「進捗は小さくならない」 | progress に `(5, 10)` `(3, 10)` の順 | `.running(received: 5, total: 10)` |
+| `importRejectedByConfigShowsMessage` / 「読み込んだ ID が設定に弾かれたら文言を出す」 | `importGGUF` 成功、`updateConfig` が `.failure([v])` | `modelError` が `設定に書けませんでした: ` で始まる、`modelNotice == nil` |
+| `noticeIsClearedBySelectingOrClosing` / 「注意書きは選び直すか閉じると消える」 | 読み込み → `selectLLM`（選べる 1 件）／読み込み → `panelDidClose()` | どちらも `modelNotice == nil` |
 
 ### 5.6 `AppModelLoginItemTests.swift`（`@Suite("AppModel のログイン項目")`）
 
@@ -562,7 +592,7 @@ extension SystemLoginItem {
 | # | 壊し方（1 か所） | 落ちるべきテスト |
 |---|---|---|
 | 1 | `UIStateStore.load` の `schema` の判定を消す | `futureSchemaGivesDefaults` |
-| 2 | `UIStateStore.load` が読めないときに投げるようにする | `missingFileGivesDefaults` |
+| 2 | `UIStateStore.load` が読めないときに既定でない値（`loginItemDecided: true`）を返すようにする（`load()` は投げない型なので、投げる代わりに） | `missingFileGivesDefaults` |
 | 3 | `OnboardingEvaluator.items` の ③ と ④ を入れ替える | `orderIsTheSpecOrder` |
 | 4 | ② の条件から `vadPresent` を外す | `whisperDoneNeedsVADWhenEnabled` |
 | 5 | ④ の条件から `uiState.loginItemDecided` を外す | `loginItemDoneWhenDecided` |
@@ -580,6 +610,12 @@ extension SystemLoginItem {
 | 17 | `setLoginItem(true)` の `markLoginItemDecided()` を消す | `turningOnMarksDecided` |
 | 18 | `register` が失敗しても `markLoginItemDecided()` するようにする | `registerFailureIsShown` |
 | 19 | `OpenPanelFolderChooser` の `canCreateDirectories = true` にする | （自動テストでは落ちない）**受け入れ条件のチェックリストと `PanelPolicyTests`（§7）で守る** |
+| 20 | `fetchModel` の結果を書く条件から世代の比較を外す | `refetchRightAfterCancelShowsNoInternalText` |
+| 21 | `progress` の世代の比較を外す | `staleProgressDoesNotLeakIntoNewDownload` |
+| 22 | `fetchModel` の「前の download を待つ」を外す | `refetchRightAfterCancelShowsNoInternalText` |
+| 23 | `chooseVault` の末尾の `/` を落とす処理を消す | `directoryURLIsStoredWithoutTrailingSlash`・`directoryURLErrorHasNoTrailingSlash` |
+| 24 | `fetchModel` の番人を `nil \|\| .idle` に戻す | `fetchCanBeRetriedAfterFailure` |
+| 25 | `progress` の「値が小さくなる通知を捨てる」を外す | `progressNeverGoesBackwards` |
 
 ## 7. 受け入れ条件
 
@@ -599,6 +635,8 @@ extension SystemLoginItem {
 1. `## S22. はじめに（オンボーディング）` — `| # | 項目 | 完了の条件 |` の 3 列で ①〜⑤ を写す。`OnboardingTests` が SPEC から読んで `OnboardingStep.allCases` と件数・順を突き合わせる
 2. `## S23. ui-state.json` — 鍵と型の表（`schema: 整数（1）`、`loginItemDecided: 真偽`）。`UIStateTests` が `savedFileHasOnlyTwoKeys` で突き合わせる
 
+**実装の注記（T-31 の実装時）**: この節は T-31 の PR では実装していない。`docs/SPEC.md` は `tools/spec/make-spec.py` が PLAN から作る（手で直さない）もので、見出しの登録・`SpecDocument` の読み手はどれも T-05 の持ち物で §3 に無い。T-30 の S20 / S21 と同じく issue #18（SPEC 同期の拡張）に回す。当面は `OnboardingTests.orderIsTheSpecOrder` が 5 項目の順と題を、`UIStateTests.savedFileHasOnlyTwoKeys` が鍵を固定値で照合する
+
 ## 9. マージ後にやること
 
 1. T-24（カタログの確定）のマージで `verified` が真になった LLM が `ModelsSection` に出ることを確かめる
@@ -608,9 +646,10 @@ extension SystemLoginItem {
 
 1. §12 に `Onboarding.swift`（`OnboardingStep` / `OnboardingItem` / `OnboardingEvaluator`）、`ModelChoices.swift`（`LLMChoice` / `ModelChoices`）、`FolderChooser.swift`（`FolderChooser` / `FileChooser` / `OpenPanelFolderChooser` / `OpenPanelFileChooser`）、`DownloadState.swift`（`DownloadState` / `ModelSlot`）、`AppModel+Vault.swift` / `AppModel+Models.swift` / `AppModel+LoginItem.swift` を足す
 2. §12 の `UIState.swift` を `UIState`（`schema` / `loginItemDecided`）と `UIStateStore`（`load` / `save`）にする
-3. §12 の `LoginItem.swift` の `LoginItemControlling` に `register() -> Result<Void, String>` / `unregister() -> Result<Void, String>` / `openSystemSettings()` を足す（T-31）
+3. §12 の `LoginItem.swift` の `LoginItemControlling` に `register() -> LoginItemResult` / `unregister() -> LoginItemResult` / `openSystemSettings()` と `enum LoginItemResult { case success, failure(String) }` を足す（T-31。`Result<Void, String>` は String が `Error` でないのでコンパイルできない）
 4. `ModelManager` の取り込みの口の名前は **T-23 が正**の `importCustomLLM(from:)`（`ModelImporter` を `layout` と `chunkBytes` 付きで呼ぶ包み）。`AppServices` 側の名前は `importGGUF(from:)` のままにする（UI の語） → 00-api-map §10 に反映済み（整合修正 M-5）
 5. §10 の `ModelDownloader.download` の `progress` が `@escaping` であることを明記する（`AppServices.download` が転送するため）
+7. （T-31 のレビュー）`ModelManager.download` が同じ ID の実行中に返す `.io(ModelDownloader.alreadyRunningMessage)` は、`alreadyRunningMessage` が internal で UI から見分けられず、そのまま出すと内部の文字列 `already_downloading` が利用者に見える。本チケットは VDModels に手を入れず、AppModel が枠ごとに前の download の Task を待ってから始めることで回避した。VDModels に `ModelError.alreadyRunning`（または `cancel(id:)` が download の終わりまで待つこと）を足し、§10 の行に載せたい
 6. （整合修正 M-5）`ModelDownloader.init(layout:factory:log:hashChunkBytes:)` と `ModelManager.init(layout:catalog:downloader:cache:log:hashChunkBytes:)`（T-23 §4 が正。`clock:` は無い）を前提にする → 00-api-map §10 に反映済み
 
 ## 11. 仕様の問題（PLAN に直したいこと）
