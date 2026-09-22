@@ -80,6 +80,35 @@ struct AppModelDiagnosticsTests {
         #expect(await Self.waitUntil { model.probe == .done([Self.probe]) })
     }
 
+    @Test("前の世代の返事は捨てる（閉じて押し直した後に届いた古い返事）")
+    func staleProbeReplyIsDropped() async throws {
+        let fake = FakeServices(Self.present())
+        let model = Self.makeModel(fake)
+        await model.runLLMProbe()
+        model.panelDidClose()
+        await model.runLLMProbe()
+        #expect(fake.jobs.count == 2)
+        let old = try #require(fake.jobs.first)
+        switch old {
+        case .llmProbe(let reply): reply(Self.probe)
+        }
+        for _ in 0..<50 { await Task.yield() }
+        #expect(model.probe == .running)
+        let fresh = try #require(fake.jobs.last)
+        let newer = DiagnosticResult(id: "DR-09", status: .fail, label: "LLM の疎通", details: ["HTTP 500"])
+        switch fresh {
+        case .llmProbe(let reply): reply(newer)
+        }
+        #expect(await Self.waitUntil { model.probe == .done([newer]) })
+    }
+
+    @Test("システム設定の「ファイルとフォルダ」の URL")
+    func privacyURLIsFixed() {
+        #expect(
+            LiveServices.privacyFilesAndFoldersURL()?.absoluteString
+                == "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")
+    }
+
     @Test("閉じた後の返事は捨てる")
     func lateProbeReplyIsDropped() async throws {
         let fake = FakeServices(Self.present())
@@ -120,7 +149,7 @@ struct AppModelDiagnosticsTests {
         #expect(model.iconState == .attention)
     }
 
-    @Test("6 つの操作をそれぞれの処理へ渡す")
+    @Test("7 つの操作をそれぞれの処理へ渡す")
     func performActionsAreRouted() async {
         let fake = FakeServices(Self.present())
         let finder = FakeFinder()
@@ -138,6 +167,10 @@ struct AppModelDiagnosticsTests {
         #expect(model.modelsHighlighted)
         model.perform(.openDeletionFlow)
         #expect(model.deletionHighlighted)
+        model.perform(.runDiagnostics)
+        #expect(await Self.waitUntil { fake.diagnosticsCount == 1 })
+        #expect(model.detailsExpanded)
+        #expect(fake.statusReportCount == 1)
         #expect(fake.reloadCount == 1)
         #expect(chooser.calls == 1)
         #expect(finder.revealed.count == 1)

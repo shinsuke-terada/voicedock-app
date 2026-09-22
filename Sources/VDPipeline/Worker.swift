@@ -117,6 +117,10 @@ public actor Worker {
     public func tick() async {
         if let running = startTask { await running.value }
         guard let config = await deps.config.current() else {
+            // 設定エラー中は段を回さないので、待っている仕事には fail で返事をする（返事は必ず返す）
+            let jobs = pendingJobs
+            pendingJobs = []
+            for job in jobs { Self.replyUnavailable(job) }
             board.set(.idle)
             return
         }

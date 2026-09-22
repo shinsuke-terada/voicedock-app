@@ -277,7 +277,7 @@ struct DiagnosticChecksTests {
         #expect(r.status == .fail)
         // 知らない識別子は GRDB の appliedMigrations に現れないので、適用済みは空として出る
         #expect(r.details.first?.hasPrefix("適用済みのマイグレーションが ") == true)
-        #expect(r.details == ["適用済みのマイグレーションが  です（最新は v1_initial）"])
+        #expect(r.details == ["適用済みのマイグレーションが なし です（最新は v1_initial）"])
         _ = store
     }
 
@@ -721,7 +721,7 @@ enum FileTree {
             if values.isDirectory == true {
                 if !rel.hasSuffix("/") { rel += "/" }
                 out.append(rel)
-            } else if rel.hasSuffix(".sqlite-shm") {
+            } else if rel == "voicedock.sqlite-shm" {
                 // WAL の共有メモリの索引は、読み取り専用の接続でも読み手の印（read mark）を書くので mtime が動く
                 // （SQLite の仕組み。中身のデータではない）。在否とサイズだけを比べる
                 out.append(rel + " " + String(values.fileSize ?? -1))

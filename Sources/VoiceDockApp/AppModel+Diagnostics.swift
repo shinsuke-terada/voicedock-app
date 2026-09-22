@@ -14,15 +14,17 @@ extension AppModel {
     func runLLMProbe() async {
         guard probe != .running else { return }
         probe = .running
+        probeGeneration += 1
+        let generation = probeGeneration
         await services.enqueue(
             .llmProbe(reply: { [weak self] r in
-                Task { @MainActor in self?.receiveProbe(r) }
+                Task { @MainActor in self?.receiveProbe(r, generation: generation) }
             }))
     }
 
-    /// DR-09 の返事（閉じた後の返事は捨てる）
-    func receiveProbe(_ r: DiagnosticResult) {
-        guard probe == .running else { return }
+    /// DR-09 の返事（閉じた後の返事・前の世代の返事は捨てる）
+    func receiveProbe(_ r: DiagnosticResult, generation: Int) {
+        guard probe == .running, generation == probeGeneration else { return }
         probe = .done([r])
     }
 
@@ -33,7 +35,10 @@ extension AppModel {
             setStatusReport(nil)
             return
         }
-        setStatusReport(await services.statusReport())
+        let report = await services.statusReport()
+        // 待っている間に閉じられたら差し込まない
+        guard detailsExpanded else { return }
+        setStatusReport(report)
     }
 
     /// 要対応のボタン（PLAN §8.11 の「操作ボタン」の列）
@@ -45,6 +50,11 @@ extension AppModel {
         case .openSystemSettings: openSystemSettingsPrivacyFilesAndFolders()
         case .openModels: modelsHighlighted = true
         case .openDeletionFlow: deletionHighlighted = true
+        case .runDiagnostics:
+            Task {
+                if !detailsExpanded { await toggleDetails() }
+                await runDiagnostics()
+            }
         }
     }
 

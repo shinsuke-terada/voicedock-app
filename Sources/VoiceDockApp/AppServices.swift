@@ -158,12 +158,17 @@ struct LiveServices: AppServices {
 
     /// `x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders`（`!` を使わず URLComponents で作る）
     func openSystemSettingsPrivacyFilesAndFolders() {
-        var components = URLComponents()
-        components.scheme = Self.systemSettingsScheme
-        components.path = Self.securityPane
-        components.query = Self.filesAndFoldersAnchor
-        guard let url = components.url else { return }
+        guard let url = Self.privacyFilesAndFoldersURL() else { return }
         NSWorkspace.shared.open(url)
+    }
+
+    /// システム設定の「ファイルとフォルダ」の URL（テストが文字列を固定する）
+    static func privacyFilesAndFoldersURL() -> URL? {
+        var components = URLComponents()
+        components.scheme = systemSettingsScheme
+        components.path = securityPane
+        components.query = filesAndFoldersAnchor
+        return components.url
     }
 
     static let systemSettingsScheme = "x-apple.systempreferences"

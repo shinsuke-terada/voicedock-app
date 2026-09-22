@@ -97,7 +97,7 @@ struct AttentionEvaluatorTests {
         i.paused = [.whisperMissing, .llamaServerMissing]
         let items = AttentionEvaluator.items(i)
         #expect(items == [.toolMissing(.whisperCLI), .toolMissing(.llamaServer)])
-        #expect(items.map(\.actions) == [[], []])
+        #expect(items.map(\.actions) == [[.runDiagnostics], [.runDiagnostics]])
     }
 
     @Test("license は要対応にしない")

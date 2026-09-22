@@ -63,11 +63,12 @@ struct AttentionTextsTests {
                 == "/v を読めません（errno 13）")
     }
 
-    @Test("ボタンの文言が 6 つとも逐語で一致する")
+    @Test("ボタンの文言が 7 つとも逐語で一致する")
     func buttonsMatchTheTable() {
         let expected: [(AttentionAction, String)] = [
             (.revealConfig, "設定ファイルを Finder で表示"), (.reloadConfig, "設定を読み直す"), (.chooseVault, "Vault を選び直す"),
             (.openSystemSettings, "システム設定を開く"), (.openModels, "モデルの節を開く"), (.openDeletionFlow, "有効化フローを開く"),
+            (.runDiagnostics, "診断を実行"),
         ]
         for (action, text) in expected {
             #expect(AttentionTexts.button(action) == text)

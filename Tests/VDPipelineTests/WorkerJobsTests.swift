@@ -74,12 +74,39 @@ struct WorkerJobsTests {
         stopped.set()
         await worker.stagePendingJobs(try await w.context(stop: stopped))
         #expect(inStage.results == [expected])
+        // enqueue → requestStop（tick を回さない）: 列に残っていた仕事にも返事が返る
+        let other = w.worker()
+        let queued = ReplyRecorder()
+        await other.enqueue(queued.job())
+        await other.requestStop()
+        #expect(queued.results == [expected])
+        #expect(await other.pendingJobs.isEmpty)
         // requestStop() の後に enqueue → tick
         let after = ReplyRecorder()
         await worker.requestStop()
         await worker.enqueue(after.job())
         await worker.tick()
         #expect(after.results == [expected])
+        #expect(await w.llm.ensureCalls.isEmpty)
+    }
+
+    @Test("DR-09 設定エラー中の enqueue → tick は fail で返事をする")
+    func configErrorRepliesWithFail() async throws {
+        let w = try await PipelineWorld.make(chat: FakeChatTransport(responses: [.content("ok")]))
+        try await w.installLLM()
+        let worker = w.worker()
+        // 設定ファイルを壊して読み直す（設定エラー状態。PLAN §6.1）
+        try Data("{".utf8).write(to: w.layout.configFile)
+        _ = await w.configStore.load()
+        #expect(await w.configStore.current() == nil)
+        let recorder = ReplyRecorder()
+        await worker.enqueue(recorder.job())
+        await worker.tick()
+        #expect(
+            recorder.results == [
+                DiagnosticResult(id: "DR-09", status: .fail, label: "LLM の疎通", details: ["設定が読めていません"])
+            ])
+        #expect(await worker.pendingJobs.isEmpty)
         #expect(await w.llm.ensureCalls.isEmpty)
     }
 

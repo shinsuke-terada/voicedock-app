@@ -18,6 +18,8 @@ public enum AttentionAction: Equatable, Sendable {
     case openModels
     /// 有効化フローを開く
     case openDeletionFlow
+    /// 「詳細」を開いて診断を実行する（whisper-cli / llama-server が無いとき。PLAN §8.11）
+    case runDiagnostics
 }
 
 /// PLAN §8.11 の表の 1 行。宣言順 = 表示順。
@@ -68,7 +70,7 @@ public enum AttentionItem: Equatable, Sendable {
         case .vaultUnavailable(.notReadable(errno: EPERM)): [.chooseVault, .openSystemSettings]
         case .vaultUnavailable: [.chooseVault]
         case .modelMissing, .llmNotSelected, .llmInsufficientMemory: [.openModels]
-        case .toolMissing: []
+        case .toolMissing: [.runDiagnostics]
         case .deviceNotListable: [.openSystemSettings]
         case .deviceNeedsReplug, .deviceNameInvalid: []
         case .ingestSilent, .diskSpaceLow, .lockMismatch: []

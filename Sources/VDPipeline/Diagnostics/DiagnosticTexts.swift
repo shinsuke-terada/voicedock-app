@@ -39,7 +39,7 @@ enum DiagnosticTexts {
     static let dbUnopenable = "読み取り専用で開けません"
     static func dbQuickCheck(_ s: String) -> String { "PRAGMA quick_check が ok ではありません: " + s }
     static func dbMigrations(applied: String?, expected: String?) -> String {
-        "適用済みのマイグレーションが " + (applied ?? "") + " です（最新は " + (expected ?? "") + "）"
+        "適用済みのマイグレーションが " + (applied ?? "なし") + " です（最新は " + (expected ?? "なし") + "）"
     }
     static func dbOK(_ last: String) -> String { "quick_check ok、マイグレーション " + last }
     static func spaceOK(_ freeBytes: Int64) -> String { "空き " + StatusTexts.gib(freeBytes) }

@@ -54,7 +54,8 @@ enum DiagnosticChecks {
         guard let ro = ReadOnlyStore.open(url: url) else {
             return result(id, .fail, [DiagnosticTexts.dbUnopenable])
         }
-        let qc = (try? ro.quickCheck()) ?? ""
+        // quick_check が投げたら「開けない」（空の結果を quick_check の文言で出さない）
+        guard let qc = try? ro.quickCheck() else { return result(id, .fail, [DiagnosticTexts.dbUnopenable]) }
         guard qc == "ok" else { return result(id, .fail, [DiagnosticTexts.dbQuickCheck(qc)]) }
         let applied = (try? ro.appliedMigrations()) ?? []
         guard applied == Store.migrationIdentifiers else {

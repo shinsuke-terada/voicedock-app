@@ -11,6 +11,9 @@ struct LLMProbeCheck: Sendable {
         id: DiagnosticID.llmProbe, status: .skip, label: DiagnosticTexts.label(DiagnosticID.llmProbe),
         details: [DiagnosticTexts.probeStopped])
 
+    /// 設定エラー中の返事（設定が読めていないので実行しない）
+    static let unavailable = fail(DiagnosticTexts.configMissing)
+
     func run() async -> DiagnosticResult {
         let c = ctx.config
         // 1.

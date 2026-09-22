@@ -31,17 +31,23 @@ public enum InboxScan {
     /// 名前が規則に合わないファイルも「ディスクは使っている」ので処理待ちに数える（voicedock と同じ）。
     public static func counts(layout: HomeLayout, leftoverRelativePaths: [String]) -> InboxCounts {
         let left = leftovers(layout: layout, relativePaths: leftoverRelativePaths)
-        let leftoverSet = Set(leftoverRelativePaths)
+        // 比べるパスは両側とも symlink を解決した絶対パス（/var と /private/var の食い違いで取り残しを処理待ちに数えない）
+        let leftoverSet = Set(leftoverRelativePaths.map { resolved(layout.url(relative: $0)) })
         var pendingCount = 0
         var pendingBytes: Int64 = 0
         for (url, size) in regularFiles(under: layout.inbox) where url.lastPathComponent.hasSuffix(".wav") {
-            if let rel = layout.relativePath(of: url), leftoverSet.contains(rel) { continue }
+            if leftoverSet.contains(resolved(url)) { continue }
             pendingCount += 1
             pendingBytes += size
         }
         return InboxCounts(
             pendingCount: pendingCount, pendingBytes: pendingBytes, leftoverCount: left.count,
             leftoverBytes: left.bytes)
+    }
+
+    /// symlink を解決した絶対パス
+    static func resolved(_ url: URL) -> String {
+        url.resolvingSymlinksInPath().path(percentEncoded: false)
     }
 
     /// 通常ファイルのサイズの合計（再帰。読めないものは飛ばす）

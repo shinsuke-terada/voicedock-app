@@ -41,7 +41,7 @@ struct DiagnosticsNoWriteTests {
         return (w, vaultPath)
     }
 
-    @Test("OPS-14 <HOME> が 1 バイトも変わらない")
+    @Test("OPS-14 <HOME> を書き換えない（-shm の索引を除く）")
     func diagnosticsChangeNothingInHome() async throws {
         let (w, _) = try await Self.populated()
         let before = try FileTree.listing(w.layout.root)

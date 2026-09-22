@@ -50,6 +50,8 @@ final class AppModel {
     var diagnostics: DiagnosticsPanelState = .idle
     /// DR-09 の実行と結果（結果は 1 件）
     var probe: DiagnosticsPanelState = .idle
+    /// DR-09 の世代（押すたび・閉じるたびに 1 増やす）。開始時と世代が違う返事は捨てる
+    @ObservationIgnored var probeGeneration = 0
     /// 「詳細」を開いているか（開いている間だけ状態の詳細を読む）
     var detailsExpanded = false
     /// 要対応の「モデルの節を開く」（節を目立たせるだけ。新しい画面を作らない。D-7）
@@ -195,6 +197,7 @@ final class AppModel {
         modelNotice = nil
         // 閉じた後に届いた DR-09 の返事は捨てる（receiveProbe が .running のときだけ受け取る）
         probe = .idle
+        probeGeneration += 1
     }
 
     func requeueManual() async {

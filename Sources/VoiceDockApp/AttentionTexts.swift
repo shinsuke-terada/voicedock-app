@@ -66,6 +66,7 @@ enum AttentionTexts {
         case .openSystemSettings: "システム設定を開く"
         case .openModels: "モデルの節を開く"
         case .openDeletionFlow: "有効化フローを開く"
+        case .runDiagnostics: Strings.buttonRunDiagnostics
         }
     }
 }

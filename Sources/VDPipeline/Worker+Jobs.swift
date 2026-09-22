@@ -19,6 +19,13 @@ extension Worker {
         }
     }
 
+    /// 実行せずに `.fail` で返事をする（設定エラー中の tick。PLAN §6.1）。
+    static func replyUnavailable(_ job: WorkerJob) {
+        switch job {
+        case .llmProbe(let reply): reply(LLMProbeCheck.unavailable)
+        }
+    }
+
     /// 実行せずに `.skip` で返事をする（停止要求の後に来た仕事・待っていた仕事）。
     static func replyStopped(_ job: WorkerJob) {
         switch job {
