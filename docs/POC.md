@@ -42,6 +42,7 @@ T-01 に要るのは章 14 の BUNDLE_ID・TEAM_ID・Xcode の版だけなので
 | 12 | P0-11 | DADiskMountApprovalCallback（任意） | PLAN §8.1（v1 では採用しない） | ⬜ 未実施 |
 | 13 | P0-12 | Vault が書類フォルダ・iCloud Drive にあるときの TCC | PLAN §8.7、§8.11 DR-10、T-28、T-32 | ✅ PASS（NSOpenPanel で選んだ Vault は再起動後もパネル無しで書ける。拒否の経路は再現できず） |
 | 14 | — | Phase 0 で決めたこと | PLAN §3.1、§3.3、§8.1、`identity.env` | ⬜ 一部決定（識別子と Xcode は確定。下記） |
+| 15 | — | LLM 受け入れ試験（10 本・修復率・350,000 文字の時間） | PLAN §8.10・§10.6、T-24 | ⬜ |
 
 ## 1. ホスト環境
 
@@ -966,3 +967,23 @@ gh: Upgrade to GitHub Pro or make this repository public to enable this feature.
 | whisper.cpp | v1.9.4（927cfce34f31707e17f2bff35c349632fb9e2c3a） | 章 5（未実施） |
 | 再マウントの -mountPoint | **使わない**（本番 `useMountPoint: false`。テストは一時ディレクトリなので `true`） | 章 3 |
 | CI のランナー | 開発機のセルフホストランナー `voicedock-local`（self-hosted, macOS, ARM64。v2.337.0） | 章 11 |
+
+## 15. LLM 受け入れ試験（PLAN §10.6）
+
+⬜ 未実施（T-24 で試験のコードと fixture を用意した。カタログの再確認と試験の実行は【利用者が行う】）
+
+手順（**利用者が行う**。15.1 はネットワークに出る。15.2 はモデル（30B は約 18.6 GB）が `~/Library/Application Support/VoiceDock/models/llm/` に要る）:
+
+1. `scripts/check-catalog.sh | tee /tmp/catalog-check.txt` の出力を 15.1 に貼る（測定日も書く）。`MISMATCH` が出たらカタログを HF の値に直す
+2. `make vendor`（`Vendor/build/bin/llama-server` が無ければ）
+3. `make acceptance-selftest`（判定の式と fixture の読み込みの単体。モデル不要）
+4. `make llm-acceptance MODEL=<id>`。出力された `llm-acceptance-<id>.md`（リポジトリの直下。コミットしない）の中身をこの章に貼る
+5. 4 判定にすべて合格したモデルだけ `Resources/ModelCatalog.json` の `verified` を `true` にする（T-24 §4.2）
+
+### 15.1 カタログの再確認
+
+⬜ 未実施
+
+### 15.2 受け入れ試験
+
+⬜ 未実施

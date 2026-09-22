@@ -12,7 +12,7 @@ define require_script
 endef
 
 .PHONY: check-toolchain lint fmt build test test-nd test-policy test-other test-disk \
-        vendor app golden llm-acceptance release clean spec
+        vendor app golden llm-acceptance acceptance-selftest release clean spec
 
 # .xcode-version と使っている Xcode が一致することを確かめる（CI と手元で同じコンパイラを使う。PLAN §3.3）
 check-toolchain:
@@ -66,9 +66,16 @@ golden:
 	$(call require_script,tools/golden/generate.sh,T-25)
 	tools/golden/generate.sh
 
+LLM_REPORT ?= $(CURDIR)/llm-acceptance-$(MODEL).md
+
 llm-acceptance: build
 	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<モデルの ID> を指定してください" >&2; exit 1; }
-	VOICEDOCK_LLM_MODEL="$(MODEL)" $(SWIFT) test --skip-build --filter LLMAcceptance
+	VOICEDOCK_LLM_MODEL="$(MODEL)" VOICEDOCK_LLM_REPORT="$(LLM_REPORT)" $(SWIFT) test --skip-build --filter LLMAcceptance
+	@echo "報告: $(LLM_REPORT)（docs/POC.md 章 15 に貼る）"
+
+# 受け入れ試験の自前の部品だけ（モデルも llama-server も要らない）
+acceptance-selftest: build
+	$(SWIFT) test --skip-build --filter "AcceptanceJudgeTests|AcceptanceFixtureLoaderTests"
 
 release:
 	$(call require_script,scripts/release.sh,T-34)
