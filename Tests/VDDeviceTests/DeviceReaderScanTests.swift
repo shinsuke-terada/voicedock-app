@@ -271,7 +271,8 @@ struct DeviceReaderScanTests {
         #expect(listing.relpaths == [Self.orig120950])
     }
 
-    @Test("読めるが辿れないフォルダ（r--）は、中の項目の lstat が EACCES になり complete は偽")
+    // root では権限の検査が効かず前提が崩れるので飛ばす（T-27 の unreadableSkipped と同じ）
+    @Test("読めるが辿れないフォルダ（r--）は、中の項目の lstat が EACCES になり complete は偽", .disabled(if: geteuid() == 0))
     func searchDeniedFolderMakesIncomplete() throws {
         let tmp = try TempDirectory()
         let fake = try FakeVolume(in: tmp)
@@ -299,7 +300,7 @@ struct DeviceReaderScanTests {
         #expect(listing.origCandidates == [Self.orig120950])
     }
 
-    @Test("深さの上限の外は列挙も lstat もせず、complete に影響しない")
+    @Test("深さの上限の外は列挙も lstat もせず、complete に影響しない", .disabled(if: geteuid() == 0))
     func beyondDepthDoesNotAffectCompleteness() throws {
         let tmp = try TempDirectory()
         let fake = try FakeVolume(in: tmp)

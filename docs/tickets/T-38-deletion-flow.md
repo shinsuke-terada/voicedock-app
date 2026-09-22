@@ -1,5 +1,7 @@
 # T-38 VDPipeline: 削除要求・Session の削除段・reaper の起動・結果の回収・期限切れ・後始末
 
+> （F-67・issue #97、2026-09-23）走査の `lstat` が `ENOENT` 以外で失敗したら一覧は不完全（`complete = false`）になり、そのデバイスは snapshot の `devices` に載らない。以後、深さの上限の内側では一覧は完全な列挙で、F-64 の `sourceIsObservedAbsent` の「一覧は完全な列挙を保証しない」という記述は上限の外（と `maxScanDepth` を下げた場合）に限られる（PLAN §8.1・§8.9.5）。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-38 |
