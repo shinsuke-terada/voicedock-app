@@ -166,7 +166,7 @@ struct Runbook: Sendable {
 
     /// 本文が挙げる `make <target>`。
     static func makeTargets(_ text: String) -> Set<String> {
-        let pattern = "\\bmake ([a-z][a-z-]*)\\b"
+        let pattern = "\\bmake ([a-z][a-z0-9-]*)\\b"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         var found: Set<String> = []
         for match in regex.matches(in: text, range: NSRange(location: 0, length: text.utf16.count)) {

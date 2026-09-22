@@ -578,7 +578,7 @@ struct Runbook: Sendable {
 
     /// 本文が挙げる `make <target>`。
     static func makeTargets(_ text: String) -> Set<String> {
-        let pattern = "\\bmake ([a-z][a-z-]*)\\b"
+        let pattern = "\\bmake ([a-z][a-z0-9-]*)\\b"
         guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
         var found: Set<String> = []
         for match in regex.matches(in: text, range: NSRange(location: 0, length: text.utf16.count)) {
@@ -633,22 +633,22 @@ struct Runbook: Sendable {
 
 | # | 壊し方 | 落ちるべきテスト |
 |---|---|---|
-| 1 | `docs/E2E.md` の判定表から `E2E-09` の行を消す | `theVerdictTableMatchesTheSpec`、`everyScenarioHasASection` は通る（節は残る）ので**表だけが落ちる**ことを確かめる |
+| 1 | `docs/E2E.md` の判定表から `E2E-09` の行を消す | `theVerdictTableMatchesTheSpec`（ほかに表の行を引く `theDeletionColumnMatchesTheSpec("E2E-09")`・`sectionTitleMatchesTheTable("E2E-09")`・`sectionVerdictMatchesTheTable("E2E-09")` も落ちる）。`everyScenarioHasASection` は通る（節は残る）ので**表の側だけが落ちる**ことを確かめる |
 | 2 | `### 3.9 E2E-09 — …` の節を丸ごと消す | `everyScenarioHasASection("E2E-09")` |
 | 3 | `### 3.9 E2E-09 — …` を `### 3.90 E2E-09 — …` にする | `sectionNumberMatchesTheScenario` |
-| 4 | `E2E-05` の判定を `だいたい通った` にする | `everyVerdictStartsWithAMarker("E2E-05")`、`sectionVerdictMatchesTheTable` |
-| 5 | `E2E-05` の判定表の判定だけ `✗ FAIL` にする（節は `✅ PASS` のまま） | `sectionVerdictMatchesTheTable` |
-| 6 | `E2E-07` の `#### 記録` のフェンスを空にする | `aVerdictNeedsEvidence("E2E-07")` |
+| 4 | `E2E-05` の判定を判定表と節の両方で `だいたい通った` にする | `everyVerdictStartsWithAMarker("E2E-05")`（両方を同じに変えるので `sectionVerdictMatchesTheTable` は通る。片方だけのずれは 5 が見る） |
+| 5 | `E2E-05` の判定表の判定だけ `✗ FAIL` にする（節は `⬜ 未実施` のまま。実施後なら `✅ PASS` のまま） | `sectionVerdictMatchesTheTable("E2E-05")` |
+| 6 | `E2E-07` の判定を判定表と節の両方で `✅ PASS` にし、`#### 記録` のフェンスは空のままにする（実施後なら、フェンスを空にする） | `aVerdictNeedsEvidence("E2E-07")` |
 | 7 | `E2E-07` の `#### 期待` の見出しを消す | `everySectionHasTheFiveSubheadings` |
 | 8 | `E2E-12` の手順から `【利用者が行う】` を消す | `everySectionSaysWhoRunsIt("E2E-12")` |
 | 9 | 手順に `scripts/make-image.sh`（存在しない）を書く | `referencedPathsExist("scripts/make-image.sh")` |
-| 10 | 手順に `make e2e` と書く | `referencedMakeTargetsExist("e2e")` |
+| 10 | 手順に `make e2e` と書く | `referencedMakeTargetsExist("e2e")`（`makeTargets` の正規表現が `[a-z][a-z-]*` だった版では `e2e` の数字で `\b` が成り立たず、**拾えずに通っていた**。`[a-z][a-z0-9-]*` に直した） |
 | 11 | 手順に `rm -f "/Volumes/$DEV/TX00_MIC001_20260101_000000_orig.wav"` を書く | `theRunbookNeverTellsYouToWriteToTheDevice` |
 | 12 | 手順に `docker compose exec voicedock voicedock status` を書く | `theRunbookNamesNoRemovedScript` |
 | 13 | 前書きに `計画書 v1.1 に従う` と書く | `theRunbookDoesNotPinTheSpecVersion` |
 | 14 | `## 1. 前提` の表から `[C-7]` の行を消す | `theCommandTableIsNotEmpty` |
-| 14b | `### 3.2 E2E-02` の本文から `[C-7]` の参照を全部消す | `theCommandTableIsUsed("[C-7]")` |
-| 15 | `Runbook.scenarioHeading` の正規表現の `—` を ` ` にする | `theHeadingExtractionIgnoresOtherHeadings` |
+| 14b | `## 3.` より後の本文から `[C-7]` の参照を全部消す（`[C-7]` は E2E-01〜03 で使うので、1 節から消すだけでは落ちない） | `theCommandTableIsUsed("[C-7]")` |
+| 15 | `Runbook.scenarioHeading` の正規表現の ` — `（前後の空白を含む）を ` ` にする（`—` だけを空白にすると空白が 3 つ並び、`"### 3.1 E2E-01 削除"` は一致しないので陰性対照が落ちない） | `theHeadingExtractionIgnoresOtherHeadings`（題に `— ` が残るので `theHeadingExtractionWorks`・`sectionTitleMatchesTheTable` も落ちる） |
 | 16 | `Runbook.evidenceBlocks` を「フェンスの数」に変える（空も数える） | `theEvidenceCountIgnoresEmptyFences` |
 
 ## 10. 受け入れ条件
