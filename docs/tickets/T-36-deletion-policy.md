@@ -986,17 +986,17 @@ struct DeletionFormulaTests {
 | # | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|---|
 | 1 | canDeleteSource を `deletionIsIdentified(c, ctx) && textIsPreserved(…) \|\| nothingToPreserve(c, ctx)`（`\|\|` を外へ） | `formulaShapeIsFixed(canDeleteSource)` |
-| 2 | `ctx.locks.allReleased(…)` の項を消す | `nd22EitherSideOfLockOneBlocks`、`nd23ReadOnlyObservedBlocks`、`nd26ReaperNotInstalledBlocks`、`nd41InvalidReaperBlocks`、`nd45UnknownReaperConfBlocks`、`lockOneAlsoStopsGroundB`、`formulaShapeIsFixed(deletionIsIdentified)` |
+| 2 | `ctx.locks.allReleased(…)` の項を消す | `nd22EitherSideOfLockOneBlocks`、`nd23ReadOnlyObservedBlocks`、`nd26ReaperNotInstalledBlocks`、`nd41InvalidReaperBlocks`、`lockOneAlsoStopsGroundB`、`readOnlyAlsoStopsGroundB`、`formulaShapeIsFixed(deletionIsIdentified)`（`nd45UnknownReaperConfBlocks` は落ちない: reaper.conf が不明なら `volumesRoot` が nil で、`preIdentityCheck` の手順 6 も偽にする） |
 | 3 | `c.parts.count >= 1` を消す | `nd21EmptyPartsIsNotDeletable`、`formulaShapeIsFixed(deletionIsIdentified)` |
 | 4 | `c.part.sourcePath?.isEmpty == false` を消す | `formulaShapeIsFixed(deletionIsIdentified)`（振る舞いでは落ちない。番犬） |
-| 5 | `preIdentityCheck` の項を消す | `fileAbsentFromSnapshotBlocks`、`nd23ReadOnlyVolumeHandleBlocks`、`changedFileOnDeviceBlocks`、`copyTimestampIsRejected`、`formulaShapeIsFixed` |
+| 5 | `preIdentityCheck` の項を消す | `nd23ReadOnlyVolumeHandleBlocks`、`unsafeRelpathBlocks`、`missingSizeOrMtimeBlocks`、`formulaShapeIsFixed(deletionIsIdentified)`（`fileAbsentFromSnapshotBlocks`・`changedFileOnDeviceBlocks`・`copyTimestampIsRejected` は `preIdentityCheck` を直接呼ぶので、式から項を消しても落ちない。それぞれ 6・8 で落ちる） |
 | 6 | preIdentityCheck の snapshot の relpath の確認を消す | `fileAbsentFromSnapshotBlocks` |
 | 7 | preIdentityCheck の `volume.readOnly == false` を消す | `nd23ReadOnlyVolumeHandleBlocks` |
 | 8 | preIdentityCheck の `withVerifiedTarget` を消す（常に真） | `changedFileOnDeviceBlocks`、`copyTimestampIsRejected` |
 | 9 | preIdentityCheck の PartKey の照合を消す | `keyThatDisagreesWithPathBlocks` |
 | 10 | `verifyRawNote(…) == .passed` を消す | `nd08RawNoteChangedAfterSaving`(b)、`formulaShapeIsFixed(textIsPreserved)` |
-| 11 | verifyRawNote の VaultCheck を消す | `nd36EmptyVaultBlocks`、`verifierNeedsConfiguredVault` |
-| 12 | verifyRawNote の期待する鍵を `parts.map(\.partkey)`（RawNoteMembership を使わない）にする | `expectedKeysFollowRawNoteMembership`、`nd32BrokenPartTranscriptBlocks`(b)(c) |
+| 11 | verifyRawNote の VaultCheck を消す | `nd36EmptyVaultBlocks`（`verifierNeedsConfiguredVault` は落ちない: vault.path が nil なら `ctx.vaultRoot` も nil で `.vaultUnavailable` のまま） |
+| 12 | verifyRawNote の期待する鍵を `parts.map(\.partkey)`（RawNoteMembership を使わない）にする | `expectedKeysFollowRawNoteMembership`、`unfinishedSiblingDoesNotBlock`、`nd03DuplicateKeptWhileLockBIsClosed`、`onlyTheRecordedTwinIsAccepted`、`duplicateWithoutDuplicateOfIsNotBacked`、`everyDeletableSkipReasonHasABasis`（`nd32BrokenPartTranscriptBlocks`(b)(c) は落ちない: 壊した Part の鍵はノートに載ったままなので RN-6 の包含は真） |
 | 13 | `PartStates.deletable.contains(part.status)` を消す | `nd01PartStillNormalizing`、`nd02…`、`nd04…`、`nd05…` |
 | 14 | `part.transcriptPath != nil` を消す | `nd32BrokenPartTranscriptBlocks`(a) |
 | 15 | partTranscriptIsValid を `part.transcriptPath != nil` にする（ファイルを読まない） | `nd32BrokenPartTranscriptBlocks`(b)(c)、`transcriptValidityReadsTheFile` |
@@ -1008,7 +1008,7 @@ struct DeletionFormulaTests {
 | 21 | sameKey を `==`（正準等価）にする | `keysCompareByScalars` |
 | 22 | readiness の 2 と 3 を入れ替える | `readinessOrderAndWords`(b) |
 | 23 | reaperStatus で署名より先に --version を実行する | `versionRunsAfterSignature`、`nd41InvalidReaperBlocks`(a) |
-| 24 | キャッシュの鍵の比較を消す（常にキャッシュを使う） | `changedFileInvalidatesCache`、`removedReaperClearsCache` |
+| 24 | キャッシュの鍵の比較を消す（常にキャッシュを使う） | `changedFileInvalidatesCache`（`removedReaperClearsCache` は落ちない: 消えた時点で手順 1 がキャッシュを空にするので、置き直した後は鍵を比べずとも検証し直す） |
 | 25 | `useCache` を無視する | `useCacheFalseVerifiesAgain` |
 | 26 | `DeviceWritability.observe` で readOnly nil を `.writable` にする | `writabilityObservesSnapshot`、`allReleasedNeedsBoth` |
 | 27 | LockDisplay で devices `[]` を `観測=不明` にする | `defaultLines` |
