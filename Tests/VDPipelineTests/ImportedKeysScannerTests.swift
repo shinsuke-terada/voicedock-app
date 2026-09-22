@@ -186,7 +186,8 @@ struct ImportedKeysScannerTests {
     func malformedKeysAreDropped() async throws {
         let (w, vault, scanner, cfg) = try await Self.setUp()
         try w.writeVaultNote(
-            "Daily/Voice/Raw/a.md", Self.note(w, ["", "x", "DJIMIC3/", "/a.wav", "DJI MIC/../a.wav", "DJI:MIC/a.wav", ".x/a.wav"]))
+            "Daily/Voice/Raw/a.md",
+            Self.note(w, ["", "x", "DJIMIC3/", "/a.wav", "DJI MIC/../a.wav", "DJI:MIC/a.wav", ".x/a.wav"]))
         #expect(try scanner.scan(vault: vault, config: cfg) == 0)
         #expect(try w.store.importedKeys().isEmpty)
     }
