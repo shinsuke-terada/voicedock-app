@@ -151,6 +151,8 @@ PY
 
 `verified: false` の項目は一覧に出ない（`ModelCatalog.listedLLMs`）。T-24 の PR では **1 つ以上の LLM が `verified: true`** になっていること（そうでないと利用者が LLM を選べない）。
 
+**利用者の決定（2026-09-22）**: T-24 は試験の仕組み（コード・fixture・判定・スクリプト）だけで先にマージし、本物の llama-server とモデルでの受け入れ試験と `verified: true` への変更は、**後でカタログだけを直す別の PR** で行う（モデルは 30B が約 18.6 GB・4B が約 2.5 GB、試験は利用者が行う）。それまで一覧に出る LLM は 0 本で、T-31 の LLM の選択は空になる。**v1.0（T-44）の前に必ず行う**
+
 ### 4.3 transcript の fixture（10 本）
 
 voicedock には LLM 応答の fixture が 2 本あるだけで、transcript の fixture は無い（PLAN §10.6）。**ここで作る。**
@@ -526,7 +528,7 @@ enum AcceptanceReport {
 
 - [ ] `scripts/check-catalog.sh` の生の出力を `docs/POC.md` 章 15.1 に貼り、`MISMATCH` が無い（または直した）
 - [ ] `Resources/ModelCatalog.json` の 4 項目が §4.1 の表と一致し、T-09 の `bundledCatalogLoads` / `bundledURLsArePinned` が緑
-- [ ] LLM のうち**少なくとも 1 つ**が `verified: true`。`true` にしたものは §4.5 の 4 判定にすべて合格している
+- [ ] LLM のうち**少なくとも 1 つ**が `verified: true`。`true` にしたものは §4.5 の 4 判定にすべて合格している（→ 利用者の決定で別の PR。§4.2 の注記）
 - [ ] 9 本の fixture が `Tests/Fixtures/llm-acceptance/` に在り、`make test-policy` が緑
 - [ ] `make acceptance-selftest` が緑（モデルが無くても走る）
 - [ ] `make llm-acceptance MODEL=<id>` が緑で、報告が `docs/POC.md` 章 15.2 に貼られている（機種・メモリ・llama.cpp の版・モデルの sha256 を含む）
@@ -548,6 +550,8 @@ enum AcceptanceReport {
 なし（受け入れ試験は規範の表を持たない。結果は `docs/POC.md`）
 
 ## 10. マージ後にやること
+
+- **【利用者が行う】受け入れ試験（docs/POC.md 章 15 の手順 1〜5）を行い、合格した LLM を `verified: true` にするカタログだけの PR を出す。v1.0（T-44）の前に必ず**
 
 - `verified: false` のまま残った LLM は一覧に出ない。後で合格したら**カタログだけ**を直す PR を出し、そのときも章 15 に追記する（測定日・機種・sha256 を必ず書く）
 - T-31 は `ModelCatalog.listedLLMs` だけを一覧に出す（`verified` を見ない実装にしない）
