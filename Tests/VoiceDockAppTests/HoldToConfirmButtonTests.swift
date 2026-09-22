@@ -13,7 +13,7 @@ struct HoldToConfirmButtonTests {
     }
 
     @Test(
-        "経過時間 → 進捗と完了（0 秒・1.5 秒・2.99 秒・3.0 秒・それより後）",
+        "経過時間 → 進捗と完了（0 秒・1.5 秒・3.0 秒・それより後）",
         arguments: [
             (0.0, Progress(fraction: 0, complete: false)),
             (1.5, Progress(fraction: 0.5, complete: false)),
@@ -67,6 +67,16 @@ struct HoldToConfirmButtonTests {
         t.release()
         #expect(t.isHolding == false)
         #expect(t.progress(at: 14) == Progress(fraction: 0, complete: false))
+        #expect(t.tick(at: 14) == false)
+    }
+
+    @Test("onEnded を経ずに押下が取り消されたら、3 秒に達していても知らせずに最初に戻す")
+    func cancelledGestureNeverFires() {
+        var t = HoldToConfirmButton.Tracker()
+        t.press(at: 10)
+        #expect(t.tick(at: 11) == false)
+        #expect(t.tick(at: 13, stillPressed: false) == false)
+        #expect(t.isHolding == false)
         #expect(t.tick(at: 14) == false)
     }
 

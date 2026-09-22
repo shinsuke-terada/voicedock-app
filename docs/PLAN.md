@@ -2015,7 +2015,7 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
    - ④の「今はしない」は `<HOME>/ui-state.json`（`HomeLayout.uiState`。§2.3）（`{"schema": 1, "loginItemDecided": true}`。`AtomicFile`）に記録する（UserDefaults を使わない。PR-03）
 4. **保存先（Vault）**: フォルダ名の 1 行（押すと「変更…」。`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）
 5. **モデル**: 1 モデル 1 行。Whisper（状態・入手）、LLM（カタログから選ぶ `Picker` を `Menu` の中に。メモリ不足のものは選べない理由付き、「ファイルから読み込む…」も `Menu` の中、進捗バー、キャンセル）
-6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）。「はじめに」の④が未完了の間は「はじめに」のカードに、完了後は状態の見出しの ⚙ から開く「設定」の画面に置く
+6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）。状態の見出しの ⚙ から開く「設定」の画面に置く（「はじめに」の④が未完了の間は「はじめに」のカードにも置く）
 7. **元音声の削除**（主画面は「› 元音声の削除  有効／無効」の行。押すと別の画面）: §8.9.8 のロック表示・事前確認・有効化（赤いボタンの 3 秒長押し）・無効化（確認なしの 1 クリック）・無音と重複の削除（同じ長押し）
 8. **詳細・診断**（主画面は行。押すと別の画面。状態の詳細はこの画面にいる間だけ読む）: 状態の詳細（下記）、診断を実行・LLM の疎通確認、過去分の削除・手動で消した分（§8.9.9）、ログと設定ファイルを Finder で表示、設定を読み直す、版
 9. **終了**ボタン

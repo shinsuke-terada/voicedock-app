@@ -44,7 +44,8 @@ struct PanelView: View {
             if DeletionSection.isAvailable(model) {
                 PanelRow(
                     systemImage: model.showsTrash ? "trash.fill" : "trash",
-                    tint: model.showsTrash ? .red : .secondary,
+                    // 無効化に失敗した段が残っている間も赤（消す能力が残りうる）
+                    tint: model.showsDisableButton ? .red : .secondary,
                     title: Strings.rowDeletion,
                     value: model.showsTrash ? Strings.deletionOn : Strings.deletionOff
                 ) { Task { await model.show(.deletion) } }  // 7  T-40

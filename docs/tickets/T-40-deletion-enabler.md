@@ -475,7 +475,7 @@ struct HoldToConfirmButton: View {
         mutating func press(at t: Double)      // 押している間の 2 回目は無視（押し始めを動かさない）
         mutating func release()                // 途中でも完了後でも最初に戻す
         func progress(at t: Double) -> Progress // 押していなければ 0
-        mutating func tick(at t: Double) -> Bool // 完了に達した最初の 1 回だけ true
+        mutating func tick(at t: Double, stillPressed: Bool = true) -> Bool // 完了に達した最初の 1 回だけ true。stillPressed が偽なら release して false
     }
 }
 ```
@@ -485,6 +485,9 @@ struct HoldToConfirmButton: View {
 - 時刻は `SystemClock().uptime()`（単調な時計。`@State` に持ち、ビューの寿命の間は起点を動かさない。PT-09 に触れない）
 - 離した・`disabled` が真になった・画面から消えたら、途中でも `Tracker.release()` してリングを 0 に戻す（何もしない）
 - 同じ押下は、完了した後や押せなくなった後に離さないまま数え直さない（`awaitingRelease`。離すまで押し直しと見なさない）
+- 押しているかは `@GestureState`（`pressing`）でも持つ。`onEnded` を経ずにジェスチャーが取り消されたとき（押したまま popover が閉じた等）は `pressing` が偽に戻るので、`onChange` と `tick(at:stillPressed: pressing)` の両方で止め、`onConfirm` を呼ばない
+- 更新の待ちは `Task.sleep(for: .milliseconds(16))` を直接使う（`Sleeper` は秒単位で 16ms を表せない。`AppDelegate` の終了待ちと同じ例外。CR-08）
+- VoiceOver の `accessibilityAction` は付けない（1 回の操作で有効化できる経路になるため）
 
 ビューそのものはテストしない。文言は §6.5、口は §6.6 で守る。
 
@@ -621,12 +624,13 @@ struct HoldToConfirmButton: View {
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
 | `holdDurationIsThreeSeconds` | 押し続ける時間は 3 秒（PLAN §8.9.8 の 2） | — | `holdDuration == 3.0` |
-| `progressFollowsElapsedTime` | 経過時間 → 進捗と完了（0 秒・1.5 秒・2.99 秒・3.0 秒・それより後） | 0・1.5・3.0・4.5（パラメタ化） | (0, 偽)・(0.5, 偽)・(1, 真)・(1, 真) |
+| `progressFollowsElapsedTime` | 経過時間 → 進捗と完了（0 秒・1.5 秒・3.0 秒・それより後） | 0・1.5・3.0・4.5（パラメタ化） | (0, 偽)・(0.5, 偽)・(1, 真)・(1, 真) |
 | `almostThereIsNotComplete` | 2.99 秒ではまだ完了しない（リングはほぼ満ちている） | 2.99 | `complete == false`、`0.99 < fraction < 1` |
 | `zeroAndNegativeElapsedAreNotComplete` | TEST-28 押した瞬間（0 秒）と負の経過は完了せず、進捗は 0 | 0・-1 | どちらも (0, 偽) |
 | `idleTrackerNeverFires` | 押していなければ進捗は 0 で、完了を知らせない | `Tracker()` | `isHolding == false`、`progress(at: 100)` が (0, 偽)、`tick(at: 100) == false` |
 | `firesExactlyOnce` | 3 秒押し続けたら完了を 1 回だけ知らせる（押したままの次の tick では知らせない） | `press(at: 10)` → `tick` を 10・11.5・12.99・13.0・13.016・20 | 13.0 だけ true。`progress(at: 20)` が (1, 真) |
 | `releasingEarlyCancels` | 途中で離すと何もしない（離した後の tick も、時間が過ぎても知らせない） | `press(at: 10)` → `tick(at: 11.5)` → `release()` → `tick(at: 14)` | すべて false、11.5 の進捗は (0.5, 偽)、離した後は (0, 偽) |
+| `cancelledGestureNeverFires` | onEnded を経ずに押下が取り消されたら、3 秒に達していても知らせずに最初に戻す | `press(at: 10)` → `tick(at: 11)` → `tick(at: 13, stillPressed: false)` → `tick(at: 14)` | すべて false、取り消しの後 `isHolding == false` |
 | `pressingAgainStartsOver` | 押し直すと 0 から数え直す（離す前の時間を足さない） | 10 に押して 12 で離し、20 に押す | `tick(at: 21) == false`、`tick(at: 23) == true` |
 | `secondPressWhileHoldingIsIgnored` | 押している間の 2 回目の press は押し始めの時刻を動かさない | `press(at: 10)`・`press(at: 12)` | `tick(at: 13) == true` |
 | `eachPressFiresOnce` | 完了して離した後、もう一度 3 秒押せばもう一度知らせる（1 回の押下につき 1 回） | 0 に押して 3 で完了 → 離す → 10 に押す | `tick(at: 12) == false`、`tick(at: 13) == true`、`tick(at: 14) == false` |
@@ -691,6 +695,7 @@ struct HoldToConfirmButton: View {
 | 40 | （F-65）`HoldToConfirmButton.holdDuration` を 0 にする | `holdDurationIsThreeSeconds`、`progressFollowsElapsedTime`（0 秒で完了になる）、`zeroAndNegativeElapsedAreNotComplete` |
 | 41 | （F-65）`Tracker.tick` の `!fired` の条件を外す（完了の知らせを 2 回以上出す） | `firesExactlyOnce`、`eachPressFiresOnce` |
 | 42 | （F-65）`Tracker.release` で `startedAt` を消さない | `releasingEarlyCancels` |
+| 43 | （F-65）`tick` の `stillPressed` の条件を外す（取り消された押下でも 3 秒で知らせる） | `cancelledGestureNeverFires` |
 | 23 | `LockDisplay` の行 2 に文言を直書きに戻す | 落ちない（値は同じ）。**PT の対象外なので、`DeletionStrings.reaperUpdateNotice` を 1 文字変えると `updateNoticeOnVersionMismatch` の「行 2 の末尾が同じ文言で終わる」が落ちることを PR に貼る** |
 
 ## 8. 受け入れ条件

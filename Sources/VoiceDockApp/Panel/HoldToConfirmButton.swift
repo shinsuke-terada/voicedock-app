@@ -19,6 +19,8 @@ struct HoldToConfirmButton: View {
     @State private var ticker: Task<Void, Never>?
     /// この押下は使い終えた（離すまで押し直しと見なさない。完了の後や押せなくなった後に、押したまま再び数え始めない）
     @State private var awaitingRelease = false
+    /// 押しているか（ジェスチャーが onEnded を経ずに取り消されても false に戻る）
+    @GestureState private var pressing = false
     /// 単調な時計（uptime の起点をビューの寿命の間は動かさない）
     @State private var clock = SystemClock()
 
@@ -37,6 +39,7 @@ struct HoldToConfirmButton: View {
         .contentShape(Capsule())
         .gesture(
             DragGesture(minimumDistance: 0)
+                .updating($pressing) { _, state, _ in state = true }
                 .onChanged { _ in begin() }
                 .onEnded { _ in
                     awaitingRelease = false
@@ -45,6 +48,13 @@ struct HoldToConfirmButton: View {
         )
         .onChange(of: disabled) { _, now in
             if now { end() }
+        }
+        // onEnded を経ない取り消し（popover が閉じた・システムが取り消した）でも、押していなければ止める
+        .onChange(of: pressing) { _, now in
+            if !now {
+                awaitingRelease = false
+                end()
+            }
         }
         .onDisappear { end() }
         .accessibilityElement(children: .combine)
@@ -70,7 +80,14 @@ struct HoldToConfirmButton: View {
     private func step() -> Bool {
         let t = seconds()
         fraction = tracker.progress(at: t).fraction
-        guard tracker.tick(at: t) else { return false }
+        guard tracker.tick(at: t, stillPressed: pressing) else {
+            // 押していない（取り消された）なら止める
+            if !tracker.isHolding {
+                end()
+                return true
+            }
+            return false
+        }
         onConfirm()
         return true
     }
@@ -129,8 +146,13 @@ struct HoldToConfirmButton: View {
             return HoldToConfirmButton.progress(elapsed: t - startedAt, duration: duration)
         }
 
-        /// 完了に達した最初の 1 回だけ true。押していない・知らせ済み・未達なら false
-        mutating func tick(at t: Double) -> Bool {
+        /// 完了に達した最初の 1 回だけ true。押していない・知らせ済み・未達なら false。
+        /// stillPressed が偽（onEnded を経ずにジェスチャーが取り消された）なら、完了の時刻でも知らせずに最初に戻す
+        mutating func tick(at t: Double, stillPressed: Bool = true) -> Bool {
+            guard stillPressed else {
+                release()
+                return false
+            }
             guard isHolding, !fired, progress(at: t).complete else { return false }
             fired = true
             return true
