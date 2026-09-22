@@ -157,7 +157,7 @@ Contents/_CodeSignature/CodeResources
 ```
 
 - `Contents/_CodeSignature/CodeResources` は `codesign` が作る。**署名の後に**照合する
-- プロンプトの 4 本は `Resources/prompts/` の中身と一致すること（テスト `bundleManifestListsEveryPromptFile` が照合する。プロンプトを増やす PR はこの一覧も直す）
+- プロンプトの 4 本は `Resources/prompts/` の中身と一致すること（テスト `manifestListsEveryPromptFile` が照合する。プロンプトを増やす PR はこの一覧も直す）
 - `.DS_Store`・`*.dSYM`・`Contents/PkgInfo`・`Contents/Frameworks` は**入れない**（一覧に無いので落ちる）
 
 ### 4.6 `scripts/make-app.sh`（全文）
@@ -483,7 +483,7 @@ step "V-3 アーキテクチャ"
 machos=("$app/Contents/MacOS/VoiceDock" "$app/Contents/Helpers/voicedock-reaper"
         "$app/Contents/Helpers/whisper-cli" "$app/Contents/Helpers/llama-server")
 for bin in "${machos[@]}"; do
-  arch="$(lipo -archs "$bin")"
+  arch="$(lipo -archs "$bin" 2>/dev/null || echo "<読めない>")"
   [ "$arch" = "arm64" ] && ok "$(basename "$bin") = arm64" || ng "$(basename "$bin") が arm64 単体でない（${arch}）"
 done
 
@@ -502,7 +502,7 @@ codesign --verify --deep --strict --verbose=2 "$app" && ok "署名が有効" || 
 
 # V-6 本体の識別子・Team ID・Hardened Runtime
 step "V-6 本体の署名の中身"
-info="$(codesign -dvvv "$app" 2>&1)"
+info="$(codesign -dvvv "$app" 2>&1 || true)"
 grep -qx "Identifier=$BUNDLE_ID" <<<"$info" && ok "Identifier=$BUNDLE_ID" || ng "Identifier が $BUNDLE_ID でない"
 grep -qx "TeamIdentifier=$TEAM_ID" <<<"$info" && ok "TeamIdentifier=$TEAM_ID" || ng "TeamIdentifier が $TEAM_ID でない"
 grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\(.*runtime.*\)' <<<"$info" && ok "Hardened Runtime" || ng "Hardened Runtime でない"
@@ -510,7 +510,7 @@ grep -q 'Authority=Developer ID Application' <<<"$info" && ok "Developer ID Appl
 
 # V-7 reaper の識別子（PLAN §3.1・§8.9.3）
 step "V-7 reaper の署名"
-rinfo="$(codesign -dvvv "$app/Contents/Helpers/voicedock-reaper" 2>&1)"
+rinfo="$(codesign -dvvv "$app/Contents/Helpers/voicedock-reaper" 2>&1 || true)"
 grep -qx "Identifier=$BUNDLE_ID.reaper" <<<"$rinfo" && ok "Identifier=$BUNDLE_ID.reaper" || ng "reaper の Identifier が違う"
 grep -qx "TeamIdentifier=$TEAM_ID" <<<"$rinfo" && ok "TeamIdentifier=$TEAM_ID" || ng "reaper の TeamIdentifier が違う"
 codesign --verify -R "=anchor apple generic and identifier \"$BUNDLE_ID.reaper\" and certificate leaf[subject.OU] = \"$TEAM_ID\"" \
@@ -547,6 +547,7 @@ exit "$status"
 - `--files-only` は `make app`（debug）から呼ぶ。公証していないバンドルに `spctl` を掛けて落とさないため
 - V-7 の要件文字列は `ReaperSignature.requirement(bundleID:teamID:)`（T-36）と**同じ形**。ここを変えたら Swift 側も同じ PR で変える（逆も同じ）
 - `status` を立てて**最後まで全部走らせる**（最初の NG で止めない。1 回の実行で全部の問題が見える）
+- そのため `$(…)` で結果を受ける `lipo -archs`・`codesign -dvvv` には `|| echo "<読めない>"`・`|| true` を付ける（付けないと、ファイルが無い・未署名のときに `set -e` がそこでスクリプトを止める。破壊 19 で reaper を消すと V-3 の `lipo` で止まっていた）
 
 ### 4.12 `scripts/release.sh`（全文）
 
@@ -706,7 +707,7 @@ struct ReleaseBundleTests {
 
 | # | 壊し方 | 落ちるべきテスト |
 |---|---|---|
-| 1 | `Resources/bundle-manifest.txt` から `Contents/Helpers/voicedock-reaper` を消す | `manifestListsTheThreeHelpers`、`makeAppInstallsEveryManifestEntry` |
+| 1 | `Resources/bundle-manifest.txt` から `Contents/Helpers/voicedock-reaper` を消す | `manifestListsTheThreeHelpers`（`makeAppInstallsEveryManifestEntry` は許可リストの行で parametrize するので、行を消すとその場合が無くなるだけで落ちない） |
 | 2 | `Resources/bundle-manifest.txt` に `Contents/Resources/prompts/extra_ja.txt` を足す | `manifestListsEveryPromptFile` |
 | 3 | `Resources/bundle-manifest.txt` の 2 行を入れ替える | `manifestIsSortedAndUnique` |
 | 4 | `Resources/Info.plist.template` の `LSUIElement` を消す | `infoPlistTemplateHasEveryRequiredKey("LSUIElement")`、`infoPlistTemplateHasTheFixedValues` |
@@ -756,8 +757,8 @@ struct ReleaseBundleTests {
 
 ## 10. API 地図への変更提案
 
-1. §16（地図に行の無い公開 API の索引）に「**`Resources/bundle-manifest.txt`（T-34）= バンドルに入ってよいファイルの唯一の出所**。`AppPaths`（T-10）が組み立てる `Contents/Resources` と `Contents/Helpers` のパスは、この一覧の行と対応する」を足す
+1. （一部反映済み）§16 の「資源」の行に `Resources/bundle-manifest.txt`（T-34）は既に在る。残りの提案は「`AppPaths`（T-10）が組み立てる `Contents/Resources` と `Contents/Helpers` のパスは、この一覧の行と対応する」の一文を足すことだけ
 2. §15（TestSupport の部品の作り手）に足すものは無い（`ReleaseBundleTests` は `PackageRoot` だけを使う）
-3. **`Resources/AppIcon.icns` の作り手を決めたい**。地図にも T-30 の予定にも記述が無い。T-30（UI）が作る前提で T-34 を書いたが、T-30 が作らないなら T-34 に移す（§4.10 に手順は書いてある）
-4. PLAN §11.3 の 1 は「reaper は `--identifier <BUNDLE_ID>.reaper`」としか書いていないが、**本体にも `--identifier <BUNDLE_ID>` を明示する**ことにした（`CFBundleIdentifier` と署名の識別子が食い違ったまま気づかない事故を防ぐ）。PLAN への追記を提案する
-5. PLAN §11.1 の Info.plist の必須キーに `CFBundleIconFile`（= `AppIcon`）と `CFBundleDevelopmentRegion`（= `ja`）が無い。アイコンが出ないので追記を提案する
+3. **`Resources/AppIcon.icns` の作り手が宙に浮いている**。地図 §16 の「資源」の行は「T-30 が作る」と書くが、T-30 の「作るもの」の表に無く、T-30 のマージ後の develop にも無い。このため `make app` は `ERROR: Resources/AppIcon.icns がありません（T-30）` で止まる（T-34 の実装時は、リポジトリの外の複製に仮のアイコンを置いて組み立てを確かめた）。利用者がアイコンを用意して別の PR で足すか、作り手のチケットを決める（§4.10 に手順は書いてある）
+4. （反映済み）本体にも `--identifier <BUNDLE_ID>` を明示すること。PLAN §11.3 の 1 に既に書いてある
+5. （反映済み）Info.plist の必須キーの `CFBundleIconFile`（= `AppIcon`）と `CFBundleDevelopmentRegion`（= `ja`）。PLAN §11.1 に既に書いてある

@@ -61,7 +61,7 @@ step "V-3 アーキテクチャ"
 machos=("$app/Contents/MacOS/VoiceDock" "$app/Contents/Helpers/voicedock-reaper"
         "$app/Contents/Helpers/whisper-cli" "$app/Contents/Helpers/llama-server")
 for bin in "${machos[@]}"; do
-  arch="$(lipo -archs "$bin")"
+  arch="$(lipo -archs "$bin" 2>/dev/null || echo "<読めない>")"
   [ "$arch" = "arm64" ] && ok "$(basename "$bin") = arm64" || ng "$(basename "$bin") が arm64 単体でない（${arch}）"
 done
 
@@ -80,7 +80,7 @@ codesign --verify --deep --strict --verbose=2 "$app" && ok "署名が有効" || 
 
 # V-6 本体の識別子・Team ID・Hardened Runtime
 step "V-6 本体の署名の中身"
-info="$(codesign -dvvv "$app" 2>&1)"
+info="$(codesign -dvvv "$app" 2>&1 || true)"
 grep -qx "Identifier=$BUNDLE_ID" <<<"$info" && ok "Identifier=$BUNDLE_ID" || ng "Identifier が $BUNDLE_ID でない"
 grep -qx "TeamIdentifier=$TEAM_ID" <<<"$info" && ok "TeamIdentifier=$TEAM_ID" || ng "TeamIdentifier が $TEAM_ID でない"
 grep -qE '^CodeDirectory .*flags=0x[0-9a-f]*\(.*runtime.*\)' <<<"$info" && ok "Hardened Runtime" || ng "Hardened Runtime でない"
@@ -88,7 +88,7 @@ grep -q 'Authority=Developer ID Application' <<<"$info" && ok "Developer ID Appl
 
 # V-7 reaper の識別子（PLAN §3.1・§8.9.3）
 step "V-7 reaper の署名"
-rinfo="$(codesign -dvvv "$app/Contents/Helpers/voicedock-reaper" 2>&1)"
+rinfo="$(codesign -dvvv "$app/Contents/Helpers/voicedock-reaper" 2>&1 || true)"
 grep -qx "Identifier=$BUNDLE_ID.reaper" <<<"$rinfo" && ok "Identifier=$BUNDLE_ID.reaper" || ng "reaper の Identifier が違う"
 grep -qx "TeamIdentifier=$TEAM_ID" <<<"$rinfo" && ok "TeamIdentifier=$TEAM_ID" || ng "reaper の TeamIdentifier が違う"
 codesign --verify -R "=anchor apple generic and identifier \"$BUNDLE_ID.reaper\" and certificate leaf[subject.OU] = \"$TEAM_ID\"" \
