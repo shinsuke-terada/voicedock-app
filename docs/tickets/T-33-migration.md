@@ -229,7 +229,7 @@ public let importedKeys: ImportedKeysService
 | `noVaultPathDoesNothing` / 「Vault 未設定なら何もしない」 | `vault.path = nil` | 戻り 0、ログが空 |
 | `missingMarkerDoesNothing` / 「目印が無ければ走らない（幻の Vault を読まない）」 | `installVault(marker: false)` | 戻り 0 |
 | `storeErrorIsLoggedNotThrown` / 「DB の例外はログにして続ける」 | `store` を閉じた状態（`pool` を無効にする）で呼ぶ | 戻り 0、`config_warning rule=store` が 1 行、例外が出ない |
-| `startupScanRunsOnce` / 「起動で 1 回だけ走る」 | 鍵のノートを置いて `worker.start()` → `worker.tick()` を 2 回 | `imported_keys_added` が 1 行だけ、`importedKeys()` が 1 件 |
+| `startupScanRunsOnce` / 「起動で 1 回だけ走る」 | 鍵のノート（`foreignKeyA`）を置いて `worker.start()` → `worker.tick()` → 別のノート（`foreignKeyB`）を置く → `worker.tick()` | `imported_keys_added` が 1 行だけ、`importedKeys()` が `[foreignKeyA]`（tick で走ると 2 つ目のノートが取り込まれる） |
 | `startupScanRunsBeforeTheFirstTick` / 「起動の走査は最初の tick より前」 | 同上 | `worker.start()` の直後（tick の前）に `importedKeys()` が 1 件 |
 | `delayedStartAlsoScans` / 「遅れた start でも走る」 | 設定を不正にして `start()` → 直してから `tick()` | `tick()` の後に 1 件 |
 

@@ -67,9 +67,12 @@ struct ImportedKeysServiceTests {
         let worker = w.worker()
         await worker.start()
         await worker.tick()
+        // 起動の後に置いたノートは、次の起動まで取り込まれない（tick では走らない）
+        try w.writeVaultNote(
+            "Daily/Voice/Raw/20260830/2026-08-30 raw.md", w.voicedockRawNote(keys: [PipelineFixtures.foreignKeyB]))
         await worker.tick()
         #expect(w.lines("imported_keys_added").count == 1)
-        #expect(try w.store.importedKeys().count == 1)
+        #expect(try w.store.importedKeys() == [PipelineFixtures.foreignKeyA])
     }
 
     @Test("起動の走査は最初の tick より前")
