@@ -1008,9 +1008,9 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | 7 | `StatusLine.lastConnected` の並べ替えを消す | `lastConnectedShowsConnectedNames` |
 | 8 | `StatusLine.deviceFree` で `freeBytes == nil` を 0 にする | `deviceFreeSkipsUnknown` |
 | 9 | `StatusTexts.backlogLine` の `count == 0` の分岐を消す | `backlogNone` |
-| 10 | `backlogLine` の `unknownDuration` の節を消す | `backlogUnknownDuration` |
+| 10 | `backlogLine` の `unknownDuration` の節が効かないようにする（`if unknownDuration > 0` を `< 0` に。節を消すと `var t` が変更されない警告＝エラーでビルドが通らない） | `backlogUnknownDuration`、`backlogZeroSecondsButParts` |
 | 11b | `ModelMemory.hasEnough` の `>=` を `>` にする | `exactIsEnough` |
-| 12 | `AppModel.refresh` の `next != snapshot` を外して常に代入する | `iconChangesOnlyWhenIconChanges` |
+| 12 | `AppModel.refresh` の `next != snapshot` を外して常に代入する | **落ちるテストが無い**（T-30 の実装で確認）。`@Observable` の setter は `Equatable` の値が等しければ観測者に知らせない（Swift 6.4 で確認）ので、この比較は再描画の抑止を二重にしているだけで、外しても観測できる違いが無い。比較は意図を明示するために残す |
 | 13 | `refresh` が `lastConnectedAt` に `nil` を渡す | `refreshPassesLastConnectedBack` |
 | 14 | `panelDidClose` の `reloadResult = nil` を消す | `panelCloseClearsReloadResult` |
 | 15 | `AppModel.slowIntervalSeconds` を 1 にする | `panelOpenSwitchesToFastInterval` |
