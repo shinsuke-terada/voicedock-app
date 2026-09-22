@@ -10,7 +10,7 @@ import VDStore
 
 @testable import VDPipeline
 
-@Suite("InProcessRetry")
+@Suite("InProcessRetry", .timeLimit(.minutes(1)))
 struct InProcessRetryTests {
     /// 待ちの中で停止を立てる Sleeper。
     struct StoppingSleeper: Sleeper {
@@ -28,12 +28,9 @@ struct InProcessRetryTests {
         -> TickContext
     {
         guard let config = await w.configStore.current() else { throw PipelineFixtureError.noConfig }
-        let deps = WorkerDependencies(
-            layout: w.layout, paths: w.paths, store: w.store, config: w.configStore, ingest: w.ingest,
-            runner: ProcessRunner(), catalog: TestCatalogs.minimal, license: AlwaysAllowLicenseGate(), clock: w.clock,
-            sleeper: sleeper, log: w.log)
         return TickContext(
-            deps: deps, config: config, zone: PipelineFixtures.zone, snapshot: nil, pauses: PauseBook(log: w.log),
+            deps: w.deps(sleeper: sleeper), config: config, zone: PipelineFixtures.zone, snapshot: nil,
+            pauses: PauseBook(log: w.log),
             activity: ActivityBoard(assertion: RecordingSleepAssertion()), stop: stop)
     }
 
@@ -137,12 +134,13 @@ struct InProcessRetryTests {
         let key = "DJIMIC3:20260829"
         try w.moveSession(key, [.ready, .merging, .merged])
         let calls = Mutex<Int>(0)
-        await InProcessRetry(ctx: try await w.context()).run(entity: .session, key: key) {
+        let sleeper = LimitedSleeper(limit: 10)
+        await InProcessRetry(ctx: try await Self.context(w, sleeper: sleeper)).run(entity: .session, key: key) {
             calls.withLock { $0 += 1 }
             Self.failSession(w, key, .llmUnavailable)
         }
         #expect(calls.withLock { $0 } == 3)
-        #expect(w.sleeper.recorded == [3, 10])
+        #expect(sleeper.recorded == [3, 10])
     }
 
     @Test("CE retry.maxAttempts 2 にすると 2 回で終わる")
@@ -150,21 +148,23 @@ struct InProcessRetryTests {
         let w = try await PipelineWorld.make { $0.retry.maxAttempts = 2 }
         let pk = try w.insertPart()
         let calls = Mutex<Int>(0)
-        await InProcessRetry(ctx: try await w.context()).run(entity: .recording, key: pk) {
+        let sleeper = LimitedSleeper(limit: 10)
+        await InProcessRetry(ctx: try await Self.context(w, sleeper: sleeper)).run(entity: .recording, key: pk) {
             calls.withLock { $0 += 1 }
             Self.failPart(w, pk, .whisperFailed)
         }
         #expect(calls.withLock { $0 } == 2)
-        #expect(w.sleeper.recorded == [3])
+        #expect(sleeper.recorded == [3])
     }
 
     @Test("CE retry.backoffSeconds [5,7,9] の待ちが使われる")
     func ceRetryBackoffSeconds() async throws {
         let w = try await PipelineWorld.make { $0.retry.backoffSeconds = [5, 7, 9] }
         let pk = try w.insertPart()
-        await InProcessRetry(ctx: try await w.context()).run(entity: .recording, key: pk) {
+        let sleeper = LimitedSleeper(limit: 10)
+        await InProcessRetry(ctx: try await Self.context(w, sleeper: sleeper)).run(entity: .recording, key: pk) {
             Self.failPart(w, pk, .whisperFailed)
         }
-        #expect(w.sleeper.recorded == [5, 7])
+        #expect(sleeper.recorded == [5, 7])
     }
 }

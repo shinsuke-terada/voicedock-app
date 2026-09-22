@@ -88,7 +88,7 @@ T-30 §4.0 の全体の規則を適用する。**このチケットのコード�
 
 ```swift
     /// 設定の 1 つのキーを変えて保存する（GUI で変えてよい 4 つだけ。PLAN §6.3）。
-    func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> Result<AppConfig, [ConfigViolation]>
+    func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult
     /// モデルを 1 件ダウンロードする（進捗は progress に。取り消しは cancelDownload）。
     func download(kind: ModelKind, entry: ModelEntry, progress: @escaping @Sendable (Int64, Int64) -> Void) async -> Result<URL, ModelError>
     func cancelDownload(id: String) async

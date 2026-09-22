@@ -4,7 +4,7 @@ import VDCore
 import VDProcess
 import VDStore
 
-/// Worker と工程の依存（00-api-map §11）。タイムゾーンは持たない（tick ごとに設定から作る）。
+/// Worker と工程の依存（00-api-map §11。並びは地図の相対順）。タイムゾーンは持たない（tick ごとに設定から作る）。
 public struct WorkerDependencies: Sendable {
     public let layout: HomeLayout
     public let paths: AppPaths
@@ -12,16 +12,16 @@ public struct WorkerDependencies: Sendable {
     public let config: ConfigStore
     public let ingest: any IngestPort
     public let runner: any ProcessRunning
-    public let catalog: ModelCatalog
-    public let license: any LicenseGate
     public let clock: any AppClock
     public let sleeper: any Sleeper
     public let log: AppLog
+    public let license: any LicenseGate
+    public let catalog: ModelCatalog
 
     public init(
         layout: HomeLayout, paths: AppPaths, store: Store, config: ConfigStore, ingest: any IngestPort,
-        runner: any ProcessRunning, catalog: ModelCatalog, license: any LicenseGate,
-        clock: any AppClock, sleeper: any Sleeper, log: AppLog
+        runner: any ProcessRunning, clock: any AppClock, sleeper: any Sleeper, log: AppLog,
+        license: any LicenseGate, catalog: ModelCatalog
     ) {
         self.layout = layout
         self.paths = paths
@@ -29,10 +29,10 @@ public struct WorkerDependencies: Sendable {
         self.config = config
         self.ingest = ingest
         self.runner = runner
-        self.catalog = catalog
-        self.license = license
         self.clock = clock
         self.sleeper = sleeper
         self.log = log
+        self.license = license
+        self.catalog = catalog
     }
 }

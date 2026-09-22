@@ -14,7 +14,8 @@ public actor Worker {
     let board: ActivityBoard
     let stop = StopFlag()
     let onStage: (@Sendable (TickStage) -> Void)?
-    var started = false
+    /// 起動の処理（start の 1 回目が作り、後から来た start・run・tick はこれを待つ。actor の再入で二重に走らせない）
+    var startTask: Task<Void, Never>?
     var pendingStart = false
     var lastSeenConnectEpoch: UInt64 = 0
     var pendingRequeues: [RequeueReason] = []
@@ -40,9 +41,19 @@ public actor Worker {
     }
 
     /// 起動時に 1 回（PLAN §5.3・§5.4）。設定エラー中・共存ガード中は保留し、解除された最初の tick の先頭で行う。
+    /// 2 回目以降の呼び手は 1 回目の処理が終わるのを待ってから戻る（start の途中で tick が走らない）。
     public func start() async {
-        if started { return }
-        started = true
+        if let running = startTask {
+            await running.value
+            return
+        }
+        let task = Task { await self.startOnce() }
+        startTask = task
+        await task.value
+    }
+
+    /// start の本体（1 回だけ）。
+    func startOnce() async {
         let noConfig = await deps.config.current() == nil
         let blocked = await deps.ingest.state() == .coexistenceBlocked
         if noConfig || blocked {
@@ -94,6 +105,7 @@ public actor Worker {
 
     /// 1 周（PLAN §5.4 の順）。停止要求で中断したら finishTick も board.set(.idle) も呼ばない。
     public func tick() async {
+        if let running = startTask { await running.value }
         guard let config = await deps.config.current() else {
             board.set(.idle)
             return

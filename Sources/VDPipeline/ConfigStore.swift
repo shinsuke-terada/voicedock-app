@@ -66,20 +66,22 @@ public actor ConfigStore {
 
     /// GUI と有効化フローの変更。**書く前に**変更後の値と reaper.conf の観測で検証し、違反なら書かない。
     /// reaperConfObservation が nil なら今の値（observeReaperConf()）で検証する。
+    /// actor の再入: 観測を**先に**取り、`config` の読み出しから書き込みまでは await を挟まない
+    /// （並行した 2 つの update が同じ古い値から始めて片方の変更を失わないため）。
     public func update(
         _ mutate: @Sendable (inout AppConfig) -> Void,
         reaperConfObservation: ReaperConfObservation? = nil
-    ) async -> Result<AppConfig, [ConfigViolation]> {
-        guard var c = config else {
-            return .failure(lastViolations.isEmpty ? [violation("設定が読み込まれていません")] : lastViolations)
-        }
-        mutate(&c)
+    ) async -> ConfigUpdateResult {
         let observation: ReaperConfObservation
         if let given = reaperConfObservation {
             observation = given
         } else {
             observation = await observeReaperConf()
         }
+        guard var c = config else {
+            return .failure(lastViolations.isEmpty ? [violation("設定が読み込まれていません")] : lastViolations)
+        }
+        mutate(&c)
         let v = ConfigValidator.validate(c, catalog: catalog, reaperConfObservation: observation)
         if !v.isEmpty { return .failure(v) }
         do {
@@ -98,9 +100,34 @@ public actor ConfigStore {
     }
 
     /// load() の手順 1〜3（既定の書き出し・読み込み・CV-30 の修復）。
+    /// actor の再入: 観測（と修復口）を待ってから、ファイルの読み出しと結果の反映までは await を挟まない。
     private func loadResult(_ url: URL) async -> ConfigLoadResult {
+        let observation = await observeReaperConf()
+        var result = readSync(url, observation: observation, writeDefaults: true)
+        if case .invalid(let v) = result, v.contains(where: { $0.rule == "CV-30" }), let reconcile = reconciler {
+            guard await reconcile() else { return readSync(url, observation: observation, writeDefaults: false) }
+            let after = await observeReaperConf()
+            guard let data = try? Data(contentsOf: url), var c = try? JSONDecoder().decode(AppConfig.self, from: data)
+            else { return readSync(url, observation: after, writeDefaults: false) }
+            c.cleanup.deleteSourceAudio = false
+            c.cleanup.deleteSkippedSource = false
+            c.device.mountMode = "ro"
+            do {
+                try AtomicFile.write(ConfigLoader.encode(c), to: url, permissions: 0o644)
+            } catch {
+                return readSync(url, observation: after, writeDefaults: false)
+            }
+            log.warning(
+                .configWarning, [(.rule, "CV-30"), (.message, "reaper.conf と config.json の削除の設定を無効側に揃えました")])
+            result = readSync(url, observation: after, writeDefaults: false)
+        }
+        return result
+    }
+
+    /// 手順 1（無いときだけ既定を書く）と read()。同期（await しない）。
+    private func readSync(_ url: URL, observation: ReaperConfObservation, writeDefaults: Bool) -> ConfigLoadResult {
         var info = stat()
-        if lstat(url.path(percentEncoded: false), &info) != 0 && errno == ENOENT {
+        if writeDefaults && lstat(url.path(percentEncoded: false), &info) != 0 && errno == ENOENT {
             let d = AppConfig.defaults(timeZone: defaultTimeZone())
             do {
                 try AtomicFile.write(ConfigLoader.encode(d), to: url, permissions: 0o644)
@@ -109,34 +136,13 @@ public actor ConfigStore {
             }
             created = true
         }
-        var result = await read(url)
-        if case .invalid(let v) = result, v.contains(where: { $0.rule == "CV-30" }), let reconcile = reconciler {
-            guard await reconcile() else { return result }
-            guard let data = try? Data(contentsOf: url), var c = try? JSONDecoder().decode(AppConfig.self, from: data)
-            else { return result }
-            c.cleanup.deleteSourceAudio = false
-            c.cleanup.deleteSkippedSource = false
-            c.device.mountMode = "ro"
-            do {
-                try AtomicFile.write(ConfigLoader.encode(c), to: url, permissions: 0o644)
-            } catch {
-                return result
-            }
-            log.warning(
-                .configWarning, [(.rule, "CV-30"), (.message, "reaper.conf と config.json の削除の設定を無効側に揃えました")])
-            result = await read(url)
-        }
-        return result
-    }
-
-    private func read(_ url: URL) async -> ConfigLoadResult {
         let data: Data
         do {
             data = try Data(contentsOf: url)
         } catch {
             return .invalid([violation("読めません: " + ErrorText.describe(error))])
         }
-        return ConfigLoader.load(data: data, catalog: catalog, reaperConfObservation: await observeReaperConf())
+        return ConfigLoader.load(data: data, catalog: catalog, reaperConfObservation: observation)
     }
 
     private func violation(_ message: String) -> ConfigViolation {
@@ -144,7 +150,9 @@ public actor ConfigStore {
     }
 }
 
-/// `update` の `Result<AppConfig, [ConfigViolation]>`（00-api-map §11）は失敗側が `Error` であることを要る。
-/// 配列はそのままでは `Error` でないので、違反の配列にだけ準拠を足す（T-18 §11 の提案 12。利用者の判断待ち）。
-// swift-format-ignore: AvoidRetroactiveConformances
-extension Array: @retroactive Error where Element == ConfigViolation {}
+/// `update` の結果（00-api-map §11）。`Result` の失敗側は `Error` を要り配列は `Error` でないため包み型にする
+/// （利用者の決定 2026-09-22）。ケース名は `Result` と同じ（呼び手は `case .failure(let v)` で違反の配列を受ける）。
+public enum ConfigUpdateResult: Sendable, Equatable {
+    case success(AppConfig)
+    case failure([ConfigViolation])
+}

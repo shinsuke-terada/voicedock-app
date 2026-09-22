@@ -11,7 +11,7 @@ import VDStore
 
 @testable import VDPipeline
 
-@Suite("Worker", .serialized)
+@Suite("Worker", .serialized, .timeLimit(.minutes(1)))
 struct WorkerTests {
     /// 常に偽の課金の口。
     struct DenyingLicenseGate: LicenseGate {
@@ -26,13 +26,10 @@ struct WorkerTests {
     /// sleeper と license を差し替えた Worker。
     static func worker(
         _ w: PipelineWorld, sleeper: any Sleeper, license: any LicenseGate = AlwaysAllowLicenseGate(),
-        onStage: (@Sendable (TickStage) -> Void)? = nil
+        ingest: (any IngestPort)? = nil, onStage: (@Sendable (TickStage) -> Void)? = nil
     ) -> Worker {
-        let deps = WorkerDependencies(
-            layout: w.layout, paths: w.paths, store: w.store, config: w.configStore, ingest: w.ingest,
-            runner: ProcessRunner(), catalog: TestCatalogs.minimal, license: license, clock: w.clock,
-            sleeper: sleeper, log: w.log)
-        return Worker(deps: deps, assertion: w.assertion, onStage: onStage)
+        Worker(
+            deps: w.deps(sleeper: sleeper, license: license, ingest: ingest), assertion: w.assertion, onStage: onStage)
     }
 
     static func relpath(_ hhmmss: String) -> String {
@@ -81,9 +78,10 @@ struct WorkerTests {
         await w.ingest.setSnapshot(FakeIngest.snapshot(completedAt: Self.ago(w, seconds: 901)))
         let recorder = StageRecorder()
         await w.worker { recorder.record($0) }.tick()
-        let expected = TickStage.allCases.filter {
-            $0 != .manualRequeue && !TickStage.requiresFreshSnapshot.contains($0)
-        }
+        let expected: [TickStage] = [
+            .groupNewParts, .requeueRecopied, .closeIdleSessions, .processPendingParts, .refreshVaultIndex,
+            .processReadySessions, .collectDeleteResults, .expireDeleteRequests, .pendingJobs, .requeueOnConnect,
+        ]
         #expect(recorder.recorded == expected)
         #expect(!recorder.recorded.contains(.evaluateDeletions))
         #expect(!recorder.recorded.contains(.settleSkippedDeletions))
@@ -182,6 +180,56 @@ struct WorkerTests {
         let worker = w.worker()
         await worker.start()
         await worker.start()
+        #expect(w.lines("service_started").count == 1)
+    }
+
+    /// state() を門で止める取り込み（start の途中で止めておくため）。
+    actor GatedIngest: IngestPort {
+        private var armed = true
+        private var held: CheckedContinuation<Void, Never>?
+
+        var isHolding: Bool { held != nil }
+
+        func release() {
+            armed = false
+            held?.resume()
+            held = nil
+        }
+
+        func latestSnapshot() -> DeviceSnapshot? { nil }
+
+        func state() async -> IngestState {
+            if armed { await withCheckedContinuation { held = $0 } }
+            return .idle
+        }
+
+        func updates() -> AsyncStream<Void> { AsyncStream.makeStream(of: Void.self).stream }
+
+        func scanNow() async -> UInt64? { nil }
+    }
+
+    @Test("start の途中に来た 2 回目の start は 1 回目の終わりを待つ（actor の再入）")
+    func concurrentStartWaitsForTheFirst() async throws {
+        let w = try await PipelineWorld.make()
+        let ingest = GatedIngest()
+        let worker = Self.worker(w, sleeper: SuspendingSleeper(), ingest: ingest)
+        let first = Task { await worker.start() }
+        try await waitUntil("1 回目の start が止まる") { await ingest.isHolding }
+        let startedWhenSecondReturned = Mutex<Bool?>(nil)
+        let sink = w.sink
+        let second = Task {
+            await worker.start()
+            let started = sink.lines.contains { $0.contains(" service_started ") }
+            startedWhenSecondReturned.withLock { $0 = started }
+        }
+        // 正しければ 2 回目は 1 回目を待って戻らない。壊れていればすぐ戻るので、最大 200 ms その機会を与える
+        for _ in 0..<20 where startedWhenSecondReturned.withLock({ $0 }) == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        await ingest.release()
+        await first.value
+        await second.value
+        #expect(startedWhenSecondReturned.withLock { $0 } == true)
         #expect(w.lines("service_started").count == 1)
     }
 

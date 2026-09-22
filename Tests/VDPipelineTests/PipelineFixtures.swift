@@ -25,10 +25,17 @@ struct PipelineWorld {
     let log: AppLog
     let assertion: RecordingSleepAssertion
 
-    var deps: WorkerDependencies {
+    var deps: WorkerDependencies { deps() }
+
+    /// sleeper・license・ingest を差し替えた依存（省略したものは世界のもの）。
+    func deps(
+        sleeper: (any Sleeper)? = nil, license: any LicenseGate = AlwaysAllowLicenseGate(),
+        ingest: (any IngestPort)? = nil
+    ) -> WorkerDependencies {
         WorkerDependencies(
-            layout: layout, paths: paths, store: store, config: configStore, ingest: ingest, runner: ProcessRunner(),
-            catalog: TestCatalogs.minimal, license: AlwaysAllowLicenseGate(), clock: clock, sleeper: sleeper, log: log)
+            layout: layout, paths: paths, store: store, config: configStore, ingest: ingest ?? self.ingest,
+            runner: ProcessRunner(), clock: clock, sleeper: sleeper ?? self.sleeper, log: log, license: license,
+            catalog: TestCatalogs.minimal)
     }
 
     /// config を設定して ConfigStore に書き、load する（検証を通らなければテストを落とす）。
@@ -244,6 +251,27 @@ func waitUntil(_ what: String, _ condition: @Sendable () async -> Bool) async th
         try await Task.sleep(for: .milliseconds(10))
     }
     throw PipelineFixtureError.timedOut(what)
+}
+
+/// 待たずに待ち秒を記録し、limit 回を超えたら CancellationError を投げる Sleeper
+/// （工程内リトライが止まらない壊れ方でもテストが終わって落ちるようにする）。
+final class LimitedSleeper: Sleeper {
+    private let limit: Int
+    private let seconds = Mutex<[Int]>([])
+
+    init(limit: Int) {
+        self.limit = limit
+    }
+
+    func sleep(seconds value: Int) async throws {
+        let count = seconds.withLock {
+            $0.append(value)
+            return $0.count
+        }
+        if count > limit { throw CancellationError() }
+    }
+
+    var recorded: [Int] { seconds.withLock { $0 } }
 }
 
 /// 段の記録（onStage に渡す）。

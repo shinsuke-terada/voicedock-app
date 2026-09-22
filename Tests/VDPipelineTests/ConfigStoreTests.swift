@@ -59,7 +59,7 @@ struct ConfigStoreTests {
         return false
     }
 
-    static func failureRules(_ result: Result<AppConfig, [ConfigViolation]>) -> [String]? {
+    static func failureRules(_ result: ConfigUpdateResult) -> [String]? {
         if case .failure(let v) = result { return v.map(\.rule) }
         return nil
     }
@@ -238,5 +238,45 @@ struct ConfigStoreTests {
         let result = await store.load()
         #expect(calls.withLock { $0 } == 1)
         #expect(Self.rules(result).contains("CV-30"))
+    }
+
+    /// 観測の口を止めておく門。armed の間、2 つの呼び手が揃うまで待たせる。
+    actor ObservationGate {
+        private var armed = false
+        private var waiting: [CheckedContinuation<Void, Never>] = []
+
+        func arm() { armed = true }
+
+        func pass() async {
+            guard armed else { return }
+            if waiting.count + 1 >= 2 {
+                armed = false
+                for continuation in waiting { continuation.resume() }
+                waiting = []
+                return
+            }
+            await withCheckedContinuation { waiting.append($0) }
+        }
+    }
+
+    @Test("並行した 2 つの update の変更が両方残る（actor の再入）")
+    func concurrentUpdatesKeepBothChanges() async throws {
+        let s = try Scene()
+        let gate = ObservationGate()
+        let store = s.store {
+            await gate.pass()
+            return .missing
+        }
+        _ = await store.load()
+        await gate.arm()
+        async let first = store.update { $0.vault.path = "/tmp/a" }
+        async let second = store.update { $0.session.maxParts = 10 }
+        let results = await [first, second]
+        #expect(results.allSatisfy { Self.failureRules($0) == nil })
+        #expect(await store.current()?.vault.path == "/tmp/a")
+        #expect(await store.current()?.session.maxParts == 10)
+        let written = try s.fileConfig()
+        #expect(written.vault.path == "/tmp/a")
+        #expect(written.session.maxParts == 10)
     }
 }

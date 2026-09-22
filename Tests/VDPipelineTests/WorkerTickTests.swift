@@ -8,7 +8,7 @@ import VDStore
 
 @testable import VDPipeline
 
-@Suite("WorkerTick", .serialized)
+@Suite("WorkerTick", .serialized, .timeLimit(.minutes(1)))
 struct WorkerTickTests {
     /// T-17 §6.3 の期待（duration_seconds は 2.0。voicedock の json.dumps(…, ensure_ascii=False, indent=2) + "\n"）。
     static let expectedTranscript = """
@@ -74,12 +74,13 @@ struct WorkerTickTests {
         let w = try await PipelineWorld.make()
         try w.installWhisper(exitCode: 1)
         let pk = try w.registerPart()
-        await w.worker().tick()
+        let sleeper = LimitedSleeper(limit: 10)
+        await Worker(deps: w.deps(sleeper: sleeper), assertion: w.assertion, onStage: nil).tick()
         let row = try w.part(pk)
         #expect(row.status == .failed)
         #expect(row.errorCode == .whisperFailed)
         #expect(row.retryCount == 3)
-        #expect(w.sleeper.recorded == [3, 10])
+        #expect(sleeper.recorded == [3, 10])
     }
 
     @Test("空の DB で tick")
