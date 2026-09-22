@@ -1053,6 +1053,15 @@ final class RecordingSleepAssertion: SleepAssertion {
 | 遅れた start でも inbox の孤児を消す | 「設定エラー中の start は保留し、解除後の最初の tick で行う」 |
 | requeueOnConnect で lastSeenConnectEpoch を更新しない | 「connectEpoch が増えたら requeue(.connect)」 |
 
+**結果（レビューの修正の後。コミット 70e8dc3 の清潔な状態から trap で戻して 1 項目ずつ）**:
+
+| 壊し方 | 実際に落ちたもの |
+|---|---|
+| WorkerDependencies の init を旧い並び（`runner, catalog, license, clock, sleeper, log`）に戻す | ビルドが落ちる（PipelineFixtures の地図の順の呼び出しが「incorrect argument labels」） |
+| ConfigStore.update で観測を `config` の読み出しの後に待つ | 「並行した 2 つの update の変更が両方残る（actor の再入）」 |
+| InProcessRetry の resumeFailed で resetRetry を true にする | 5 本が止まらずに落ちる: 「失敗 → 3 秒 → …」「Session も同じ」「CE retry.maxAttempts 2 …」「CE retry.backoffSeconds [5,7,9] …」「whisper の失敗は工程内で 3 回」 |
+| Worker.start で 2 回目以降をすぐ戻す（startTask を待たない） | 「start の途中に来た 2 回目の start は 1 回目の終わりを待つ（actor の再入）」 |
+
 ## 8. 受け入れ条件
 
 - [ ] §3 のファイルがすべて在り、公開宣言が 00-api-map §11（と §11 の提案）に一致する
