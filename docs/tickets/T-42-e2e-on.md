@@ -11,7 +11,7 @@
 ## 1. 目的
 
 削除を**実際に有効にして**実機で 3 件（E2E-10・11・17）を通し、削除 OFF で通した 9 件（E2E-01〜09）を**削除 ON でもう一度**通す。
-PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して 5 条件）の判定を `docs/E2E.md` に記録し、**ゲートが開いたことを機械で確かめられる形にする**。
+PLAN §12.4 の削除のゲート（5 条件。5 番目「削除 ON で E2E-01〜09 を再実行」は PLAN に反映済み）の判定を `docs/E2E.md` に記録し、**ゲートが開いたことを機械で確かめられる形にする**。
 
 > voicedock では E2E が揃う前に削除を有効にし、**単体テストが全部緑のまま実機で 5 件の欠陥**（#151 / #152 / #154 / #156 ほか）が見つかった。
 > 「三重ロックを全部外して 1 日流す」でしか見つからない欠陥がある（PLAN §12.4 の 4）。
@@ -64,19 +64,19 @@ PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して
 |---|---|
 | 題 | `削除 ON で通し` |
 | 削除 | ON |
-| 前提 | **`make app` か `make release` の `.app`**（ad-hoc 署名でないもの）。削除 OFF の 15 件が PASS 済み。**無音の録音 1 本**と普通の録音 2 本を新しく録る。[C-7]・[C-15] を保存する |
-| 手順 | ① [C-7]・[C-15]・[C-11]・[C-16]・[C-1] を取る（前）<br>② パネルの「元音声の削除」で有効化する。**事前確認の文言と、入力欄に `ENABLE` を打つところ**を記録する。`y` や `enable`（小文字）では通らないことも 1 回試す<br>③ [C-11]・[C-16]・[C-14] を取る（`deletion_enabled` が出ている。**「挿し直した後に読み書きできる」旨の表示**を書き写す）<br>④ 挿す（**有効化してから初めての接続**）<br>⑤ [C-8] で**読み書き可能で**マウントされていることを確かめる<br>⑥ 完走を待つ<br>⑦ [C-1]・[C-13]・[C-14]・[C-12]・[C-6]・[C-7]・[C-15]・[C-9]・[C-11] を取る（後） |
-| 期待 | ③ ロック 1 = アプリ有効・reaper.conf 有効、ロック 2-A = 導入済み（署名 OK・版が `VERSION` と一致）、ロック 2-B = 設定 rw・観測は**まだ読み取り専用**（挿し直す前）<br>⑤ 挿し直した後は観測が「読み書き可能」<br>⑦ **Raw ノートの検証を通った Part の元音声だけが消える**（[C-7] の前後の差が、その Part のファイルだけ）。`delete_requested` → `reaper_run exit=0` → `source_deleted` の順にログが出る。`queue/delete` と `queue/result` が**空**に戻る（[C-6]）。`recordings.source_deleted_at` が入る（[C-13]）。**空き容量が戻る**（[C-15] の前後）。**無音の Part は消えない**（`source_delete_skipped reason=…`。根拠 B は既定 false）。Daily / Raw ノートは削除 OFF のときと同じ形 |
+| 前提 | **`make app` か `make release` の `.app`**（ad-hoc 署名でないもの。`codesign -dvvv` で reaper の `Identifier=` と `TeamIdentifier=` を確かめる）。削除 OFF の 13 件が PASS 済み。デバイスに未処理の録音が無い。**無音の録音 1 本**と普通の録音 2 本を**有効化の後に**新しく録る。デバイスの全ファイルの一覧を保存する |
+| 手順 | ① 挿して [C-8] に `read-only` が出たら [C-7]・[C-15]・[C-11]・[C-16]・[C-1] を取る（前。削除 OFF なので読み取り専用）<br>② パネルの「元音声の削除」で有効化する。**事前確認の 2 文と診断の要約、入力欄に `ENABLE` を打つところ**を記録する。`enable`（小文字）では通らないことも 1 回試す<br>③ 直ちに [C-11]・[C-16]・[C-14] を取る（`deletion_enabled` が出ている。注意書き「読み書きできるようになるのはデバイスを挿し直した後です」を書き写す。デバイスが挿さっているときだけ出る）<br>④ 抜いて、3 本を新しく録る<br>⑤ 挿す（**有効化してから初めての接続**）。[C-8] で `read-only` が**無い**ことを確かめ、直ちに [C-7]・[C-15]（前）<br>⑥ 完走を待つ<br>⑦ [C-1]・[C-13]・[C-14]・[C-12]・[C-6]・[C-7]・[C-15]・[C-9]・[C-11] と無音の Part の行を取る（後） |
+| 期待 | ③ `ロック 1  : アプリ=有効, reaper.conf=有効`、`ロック 2-A: 削除モジュール=導入済み（署名 OK, 版 <VERSION>）`、`ロック 2-B: 設定=rw, <デバイス>=読み取り専用（観測）`（挿し直す前）<br>⑤ 挿し直した後は観測が `読み書き可能（観測）`<br>⑦ **Raw ノートの検証を通った Part の元音声だけが消える**（[C-7] の前後の差が、その Part のファイルだけ）。`delete_requested` → `reaper_run exit=0` → `source_deleted` の順にログが出る。`queue/delete` と `queue/result` が**空**に戻る（[C-6]）。`recordings.source_deleted_at` が入る（[C-13]）。**空き容量が戻る**（[C-15] の前後）。**無音の Part は消えない**（`SKIPPED` のまま `delete_request_id` も `source_deleted_at` も空。根拠 B は既定 false なので `SkippedSettler` は何も読まずに 0 を返し、**ログも出さない**）。Daily / Raw ノートは削除 OFF のときと同じ形 |
 | 記録 | ② の事前確認の文言と `ENABLE` 以外が弾かれた表示、③ と ⑦ の [C-11]、[C-7] の前後の `diff`（**消えたファイルだけが差分**）、[C-15] の前後、[C-13]、[C-14]、[C-12]、[C-6] |
 | 落とし穴 | **有効化の直後、挿し直す前のデバイスは観測が `readOnly` なので削除されない**（`source_delete_skipped reason=device_readonly`）。これは正しい動き。消し損ねた分は E2E-11 の「過去分を削除対象にする」で拾う |
 
-追加で必ず行う 2 つの確認（**何も消えないことの確認**。ND-40 / RV-00 の実機での裏取り）:
+追加で必ず行う 3 つの確認（**何も消えないことの確認**。ND-40 / RV-00 の実機での裏取り。**デバイスを抜き、`queue/delete` が空のときに**行う）:
 
 | # | 手順【利用者が行う】 | 期待 |
 |---|---|---|
 | 10-a | `"<VoiceDock.app のパス>/Contents/Helpers/voicedock-reaper" --home "$VD_HOME"` を手で実行する | **終了コード 3**、標準出力も `reaper.log` も**何も書かれない**、`queue/delete` が変わらない（RV-00。バンドル内から起動しても動かない） |
 | 10-b | `"$VD_HOME/bin/voicedock-reaper" --version` を手で実行する | `VERSION` と同じ 1 行。**要求は処理されない**（`--version` は RV-00 より前に処理して終わる） |
-| 10-c | `"$VD_HOME/bin/voicedock-reaper" --home "$VD_HOME"` を**手で**実行する（`queue/delete` が空のときに限る） | 終了コード 0。何も消えない（要求が無い）。**TCC の差**（voicedock ではターミナルから直に叩くと `Operation not permitted` だった）を記録する。要求がある状態で手で叩かない |
+| 10-c | `"$VD_HOME/bin/voicedock-reaper" --home "$VD_HOME"` を**手で**実行する（`queue/delete` が空で、デバイスを抜いてあるときに限る） | 終了コード 0（4 なら `reaper_busy`。少し待ってもう一度）。何も消えない（要求が無い）。`reaper.log` に `reaper_started` と `reaper_completed requests=0`。要求が無いと reaper はデバイスを開かないので、voicedock で見えた **TCC の差**（ターミナルから直に叩くと `Operation not permitted`）は**この確認では現れない**。要求がある状態・デバイスが挿さった状態で手で叩かない |
 
 ### 5.3 E2E-11 — 過去分の削除・手動で消した分の完了
 
@@ -85,10 +85,10 @@ PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して
 | 題 | `過去分の削除・手動で消した分の完了` |
 | 削除 | ON |
 | 前提 | E2E-10 が PASS。**削除 OFF の期間に処理した Part が残っている**（E2E-01〜09 で処理したもの）。[C-7] を保存する |
-| 手順 | ① [C-1]・[C-7]・[C-13] を取る（前）<br>② パネルの「詳細 → 過去分を削除対象にする」を押す。**プレビュー（件数と、対象外の件数と理由）を書き写す**<br>③ もう一度押して実行する<br>④ 完走を待って [C-1]・[C-7]・[C-13]・[C-14]・[C-12]<br>⑤ 【利用者が行う】**手で 1 本だけ**デバイスから録音を消す（Finder で削除。まだアプリに要求を書かせていない Part を選ぶ）。消す前に `stat -f '%z %m %N'` を取る<br>⑥ 挿し直して新しい snapshot を取らせる<br>⑦ 「手動で消した分を完了にする」のプレビューを書き写し、実行する<br>⑧ [C-1]・[C-13]・[C-14] |
-| 期待 | ② 対象は「COMPLETED の Session の Part で、`canDeleteSource` が真のもの」。対象外には理由（`already_deleted` / `not_deletable`）と件数が出る。**削除 OFF の期間の Part も、Raw ノートの検証を経ていれば対象になる**（voicedock では Raw 検証を経ていないため `--backlog` が 0 件だったが、本アプリは Raw ノートの保存・検証を削除 OFF でも行うので対象になる）<br>④ 対象の元音声が消え、`source_deleted_at` が入る<br>⑦ 手で消した Part が `SOURCE_DELETE_PENDING` → `SOURCE_DELETING`（detail `resolve_absent`）→ `COMPLETED`（detail `already_absent`）。`source_delete_skipped reason=already_absent`。**`source_deleted_at` は入らない**（消したのはアプリではない） |
-| 記録 | ② と ⑦ のプレビューの全文、[C-1]・[C-7]・[C-13] の前後、[C-14]、[C-4] の当該 Part の遷移 3 行 |
-| 落とし穴 | ② のプレビューが 0 件なら**この試験は空振り**（TEST-20）。0 件なら削除 OFF で処理した Part を先に用意する。⑤ で消すのは**この試験用に録った 1 本**に限る |
+| 手順 | ① [C-1]・[C-7]・[C-13] と「対象になりうる Part の一覧」（COMPLETED の Session の COMPLETED / SOURCE_DELETE_PENDING の Part で、`source_deleted_at` と `delete_request_id` が空のもの）を取る（前）<br>② パネルの「詳細 → 過去分を削除対象にする」を押す。**プレビュー（件数と、対象外の件数と理由）を書き写す**。消えてよい範囲を超えていたら「やめる」<br>③ 「削除要求を書く（n 件）」を押して実行する<br>④ 完走を待って [C-1]・[C-7]・[C-13]・[C-14]・[C-12]・[C-6]<br>⑤ `SOURCE_DELETE_PENDING` の Part を `sqlite3` で調べる。**0 行なら ⑥〜⑨ を行わない**<br>⑥ 【利用者が行う】その中から**1 本だけ**選び、`stat -f '%z %m %N'` を取ってから Finder で削除する<br>⑦ 挿し直して新しい snapshot を取らせる<br>⑧ 「手動で消した分を完了にする」のプレビューを書き写し、「完了にする（1 件）」で実行する<br>⑨ [C-1]・[C-13]・[C-14]・[C-4] |
+| 期待 | ② 対象は「COMPLETED の Session の Part で、`canDeleteSource` が真のもの」。プレビューは `削除要求を書く対象: n 件`、対象外は `・削除済み: k 件`（`already_deleted`）/ `・削除の条件を満たさない: k 件`（`not_deletable`）。**削除 OFF の期間の Part も、Raw ノートの検証を経ていれば対象になる**（voicedock では Raw 検証を経ていないため `--backlog` が 0 件だったが、本アプリは Raw ノートの保存・検証を削除 OFF でも行うので対象になる）<br>④ 対象の元音声が消え、`source_deleted_at` が入る<br>⑧ プレビューが `完了にする対象: 1 件` と `デバイスに無いことを確かめた録音だけを完了にします（削除した記録は付けません）`<br>⑨ 手で消した Part が `SOURCE_DELETE_PENDING` → `SOURCE_DELETING`（detail `resolve_absent`）→ `COMPLETED`（detail `already_absent`）。`source_delete_skipped reason=already_absent`。**`source_deleted_at` は入らない**（消したのはアプリではない） |
+| 記録 | ② と ⑧ のプレビューの全文、「対象になりうる Part の一覧」、[C-1]・[C-7]・[C-13] の前後、[C-14]、⑤ の出力、[C-4] の当該 Part の遷移 3 行 |
+| 落とし穴 | ② のプレビューが 0 件なら**この試験は空振り**（TEST-20）。0 件なら削除 OFF で処理した Part を先に用意する。**「過去分」は 1 件ずつ選べず、§1 の下準備で取り込んだ以前の録音も対象になる**。「手動で消した分を完了にする」の対象は `SOURCE_DELETE_PENDING` の Part だけ（PLAN §8.9.9）。`SOURCE_DELETE_PENDING` は reaper の拒否・期限切れ（`no_result`）・`still_in_inventory` でしか生じず、手の操作で確実には作れない。⑤ が 0 行なら判定を `⬜ 未実施` のままにし、運用の中で出たときに ⑤〜⑨ を行う。**`SOURCE_DELETE_PENDING` でない Part の録音を手で消さない**（`COMPLETED` は `source_deleted_at` が空のまま残り、`RAW_SAVED` は要求が書かれず Session が削除の段で待ち続ける） |
 
 ### 5.4 E2E-17 — 削除を無効化
 
@@ -96,9 +96,9 @@ PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して
 |---|---|
 | 題 | `削除を無効化` |
 | 削除 | ON→OFF |
-| 前提 | E2E-10 が PASS（削除が有効で、デバイスが読み書き可能で接続中）。未処理の録音が 1 本以上ある（無効化の後に処理が進む状態を作る） |
-| 手順 | ① [C-11]・[C-16]・[C-8]・[C-1] を取る（前）<br>② パネルの「元音声の削除」で**無効化**する（**確認は求められない**。1 回のクリックで止まる）<br>③ **直ちに** [C-8]・[C-11]・[C-16]・[C-6]・[C-14] を取る<br>④ 未処理の録音の処理が終わるまで待つ<br>⑤ [C-1]・[C-7]・[C-13]・[C-14] |
-| 期待 | ② 確認ダイアログも入力欄も出ない（**止めたいときに止められる**）<br>③ **接続中のデバイスが直ちに読み取り専用へ再マウントされる**（[C-8] に `read-only` が出る。挿し直しを待たない）。`bin/voicedock-reaper` が**消えている**（[C-16]）。`bin/reaper.conf` が `DELETE_SOURCE_AUDIO=false`。`queue/delete` が**空**（要求が取り下げられた）。`deletion_disabled` が出る。ロックの表示が 3 つとも掛かった状態<br>⑤ **以後 1 本も消えない**（[C-7] の件数が変わらない）。`source_delete_skipped reason=delete_source_audio_disabled` が出る。処理自体は最後まで進み `COMPLETED` になる |
+| 前提 | E2E-10 が PASS（削除が有効）。数分の録音を 1 本新しく録り、挿して読み書き可能でマウントさせる（無効化の後に処理が進む状態を作る） |
+| 手順 | ① 挿して [C-7]、パネルが「文字起こし中」になったら [C-11]・[C-16]・[C-8]・[C-1] を取る（前。コピーの途中で押すと再マウントの段が失敗しうる）<br>② パネルの「元音声の削除」の「無効にする」で**無効化**する（**確認は求められない**。1 回のクリックで止まる）<br>③ **直ちに** [C-8]・[C-11]・[C-16]・[C-6]・[C-14] を取る<br>④ 未処理の録音の処理が終わるまで待つ<br>⑤ [C-1]・[C-7]・[C-13]・[C-14] |
+| 期待 | ② 確認ダイアログも入力欄も出ない（**止めたいときに止められる**）<br>③ **接続中のデバイスが直ちに読み取り専用へ再マウントされる**（[C-8] に `read-only` が出る。挿し直しを待たない）。`bin/voicedock-reaper` が**消えている**（[C-16]）。`bin/reaper.conf` が `DELETE_SOURCE_AUDIO=false`。`queue/delete` が**空**（要求が取り下げられた）。`deletion_disabled` が出る。ロックの表示が 3 つとも掛かった状態（`ロック 1  : アプリ=無効, reaper.conf=無効` / `ロック 2-A: 削除モジュール=未導入` / `ロック 2-B: 設定=ro, <デバイス>=読み取り専用（観測）`）。段が失敗すれば WARNING の `deletion_disabled reason=<段,…>` とパネルの `無効にできなかった段: …`（FAIL）<br>⑤ **以後 1 本も消えない**（[C-7] の件数が変わらない）。`source_delete_skipped reason=delete_source_audio_disabled` が出る。処理自体は最後まで進み `COMPLETED` になる |
 | 記録 | ②（クリックだけで止まったこと）、③ の [C-8]・[C-11]・[C-16]・[C-6]、⑤ の [C-7] の前後と [C-14] |
 | 落とし穴 | 無効化は「消す能力に近いものから先に止める」順（reaper.conf → reaper の削除 → config → 要求の取り下げ → 再マウント）。**途中の段が失敗しても残りを続ける**ので、③ の記録では**5 つとも**を確かめる |
 
@@ -121,9 +121,9 @@ PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して
 |---|---|---|
 | R-01 | E2E-01 | **Raw ノートの検証を通った直後**に元音声が消える（Daily の保存を待たない）。`RAW_SAVED` → `SOURCE_DELETING` → `COMPLETED` |
 | R-02 | E2E-02 | **コピー中に抜いても 1 本も消えない**（コピー未完了の Part に要求を書かない）。再接続後の再コピー分も、Raw の検証を経てから消える。`[C-7]` の差分が「Raw の検証を通った分」と完全に一致 |
-| R-03 | E2E-03 | 文字起こし中に抜くと、デバイスが `.absent` なので**待つ**（`delete_attempts` が増える）。挿し直すと消える。**未接続を「書き込み可能」と誤認しない** |
+| R-03 | E2E-03 | 文字起こし中に抜くと、デバイスが `.absent` なので**待つ**（`sessions.delete_attempts` が増える）。挿し直すと消える。**未接続を「書き込み可能」と誤認しない** |
 | R-04 | E2E-04 | Vault が使えない間は**1 本も消えない**（Raw ノートが書けない ＝ 根拠 A が成立しない）。戻したら消える |
-| R-05 | E2E-05 | 抜き挿し 6 回で**要求が二重に書かれない**（`queue/delete` の request_id が重複しない。`reaper.log` に `replayed` が出ない） |
+| R-05 | E2E-05 | 抜き挿し 6 回で**要求が二重に書かれない**（`queue/delete` の request_id が重複しない。`reaper.log` に `reason=replayed` が出ない） |
 | R-06 | E2E-06 | 1 日分でも要求の回収が追いつく（`queue/result` が溜まらない）。空き容量が**録音 1 日分ぶん**戻る |
 | R-07 | E2E-07 | **無音の Part は消えない**（根拠 B は既定 false）。根拠 B を有効にすると消える。**有効にしたら必ず元に戻す** |
 | R-08 | E2E-08 | **`WHISPER_FAILED` の Part は消えない**。他の Part は消える。再コピー → 完走の後に消える |
@@ -159,10 +159,10 @@ PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して
 （`make test-disk` の全出力を ```text で貼る）
 ```
 
-- `G-1`〜`G-4` は PLAN §12.4 の 1〜4 と**同じ順・同じ意味**。`G-5` は本チケットで足す条件（緩めず、強める方向。PLAN への追記を §11 で提案する）
+- `G-1`〜`G-5` は PLAN §12.4 の 1〜5 と**同じ順・同じ意味**（5 番目は PLAN に反映済み）
 - 最後の 1 行は **`**ゲート: 閉**` か `**ゲート: 開**` のどちらか**。散文にしない
 - **`開` と書けるのは、判定表（§2）の 18 件と §4 の G と §6 の R がすべて `✅` か `—` のときだけ**。これを `RunbookGateTests.theGateIsClosedUntilEverythingPasses` が機械で見る
-- G-1 / G-3 は手元で走らせたコマンドの**全出力**を貼る（`make test-nd` / `make test-disk`）。「全部緑」とだけ書かない
+- G-1 / G-3 は手元で走らせたコマンドの**全出力**を貼ってから `✅` にする（`make test-nd` / `make test-disk`）。「全部緑」とだけ書かない。実施前（`⬜ 未実施`）はフェンスが空でよい
 
 ### 7.2 `## 5. 三重ロックを全部外して 1 日`（形と中身）
 
@@ -182,7 +182,7 @@ PLAN §12.4 の削除のゲート（4 条件。本チケットで 1 つ足して
 |---|---|
 | 前提 | E2E-10・11・17 と §6 の再実行が PASS。削除を**有効に戻した**状態（E2E-17 で無効化したままにしない）。[C-11] が 3 つとも解除を示している |
 | 手順【利用者が行う】 | ① 開始時刻と [C-1]・[C-7]・[C-15]・[C-9]・[C-16] を取る<br>② **普段どおり 1 日録って、帰宅して挿す**（試験用の操作を足さない。抜き挿し・スリープ・アプリの再起動が自然に起きるままにする）<br>③ 24 時間後に終了時刻と [C-1]・[C-7]・[C-15]・[C-9]・[C-13]・[C-14]・[C-12]・[C-6]・[C-10] を取る<br>④ **Daily / Raw ノートを目視で読む**（内容が壊れていないか。警告行の理由が妥当か）<br>⑤ `grep -c ERROR "$VD_HOME/logs/app.log"` と、`WARNING` の行を全部 |
-| 期待 | Raw が 1 枚・Daily が 1 枚。`FAILED` が 0 件（あれば理由が妥当で、次の接続で再試行される）。**Raw の検証を通った録音だけが消え、空き容量が戻る**。`queue/delete`・`queue/result` が空に戻っている。`reaper.log` に `SOURCE_IDENTITY_MISMATCH` の理由語が出ていない（出ていたらその理由を調べる）。`ERROR` の行が 0（あれば 1 件ずつ説明を書く） |
+| 期待 | Raw が 1 枚・Daily が 1 枚。`FAILED` が 0 件（あれば理由が妥当で、次の接続で再試行される）。**Raw の検証を通った録音だけが消え、空き容量が戻る**。`queue/delete`・`queue/result` が空に戻っている。`reaper.log` に `source_delete_rejected` と `request_rejected` が出ていない（`SOURCE_IDENTITY_MISMATCH` は結果ファイルの status で、`reaper.log` には出ない。出ていたら `reason=` の語を付録 B.2 で引いて調べる）。`ERROR` の行が 0（あれば 1 件ずつ説明を書く） |
 | 記録 | ①③ の全部、④ の目視の所見（**何を見て問題ないと判断したか**を文で）、⑤ の全出力、その日に起きた異常（あれば） |
 | 判定 | `✅ PASS` / `✗ FAIL` |
 
@@ -256,10 +256,16 @@ struct RunbookGate: Sendable {
 }
 ```
 
+上の型には、次の 3 つも置く（下の表のテストが使う。いずれも `RunbookGate` の中。公開 API ではない）:
+
+- `func gateConditions() throws -> [String]` — `gateRows()` と同じ行の「条件」の列（2 列目）
+- `static func wasRun(_ verdict: String) -> Bool` — `✅` か `✗` で始まる（生の出力を要求する条件。T-35 の `aVerdictNeedsEvidence` と同じ考え）
+- `static func nonEmptyFences(_ lines: [String]) -> Int` — 中身が空でないコードフェンスの数（`####` の見出しを問わない。`### 4.1` / `### 4.3` は `#### 記録` を持たないため `Runbook.evidenceBlocks` を使えない）
+
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
 | `thePassPredicateIsExact()` | **陽性対照**: 「通った」の判定が正確 | 文字列を直に渡す | `✅ PASS` は真、`— 対象外` は真、`⬜ 未実施` は偽、`✗ FAIL` は偽、`PASS`（記号なし）は偽、空文字列は偽 |
-| `theGateTableCoversPlanSection124()` | ゲートの 4 条件が PLAN §12.4 と対応する | `SpecDocument.plan().document.section("12.4")` の本文 | ゲートの行が `G-1`〜`G-N`（N ≧ 4）で連番。`付録 B.1`・`付録 B.3`・`.diskImage`・`1 日` の 4 つの語が、それぞれ**どれかの行の条件の列**に現れる |
+| `theGateTableCoversPlanSection124()` | ゲートの 4 条件が PLAN §12.4 と対応する | `SpecDocument.plan().document.section("12.4")` の本文の番号付きの行（`^[0-9]+\. `） | PLAN の条件が 4 つ以上。ゲートの行が `G-1`〜`G-N`（N ≧ 4 かつ N ≧ PLAN の条件の数）で連番。`付録 B.1`・`付録 B.3`・`.diskImage`・`1 日` の 4 つの語が、それぞれ**どれかの行の条件の列**（`gateConditions()`）に現れる |
 | `theGateHasAState()` | ゲートの開閉が 1 行で書いてある | `gateState()` | nil でない（**散文で書かない**） |
 | `theGateIsClosedUntilEverythingPasses()` | ゲートを開けるのは全部通ってから | 判定表・G の表・R の表 | `gateState() == "**ゲート: 開**"` なら、§2 の 18 件・G の全行・R の全行の判定が**すべて** `passes` を満たす。満たさないものがあれば、その ID を並べて失敗させる |
 | `everyGateVerdictStartsWithAMarker(_:)` | G の判定が 4 つの記号のどれかで始まる | `gateRows()` で parametrize | `✅` / `✗` / `⬜` / `—` のどれかで始まる |
@@ -269,7 +275,8 @@ struct RunbookGate: Sendable {
 | `theRerunSectionVerdictMatchesTheTable(_:)` | 節の判定と表の判定が一致 | 同上 | 一字一句一致 |
 | `theOneDaySectionExists()` | 「三重ロックを全部外して 1 日」の節が在る | `## 5.` の節 | 見出しが在り、`前提`・`手順`・`期待`・`記録`・`判定` の 5 つの `####` を持ち、判定が記号で始まる |
 | `theOneDaySectionHasEvidence()` | 1 日運用に生の出力が在る | 同上 | 判定が `✅` か `✗` で始まるなら、空でないコードフェンスが 1 つ以上 |
-| `theGateRecordsAreRaw(_:)` | G-1 と G-3 の記録に生の出力が在る | `### 4.1` と `### 4.3` の節で parametrize | それぞれ空でないコードフェンスを 1 つ以上持つ |
+| `theGateRecordsAreRaw(_:)` | G-1 と G-3 の記録に生の出力が在る | `### 4.1` と `### 4.3` の節で parametrize | 対応する G の判定が `✅` か `✗` で始まるなら（`wasRun`）、その節が空でないコードフェンス（`nonEmptyFences`）を 1 つ以上持つ。`⬜ 未実施` の間は問わない（利用者が走らせる前に出力を捏造しない） |
+| `theFenceCountIgnoresEmptyFences()` | **陽性対照**: 空のフェンスは生の出力と数えない | 行の配列を直に渡す | 中身のあるフェンスは 1、空行だけのフェンスは 0、空の配列は 0 |
 | `theScenariosThatDeleteAreMarked()` | 削除 ON の 3 件が判定表で `ON` になっている | 判定表 | `E2E-10` と `E2E-11` の「削除」の列が `ON`、`E2E-17` が `ON→OFF`（SPEC の S9 と一致することは T-35 の `theDeletionColumnMatchesTheSpec` が見る） |
 
 - T-35 の全テスト（判定表と SPEC の 1 対 1、5 つの `####`、証拠のフェンス、`【利用者が行う】`、`/Volumes` に書く手順が無いこと）が、**足した 3 節と §6 の 9 節にもそのまま掛かる**
@@ -285,7 +292,7 @@ struct RunbookGate: Sendable {
 | 4 | `**ゲート: 閉**` の行を `ゲートはまだ開けていない` に書き換える | `theGateHasAState` |
 | 5 | `G-3`（`.diskImage`）の行を消す | `theGateTableCoversPlanSection124` |
 | 6 | `G-1` の判定を `だいたい通った` にする | `everyGateVerdictStartsWithAMarker("G-1")` |
-| 7 | `### 4.1 G-1 の記録` のフェンスを空にする | `theGateRecordsAreRaw` |
+| 7 | `G-1` の判定を `✅ PASS` にし、`### 4.1 G-1 の記録` のフェンスを空のままにする | `theGateRecordsAreRaw("4.1 G-1 の記録")` |
 | 8 | `## 5.` の `#### 記録` を消す | `theOneDaySectionExists` |
 | 9 | `## 6.` の表から `R-07` の行を消す | `theRerunTableCoversOneToNine` |
 | 10 | `### 6.7 R-07 — …` の節を消す | `everyRerunHasASection("R-07")` |
@@ -309,7 +316,7 @@ struct RunbookGate: Sendable {
 
 ## 11. SPEC の変更
 
-なし。ただし PLAN §12.4 への追記を §13 で提案する（`G-5`）。`docs/SPEC.md` の `S9` は変わらない。
+なし。`docs/SPEC.md` の `S9` は変わらない（PLAN §12.4 の 5 番目は反映済み）。
 
 ## 12. マージ後にやること
 
@@ -317,6 +324,8 @@ struct RunbookGate: Sendable {
 - T-44 は `docs/E2E.md` の `**ゲート: 開**` と E2E-06 の記録をリリースの条件にする
 
 ## 13. API 地図への変更提案
+
+（2026-09-22 時点で 1・3・4・5 は反映済み。1 は 00-api-map §14 の `PolicyTests` の行、3 は PLAN §12.4 の 5、4 は PLAN 付録 B.3 の E2E-11、5 は PLAN §8.9.8 の無効化の段にある。）
 
 1. §14 の `PolicyTests` の「主な中身」に `RunbookGateTests`（T-42）を足す（`RunbookTests`（T-35）と同じ行でよい）
 2. `Runbook` 型（T-35）は `PolicyTests` の中に置いたまま。T-42 は**同じターゲットに `RunbookGate` を足すだけ**で、`Runbook` を変更しない（変更が要るなら T-35 のファイルを同じ PR で直す）
