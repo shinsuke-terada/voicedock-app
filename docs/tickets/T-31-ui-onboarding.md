@@ -554,7 +554,7 @@ extension SystemLoginItem {
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `fetchReportsProgress` / 「進捗を出す」 | `download` が `(1, 10)` `(5, 10)` を進捗に流してから成功 | 途中で `downloads[.whisper] == .running(received: 5, total: 10)`、終わりで `.idle` |
-| `fetchIsNotStartedTwice` / 「二重に始めない」 | 進行中にもう一度 `fetchModel` | `download` の呼び出しは 1 回 |
+| `fetchIsNotStartedTwice` / 「二重に始めない」 | 進行中にもう一度 `fetchModel`（別の Task で押し、その後 1 本目を返させる） | `download` の呼び出しは 1 回 |
 | `fetchFailureShowsMessage` / 「失敗の文言」 | `.failure(.sha256Mismatch)` | `downloads[.whisper] == .failed(SHA-256 が一致しません（壊れています。もう一度入手してください）)` |
 | `httpFailureShowsCode` / 「HTTP のコードを出す」 | `.failure(.http(404))` | `配布元が HTTP 404 を返しました` |
 | `cancelStopsAndDoesNotShowError` / 「やめたらエラーにしない」 | 進行中に `cancelModel` → `download` が `.failure(.cancelled)` を返す | `downloads[.whisper] == .idle`、`modelError == nil`、`cancelDownload` が `entry.id` で 1 回 |
@@ -615,6 +615,7 @@ extension SystemLoginItem {
 | 22 | `fetchModel` の「前の download を待つ」を外す | `refetchRightAfterCancelShowsNoInternalText` |
 | 23 | `chooseVault` の末尾の `/` を落とす処理を消す | `directoryURLIsStoredWithoutTrailingSlash`・`directoryURLErrorHasNoTrailingSlash` |
 | 24 | `fetchModel` の番人を `nil \|\| .idle` に戻す | `fetchCanBeRetriedAfterFailure` |
+| 25 | `progress` の「値が小さくなる通知を捨てる」を外す | `progressNeverGoesBackwards` |
 
 ## 7. 受け入れ条件
 
