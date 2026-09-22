@@ -53,11 +53,15 @@ struct PanelView: View {
             PanelRow(systemImage: "stethoscope", title: Strings.rowDetails) {
                 Task { await model.show(.details) }
             }  // 8  T-32
-            Button(Strings.buttonQuit) { model.quit() }  // 9
-                .buttonStyle(.borderless)
-                .controlSize(.small)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
+            // 9。押せることが一目で分かるよう、枠つきのボタンに電源のアイコンを添える（実機の確認で利用者の指摘）
+            Button {
+                model.quit()
+            } label: {
+                Label(Strings.buttonQuit, systemImage: "power")
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .frame(maxWidth: .infinity)
         }
     }
 }
