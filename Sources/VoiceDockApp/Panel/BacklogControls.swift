@@ -1,4 +1,4 @@
-// 後追いの 2 つのボタンと、プレビュー・実行・結果の表示（PLAN §8.9.9。「詳細」の節の中。新しい画面を作らない。D-7）。
+// 後追いの 2 つのボタンと、プレビュー・実行・結果の表示（PLAN §8.9.9。「詳細・診断」の画面の中。F-65）。
 import SwiftUI
 import VDPipeline
 
@@ -21,7 +21,7 @@ struct BacklogControls: View {
                 }
             case .preview(let kind, let plan):
                 ForEach(Array(BacklogTexts.previewLines(kind, plan).enumerated()), id: \.offset) { _, line in
-                    Text(line).fixedSize(horizontal: false, vertical: true)
+                    Text(line).font(.caption).fixedSize(horizontal: false, vertical: true)
                 }
                 HStack {
                     if !plan.eligible.isEmpty {
@@ -33,6 +33,8 @@ struct BacklogControls: View {
                 }
             }
         }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 
     /// 2 つのボタン（working の間は無効。二重に入れない）

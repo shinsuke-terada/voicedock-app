@@ -11,7 +11,7 @@
 
 3 つを作る。どれも**何も書き換えない**:
 
-1. **診断（DR-01〜17 のうち 15 件 ＋ DR-09。DR-13 は取り下げ。PLAN F-61）** — パネルの「詳細 → 診断を実行」。voicedock の `doctor` の実行規則（致命の fail 以降は skip・DR-14 は最後）をそのまま移す
+1. **診断（DR-01〜17 のうち 15 件 ＋ DR-09。DR-13 は取り下げ。PLAN F-61）** — パネルの「詳細・診断 → 診断を実行」。voicedock の `doctor` の実行規則（致命の fail 以降は skip・DR-14 は最後）をそのまま移す
 2. **要対応（`AttentionItem`）** — 無人稼働で最も起きやすい故障「何も起きない」を検出する（SM-24 / RK-23）。**利用者の操作が要るものだけ**を出す（OPS-12）
 3. **状態の詳細（`StatusReport`）** — voicedock の `status` に当たる。**DB が無ければ全 0**、DB を作らない
 
@@ -801,8 +801,8 @@ s.attention = AttentionEvaluator.items(attention)
 - `panelDidClose()`: `probe = .idle` にする（閉じた後に届いた DR-09 の返事を `receiveProbe` が捨てる）
 - `perform(_:)`: `.revealConfig` → `revealConfigInFinder()`、`.reloadConfig` → `Task { await reloadConfig() }`、`.chooseVault` → `Task { await chooseVault() }`（T-31）、
   `.openSystemSettings` → `openSystemSettingsPrivacyFilesAndFolders()`（`NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)`。**`URL(string:)` は PT-02 の対象外**（`URLSession` ではない）だが、`!` を使わないよう `URLComponents` で作る）、
-  `.openModels` → `modelsHighlighted = true`（節を目立たせるだけ。新しい画面を作らない。D-7）、`.openDeletionFlow` → `deletionHighlighted = true`（T-40 が使う）、
-  `.runDiagnostics` → `Task { if !detailsExpanded { await toggleDetails() }; await runDiagnostics() }`（詳細を開いてから診断を実行する）
+  `.openModels` → `modelsHighlighted = true`（節を目立たせるだけ。F-65 で `show(.main)` も）、`.openDeletionFlow` → `deletionHighlighted = true`（F-65 で `show(.deletion)` も）、
+  `.runDiagnostics` → `Task { await show(.details); await runDiagnostics() }`（F-65。「詳細・診断」の画面へ移ってから診断を実行する。`show` は T-30 §4.11b）
 - `runLLMProbe()` は押すたびに `probeGeneration`（`@ObservationIgnored var probeGeneration = 0`）を 1 増やし、返事のクロージャに開始時の世代を持たせる。`receiveProbe(_:generation:)` は `probe == .running` かつ世代が同じときだけ受け取る（`panelDidClose()` も世代を 1 増やす。閉じて押し直した後に届いた古い返事を捨てる）
 - `toggleDetails()` は `await services.statusReport()` の後に `guard detailsExpanded` を置く（待っている間に閉じられたら差し込まない）
 - `LiveServices.privacyFilesAndFoldersURL() -> URL?`（static。`URLComponents` で作る）を切り出し、`openSystemSettingsPrivacyFilesAndFolders()` はこれを開く
@@ -832,8 +832,9 @@ s.attention = AttentionEvaluator.items(attention)
 ボタンの文言（`AttentionTexts.button(_:)`）: `.revealConfig` → `設定ファイルを Finder で表示`、`.reloadConfig` → `設定を読み直す`、
 `.chooseVault` → `Vault を選び直す`、`.openSystemSettings` → `システム設定を開く`、`.openModels` → `モデルの節を開く`、`.openDeletionFlow` → `有効化フローを開く`、`.runDiagnostics` → `診断を実行`（`Strings.buttonRunDiagnostics` をそのまま使う）。
 
-`AttentionSection`: `snapshot.attention` が空なら `EmptyView()`。そうでなければ `SectionBox(title: Strings.sectionAttention)` に 1 項目 1 ブロック（`title` を太字、`detail`、`actions` のボタン）。
-`DetailsSection`: `DisclosureGroup(Strings.sectionDetails, isExpanded:)`。開いたら
+`AttentionSection`: `snapshot.attention` が空なら何も出さない。そうでなければ `SectionBox(title: Strings.sectionAttention)` に 1 項目 1 ブロック（`title` を太字、`detail`、`actions` のボタン）。
+F-65: 主画面では状態の直下のカードで、先頭の `AttentionSection.mainLimit`（2）件と `Strings.attentionMore(n)` のボタン（`show(.attention)`）。要対応の画面（`limit: nil`）では全件。件数の切り方は `static func split(_:limit:)`（T-30 §5.6）。
+`DetailsSection`: （F-65 で `DisclosureGroup` をやめ、主画面の「詳細・診断」の行から開く別の画面の中身になった。状態の詳細はこの画面にいる間だけ読む。T-30 §4.11b）以下は実装時の形の記録。`DisclosureGroup(Strings.sectionDetails, isExpanded:)`。開いたら
 `Button(Strings.buttonRunDiagnostics)`（結果は `mark + " " + label` と `details` を字下げ、末尾に `Diagnostics.summary`）、
 `Button(Strings.buttonRunLLMProbe)`、`statusReport?.lines` の `Text`、`Button(Strings.buttonRetry)`（= `requeueManual()`）、
 `Button(Strings.buttonRevealConfig)`・`Button(Strings.buttonRevealLogs)`・`Button(Strings.buttonReloadConfig)`、`Text(model.versionLine)`、

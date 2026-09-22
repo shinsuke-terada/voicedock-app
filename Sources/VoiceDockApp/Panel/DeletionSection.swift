@@ -1,34 +1,44 @@
-// 「元音声の削除」の節（PLAN §8.9.8・§8.12 の 7）。値と操作は AppModel、文言は DeletionStrings と Strings。
+// 「元音声の削除」の画面の中身（PLAN §8.9.8・§8.12 の 7）。値と操作は AppModel、文言は DeletionStrings と Strings。
 import SwiftUI
 import VDPipeline
 
-/// 「元音声の削除」の節。3 つのロックの個別表示・有効化（ENABLE の入力）・根拠 B・無効化（確認なし）。
-/// ENABLE の判定はしない（入力をそのまま DeletionEnabler に渡す）。操作の実行中はボタンを押せない。
-/// 設定エラー中でも、消す能力が残っていれば「無効にする」だけを出す（PLAN §8.9.8 の常時表示）。
+/// 「元音声の削除」の画面の中身。3 つのロックの個別表示・有効化（赤いボタンの 3 秒の長押し。F-65）・根拠 B（同じ長押し）・
+/// 無効化（確認なしの 1 クリック）。確認語の判定はしない（長押しの完了で AppModel が定数を DeletionEnabler に渡す）。
+/// 操作の実行中はボタンを押せない。設定エラー中でも、消す能力が残っていれば「無効にする」だけを出す（PLAN §8.9.8 の常時表示）。
 struct DeletionSection: View {
     let model: AppModel
-    @State private var confirmation = ""
-    @State private var skippedConfirmation = ""
+
+    /// 主画面に「元音声の削除」の行を出すか（設定が読めているか、消す能力が残っている間）
+    static func isAvailable(_ model: AppModel) -> Bool {
+        model.deletion != nil || model.showsDisableButton
+    }
 
     var body: some View {
-        if model.deletion != nil || model.showsDisableButton {
-            SectionBox(title: Strings.sectionDeletion) {
-                if let deletion = model.deletion {
-                    released(deletion)
+        if let deletion = model.deletion {
+            released(deletion)
+        } else if !model.showsDisableButton {
+            Text(Strings.deletionUnavailable).font(.callout).foregroundStyle(.secondary)
+        }
+        if model.showsDisableButton {
+            SectionBox {
+                // 確認を出さない（止めたいときに止められること）
+                Button {
+                    Task { _ = await model.disableDeletion() }
+                } label: {
+                    Label(Strings.buttonDisableDeletion, systemImage: "lock.fill")
                 }
-                if model.showsDisableButton {
-                    // 確認を出さない（止めたいときに止められること）
-                    Button(Strings.buttonDisableDeletion) { Task { _ = await model.disableDeletion() } }
-                        .disabled(model.deletionBusy)
-                }
-                if let error = model.enableError {
-                    Text(Strings.enableFailed(error)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
-                }
-                if !model.disableFailedStages.isEmpty {
-                    Text(Strings.disableFailed(model.disableFailedStages)).foregroundStyle(.red)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                .buttonStyle(.bordered)
+                .controlSize(.regular)
+                .disabled(model.deletionBusy)
             }
+        }
+        if let error = model.enableError {
+            Text(Strings.enableFailed(error)).font(.caption).foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        if !model.disableFailedStages.isEmpty {
+            Text(Strings.disableFailed(model.disableFailedStages)).font(.caption).foregroundStyle(.red)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -36,51 +46,54 @@ struct DeletionSection: View {
     @ViewBuilder
     private func released(_ deletion: DeletionPanelState) -> some View {
         // 3 つのロックの個別表示（LockDisplay.lines のまま）と注意書き
-        ForEach(Array(deletion.lines.enumerated()), id: \.offset) { _, line in
-            Text(line).font(.system(.caption, design: .monospaced))
-        }
-        ForEach(Array(deletion.notices.enumerated()), id: \.offset) { _, notice in
-            Text(notice).fixedSize(horizontal: false, vertical: true)
-        }
-        if let notice = model.deletionNotice, !deletion.notices.contains(notice) {
-            Text(notice).fixedSize(horizontal: false, vertical: true)
+        SectionBox(title: deletion.showsTrash ? Strings.deletionOn : Strings.deletionOff) {
+            ForEach(Array(deletion.lines.enumerated()), id: \.offset) { _, line in
+                Text(line).font(.system(.caption, design: .monospaced)).fixedSize(horizontal: false, vertical: true)
+            }
+            ForEach(Array(deletion.notices.enumerated()), id: \.offset) { _, notice in
+                Text(notice).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
+            if let notice = model.deletionNotice, !deletion.notices.contains(notice) {
+                Text(notice).font(.caption).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+            }
         }
         if deletion.showsTrash {
             if deletion.showsSkippedToggle && !deletion.skippedEnabled {
-                HStack {
-                    TextField(DeletionStrings.confirmationWord, text: $skippedConfirmation)
-                    Button(Strings.buttonEnableSkippedDeletion) {
-                        let word = skippedConfirmation
-                        Task {
-                            if case .success = await model.enableSkippedDeletion(confirmation: word) {
-                                skippedConfirmation = ""
-                            }
-                        }
+                SectionBox {
+                    Text(Strings.holdToEnableHint).font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HoldToConfirmButton(title: Strings.buttonEnableSkippedDeletion, disabled: model.deletionBusy) {
+                        Task { _ = await model.enableSkippedDeletion() }
                     }
-                    .disabled(model.deletionBusy)
                 }
             }
         } else {
-            // 有効化の事前確認（PLAN §8.9.8 の 1）
-            Text(DeletionStrings.confirmVerified).fixedSize(horizontal: false, vertical: true)
-            Text(DeletionStrings.confirmIrreversible).fixedSize(horizontal: false, vertical: true)
-            if case .done(let results) = model.diagnostics {
-                Text(Diagnostics.summary(results))
-            } else {
-                Button(Strings.buttonRunDiagnostics) { Task { await model.runDiagnostics() } }
-                    .disabled(model.diagnostics == .running)
-            }
-            HStack {
-                TextField(DeletionStrings.confirmationWord, text: $confirmation)
-                Button(Strings.buttonEnableDeletion) {
-                    let word = confirmation
-                    Task {
-                        if case .success = await model.enableDeletion(confirmation: word) {
-                            confirmation = ""
-                        }
-                    }
+            // 有効化の事前確認（PLAN §8.9.8 の 1）と、赤いボタンの長押し（同 2）
+            SectionBox {
+                Label {
+                    Text(DeletionStrings.confirmVerified).fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "checkmark.seal").foregroundStyle(.secondary)
                 }
-                .disabled(model.deletionBusy)
+                Label {
+                    Text(DeletionStrings.confirmIrreversible).fixedSize(horizontal: false, vertical: true)
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                }
+                if case .done(let results) = model.diagnostics {
+                    Text(Diagnostics.summary(results)).font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Button(Strings.buttonRunDiagnostics) { Task { await model.runDiagnostics() } }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(model.diagnostics == .running)
+                }
+                Divider()
+                Text(Strings.holdToEnableHint).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HoldToConfirmButton(title: Strings.buttonEnableDeletion, disabled: model.deletionBusy) {
+                    Task { _ = await model.enableDeletion() }
+                }
             }
         }
     }

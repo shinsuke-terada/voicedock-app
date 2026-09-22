@@ -48,11 +48,16 @@ extension AppModel {
         case .reloadConfig: Task { await reloadConfig() }
         case .chooseVault: Task { await chooseVault() }
         case .openSystemSettings: openSystemSettingsPrivacyFilesAndFolders()
-        case .openModels: modelsHighlighted = true
-        case .openDeletionFlow: deletionHighlighted = true
+        case .openModels:
+            // モデルの節は主画面にある（F-65）
+            modelsHighlighted = true
+            Task { await show(.main) }
+        case .openDeletionFlow:
+            deletionHighlighted = true
+            Task { await show(.deletion) }
         case .runDiagnostics:
             Task {
-                if !detailsExpanded { await toggleDetails() }
+                await show(.details)
                 await runDiagnostics()
             }
         }

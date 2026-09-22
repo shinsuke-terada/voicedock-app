@@ -1,5 +1,8 @@
 # T-30 UI: メニューバーとパネルの骨組み・AppModel
 
+> （F-65 でパネルをカード型に作り直した。2026-09-23、利用者の決定）主画面は**スクロールしない**。長い中身（元音声の削除・詳細と診断・要対応の多数・一般）は popover の中の別の画面（`PanelScreen`・`AppModel.show(_:)`。§4.11b）に切り替え、見出しに「‹ 戻る」を置く（`SubScreen`）。
+> 高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の 640pt と `PanelStyle.maxHeight` をやめた。§4.6）。§4.13 のコードは F-65 の形に直した。主画面に ScrollView が無いことは `PanelLayoutPolicyTests` が固定する。
+
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`CoexistenceGuard(...)` の注入・`StatusLine` の最優先の分岐・`Strings.statusCoexistenceBlocked`・`coexistenceWinsOverEverything` は外した。以下の本文の共存ガードの記述は記録として残す。
 
 | 項目 | 内容 |
@@ -50,7 +53,11 @@
 | `Sources/VoiceDockApp/Panel/GeneralSection.swift` | 空（T-31） |
 | `Sources/VoiceDockApp/Panel/DeletionSection.swift` | 空（T-40） |
 | `Sources/VoiceDockApp/Panel/DetailsSection.swift` | 空（T-32） |
-| `Sources/VoiceDockApp/Panel/PanelStyle.swift` | 幅・余白・見出しの体裁（`SectionBox`） |
+| `Sources/VoiceDockApp/Panel/PanelStyle.swift` | 幅・余白・カードの体裁（`SectionBox`）・状態の色（F-65） |
+| `Sources/VoiceDockApp/PanelScreen.swift` | （F-65）`enum PanelScreen`（パネルの中の 5 つの画面） |
+| `Sources/VoiceDockApp/AppModel+Navigation.swift` | （F-65）`AppModel.show(_:)`（§4.11b） |
+| `Sources/VoiceDockApp/Panel/SubScreen.swift` | （F-65）別の画面の枠（「‹ 戻る」と題。中身が長いときだけスクロール） |
+| `Sources/VoiceDockApp/Panel/PanelRow.swift` | （F-65）押すと別の画面へ移る 1 行 |
 | `Sources/VDPipeline/StatusTexts.swift` | 未処理の 1 行・観測の表示語・GiB の整形（T-32 の `StatusReporter` と共有） |
 | `Sources/VDCore/ModelMemory.swift` | `ModelMemory`（メモリの条件。T-31 の `Picker` と T-32 の DR-08 が共有。§4.10b） |
 | `Sources/VoiceDockApp/LoginItem.swift` | `LoginItemControlling`、`SystemLoginItem`（このチケットは `status()` だけ。操作は T-31 が足す） |
@@ -62,6 +69,9 @@
 | `Tests/VoiceDockAppTests/FakeServices.swift` | `AppServices` の偽物（`VoiceDockAppTests` の中だけ。TestSupport には置かない） |
 | `Tests/VoiceDockAppTests/BootstrapTests.swift` | 起動の順（`Bootstrap.startServices`。§4.2 の 15） |
 | `Tests/VoiceDockAppTests/StringsTests.swift` | `Strings` の全項目を §4.12 の表と逐語で固定する（§7 の受け入れ条件） |
+| `Tests/VoiceDockAppTests/AppModelNavigationTests.swift` | （F-65）画面の切り替えと状態の詳細の読み書き（§5.5） |
+| `Tests/VoiceDockAppTests/PanelPartsTests.swift` | （F-65）要対応の件数の切り方・Vault の名前・状態の色（§5.6） |
+| `Tests/PolicyTests/PanelLayoutPolicyTests.swift` | （F-65）主画面（`PanelView.swift`）に ScrollView・List・Form が無く、パネルで ScrollView を使うのは `SubScreen.swift` だけ（§5.7） |
 | `Tests/VDPipelineTests/StatusTextsTests.swift` | |
 | `Tests/VDCoreTests/ModelMemoryTests.swift` | §4.10b |
 
@@ -366,8 +376,6 @@ import SwiftUI
 
 @MainActor
 final class StatusItemController: NSObject, NSPopoverDelegate {
-    static let panelWidth: CGFloat = 380
-
     private let item: NSStatusItem
     private let popover: NSPopover
     private let model: AppModel
@@ -386,7 +394,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 **`init(model:)`**:
 1. `item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)`
 2. `popover = NSPopover()`、`popover.behavior = .transient`、`popover.animates = false`、
-   `popover.contentViewController = NSHostingController(rootView: PanelView(model: model))`、`popover.contentSize = NSSize(width: Self.panelWidth, height: PanelStyle.maxHeight)`（**実機で修正**: 高さ 1 と `frame(maxHeight:)` の組み合わせでは ScrollView が自分の高さを持たず、popover が 1pt に潰れて開けなかった。高さを固定する）
+   `let hosting = NSHostingController(rootView: PanelView(model: model))`、`hosting.sizingOptions = .preferredContentSize`、`popover.contentViewController = hosting`（**F-65**: 高さは中身に合わせる。`popover.contentSize` を設定しない。以前は高さ 1 と `frame(maxHeight:)` の組み合わせで ScrollView が自分の高さを持たず popover が 1pt に潰れた（PR #100）ので 640pt に固定していたが、主画面から ScrollView を外し、別の画面の ScrollView は中身を測った高さを持つので潰れない）
 3. `super.init()`、`popover.delegate = self`
 4. `item.button?.target = self`、`item.button?.action = #selector(toggle(_:))`、`item.button?.setButtonType(.momentaryChange)`
 5. `applyIcon()` を 1 回呼ぶ
@@ -400,7 +408,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 1. `guard let button = item.button else { return }`
 2. `model.panelDidOpen()`
 3. `popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)`
-4. `NSApp.activate()`（入力欄にフォーカスを渡すため。PLAN §8.12。`ENABLE` の入力欄・`Picker` が効かなくなるのを防ぐ）
+4. `NSApp.activate()`（パネルの操作に最初のクリックから反応させるため。PLAN §8.12。`Menu`・トグル・長押しのボタンが効かなくなるのを防ぐ）
 
 **`close()`**: `popover.performClose(nil)`（`popoverDidClose` が `model.panelDidClose()` を呼ぶ）
 
@@ -728,13 +736,31 @@ struct NSWorkspaceFinder: FinderOpening { func reveal(_ url: URL) { NSWorkspace.
 5. `if (iconState, showsTrash) != before { iconContinuation?.yield(()) }`
 
 **`panelDidOpen()`**: `isPanelOpen = true` → `if let wake = wakeContinuation { wake.yield(()) } else { Task { await refresh() } }`（開いた瞬間に最新にする。ループが回っていれば 30 秒の眠りを起こし、読み直して 1 秒周期へ切り替える。回っていなければ 1 回だけ読む）
-**`panelDidClose()`**: `isPanelOpen = false`、`reloadResult = nil`（次に開いたときに古い結果を出さない）
+**`panelDidClose()`**: `isPanelOpen = false`、`reloadResult = nil`（次に開いたときに古い結果を出さない）。F-65: `screen = .main`、`detailsExpanded` が真なら偽にして `setStatusReport(nil)`（次は主画面から開く）
 
 **`requeueManual()`**: `await services.requeueManual()` → `await refresh()`
 **`reloadConfig()`**: `switch await services.reloadConfig() { case .valid: reloadResult = .ok; case .invalid(let v): reloadResult = .invalid(v) }` → `await refresh()`
 **`revealConfigInFinder()`** / **`revealLogsInFinder()`**: `openFinder.reveal(layout.configFile)` / `openFinder.reveal(layout.appLog)`。`layout` は `AppSnapshot` に持たせず、`init(…layout:…)` で受けて `@ObservationIgnored private let` で持つ（`HomeLayout` は `Sendable` な値）
 **`setAttentionForTesting(_:)`**（internal。`@testable` のテスト用）: `hasAttention = value`。T-32 が `refresh` で立てるまでアイコンの優先順位を試す口
 **`quit()`**: `quitHandler()`
+
+### 4.11b `PanelScreen.swift` と `AppModel+Navigation.swift`（F-65）
+
+```swift
+enum PanelScreen: String, CaseIterable, Sendable, Equatable {
+    case main, attention, deletion, details, settings
+}
+// AppModel.swift に: var screen: PanelScreen = .main（書くのは show と panelDidClose だけ）
+extension AppModel {
+    /// 画面を切り替える。details に入ったら状態の詳細を読み、出たら捨てる
+    func show(_ next: PanelScreen) async
+}
+```
+
+**`show(_:)`**: `screen = next` → `next == .details` なら `if !detailsExpanded { await toggleDetails() }`、そうでなく `detailsExpanded` なら `await toggleDetails()`（「詳細・診断」の画面にいる間だけ inbox と staging を走査する。T-32 の `toggleDetails` をそのまま使う）
+
+- 要対応の操作（T-32 の `perform`）: `.openModels` は `modelsHighlighted = true` と `show(.main)`、`.openDeletionFlow` は `deletionHighlighted = true` と `show(.deletion)`、`.runDiagnostics` は `show(.details)` の後に `runDiagnostics()`
+- 画面は popover の中だけで切り替える（窓を作らない。D-7）
 
 ---
 
@@ -793,6 +819,26 @@ enum Strings {
 | `iconDescription(_:)` | `IconState` ごとに `待機中` / `取り込み中` / `処理中` / `要対応` |
 | `iconTrashDescription` | `元音声の削除が有効です` |
 
+F-65 で足した文言（カード型のパネルと長押しの有効化。`holdSeconds` は `HoldToConfirmButton.holdDuration` から作る。CR-06）:
+
+| 名前 | 文言 |
+|---|---|
+| `holdSeconds` | `3` |
+| `holdToEnableHint` | `赤いボタンを 3 秒長押しすると有効になります。途中で離すと取り消します` |
+| `holdKeepPressing` | `そのまま押し続けてください…` |
+| `deletionUnavailable` | `設定を読み込めていないため、いまは操作できません` |
+| `buttonBack` | `戻る` |
+| `screenSettings` | `設定` |
+| `rowDeletion` | `元音声の削除` |
+| `rowDetails` | `詳細・診断` |
+| `sectionDiagnostics` | `診断` |
+| `sectionBacklog` | `後追い` |
+| `deletionOn` / `deletionOff` | `有効` / `無効` |
+| `attentionMore(_:)` | `ほか <n> 件` |
+| `onboardingProgress(done:total:)` | `<done>/<total>` |
+| `statusDetailLine(lastConnected:backlog:)` | `最終接続 <lastConnected> · <backlog>` |
+| `deviceFreeLine(_:)` | `デバイスの空き容量 <value>` |
+
 `PauseReason` の表示語（**`StatusTexts.pauseWord(_:)`（VDPipeline。§4.10）に置く**。VDPipeline 側（要対応・DR-09）も同じ語を使うため。`Strings` に写さない）:
 
 | `PauseReason` | 表示語 |
@@ -813,73 +859,70 @@ enum Strings {
 
 ---
 
-### 4.13 `Panel/PanelStyle.swift` と `Panel/PanelView.swift`
+### 4.13 `Panel/PanelStyle.swift` と `Panel/PanelView.swift`（F-65 でカード型・画面の切り替えに直した）
 
 ```swift
-// パネルの体裁（PLAN §8.12「幅 380pt、縦スクロール」）。
-import SwiftUI
-
+// パネルの体裁（PLAN §8.12「幅 380pt 前後、カード型。主画面はスクロールしない」。F-65）。
 enum PanelStyle {
     static let width: CGFloat = 380
-    static let maxHeight: CGFloat = 640
-    static let padding: CGFloat = 14
-    static let sectionSpacing: CGFloat = 12
+    static let maxScreenHeight: CGFloat = 560   // 別の画面の中身の高さの上限（超えたときだけその画面でスクロール）
+    static let padding: CGFloat = 12
+    static let sectionSpacing: CGFloat = 10
+    static let cardPadding: CGFloat = 12
+    static let cardSpacing: CGFloat = 8
+    static let cornerRadius: CGFloat = 10
+    static func headerSymbol(_ state: IconState) -> String   // waveform.circle.fill などの塗りつぶし版
+    static func tint(_ state: IconState) -> Color           // 待機＝緑、取り込み・処理中＝青、要対応＝橙
 }
 
-/// 節の枠（見出し ＋ 中身）。中身が空なら何も描かない。
+/// カード（見出し ＋ 右肩の小さな文字 ＋ 中身）。角丸 10 の `.quaternary.opacity(0.5)` の背景、余白 12。
 struct SectionBox<Content: View>: View {
-    let title: String
-    @ViewBuilder let content: () -> Content
+    init(title: String? = nil, trailing: String? = nil, @ViewBuilder content: () -> Content)
 }
 ```
 
 ```swift
-// パネル本体（PLAN §8.12 の 1〜9 をこの順に）。
-import SwiftUI
-
+// パネル本体（PLAN §8.12 の 1〜9 をこの順に）。主画面はスクロールしない。長い中身は popover の中の別の画面へ（F-65）。
 struct PanelView: View {
-    @Bindable var model: AppModel   // 参照は @Observable なので let でもよいが、後続が binding を使う
+    @Bindable var model: AppModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: PanelStyle.sectionSpacing) {
-                StatusSection(model: model)          // 1
-                AttentionSection(model: model)       // 2  T-32
-                OnboardingSection(model: model)      // 3  T-31
-                VaultSection(model: model)           // 4  T-31
-                ModelsSection(model: model)          // 5  T-31
-                GeneralSection(model: model)         // 6  T-31
-                DeletionSection(model: model)        // 7  T-40
-                DetailsSection(model: model)         // 8  T-32
-                Divider()
-                Button(Strings.buttonQuit) { model.quit() }   // 9
+        Group {
+            switch model.screen {
+            case .main: main
+            case .attention: SubScreen(title: Strings.sectionAttention, model: model) { AttentionSection(model: model, limit: nil) }
+            case .deletion: SubScreen(title: Strings.sectionDeletion, model: model) { DeletionSection(model: model) }
+            case .details: SubScreen(title: Strings.rowDetails, model: model) { DetailsSection(model: model) }
+            case .settings: SubScreen(title: Strings.screenSettings, model: model) { /* 一般のカードと版 */ }
             }
-            .padding(PanelStyle.padding)
-            .frame(width: PanelStyle.width, alignment: .leading)
         }
-        .frame(width: PanelStyle.width, height: PanelStyle.maxHeight)
+        .padding(PanelStyle.padding)
+        .frame(width: PanelStyle.width, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)   // 高さは中身に合わせる
+    }
+
+    private var main: some View {   // ScrollView を置かない
+        VStack(alignment: .leading, spacing: PanelStyle.sectionSpacing) {
+            StatusSection(model: model)       // 1（⚙ で設定の画面）
+            AttentionSection(model: model)    // 2  T-32（先頭の 2 件と「ほか n 件 ›」）
+            OnboardingSection(model: model)   // 3  T-31（6 のトグルもここ。完了後は ⚙ の画面）
+            VaultSection(model: model)        // 4  T-31
+            ModelsSection(model: model)       // 5  T-31
+            // 7  T-40: DeletionSection.isAvailable(model) のときだけ PanelRow「元音声の削除  有効／無効」→ show(.deletion)
+            // 8  T-32: PanelRow「詳細・診断」→ show(.details)
+            Button(Strings.buttonQuit) { model.quit() }   // 9
+        }
     }
 }
 ```
 
 - **節の順を変えない**（PLAN §8.12 の番号がそのまま並び）。節を足すときは PLAN を先に直す
-- 空の節は `struct XSection: View { let model: AppModel; var body: some View { EmptyView() } }` と、その上に 1 行のコメント `// T-nn が中身を書く（PLAN §8.12 の <n>）。`
+- **主画面に ScrollView・List・Form を置かない**（F-65。`PanelLayoutPolicyTests`）。スクロールは `SubScreen` の中だけで、中身の高さを `onGeometryChange` で測り `min(中身, PanelStyle.maxScreenHeight)` の高さを与える（測る前は上限。0 から始めない）
+- `SubScreen(title:model:content:)`: 見出しは「‹ 戻る」（`Strings.buttonBack`。`show(.main)`。Esc でも戻る）と題
+- `PanelRow(systemImage:tint:title:value:action:)`: 押すと別の画面へ移る 1 行（左にアイコン、右に値と「›」）
 
-`Panel/StatusSection.swift`（このチケットが中身を書く唯一の節）:
-```swift
-struct StatusSection: View {
-    let model: AppModel
-    var body: some View {
-        SectionBox(title: Strings.sectionStatus) {
-            Text(model.statusLine).font(.headline)
-            LabeledRow(Strings.labelLastConnected, model.lastConnectedLine)
-            LabeledRow(Strings.labelBacklog, model.backlogLine)
-            if let free = model.deviceFreeLine { LabeledRow(Strings.labelDeviceFree, free) }
-        }
-    }
-}
-```
-`LabeledRow` は同じファイルの private な `View`（`HStack` に `Text(label)` と `Text(value)`、`label` は `.secondary`）。
+`Panel/StatusSection.swift`（状態の見出しのカード）: `PanelStyle.headerSymbol(model.iconState)` を `PanelStyle.tint` の色で大きめに、1 行目に `model.statusLine`（headline。削除が有効なら赤い `trash` を並べる）、
+2 行目に `Strings.statusDetailLine(lastConnected: model.lastConnectedLine, backlog: model.backlogLine)`（caption・secondary）、観測があれば `Strings.deviceFreeLine(model.deviceFreeLine)`。右上に ⚙（`show(.settings)`）
 
 ---
 
@@ -1012,6 +1055,38 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 |---|---|---|
 | `startServicesAwaitsRecoveryBeforeScan` / 「起動は復旧（Worker.start）を待ってから走査（IngestService.start）を始める」 | `startServices` に 3 つの偽物を渡す（`workerStart` は 50 ms 眠ってから記録）→ 返ったタスクを待つ | 記録の先頭が `start`、3 つとも 1 回ずつ |
 
+### 5.5 `AppModelNavigationTests.swift`（`@Suite("AppModel+Navigation")`。F-65）
+
+| 関数名 / 表示名 | 準備 | 期待 |
+|---|---|---|
+| `startsOnTheMainScreen` / 「TEST-28 何もしなければ主画面で、状態の詳細は読まない」 | 作っただけ | `screen == .main`、`detailsExpanded == false`、`statusReportCount == 0` |
+| `detailsScreenLoadsAndDropsTheReport` / 「「詳細・診断」に入ると状態の詳細を 1 回読み、戻ると捨てる」 | `show(.details)` → `show(.main)` | 入ると `statusReport != nil`・読み 1 回、戻ると nil・読みは 1 回のまま |
+| `otherScreensDoNotLoadTheReport` / 「「詳細・診断」以外の画面では状態の詳細を読まない」 | attention・deletion・settings・main へ順に | `statusReportCount == 0` |
+| `leavingDetailsForAnotherScreenDropsTheReport` / 「「詳細・診断」から別の画面へ直接移っても状態の詳細を捨てる」 | `show(.details)` → `show(.deletion)` | `detailsExpanded == false`、`statusReport == nil` |
+| `closingThePanelReturnsToMain` / 「パネルを閉じたら次は主画面から（状態の詳細も捨てる）」 | `show(.details)` → `panelDidClose()` | `screen == .main`、`statusReport == nil` |
+| `attentionActionsNavigate` / 「要対応の「有効化フローを開く」は「元音声の削除」の画面へ、「モデルの節を開く」は主画面へ」 | `perform(.openDeletionFlow)` → `perform(.openModels)` | `.deletion`・`deletionHighlighted`、`.main`・`modelsHighlighted` |
+| `runDiagnosticsOpensTheDetailsScreen` / 「要対応の「診断を実行」は「詳細・診断」の画面へ移ってから診断する」 | `perform(.runDiagnostics)` | 診断 1 回、`screen == .details`、読み 1 回 |
+| `fiveScreens` / 「画面は 5 つ」 | `PanelScreen.allCases` | `main, attention, deletion, details, settings` |
+
+### 5.6 `PanelPartsTests.swift`（`@Suite("PanelParts")`。F-65）
+
+| 関数名 / 表示名 | 準備 | 期待 |
+|---|---|---|
+| `mainShowsTheFirstTwo` / 「主画面の要対応は先頭の 2 件と「ほか n 件」」 | 3 件、`limit: mainLimit` | 先頭 2 件、残り 1、`mainLimit == 2` |
+| `twoOrFewerAreAllShown` / 「2 件以下なら全部出し、「ほか」は出さない」 | 2 件 | 2 件、残り 0 |
+| `attentionScreenShowsAll` / 「要対応の画面（limit なし）は全件」 | 3 件、`limit: nil` | 3 件、残り 0 |
+| `noAttention` / 「TEST-28 要対応が 0 件なら何も出さない」 | 0 件 | `[]`、0 |
+| `vaultDisplayName` / 「Vault の行はフォルダ名、未選択は「まだ選ばれていません」」 | パス・末尾 `/`・nil・空 | フォルダ名・`まだ選ばれていません` |
+| `tintFollowsTheState` / 「状態の色」 | 4 状態 | 緑・青・青・橙 |
+| `sizes` / 「幅は 380pt、別の画面の高さの上限は 560pt」 | — | 380・560 |
+
+### 5.7 `Tests/PolicyTests/PanelLayoutPolicyTests.swift`（`@Suite("PanelLayoutPolicy")`。F-65）
+
+| 関数名 / 表示名 | 準備 | 期待 |
+|---|---|---|
+| `mainScreenDoesNotScroll` / 「主画面（PanelView.swift）に ScrollView・List・Form が無い」 | `SourceTree.load()` の `VoiceDockApp/Panel/PanelView.swift` の識別子のトークン（コメントと文字列は数えない） | `VStack`・`StatusSection` が在り（空振りしない）、`ScrollView`・`List`・`Form` が 1 つも無い |
+| `onlySubScreenScrolls` / 「パネルの中で ScrollView を使ってよいのは SubScreen.swift だけ」 | `VoiceDockApp/Panel/` の全ファイル | `SubScreen.swift` には `ScrollView` が在り（陽性対照）、ほかのファイルには 3 つとも無い |
+
 ### 5.4 `Tests/VDPipelineTests/StatusTextsTests.swift`（`@Suite("StatusTexts")`）
 
 | 関数名 / 表示名 | 準備 | 期待 |
@@ -1048,6 +1123,10 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | 19 | `Bootstrap.startServices` の `await workerStart()` を `Task { await workerStart() }` にする（start の await を外す） | `startServicesAwaitsRecoveryBeforeScan` |
 | 20 | `panelDidOpen` が wake を流さない（`Task { await refresh() }` だけにする） | `panelOpenWakesTheSlowSleep` |
 | 21 | `ModelMemory.hasEnough` を `UInt64(g) * bytesPerGB` に戻す | `overflowingRequirementIsNotEnough`（trap で落ちる） |
+| 22 | （F-65）主画面（`PanelView` の `main`）を `ScrollView { … }` で包む | `mainScreenDoesNotScroll` |
+| 23 | （F-65）`show(_:)` で details を出るときに `toggleDetails()` を呼ばない | `detailsScreenLoadsAndDropsTheReport`、`leavingDetailsForAnotherScreenDropsTheReport` |
+| 24 | （F-65）`panelDidClose` の `screen = .main` を消す | `closingThePanelReturnsToMain` |
+| 25 | （F-65）`AttentionSection.split` で `limit` を無視する | `mainShowsTheFirstTwo` |
 | 18 | `LiveServices.read` で `ReadOnlyStore.open` の nil のとき `BacklogCounts(count: 1, …)` を返す | `bootWithoutDatabaseShowsZero`（`emptyServicesProduceIdlePanel` は `FakeServices` を通すので `LiveServices` を見ない） |
 
 ## 7. 受け入れ条件
@@ -1058,6 +1137,7 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 - [ ] PT-08（`print` / `Logger(` が `Log.swift` 以外に無い）、PT-09（`Date()`）、PT-14、PT-18、PT-19 が通る。**`Bootstrap.swift` に `ProcessInfo.processInfo.environment` を書かない**（PT-18。`physicalMemory` は環境変数ではないので可）
 - [ ] `Strings` の全項目が §4.12 の表と逐語で一致する（`StringsTests` で 1 本ずつ固定する。表示名は日本語）
 - [ ] `PanelView` の節の並びが PLAN §8.12 の 1〜9 と同じで、空の節に `// T-nn が中身を書く（PLAN §8.12 の <n>）。` が在る
+- [ ] （F-65）主画面に ScrollView が無く（`PanelLayoutPolicyTests`）、popover の高さが中身に合う（`sizingOptions = .preferredContentSize`。【利用者が行う】目視で 1pt に潰れないこと）
 - [ ] AppModel に DB・`ConfigStore`・`Worker`・`IngestService` への直接の参照が無い（`AppServices` 経由だけ）
 - [ ] `Bootstrap.build()` が `await worker.start()`（復旧の完了）→ `Worker.run()` のタスク → `ingest.start()` の順に呼んでいる（§8.15 の順。`startServices` と `BootstrapTests`）
 

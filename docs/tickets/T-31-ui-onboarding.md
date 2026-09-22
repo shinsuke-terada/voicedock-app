@@ -452,6 +452,12 @@ extension SystemLoginItem {
 
 ### 4.11 4 つの節のビュー
 
+> （F-65 でカード型に作り直した。2026-09-23、利用者の決定。T-30 §4.13）下の箇条は T-31 の実装時の形の記録。今の形は次のとおり:
+> **はじめに**は見出しの右肩に `Strings.onboardingProgress(done:total:)`、`visible` の項目を 2 列のチェック（`Grid`）で並べ、④ が未完了の間は `GeneralSection`（トグル）と「今はしない」をこのカードに置く。⑤ の `detail` はカードの下に小さく。
+> **保存先**はフォルダ名の 1 行（`VaultSection.displayName`。全体のパスはヘルプ）で、押すと `chooseVault()`。右に `Strings.buttonChangeVault` と「›」。
+> **モデル**は 1 モデル 1 行（ラベル・名前・入手済みなら緑のチェック、未入手なら `buttonFetchModel`、入手中は進捗と × のキャンセル）。LLM の `Picker` と `buttonImportGGUF` は `Menu` の中に置く。要対応の「モデルの節を開く」で枠を橙にする（`modelsHighlighted`）。
+> **一般**は枠を持たない中身（トグル・許可の案内・失敗）になり、「はじめに」のカードか ⚙ の「設定」の画面（T-30 §4.11b）に置く。
+
 `OnboardingSection`（§8.12 の 3）:
 - `let items = OnboardingEvaluator.items(model.snapshot)`。`items.contains { $0.visible && !$0.done }` が偽なら `EmptyView()`
 - `SectionBox(title: Strings.sectionOnboarding)` の中に、`visible` の項目を順に 1 行ずつ。`done` なら `checkmark.circle.fill`、未完了なら `circle`
