@@ -1,8 +1,8 @@
 // 例外を error_message とログ用の 1 行にする（PLAN §8.3「<型名>: <説明>」）。Duration を秒の Double にする。
 
 /// 例外を error_message とログ用の 1 行にする（PLAN §8.3「<型名>: <説明>」）。
-enum ErrorText {
-    static func describe(_ error: any Error) -> String { "\(type(of: error)): \(error)" }
+public enum ErrorText {
+    public static func describe(_ error: any Error) -> String { "\(type(of: error)): \(error)" }
 }
 
 /// Duration を秒の Double にする。

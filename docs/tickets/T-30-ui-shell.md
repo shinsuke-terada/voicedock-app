@@ -58,9 +58,11 @@
 | `Tests/VoiceDockAppTests/StatusLineTests.swift` | |
 | `Tests/VoiceDockAppTests/IconStateTests.swift` | |
 | `Tests/VoiceDockAppTests/FakeServices.swift` | `AppServices` の偽物（`VoiceDockAppTests` の中だけ。TestSupport には置かない） |
+| `Tests/VoiceDockAppTests/StringsTests.swift` | `Strings` の全項目を §4.12 の表と逐語で固定する（§7 の受け入れ条件） |
 | `Tests/VDPipelineTests/StatusTextsTests.swift` | |
+| `Tests/VDCoreTests/ModelMemoryTests.swift` | §4.10b |
 
-**削除**: `Sources/VoiceDockApp/ModuleMarker.swift` は無い（T-01 は `main.swift` にコメントだけ置いた）。その `main.swift` を置き換える。
+**削除**: `Sources/VoiceDockApp/ModuleMarker.swift` は無い（T-01 は `main.swift` にコメントだけ置いた）。その `main.swift` を置き換える。T-01 の目印 `Tests/VoiceDockAppTests/TargetMarker.swift` は消す（実ファイルが入ったため）。
 
 ## 4. 仕様
 
@@ -84,7 +86,7 @@ import AppKit
 
 let appDelegate = AppDelegate()
 let application = NSApplication.shared
-application.setActivationPolicy(.accessory)     // Dock に出ない（Info.plist の LSUIElement と二重に効かせる）
+application.setActivationPolicy(.accessory)  // Dock に出ない（Info.plist の LSUIElement と二重に効かせる）
 application.delegate = appDelegate
 application.run()
 ```
@@ -132,7 +134,7 @@ final class AppContext {
 }
 
 /// 起動できなかった理由（パネルを出さずに知らせて終わる。設定エラーはここに来ない）。
-enum BootFailure: Equatable {
+enum BootFailure: Error, Equatable {   // Result の Failure なので Error に準拠する
     case directories(String)      // HomeLayout.createDirectories() が投げた
     case catalog(String)          // バンドルの ModelCatalog.json が読めない
     case database(String)         // Store(url:clock:zone:) が投げた
@@ -140,6 +142,9 @@ enum BootFailure: Equatable {
 }
 
 enum Bootstrap {
+    static let useMountPoint = false
+    /// os.Logger の subsystem（= BUNDLE_ID。identity.env と同じ値）。T-36 が AppIdentity.bundleID に替える
+    static let logSubsystem = "io.github.shinsuke-terada.VoiceDock"
     /// 本番の組み立て。PLAN §8.15 の順に行う。
     @MainActor static func build() async -> Result<AppContext, BootFailure>
 }
@@ -149,11 +154,11 @@ enum Bootstrap {
 
 1. `let layout = HomeLayout.production()`、`let paths = AppPaths.fromMainBundle()`
 2. `<HOME>` と下位ディレクトリ: `do { try layout.createDirectories() } catch { return .failure(.directories(ErrorText.describe(error))) }`（`bin/` は作らない）
-3. カタログ: `guard let data = try? Data(contentsOf: paths.modelCatalog), case .success(let catalog) = ModelCatalog.load(data) else { return .failure(.catalog(…)) }`
+3. カタログ: `do { catalogData = try Data(contentsOf: paths.modelCatalog) } catch { return .failure(.catalog(ErrorText.describe(error))) }` → `switch ModelCatalog.load(catalogData) { case .success(let c): catalog = c; case .failure(let e): return .failure(.catalog(ErrorText.describe(e))) }`（`try?` で理由を捨てない）
 4. 時計とログ（**設定を読む前のログは既定のレベルで出す**）:
    - `let clock: any AppClock = SystemClock()`
    - `let bootZone = ZonedTime(timeZone: TimeZone.current)`
-   - `let sink = TeeSink(a: OSLogSink(subsystem: AppIdentity.bundleID), b: LogFile(url: layout.appLog))`
+   - `let sink = TeeSink([OSLogSink(subsystem: logSubsystem), LogFile(url: layout.appLog)])`（`TeeSink` の init は T-10 の `init(_ sinks: [any LogSink])`。`AppIdentity` は T-36 が作るので、ここでは `Bootstrap.logSubsystem` の文字列を使う。T-36 §4 の「os.Logger の subsystem が文字列で書かれていれば `AppIdentity.bundleID` に替える」が拾う）
    - `var log = AppLog(sink: sink, level: .info, unsafeContent: false, zone: bootZone, clock: clock, category: "app")`
 5. 子プロセス: `let runner = ProcessRunner()`
 6. **ロックの評価器はまだ作らない**（Phase 8 の T-36 が `LockEvaluator` をここに入れる。T-36 §4.9）。本チケットは Phase 7 の型だけで組む: `LockEvaluator`・`CodeSignatureVerifier`・`ReaperSignature`・`SystemVolumeOpener` を**使わない**
@@ -180,7 +185,7 @@ enum Bootstrap {
         log: log.withCategory("device"), volumesRoot: Contract.volumesRoot))
     ```
     `static let useMountPoint = false`（P0-02 で確定。実機では `-mountPoint` が使えない。`docs/POC.md` 章 3）
-12. Worker（`verificationCache` は 14 のモデルと共有するので先に名前を付ける）:
+12. Worker（`verificationCache` は 14 のモデルと共有するので先に名前を付ける。**`WorkerDependencies` にはまだ `verificationCache` のフィールドが無い**（T-18 §10 の 4 のとおり T-32 が足す）ので、T-30 では渡さず 14 の `ModelManager` にだけ渡す）:
     ```swift
     let verificationCache = ModelVerificationCache()
     let worker = Worker(deps: WorkerDependencies(
@@ -189,7 +194,7 @@ enum Bootstrap {
         chatTransportFactory: { handle, cfg in LoopbackChatTransport(endpoint: handle.endpoint, apiKey: handle.apiKey, modelID: handle.modelID, config: cfg, factory: EphemeralSessionFactory()) },
         clock: clock, sleeper: TaskSleeper(), log: log.withCategory("pipeline"),
         license: AlwaysAllowLicenseGate(), catalog: catalog,
-        verificationCache: verificationCache,
+        // verificationCache: verificationCache,   ← T-32 がフィールドを足したら渡す
         physicalMemoryBytes: ProcessInfo.processInfo.physicalMemory))
     ```
     **末尾の `importedKeys`（T-33）・`locks`・`volumeOpener`（T-36）はまだ渡さない**（00-api-map §11 の `WorkerDependencies` の行が足す順の正。T-18 の並び → T-33 の `importedKeys` → T-36 の `locks` と `volumeOpener`）
@@ -208,7 +213,8 @@ enum Bootstrap {
 
 - **Phase 8 で T-36 が差し替えるところ**（T-36 §4.9。本チケットでは書かない）: 6 に `LockEvaluator` を作る行、7 の `observeReaperConf`、12 の末尾の `locks`・`volumeOpener`。本チケットの Bootstrap は `VDPipeline` の削除まわりの型（`LockEvaluator`・`SignatureVerifier`・`ReaperSignature`・`VolumeOpener`）を 1 つも参照しない
 - **順序の理由**: `Worker.start()`（復旧）を `IngestService.start()`（走査）より先に行う（PLAN §8.15）。`Worker.run()` は先頭で `start()` を呼ぶ（T-18 §4.8）ので、`workerTask` を作ってから `ingest.start()` を呼べばこの順になる
-- 14 の `EphemeralDownloadSessionFactory` が T-23 でまだ無い間は、`ModelManager` の行に `// T-23 が ModelDownloader を渡す。` と書いて `models` を省く（`AppContext.models` の型は `ModelManager?`）。**T-23 のマージで Optional を外す**（「マージ後にやること」）
+- T-23 はマージ済みなので `EphemeralDownloadSessionFactory` と `ModelManager` はある。`AppContext.models` は `ModelManager`（Optional にしない）
+- 14 の `hashChunkBytes` の行は 120 桁を超えるので `let hashChunkBytes =` の後で改行する（swift-format）
 
 ---
 
@@ -233,20 +239,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func requestTerminate()
 
     static let terminateTimeout: Duration = .seconds(10)
-    static let terminateKillGrace: Duration = .seconds(5)   // ProcessRunner.killGrace と同じ値を使う
+    static let terminateKillGrace: Duration = ProcessRunner.killGrace   // 同じ値を 2 か所に書かない（CR-06。import VDProcess）
 }
 ```
 
 **`applicationDidFinishLaunching`**:
-1. `Task { @MainActor in`
+1. `Task { @MainActor [weak self] in`（中の `quit:` の `[weak self]` と揃える。外側が暗黙の強参照だと Swift 6.4 は `ImplicitStrongCapture` でエラーにする）
 2. `switch await Bootstrap.build()`:
    - `.failure(let f)`: `NSAlert` を出す（`messageText = Strings.bootFailureTitle`、`informativeText = f.message`、ボタン `Strings.ok`）→ `runModal()` → `NSApp.terminate(nil)`
    - `.success(let ctx)`: 続ける
-3. `let model = AppModel(services: LiveServices(context: ctx), openFinder: NSWorkspaceFinder(), quit: { [weak self] in self?.requestTerminate() })`
+3. `let model = AppModel(services: LiveServices(context: ctx), openFinder: NSWorkspaceFinder(), layout: ctx.layout, now: ctx.clock.now(), quit: { [weak self] in self?.requestTerminate() })`（§4.11 の init。`layout` は Finder に渡す URL の元、`now` は最初の `AppSnapshot` の時刻）
 4. `let controller = StatusItemController(model: model)`
 5. `model.start()`（購読と最初の `refresh()` を始める）
 6. `if await ctx.config.didCreateDefaults() { controller.open() }`（**初回起動だけ自動で開く**。PLAN §8.12）
-7. `self.context = ctx; self.model = model; self.statusItem = controller`
+7. `self?.context = ctx; self?.model = model; self?.statusItem = controller`
 8. `}`
 
 - 2 で失敗したときは `StatusItemController` を作らない（アイコンの出ないゾンビにしない）
@@ -265,7 +271,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
    5. `}`
 5. `return .terminateLater`
 
-- `withTimeout(_:_:)`（このファイルの private な自由関数）: `await withTaskGroup` で「本体」と「`try? await Task.sleep(for: timeout)`」を競わせ、先に終わった方で抜ける。**待ち切れなくても終了する**（中途の状態は次回起動の復旧が戻す。PLAN §5.3）
+- `withTimeout(_:_:) -> Bool`（このファイルの private な自由関数）: 「本体」と「`try? await Task.sleep(for: timeout)`」を**構造化しないタスク 2 つ**で競わせ、先に `AsyncStream`（`bufferingNewest(1)`）へ流した方で抜ける（本体が先なら真）。**`withTaskGroup` は使わない**: グループは抜ける前に子の終わりを待ち、`await t.value` は取り消しに応じないので、時間切れにならない。**待ち切れなくても終了する**（中途の状態は次回起動の復旧が戻す。PLAN §5.3）
 - **`beginActivity` との関係**: スリープの抑止は `Worker` が持つ（`ActivityBoard` → `ProcessInfoSleepAssertion`。T-18 §4.7）。AppDelegate は何も足さない。
   `requestStop()` で tick が中断した場合は `board.set(.idle)` が呼ばれず（T-18 §4.8）トークンが残るが、**プロセスの終了でトークンは消える**ので追加の後始末をしない。
   `.suddenTerminationDisabled` を持っている間も `NSApp.terminate` による通常の終了は妨げられない（突然の終了だけを止めるオプションである）
@@ -465,8 +471,7 @@ protocol AppServices: Sendable {
 }
 
 struct LiveServices: AppServices {
-    let context: AppContext
-    init(context: AppContext)
+    let context: AppContext      // init は合成されたもの（swift-format の UseSynthesizedInitializer）
 }
 ```
 
@@ -557,8 +562,7 @@ public enum StatusTexts {
     public static func gib(_ bytes: Int64) -> String
     /// PLAN §8.12「未処理 <h 小数 1 桁> 時間ぶん（<n> 件）」／「、うち <k> 件は長さ不明」／「未処理なし」
     public static func backlogLine(count: Int, seconds: Double, unknownDuration: Int) -> String
-    /// PLAN §8.9.8 の観測の表示語（#107 / #148）
-    public static func writabilityWord(_ w: DeviceWritability) -> String
+    // writabilityWord(_ w: DeviceWritability) は T-32 が足す（DeviceWritability は T-32 の LockObserving.swift が作る。00-api-map §11）
     /// ガードの理由の日本語（PLAN §5.4）。パネルの 1 行（T-30）・要対応（T-32）・DR-09（T-32）が共有する
     public static func pauseWord(_ r: PauseReason) -> String
 }
@@ -570,9 +574,10 @@ public enum StatusTexts {
   2. `var t = "未処理 " + String(format: "%.1f", max(0, seconds) / 3600) + " 時間ぶん（" + String(count) + " 件）"`
   3. `unknownDuration > 0` → `t += "、うち " + String(unknownDuration) + " 件は長さ不明"`
   4. `return t`
-- `writabilityWord`: `.absent` → `"デバイス未接続"`、`.unknown` → `"不明"`、`.readOnly` → `"読み取り専用"`、`.writable` → `"読み書き可能"`
+- **`writabilityWord` は T-30 では作らない。**引数の `DeviceWritability` は 00-api-map §11 で T-32 の `LockObserving.swift` が作る型で、T-30 の時点では存在しない（地図 ＞ チケット）。T-32 が `LockObserving.swift` と一緒に `StatusTexts` に足す。決まっている中身（T-32 への申し送り）:
+  - `.absent` → `"デバイス未接続"`、`.unknown` → `"不明"`、`.readOnly` → `"読み取り専用"`、`.writable` → `"読み書き可能"`
   - **`nil` を「読み書き可能」に丸めない。0 台を観測扱いにしない**（#107 / #148。voicedock `status.py:175-194`）
-  - T-32 の `LockDisplay.lines`（§4.11）はこの 4 語を自前で持っている。**T-32 のマージ後に `writabilityWord` を使うよう直す**（§10）
+  - テスト `writabilityWords`（「#107 / #148 観測の 4 語」）と破壊による証明の 11 も T-32 に移す
 
 ### 4.10b `Sources/VDCore/ModelMemory.swift`
 
@@ -608,7 +613,8 @@ public enum ModelMemory {
 // UI が見る唯一の値（PLAN §8.12）。IngestService / Worker / ConfigStore から来る値の写しで、DB を直接触らない。
 import AppKit
 import Foundation
-import Observation
+import SwiftUI        // @Observable は SwiftUI が再輸出する。`import Observation` は PLAN §3.4 の許可リストに無い（PT-07）
+import VDContract     // HomeLayout
 import VDCore
 import VDDevice
 import VDPipeline
@@ -627,14 +633,16 @@ final class AppModel {
 
     @ObservationIgnored private let services: any AppServices
     @ObservationIgnored private let openFinder: any FinderOpening
+    @ObservationIgnored private let layout: HomeLayout
     @ObservationIgnored private let quitHandler: @MainActor () -> Void
     @ObservationIgnored private let sleeper: any Sleeper
     @ObservationIgnored private var loop: Task<Void, Never>?
+    @ObservationIgnored private var updatesLoop: Task<Void, Never>?   // 走査の通知を待つタスク（stop で止める）
     @ObservationIgnored private var iconContinuation: AsyncStream<Void>.Continuation?
 
-    init(services: any AppServices, openFinder: any FinderOpening,
+    init(services: any AppServices, openFinder: any FinderOpening, layout: HomeLayout,
          sleeper: any Sleeper = TaskSleeper(), now: Instant,
-         quit: @escaping @MainActor () -> Void)
+         quit: @escaping @MainActor () -> Void)   // snapshot = AppSnapshot(now: now)
 
     // 導出（すべて計算プロパティ。状態を 2 か所に持たない）
     var iconState: IconState { IconState.compute(hasAttention: hasAttention, ingesting: snapshot.ingestActivity.scanning, processing: snapshot.worker.activity != .idle) }
@@ -645,7 +653,8 @@ final class AppModel {
     var backlogLine: String { StatusLine.backlog(snapshot) }
     var versionLine: String { Strings.versionLine(snapshot.version) }
     var zone: ZonedTime { ZonedTime(timeZone: TimeZone(identifier: snapshot.timeZone) ?? .current) }
-    /// アイコンの張り替えの通知（StatusItemController が待つ）
+    /// アイコンの張り替えの通知（StatusItemController が待つ）。受け手は 1 つ:
+    /// 取るたびに `AsyncStream.makeStream(of: Void.self)` を作り、前の continuation を finish して差し替える
     var iconChanges: AsyncStream<Void> { get }
 
     // 操作
@@ -660,7 +669,10 @@ final class AppModel {
     func revealLogsInFinder()
     func quit()
 
-    enum ReloadResult: Equatable { case ok, invalid([ConfigViolation]) }
+    enum ReloadResult: Equatable {   // 1 行 1 case（swift-format の OneCasePerLine）
+        case ok
+        case invalid([ConfigViolation])
+    }
 
     static let fastIntervalSeconds = 1    // パネルが開いている間
     static let slowIntervalSeconds = 30   // 閉じている間（Worker の周期と同じ。PLAN §8.15「常時ポーリングしない」）
@@ -678,12 +690,12 @@ struct NSWorkspaceFinder: FinderOpening { func reveal(_ url: URL) { NSWorkspace.
 2. `loop = Task { @MainActor [weak self] in`
    1. `await self?.refresh()`
    2. `let updates = await self?.services.updates()`
-   3. `if let updates { Task { @MainActor [weak self] in for await _ in updates { await self?.refresh() } } }`（走査の終わりで 1 回）
-   4. `while !Task.isCancelled { try? await sleeper.sleep(seconds: self?.isPanelOpen == true ? Self.fastIntervalSeconds : Self.slowIntervalSeconds); await self?.refresh() }`
+   3. `if let updates { self?.updatesLoop = Task { @MainActor [weak self] in for await _ in updates { await self?.refresh() } } }`（走査の終わりで 1 回）
+   4. `while !Task.isCancelled { try? await sleeper.sleep(seconds: self?.isPanelOpen == true ? Self.fastIntervalSeconds : Self.slowIntervalSeconds); if Task.isCancelled { break }; await self?.refresh() }`（`sleeper` は `start()` の先頭で `let sleeper = self.sleeper` に取る）
    3. `}`
 
 - **アイドル時の CPU を 0 に近く保つ**（PLAN §8.15）: パネルが閉じている間は 30 秒周期＋走査の通知だけ。開いている間だけ 1 秒周期にする
-- `stop()`: `loop?.cancel()`、`loop = nil`、`iconContinuation?.finish()`
+- `stop()`: `loop?.cancel()`、`loop = nil`、`updatesLoop?.cancel()`、`updatesLoop = nil`、`iconContinuation?.finish()`
 
 **`refresh()`**:
 1. `let next = await services.read(lastConnectedAt: snapshot.lastConnectedAt)`
@@ -697,7 +709,8 @@ struct NSWorkspaceFinder: FinderOpening { func reveal(_ url: URL) { NSWorkspace.
 
 **`requeueManual()`**: `await services.requeueManual()` → `await refresh()`
 **`reloadConfig()`**: `switch await services.reloadConfig() { case .valid: reloadResult = .ok; case .invalid(let v): reloadResult = .invalid(v) }` → `await refresh()`
-**`revealConfigInFinder()`** / **`revealLogsInFinder()`**: `openFinder.reveal(layoutURL)`。`layoutURL` は `AppSnapshot` に持たせず、`init` で受けた `layout` を `@ObservationIgnored let` で持つ（`HomeLayout` は `Sendable` な値）
+**`revealConfigInFinder()`** / **`revealLogsInFinder()`**: `openFinder.reveal(layout.configFile)` / `openFinder.reveal(layout.appLog)`。`layout` は `AppSnapshot` に持たせず、`init(…layout:…)` で受けて `@ObservationIgnored private let` で持つ（`HomeLayout` は `Sendable` な値）
+**`setAttentionForTesting(_:)`**（internal。`@testable` のテスト用）: `hasAttention = value`。T-32 が `refresh` で立てるまでアイコンの優先順位を試す口
 **`quit()`**: `quitHandler()`
 
 ---
@@ -905,6 +918,8 @@ final class FakeServices: AppServices {
     var reloadCount: Int { get }
     var scanCount: Int { get }
     var lastConnectedSeen: [Instant?] { get }   // read に渡された値
+    var readCount: Int { get }                   // read が呼ばれた回数
+    var subscriberCount: Int { get }             // updates() が呼ばれた回数
     func push()                                  // updates() のストリームに 1 件流す
 }
 final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
@@ -912,7 +927,7 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 
 ### 5.1 `StatusLineTests.swift`（`@Suite("StatusLine")`）
 
-`AppSnapshot(now: Instant(epochMillis: 1_756_000_000_000))` を作り、必要なフィールドだけ差し替える。
+`AppSnapshot(now: Instant(epochMillis: 1_756_000_000_000))` に `configPresent = true` を入れたものを作り、必要なフィールドだけ差し替える（`AppSnapshot` の既定は `configPresent = false` = 設定エラー状態。§4.7）。
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
@@ -933,7 +948,7 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | `lastConnectedNever` / 「一度も見ていなければ『まだありません』」 | どちらも無い | `まだありません` |
 | `deviceFreeSkipsUnknown` / 「空き容量が観測できない台は出さない」 | 2 台のうち 1 台だけ `freeBytes` | `DJIMIC3 4.2 GiB` |
 | `deviceFreeNilWhenNoObservation` / 「1 台も観測が無ければ行を出さない」 | `device == nil` | `nil` |
-| `emptySnapshotIsIdle` / 「TEST-28 何も無い観測」 | `AppSnapshot(now:)` のまま | `待機中`・`未処理なし`・`まだありません`・`deviceFree == nil` |
+| `emptySnapshotIsIdle` / 「TEST-28 何も無い観測」 | `AppSnapshot(now:)` のまま（1 行は `configPresent = true` にしたものでも見る） | 1 行はそのままなら `設定にエラーがあります`、`configPresent = true` なら `待機中`。`未処理なし`・`まだありません`・`deviceFree == nil` |
 
 ### 5.2 `IconStateTests.swift`（`@Suite("IconState")`）
 
@@ -947,13 +962,13 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 
 ### 5.3 `AppModelTests.swift`（`@Suite("AppModel")`）
 
-すべて `@MainActor`。`AppModel(services: fake, openFinder: finder, sleeper: RecordingSleeper(), now: fixed, quit: { quits += 1 })` を作り、`refresh()` を直接呼ぶ（`start()` のループは 1 本だけ別に試す）。
+すべて `@MainActor`。`AppModel(services: fake, openFinder: finder, layout: layout, sleeper: RecordingSleeper(), now: fixed, quit: { quits += 1 })` を作り、`refresh()` を直接呼ぶ（`start()` のループは別に試す）。`layout` は `HomeLayout(root: /tmp/voicedock-t30-layout)`（ファイルは作らない）。`fake` の観測は `configPresent = true` を入れたもの。
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `refreshCopiesTheSnapshot` / 「refresh は観測をそのまま写す」 | `fake.set(s)` | `model.snapshot == s` |
 | `refreshPassesLastConnectedBack` / 「前回の最終接続を read に渡す」 | `s.lastConnectedAt = t` → refresh → refresh | `fake.lastConnectedSeen == [nil, t]` |
-| `iconChangesOnlyWhenIconChanges` / 「アイコンが変わらなければ通知しない」 | 同じ観測で 2 回 refresh、その後 `deletionEnabled = true` で 1 回 | 通知は 1 回だけ（`trash` が付いたときの 1 件） |
+| `iconChangesOnlyWhenIconChanges` / 「アイコンが変わらなければ通知しない」 | 同じ観測で 2 回 refresh（2 回目の前に `withObservationTracking { _ = model.snapshot }` を張る）、その後 `deletionEnabled = true` で 1 回 | 2 回目で `onChange` が呼ばれない。通知は 1 回だけ（`trash` が付いたときの 1 件） |
 | `showsTrashFollowsDeletionEnabled` / 「削除が有効なら trash を常時出す」 | `deletionEnabled = true` | `model.showsTrash == true` |
 | `iconIsAttentionWhenFlagged` / 「要対応が立てばアイコンが変わる」 | `hasAttention` を `setAttentionForTesting(true)`（`@testable` の internal 関数） | `model.iconState == .attention` |
 | `panelOpenSwitchesToFastInterval` / 「パネルが開いている間だけ 1 秒周期」 | `start()` → `panelDidOpen()` → `RecordingSleeper` の記録を見る | 眠りの秒数に 1 が現れ、閉じると 30 に戻る |
@@ -963,9 +978,10 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | `reloadConfigInvalidKeepsViolations` / 「違反はそのまま持つ」 | `setReload(.invalid([v1, v2]))` | `reloadResult == .invalid([v1, v2])` |
 | `revealOpensFinderWithTheRightURL` / 「Finder に渡す URL は HomeLayout から取る」 | `revealConfigInFinder()`・`revealLogsInFinder()` | `finder.revealed == [layout.configFile, layout.appLog]` |
 | `quitCallsTheHandler` / 「終了はハンドラを呼ぶだけ」 | `quit()` | `quits == 1`（AppModel は `NSApp` を触らない） |
-| `startRefreshesOnIngestUpdate` / 「走査の通知で読み直す」 | `start()` → `fake.push()` | `read` の回数が増える |
+| `startRefreshesOnIngestUpdate` / 「走査の通知で読み直す」 | `SuspendingSleeper()`（周期の眠りが戻らない）で `start()` → `read` 1 回と購読 1 つを待つ → `fake.push()` | `read` の回数が 2 になる |
 | `stopCancelsTheLoop` / 「stop で周期を止める」 | `start()` → `stop()` → 時間を進める | それ以上 `read` が呼ばれない |
-| `emptyServicesProduceIdlePanel` / 「TEST-28 何も無い観測でも落ちない」 | `AppSnapshot(now:)` のまま | `statusLine == 待機中`、`iconState == .idle`、`showsTrash == false` |
+| `emptyServicesProduceIdlePanel` / 「TEST-28 何も無い観測でも落ちない」 | `configPresent = true` 以外は `AppSnapshot(now:)` のまま | `statusLine == 待機中`、`iconState == .idle`、`showsTrash == false`、`backlogLine == 未処理なし` |
+| `bootWithoutDatabaseShowsZero` / 「DB が無ければ未処理は全 0（LiveServices は DB を作らない）」 | `TempDirectory` の `HomeLayout` で `AppContext` を組む（`Store` は `layout.database` とは別の場所に開く。取り込みは `FakeMountInspector`・`FakeRemounter`・`FakeMountEventSource`・一時ディレクトリの `volumesRoot`。どれも start しない）→ `LiveServices.read(lastConnectedAt: nil)` | `backlog` が全 0、`configPresent == false`、`device == nil`、`layout.database` が作られていない。`AppModel` を通すと `backlogLine == 未処理なし` |
 
 ### 5.4 `Tests/VDPipelineTests/StatusTextsTests.swift`（`@Suite("StatusTexts")`）
 
@@ -977,7 +993,6 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | `backlogZeroSecondsButParts` / 「全部長さ不明なら 0.0 時間」 | `count: 2, seconds: 0, unknown: 2` | `未処理 0.0 時間ぶん（2 件）、うち 2 件は長さ不明` |
 | `gibOneDecimal` / 「GiB は小数 1 桁」 | `4_509_715_660` | `4.2 GiB` |
 | `gibZeroAndNegative` / 「0 と負の値は 0.0 GiB」 | `0`・`-1` | どちらも `0.0 GiB` |
-| `writabilityWords` / 「#107 / #148 観測の 4 語」 | `.absent` / `.unknown` / `.readOnly` / `.writable` | `デバイス未接続` / `不明` / `読み取り専用` / `読み書き可能` |
 | `pauseWords` / 「ガードの理由の 11 語」 | `PauseReason.allCases` | §4.12 の表と逐語で一致（11 件） |
 
 ## 6. 破壊による証明
@@ -994,7 +1009,6 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | 8 | `StatusLine.deviceFree` で `freeBytes == nil` を 0 にする | `deviceFreeSkipsUnknown` |
 | 9 | `StatusTexts.backlogLine` の `count == 0` の分岐を消す | `backlogNone` |
 | 10 | `backlogLine` の `unknownDuration` の節を消す | `backlogUnknownDuration` |
-| 11 | `writabilityWord` の `.unknown` を `読み書き可能` にする | `writabilityWords` |
 | 11b | `ModelMemory.hasEnough` の `>=` を `>` にする | `exactIsEnough` |
 | 12 | `AppModel.refresh` の `next != snapshot` を外して常に代入する | `iconChangesOnlyWhenIconChanges` |
 | 13 | `refresh` が `lastConnectedAt` に `nil` を渡す | `refreshPassesLastConnectedBack` |
@@ -1002,7 +1016,7 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 | 15 | `AppModel.slowIntervalSeconds` を 1 にする | `panelOpenSwitchesToFastInterval` |
 | 16 | `requeueManual` の `refresh()` を消す | `requeueManualCallsWorkerAndRefreshes` |
 | 17 | `revealLogsInFinder` が `layout.reaperLog` を渡す | `revealOpensFinderWithTheRightURL` |
-| 18 | `LiveServices.read` で `ReadOnlyStore.open` の nil のとき `BacklogCounts(count: 1, …)` を返す | `emptyServicesProduceIdlePanel`（`AppModelTests`）と、結合の `bootWithoutDatabaseShowsZero`（§5.3 に足す） |
+| 18 | `LiveServices.read` で `ReadOnlyStore.open` の nil のとき `BacklogCounts(count: 1, …)` を返す | `bootWithoutDatabaseShowsZero`（`emptyServicesProduceIdlePanel` は `FakeServices` を通すので `LiveServices` を見ない） |
 
 ## 7. 受け入れ条件
 
@@ -1024,8 +1038,8 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 
 ## 9. マージ後にやること
 
-1. T-23 のマージで `AppContext.models` の `Optional` を外し、`Bootstrap` の 14 を本物の `ModelDownloader` にする
-2. T-32 のマージで `LockDisplay.lines` の 4 語を `StatusTexts.writabilityWord(_:)` に置き換える（CR-06。`LockDisplay` を作るのは T-32 §4.11）
+1. （T-23 はマージ済み。`AppContext.models` は最初から `ModelManager`）
+2. T-32 が `DeviceWritability` と一緒に `StatusTexts.writabilityWord(_:)`（§4.10 の申し送り）を足し、`LockDisplay.lines` の 4 語をそれに置き換える（CR-06。`LockDisplay` を作るのは T-32 §4.11）。同時に `WorkerDependencies.verificationCache` を足し、`Bootstrap` の 12 で渡す
 3. T-40 のマージで `Bootstrap` の 13（`setLock1Reconciler`）の本体を入れる
 4. P0-02 の結果で `Bootstrap.useMountPoint` の値を確定する（T-15 §マージ後と同じ項目）
 5. README の一覧の T-30 の行の前提を `T-29` のままにする（変更なし）
@@ -1036,12 +1050,14 @@ final class FakeFinder: FinderOpening { var revealed: [URL] { get } }
 2. §12 の `Bootstrap.swift` の説明を `AppContext`・`BootFailure`・`Bootstrap.build() async -> Result<AppContext, BootFailure>` に具体化する
 3. §12 の `IconState.swift` を `enum IconState: String { idle, ingesting, processing, attention }`（`symbolName`・`trashSymbolName`・`compute(hasAttention:ingesting:processing:)`）にする
 4. §12 の `LoginItem.swift` を `protocol LoginItemControlling { func status() -> LoginItemStatus }` と `SystemLoginItem` にし、「操作は T-31 が足す」と注記する
-5. §11（VDPipeline）に `StatusTexts.swift`（`public enum StatusTexts { gib / backlogLine / writabilityWord }`。**作り手 T-30**、使い手 T-32）を足す。§2.3（VDCore）に `ModelMemory.swift`（`public enum ModelMemory { bytesPerGB / hasEnough(minMemoryGB:physicalMemoryBytes:) / gb(_:) }`。**作り手 T-30**、使い手 T-22・T-31・T-32）を足す
+5. §11（VDPipeline）に `StatusTexts.swift`（`public enum StatusTexts { gibBytes / gib / backlogLine / pauseWord }`。**作り手 T-30**、使い手 T-32。`writabilityWord(_: DeviceWritability)` は型を作る T-32 が足す）を足す。§2.3（VDCore）に `ModelMemory.swift`（`public enum ModelMemory { bytesPerGB / hasEnough(minMemoryGB:physicalMemoryBytes:) / gb(_:) }`。**作り手 T-30**、使い手 T-22・T-31・T-32）を足す
 6. §11 の `Diagnostics/` に `LoginItemStatus.swift`（`public enum LoginItemStatus`。**作り手 T-30**、T-32 が使う）を足し、`Diagnostics.swift` の行から `LoginItemStatus` を外す（1 ファイル 1 型）
 7. §14 の `VoiceDockAppTests` の「主な中身」に「`FakeServices` / `FakeFinder`（このターゲットの中だけ。TestSupport には置かない）」を注記する
 8. §11 の `LockObserving.display`（T-32）が返す `LockDisplay.lines` は `StatusTexts.writabilityWord` を使う、と注記する（`LockEvaluator` は T-36 でこのプロトコルに準拠する）
 9. （整合修正 M-4 / M-5 / H-2）`Bootstrap` の呼び出しを地図に合わせた: `ConfigStore(layout:catalog:log:observeReaperConf:)`（§11。`log:` を渡す。`observeReaperConf` は Phase 7 では `{ .missing }`）、`ModelDownloader(layout:factory:log:hashChunkBytes:)` と `ModelManager(layout:catalog:downloader:cache:log:hashChunkBytes:)`（§10。`clock:` は無い）、`WorkerDependencies` の末尾（`importedKeys`・`locks`・`volumeOpener`）は渡さない。地図側の修正は不要
 10. §11 に `ErrorText.swift`（`public enum ErrorText { static func describe(_ e: any Error) -> String }`。T-18 が internal で作ったものを **T-30 が public にする**。VoiceDockApp の `Bootstrap` / `LoginItem` が使う）を足す。`DurationSeconds` は internal のまま
+11. §11 の `WorkerDependencies` の行に「`verificationCache` は T-32 が足す（T-18 §10 の 4）。T-30 の時点のフィールドには無い」と注記する（地図は T-18 の並びに `verificationCache` を含めて書いているが、T-18・T-22 の実装には無い。T-30 の `Bootstrap` は `ModelManager` にだけ渡す）
+12. `AppIdentity`（T-36）ができるまで、`Bootstrap.logSubsystem`（`"io.github.shinsuke-terada.VoiceDock"`）を os.Logger の subsystem に使う、と §12 の `Bootstrap.swift` の行に注記する
 
 ## 11. 仕様の問題（PLAN に直したいこと）
 
