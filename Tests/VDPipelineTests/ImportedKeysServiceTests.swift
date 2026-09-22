@@ -56,6 +56,8 @@ struct ImportedKeysServiceTests {
         #expect(await w.importedKeys.scanIfAvailable(.startup) == 0)
         let lines = w.lines("config_warning").filter { $0.contains("rule=store") }
         #expect(lines.count == 1)
+        // message は例外の型名（PLAN §A の config_warning。文言ではない）
+        #expect(lines.first?.contains("message=DatabaseError") == true)
         #expect(w.lines("imported_keys_added").isEmpty)
     }
 

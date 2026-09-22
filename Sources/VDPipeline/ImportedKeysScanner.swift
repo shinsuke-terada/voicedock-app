@@ -33,8 +33,10 @@ public struct ImportedKeysScanner: Sendable {
         for relative in files {
             let keys = Frontmatter.recordingKeys(ofFile: vault.appendingPathComponent(relative, isDirectory: false))
             for key in keys {
-                // PLAN §8.13: PartKey の形（<device_id>/<relpath> で RelPath.isSafe）でなければ入れない
-                guard PartKey.deviceID(of: key) != nil, let relpath = PartKey.relpath(of: key), RelPath.isSafe(relpath)
+                // PLAN §8.13: PartKey の形でなければ入れない（PartKey.make で組み直して同じ鍵になること。
+                // DeviceID.isValid と RelPath.isSafe の両方を通る）
+                guard let deviceID = PartKey.deviceID(of: key), let relpath = PartKey.relpath(of: key),
+                    (try? PartKey.make(deviceID: deviceID, relpath: relpath)) == key
                 else { continue }
                 if seen.insert(key).inserted {
                     rows.append((key, relative))

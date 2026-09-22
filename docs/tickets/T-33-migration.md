@@ -68,7 +68,7 @@ public struct ImportedKeysScanner: Sendable {
 5. `files`（Vault からの相対パスのスカラー列の昇順）を順に:
    - `keys = Frontmatter.recordingKeys(ofFile: vault.appendingPathComponent(relative, isDirectory: false))`
      （読めない・UTF-8 でない・frontmatter が無い・配列でない → `[]`。例外を投げない。T-26 §4.5）
-   - 各 `key` を順に: `PartKey.deviceID(of: key) != nil`、`PartKey.relpath(of: key) != nil` かつ `RelPath.isSafe(relpath)` でなければ**捨てる**（壊れた鍵を DB に入れない。PLAN §8.13「`<device_id>/<relpath>` で `RelPath.isSafe`」）。
+   - 各 `key` を順に: `PartKey.deviceID(of: key)` と `PartKey.relpath(of: key)` が取れ、かつ `(try? PartKey.make(deviceID:relpath:)) == key`（`DeviceID.isValid` と `RelPath.isSafe` の両方。PLAN §4.2・§8.13）でなければ**捨てる**（壊れた鍵を DB に入れない）。
      `seen.insert(key).inserted` が真のときだけ `rows.append((key, relative))`（**先に見つけたノートを `source_note` にする**。走査の順が決まっているので結果は決定的）
 6. `rows` が空なら `0` を返す
 7. `n = try store.insertImportedKeys(rows)`（**DB に行がある partkey と、既に `imported_keys` に在る partkey は入らない**。T-11 の `WHERE NOT EXISTS` と `INSERT OR IGNORE`）
@@ -214,7 +214,7 @@ public let importedKeys: ImportedKeysService
 | `unreadableNoteIsSkipped` / 「読めないノートは飛ばして続ける」 | `bad.md`（0o000）と `good.md`（鍵 1 つ） | 戻り 1、例外を投げない。後始末で chmod を戻す |
 | `invalidUTF8IsSkipped` / 「UTF-8 でないノートは飛ばす」 | 不正なバイト列のファイルと正しいノート | 戻り 1 |
 | `brokenFrontmatterIsSkipped` / 「frontmatter が壊れていれば飛ばす」 | `---\n: :\n---\n`・`no frontmatter\n`・鍵が文字列（配列でない）ノート | 戻り 0 |
-| `malformedKeysAreDropped` / 「鍵の形が壊れていれば入れない」 | `voicedock_recording_keys: ["", "x", "DJIMIC3/", "/a.wav", "DJI MIC/../a.wav"]` | 戻り 0、`importedKeys()` が空 |
+| `malformedKeysAreDropped` / 「鍵の形が壊れていれば入れない」 | `voicedock_recording_keys: ["", "x", "DJIMIC3/", "/a.wav", "DJI MIC/../a.wav", "DJI:MIC/a.wav", ".x/a.wav"]` | 戻り 0、`importedKeys()` が空 |
 | `duplicateKeysAcrossNotesTakeTheFirst` / 「同じ鍵が 2 つのノートに在れば先（昇順）の方」 | `a.md` と `b.md` の両方に A | 戻り 1、`source_note` が `Daily/Voice/Raw/a.md` |
 | `emptyVaultAddsNothing` / 「空の Vault では 0 件（TEST-28）」 | ノートを 1 つも置かない | 戻り 0、ログが空、`imported_keys` が空 |
 | `missingRawFolderAddsNothing` / 「Raw フォルダが無くても落ちない」 | `Daily/Voice/Raw` を作らない | 戻り 0 |
