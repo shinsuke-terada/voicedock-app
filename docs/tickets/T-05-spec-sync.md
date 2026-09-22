@@ -85,7 +85,7 @@ SPEC.md は PLAN の表の**機械的な写し**にし（手で直さない）�
 
 - **常に**: テストの表示名の ID はすべて SPEC の生きた ID（`testIDsExistInSpec`。表に無い ID のテストを作らない）
 - **有効にした種類だけ**: SPEC の ID の集合 = テストの ID の集合（`activatedKindsMatchSpec`）。ND はさらに層ごとに 1 本以上（`ndLayersCovered`）
-- 有効にするのは、その種類のテストを揃えるチケット: **T-09 が `.cv`、T-32 が `.dr`、T-37 が `.rv`、T-39 が `.nd`** を `SpecCoverage.activated` に足す（E2E は docs/E2E.md の判定表との一致を T-35 が確かめる）
+- 有効にするのは、その種類のテストを揃えるチケット: **T-09 が `.cv`、T-32 が `.dr`、T-37 が `.rv`、T-39 が `.nd`** を `SpecCoverage.activated` に足す（E2E は docs/E2E.md の判定表との一致を T-35 が確かめる）。`.rv` は T-37 の PR では足されず（RV-01・02・05 の ID で始まるテストが無かった）、T-37 の積み残しとして issue #87 でテストを揃えて足した（T-37 §3・§5.5）
 
 ### 5. 後続のチケットが足す SPEC 同期のテスト（形をここで決める）
 

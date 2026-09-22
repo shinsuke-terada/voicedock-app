@@ -46,6 +46,41 @@ struct ReaperConfGateTests {
         Self.expectUntouched(bench, name)
     }
 
+    // MARK: - RV-01（規範 ID のテスト。ND-22・ND-43 と振る舞いは重なるが、RV の ID で独立させる。issue #87）
+
+    @Test("RV-01 DELETE_SOURCE_AUDIO=false なら reaper_disabled reason=lock1 で 0、要求に触らない")
+    func rv01Lock1FalseExitsZeroAndTouchesNothing() throws {
+        let (bench, name) = try Self.bench()
+        let root = bench.volumesRoot.path(percentEncoded: false)
+        try bench.writeReaperConfRaw("SCHEMA=1\nDELETE_SOURCE_AUDIO=false\nVOLUMES_ROOT=" + root + "\n")
+        let run = try bench.run()
+        #expect(run.exitCode == 0)
+        #expect(Self.logged(bench, "INFO  reaper_disabled reason=lock1"))
+        #expect(!Self.logged(bench, Self.confInvalidLine))
+        Self.expectUntouched(bench, name)
+    }
+
+    @Test("RV-01 reaper.conf が不正なら reaper_disabled reason=conf_invalid で 2、要求に触らない")
+    func rv01InvalidConfExitsTwoAndTouchesNothing() throws {
+        let (bench, name) = try Self.bench()
+        let root = bench.volumesRoot.path(percentEncoded: false)
+        try bench.writeReaperConfRaw("SCHEMA=1\nDELETE_SOURCE_AUDIO=1\nVOLUMES_ROOT=" + root + "\n")
+        try Self.expectInvalid(bench, name)
+        #expect(!Self.logged(bench, "INFO  reaper_disabled reason=lock1"))
+    }
+
+    @Test("RV-01 DELETE_SOURCE_AUDIO=true なら要求の処理へ進む（対照）")
+    func rv01Lock1TrueProceedsToRequests() throws {
+        let (bench, _) = try Self.bench()
+        let root = bench.volumesRoot.path(percentEncoded: false)
+        try bench.writeReaperConfRaw("SCHEMA=1\nDELETE_SOURCE_AUDIO=true\nVOLUMES_ROOT=" + root + "\n")
+        let run = try bench.run()
+        #expect(run.exitCode == 0)
+        #expect(bench.logLines().allSatisfy { !$0.contains(" reaper_disabled ") })
+        #expect(bench.requests() == [])
+        #expect(try bench.result(ReaperBench.requestID).detail == "not_a_mount_point")
+    }
+
     @Test("ND-43 [R1] 未知のキーは無効側")
     func nd43UnknownKeyIsInvalid() throws {
         let (bench, name) = try Self.bench()

@@ -46,6 +46,8 @@
 | `Tests/ReaperTests/ReaperConfGateTests.swift` | reaper.conf とロック 1（層 R1） |
 | `Tests/ReaperTests/ReaperQueueTests.swift` | 走査・RV-02〜RV-06・ロック・ログ・SIGTERM（層 R1） |
 | `Tests/ReaperTests/ReaperDiskImageTests.swift` | 層 R3（`.diskImage`） |
+| `Tests/PolicyTests/SpecSync/SpecCoverage.swift`（変更） | `activated` に `.rv` を足す（T-05 §4。T-37 の積み残しを issue #87 で足した） |
+| `Tests/PolicyTests/SpecSync/SpecCoverageTests.swift`（行を直す） | `activatedKeepsTheCheckedKinds` が `.rv` も含むこと（§5.5） |
 
 `Tests/ReaperTests/TargetIdentityNDTests.swift`（層 R2）は **T-07 が作る**（このチケットでは作らない）。
 
@@ -660,6 +662,9 @@ struct ReaperBench {
 | `symlinkedConfIsInvalid` | reaper.conf が symlink なら無効側 | `bin/reaper.conf` を別ファイルへの symlink に | 同上 |
 | `oversizedConfIsInvalid` | reaper.conf が 64 KiB を超えたら無効側 | `#` 行で `Contract.maxRequestBytes + 1` バイト | 同上 |
 | `commentsAndBlankLinesArePassed` | 空行と `#` の行は無視される（対照） | 正しい 3 行の前後に空行と `#` を挟む | exit 0、要求が処理される（`not_a_mount_point`） |
+| `rv01Lock1FalseExitsZeroAndTouchesNothing` | `RV-01 DELETE_SOURCE_AUDIO=false なら reaper_disabled reason=lock1 で 0、要求に触らない` | `SCHEMA=1\nDELETE_SOURCE_AUDIO=false\nVOLUMES_ROOT=<ROOT>\n`（手書き） | exit 0、`reaper_disabled reason=lock1`、`reason=conf_invalid` の行が無い、要求に触らない（issue #87。ND-22 と振る舞いは重なるが RV の規範 ID のテストとして独立させる） |
+| `rv01InvalidConfExitsTwoAndTouchesNothing` | `RV-01 reaper.conf が不正なら reaper_disabled reason=conf_invalid で 2、要求に触らない` | `SCHEMA=1\nDELETE_SOURCE_AUDIO=1\nVOLUMES_ROOT=<ROOT>\n` | exit 2、`reaper_disabled reason=conf_invalid`、`reason=lock1` の行が無い、要求に触らない（issue #87） |
+| `rv01Lock1TrueProceedsToRequests` | `RV-01 DELETE_SOURCE_AUDIO=true なら要求の処理へ進む（対照）` | `SCHEMA=1\nDELETE_SOURCE_AUDIO=true\nVOLUMES_ROOT=<ROOT>\n` | exit 0、`reaper_disabled` の行が無い、要求が消え結果の `detail == "not_a_mount_point"`（上の 2 本が手書きの conf のほかの行で弾かれていないことの担保。TEST-19） |
 
 ### 5.3 `ReaperQueueTests.swift`（`@Suite("voicedock-reaper の走査と要求（層 R1）")`）
 
@@ -675,7 +680,10 @@ struct ReaperBench {
 |---|---|---|---|
 | `nd38BadFileNamesGoToRejected` | `ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ` | 名前 `evil.json`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3..json`（`..` を含む。`..json` は `.` で始まり走査が無視するので使わない）・`20260912T090000Z-a5d046dce76cfedc-A1B2C3.json`（大文字 16 進）・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.JSON`・`20260912T090000Z-a5d046dce76cfedc-a1b2c3.json.bak`（パラメタ化）。**中の `request_id` はファイル名の stem（`.json` で終わらない名前は名前そのもの）にする**（既定の request_id のままだと RV-02b が代わりに弾き、§6 の 6 で落ちなかった） | exit 0、`rejected() == [その名前]`、`results() == []`、`processedLines() == []`、外へ書かない、`request_rejected file=<名前> reason=malformed_request_id`、デバイス上のファイルが在る |
 | `nd38InnerRequestIDMismatchGoesToRejected` | `ND-38 [R1] JSON の request_id がファイル名と違えば rejected/ へ（RV-02b）` | 正しい名前、中の `request_id` を `../evil` に | 同上。加えて `<HOME>/queue/evil.json` が無い |
-| `rv02bNonStringRequestIDGoesToRejected` | `RV-02b request_id が文字列でなければ rejected/ へ` | 中の `request_id` を `1` に | 同上 |
+| `rv02bNonStringRequestIDGoesToRejected` | `RV-02 request_id が文字列でなければ rejected/ へ（02b）` | 中の `request_id` を `1` に | 同上（旧表示名 `RV-02b …` は `TestNameIndex.pattern`（T-05）に合わず、RV-02 として数えられなかった。issue #87 で改名） |
+| `rv02aMalformedFileNameGoesToRejected` | `RV-02 ファイル名が <request_id>.json の形でなければ rejected/ へ（02a）` | 名前 `20260912T090000Z-a5d046dce76cfedc-a1b2c.json`（乱数部が 5 桁）、中の `request_id` は stem | 同上（issue #87） |
+| `rv02bInnerRequestIDMismatchGoesToRejected` | `RV-02 JSON の request_id がファイル名の stem と違えば rejected/ へ（02b）` | 正しい名前、中の `request_id` を形は正しい別の ID `20260912T090000Z-a5d046dce76cfedc-ffffff` に（形ではなく一致を見ていること） | 同上（issue #87） |
+| `rv02MatchingNameProceeds` | `RV-02 ファイル名と中の request_id が一致すれば not_a_mount_point まで進む（対照）` | 通る要求 1 件 | exit 0、`rejected() == []`、結果の `detail == "not_a_mount_point"`（issue #87） |
 | `nonJSONNamesGoToRejected` | `.json` で終わらない名前は rejected/ へ | 名前 `README` | 同上 |
 | `dotFilesAreIgnored` | `.` で始まる名前は無視する | `.20260912T090000Z-a5d046dce76cfedc-a1b2c3.json.tmp` を置く | exit 0、`reaper_completed requests=0`、そのファイルが残る、`rejected() == []` |
 
@@ -705,6 +713,7 @@ struct ReaperBench {
 | `replayedDoesNotOverwriteAnExistingResult` | `RV-04 replayed は既に在る結果を上書きしない` | `processed.log` に ID を 1 行、`queue/result/<ID>.json` に `DELETED`（detail = relpath）を置き、同じ ID の要求を置く | 結果ファイルのバイト列が**変わらない**、要求が消える、`processedLines()` が 1 行のまま、`reason=replayed` のログ |
 | `nd44PartkeyMismatchIsRefused` | `ND-44 [R1] device_id/relpath が partkey と違えば partkey_mismatch` | `partkey: "VDT0037/other.wav"` | `detail == "partkey_mismatch"`、要求が消える、ファイルが在る |
 | `nd44DeviceIDMismatchIsRefused` | `ND-44 [R1] partkey の device_id だけが違えば partkey_mismatch` | `partkey: "OTHER/" + relpath` | 同上 |
+| `rv05PartkeyMismatchKeepsTheSource` | `RV-05 device_id/relpath が partkey と違えば partkey_mismatch、原本は残る` | `partkey` を同じフォルダの別名 `VDT0037/TX_MIC001_20260912_090000/TX00_MIC001_20260912_090001_orig.wav` に | exit 0、結果 1 件で `status == .sourceIdentityMismatch`・`detail == "partkey_mismatch"`・`deviceID == "VDT0037"`・`partkey` が要求のもの、`processedLines() == [requestID]`、要求が消える、デバイス上のファイルが在り大きさが 4096 のまま、`source_delete_rejected request_id=… reason=partkey_mismatch`（issue #87。ND-44 と振る舞いは重なるが RV の規範 ID のテストとして独立させる） |
 | `rv06AbsentDeviceLeavesTheRequest` | `RV-06 デバイスが無ければ要求を残す` | `deviceID: "NOSUCH"`、`partkey` も合わせる | exit 0、要求が**残る**、`results() == []`、`processedLines() == []`、`device_absent request_id=… device=NOSUCH` |
 | `rv06InvalidDeviceIDIsRejected` | `RV-06 device_id が不正なら not_a_mount_point` | `.hidden`・`a:b`（パラメタ化。partkey も合わせる） | `detail == "not_a_mount_point"`、要求が消える |
 | `namesAreProcessedInByteOrder` | 要求は名前のバイト順に処理される | 乱数部だけ違う 3 件（`…-a00001`・`…-a00002`・`…-a00003`）を作る順を入れ替えて置く | `processedLines()` が昇順、`reaper_completed requests=3` |
@@ -750,6 +759,14 @@ struct ReaperBench {
 - `.diskImage` のテストは `/Volumes` の下に attach しない（`DiskImageVolume` が一時ディレクトリにマウントする。T-07）
 - **ND-20 / ND-25 は macOS の msdos が symlink（`XSym` 形式）を作れることに依存する。**実装時に `symlink(2)` が `ENOTSUP` で失敗したら、その 2 本は層 R2（T-07）だけに残し、PLAN 付録 B.1 の「層」の列と `docs/SPEC.md` の S7 を同じ PR で `R2` に直す（§9 に手順を書いた）
 
+### 5.5 `Tests/PolicyTests/SpecSync/SpecCoverageTests.swift`（行を直す。T-39 §6.7 の行）
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `activatedKeepsTheCheckedKinds` | 有効にした種類は .cv・.dr・.nd・.rv を含む（外すと集合の一致の検査が黙って止まる。T-39・issue #87） | なし | `SpecCoverage.activated.isSuperset(of: [.cv, .dr, .nd, .rv])` |
+
+`.rv` を `activated` に足すと、`activatedKindsMatchSpec` が SPEC の RV-00〜RV-13 とテストの表示名の RV の集合の一致を確かめる（T-05 §4）。
+
 ## 6. 破壊による証明
 
 | # | 壊し方（1 か所だけ） | 落ちるべきテスト |
@@ -774,6 +791,12 @@ struct ReaperBench {
 | 18 | `ReaperLog` の回転の条件を `size + n >= maxBytes` にする | `theLogRotatesAtFiveMiB` |
 | 19 | `ProcessedLog.contains` の `unreadable` を `false` に倒す（fail-open） | （直接の検査が無い。`state/` を `chmod 0o000` にして `processedLines()` が読めない舞台で `nd39PlainDirectoryIsNotAMountPoint` が `replayed` にならないことを確かめるテストを足すか、レビュー項目として PR に書く） |
 | 20 | `ReaperBench` の手順 2（`<HOME>/bin` への複製）を消す | 層 R1・R3 の全テスト（exit 3 になる） |
+| 21 | RV-01 の 3 本（§5.2）の表示名から `RV-01 ` を外す（1 本だけでは残りの 2 本が RV-01 を数えるので落ちない。issue #87） | `activatedKindsMatchSpec`（SPEC だけに RV-01） |
+| 22 | 手順 7（RV-01）を消す（4 と同じ変異。issue #87） | `rv01Lock1FalseExitsZeroAndTouchesNothing` |
+| 23 | 手順 6 の `.missing, .invalid` の分岐で `reason=lock1` を出して 0 を返す（issue #87） | `rv01InvalidConfExitsTwoAndTouchesNothing` |
+| 24 | `RequestProcessor` の手順 4（RV-02b）の照合を「文字列であること」だけにする（issue #87） | `rv02bInnerRequestIDMismatchGoesToRejected` |
+| 25 | `QueueFiles.isRequestFileName` を `name.hasSuffix(".json")` だけにする（6 と同じ変異。issue #87） | `rv02aMalformedFileNameGoesToRejected` |
+| 26 | 手順 7（RV-05）を消す（9 と同じ変異。issue #87） | `rv05PartkeyMismatchKeepsTheSource` |
 
 ### 6.1 実施結果（T-37 の実装時。コミット後の清潔な状態で 1 項目ずつ壊し、`git checkout --` で戻した。層 R1 だけ）
 
@@ -797,6 +820,17 @@ struct ReaperBench {
 | 18 | 最初は落ちなかった（5 MiB ちょうどの詰め物では `>` と `>=` のどちらでも回る）→ `theLogDoesNotRotateAtExactlyFiveMiB` を足して落ちた |
 | 19 | `rv04UnreadableProcessedLogIsFailClosed`（足したテスト） |
 | 20 | 舞台を使う層 R1 の 53 本すべて（`ReaperLog の行` の 3 本だけが緑） |
+
+issue #87 で足した 21〜26（同じく層 R1 だけ。コミット後の清潔な状態で 1 項目ずつ壊し、Python の `finally` で `git checkout --` した）:
+
+| # | 落ちたテスト |
+|---|---|
+| 21 | `activatedKindsMatchSpec` |
+| 22 | `rv01Lock1FalseExitsZeroAndTouchesNothing`、`nd22Lock1FalseTouchesNothing` |
+| 23 | `rv01InvalidConfExitsTwoAndTouchesNothing`、ND-43 の 5 本（パラメタ化を含む）、`missingConfIsInvalid`・`symlinkedConfIsInvalid`・`oversizedConfIsInvalid` |
+| 24 | `rv02bInnerRequestIDMismatchGoesToRejected`、`nd38InnerRequestIDMismatchGoesToRejected`（`rv02bNonStringRequestIDGoesToRejected` は型の検査が残るので緑） |
+| 25 | `rv02aMalformedFileNameGoesToRejected`、`nd38BadFileNamesGoToRejected`（5 件のパラメタ） |
+| 26 | `rv05PartkeyMismatchKeepsTheSource`、`nd44PartkeyMismatchIsRefused`、`nd44DeviceIDMismatchIsRefused` |
 
 ## 7. 受け入れ条件
 
