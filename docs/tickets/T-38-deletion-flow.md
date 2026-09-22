@@ -740,7 +740,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 
 | # | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|---|
-| 1 | RequestWriter で ① と ② の順を入れ替える（ファイルを先に書く）。② の失敗を注入すると ID が残らない | `queueWriteFailureRollsBackTheID`（ID の巻き戻しを消すと落ちる。順の入れ替えは `deletionActuallyHappensWhenEverythingIsValid` の ID とファイル名の一致で確かめる） |
+| 1 | RequestWriter で ① と ② の順を入れ替える（ファイルを先に書く） | `writerRefusesAStaleRow`（① が状態の変化で弾かれても要求ファイルが残る。ID の巻き戻しは 2 が確かめる） |
 | 2 | ② の失敗で ID を nil に戻さない | `queueWriteFailureRollsBackTheID` |
 | 3 | requestDeletions の freshSnapshot を `ingest.latestSnapshot()`（新鮮さを見ない）にする | `staleSnapshotWritesNothing`、`everyLayerAFaultWritesNoRequest(staleSnapshot)`、`staleSnapshotDoesNotLaunch` |
 | 4 | requestDeletions の `deleteRequestID != nil` の飛ばしを消す | `skipsPartsAwaitingAResult` |
