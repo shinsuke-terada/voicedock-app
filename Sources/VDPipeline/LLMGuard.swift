@@ -17,11 +17,21 @@ struct LLMGuard {
 
     /// ガードを通れば起動に使うモデル。通らなければ理由をすべて ctx.pauses.trip して nil（遷移しない）。
     func evaluate() -> LLMTarget? {
+        let r = inspect()
+        guard r.reasons.isEmpty else {
+            for reason in r.reasons { ctx.pauses.trip(reason) }
+            return nil
+        }
+        return r.target
+    }
+
+    /// ガードの判定だけ（ctx.pauses に積まない）。理由が空のときだけ target が在る。
+    /// evaluate と、今すぐ要約の事前確認（SummarizeNow。PLAN §5.4・F-66）が使う。
+    func inspect() -> (target: LLMTarget?, reasons: [PauseReason]) {
         let layout = ctx.deps.layout
         // 1. 未選択なら以降を見ない
         guard let id = ctx.config.llm.modelID else {
-            ctx.pauses.trip(.llmNotSelected)
-            return nil
+            return (nil, [.llmNotSelected])
         }
         // 2.
         var reasons: [PauseReason] = []
@@ -55,11 +65,7 @@ struct LLMGuard {
             reasons.append(.llamaServerMissing)
         }
         // 7.
-        guard reasons.isEmpty else {
-            for r in reasons { ctx.pauses.trip(r) }
-            return nil
-        }
-        guard let model else { return nil }
-        return LLMTarget(model: model, modelID: id)
+        guard reasons.isEmpty, let model else { return (nil, reasons) }
+        return (LLMTarget(model: model, modelID: id), [])
     }
 }

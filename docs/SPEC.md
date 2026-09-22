@@ -69,6 +69,8 @@ FAILED→NORMALIZING | FAILED→TRANSCRIBING | FAILED→RAW_WRITING
 RAW_SAVED で結果を待っていた Part の DELETED も RAW_SAVED→SOURCE_DELETING→COMPLETED の 2 遷移で進める。
 元ファイルが無いと観測できた RAW_SAVED の Part は、既存の RAW_SAVED→COMPLETED を detail `already_absent` で使う（§8.9.5。F-64。辺は増やさない））
 
+（Session の OPEN→READY の detail は `stale_day` / `idle` / `summarize_now`（パネルの今すぐ要約。§5.4。F-66。辺は増やさない））
+
 Session:
 ```text
 OPEN→OPEN(Part 追加) | OPEN→READY

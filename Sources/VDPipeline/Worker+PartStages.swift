@@ -28,12 +28,14 @@ extension Worker {
         }
     }
 
+    /// 日付が過ぎたか idle が経った OPEN を閉じ、続けてパネルの今すぐ要約（F-66）を行う（同じ tick で要約まで進める）。
     func stageCloseIdleSessions(_ ctx: TickContext) {
         do {
             try SessionSteps(ctx: ctx).closeIdleSessions()
         } catch {
             warnStore(error)
         }
+        stageSummarizeNow(ctx)
     }
 
     /// 一覧を先に確定（started_at, partkey 順）し、1 件ごとに工程内リトライ。停止要求は Part の区切りで効く。

@@ -609,7 +609,7 @@ tick():   // 待ちは「IngestService からの通知」「パネルからの�
   snapshot = await ingest.latestSnapshot()                            // 起動直後は nil（まだ走査していない）
   groupNewParts
   requeueRecopied                                                     // 契機 4（下記）
-  closeIdleSessions
+  closeIdleSessions             // 続けて、パネルが要求した「今すぐ要約」（summarizeNow）を行う（下記。F-66）
   processPendingParts          // 一覧を先に確定: 非終端 Part を started_at, partkey 昇順。1 件ごとに工程内リトライ
   refreshVaultIndexIfExpired   // TTL 300 秒。ContinuousClock で測る（TIME-06）
   processReadySessions         // 一覧を先に確定（下記）。終わりで llama-server を必ず止める
@@ -621,6 +621,15 @@ tick():   // 待ちは「IngestService からの通知」「パネルからの�
   if snapshot.connectEpoch > lastSeenConnectEpoch: requeueFailed(.connect); lastSeenConnectEpoch = snapshot.connectEpoch
 ```
 
+- **今すぐ要約（手動。F-66）:** パネルの要求（`WorkerJob.summarizeNow(reply:)`）は、`closeIdleSessions` の段の終わりで列から取り出して入れた順に行う（ほかの仕事は `pendingDiagnostics` の段のまま）。
+  自動の要約（日付が変わった 0:00 の `stale_day` と `idle`）は変えない。1 件ごとに:
+  1. 停止要求が立っていれば何もせずに失敗（「終了中のため実行しませんでした」）
+  2. 解析の前のガード（下記・§8.5）の LLM の条件（未選択・モデルが無い・メモリ不足・llama-server が無い）を**積まずに**判定し、当たれば何も閉じずに失敗。文言は当たった理由の `StatusTexts.pauseWord` を `、` で繋いだもの（例「LLM が未選択」）
+  3. 今日（設定のタイムゾーン）の `day_date` の OPEN を `session_key` 順に `OPEN→READY`（detail `summarize_now`）。`TransitionConflict` は数えずに次へ。返事は閉じた数（無ければ 0）。DB の例外は `config_warning rule=store` を出して失敗
+  - 返事はその場で返し、要約は同じ tick の `processReadySessions` が進める（Part が全部終端でなければ、終端になった tick で進む）。ログのイベントは増やさない（遷移は `events` が持つ）
+  - 閉じた後に同じ日の録音が届けば、既存の再オープン（§5.6。Raw の保存で `reopenable` の Session を `→MERGING`）で要約し直す。`allowReopen = false` なら要約し直さない（自動の閉じ方と同じ）
+  - `pendingDiagnostics` の段に残っていた分（`closeIdleSessions` の段より後に入った分）はそこで実行せず、列に戻して次の tick で行う
+  - 設定エラー中の tick は「設定が読めていません」、停止要求（`requestStop`・停止後の `enqueue`）は「終了中のため実行しませんでした」で失敗の返事をする（返事は必ず 1 回）
 - `processReadySessions` の対象: `processable` の各状態の Session（`ORDER BY session_key`）のうち、Part が **1 件以上**あり**全件が `partTerminal`**のもの。最終的な処理順は **session_key の昇順**（voicedock worker.py:391-412）
 - 停止要求は各 Part / 各 Session の区切りと、工程内リトライの待ちの前後で確認する（停止ハンドラはフラグを立てるだけ。CONC-11）
 - `now` は `AppClock` プロトコル（標準ライブラリの `Clock` と名前を分ける）から毎回取る。tick の先頭で固定しない（TIME-04）。`Date()` を直接呼ぶのは `SystemClock` だけ（PT-09）
@@ -669,7 +678,8 @@ ensureNormalized → ensureTranscribed → ensureRawNote → requestDeletions(�
 - Session が無ければ `insertSession`（OPEN。events に NULL→OPEN）。Part に session_key を書き（`updateRecording`）、集計列を数え直す:
   `SELECT COUNT(*), MIN(started_at), MAX(ended_at), SUM(duration_seconds), SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) FROM recordings WHERE session_key = ?`（`IN` には FAILED と SKIPPED の rawValue を束縛する。SQL に状態名を書かない。PT-06）
   → `part_count / started_at / ended_at / recorded_seconds / failed_part_count`（SUM は全部 NULL なら NULL）。Session が OPEN なら `OPEN→OPEN`（detail = partkey。新規作成の直後も書く）。閉じた Session への追加は events を書かない
-- OPEN を閉じる（`closeIdleSessions`、`ORDER BY session_key`）: `day_date != today(tz)` なら `OPEN→READY`（detail `stale_day`）、そうでなく `updated_at <= now − idleClose(1800 秒)` なら（detail `idle`）
+- OPEN を閉じる（`closeIdleSessions`、`ORDER BY session_key`）: `day_date != today(tz)` なら `OPEN→READY`（detail `stale_day`）、そうでなく `updated_at <= now − idleClose(1800 秒)` なら（detail `idle`）。
+  パネルの「今すぐ要約」は今日の OPEN を detail `summarize_now` で閉じる（§5.4。F-66）
 - Block（`computeBlocks`）: 入力は FAILED / SKIPPED を除く Part（**transcript が読めない Part も含む**）を `(started_at, ended_at ?? "")` で並べたもの。
   最初の Part で `start = started_at, end = ended_at ?? started_at, unknownEnd = (ended_at == nil)`。以降、`gap = started_at − end` が `unknownEnd || gap > blockGap(3600)` なら区切って新しい Block、
   そうでなければ `unknownEnd = (ended_at == nil); end = max(end, ended_at ?? started_at)`。**ちょうど閾値は区切らない**
@@ -2629,6 +2639,8 @@ FAILED→NORMALIZING | FAILED→TRANSCRIBING | FAILED→RAW_WRITING
 RAW_SAVED で結果を待っていた Part の DELETED も RAW_SAVED→SOURCE_DELETING→COMPLETED の 2 遷移で進める。
 元ファイルが無いと観測できた RAW_SAVED の Part は、既存の RAW_SAVED→COMPLETED を detail `already_absent` で使う（§8.9.5。F-64。辺は増やさない））
 
+（Session の OPEN→READY の detail は `stale_day` / `idle` / `summarize_now`（パネルの今すぐ要約。§5.4。F-66。辺は増やさない））
+
 Session:
 ```text
 OPEN→OPEN(Part 追加) | OPEN→READY
@@ -3114,3 +3126,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-63 | 事 | 付録 B.3 | （2026-09-22 に利用者が決定）E2E-11 の後半「手動で消した分の完了」を実機の試験から外し、T-41 の単体テスト（`BacklogPlannerTests` の resolveAbsent 系）で代えた。対象の `SOURCE_DELETE_PENDING` は reaper の拒否・期限切れ（`no_result`）・`still_in_inventory` でしか生じず、要求を書いてから reaper が動くまでが同じ tick の中にあるので、手の操作で確実に作れない。運用中に `SOURCE_DELETE_PENDING` が出たら docs/E2E.md §3.11 に記録する。E2E-11 は前半（過去分を削除対象にする）が PASS なら PASS とし、削除のゲート（§12.4 の 2）もそれで満たす |
 | F-64 | 誤 | §8.9.2・§8.9.5・§8.9.9・付録 A.2 | （2026-09-22 に利用者が承認）削除が有効（`.configured`・`.writable`）なのに RAW_SAVED の Part の元ファイルがデバイスから消えていると、事前確認（`preIdentityCheck`）が永久に偽で要求が書かれず、削除段が `requested == 0` のまま `delete_attempts += 1` を繰り返して Session が COMPLETED にならなかった（「手動で消した分を完了にする」は SOURCE_DELETE_PENDING だけが対象で救えず、抜け道は削除の無効化だけ。CR-15・DEL-15/16 に反する）→ `requestDeletions` が、新鮮で**その Part の取り込み（updated_at）より後の** snapshot でデバイスが接続中で列挙でき relpath が一覧に無い RAW_SAVED の Part を、要求を書かずに RAW_SAVED→COMPLETED（detail `already_absent`、`source_delete_skipped recording_key=… reason=already_absent`）にする。`source_deleted_at` は入れない。未接続・列挙できない・snapshot が古い・取り込み前の snapshot のときは従来どおり待つ（一覧は深さの上限の外と読めないディレクトリを含まないので、そこでは消し損ねうるが録音は失われない）。遷移とログの語は既存のもの（A.2・A.4 の語は増やさない）。根拠 B（SKIPPED）は Session の完了を待たせず、不在の Part は要求の対象から外れるので同じ詰まりは無い |
 | F-65 | 事 | §2.2・§8.9.8・§8.12・§12.3・§14 | （2026-09-23 に利用者が決定）パネルをカード型に作り直し、**主画面をスクロールなしで収める**。長い中身（元音声の削除・詳細と診断・要対応の多数・一般）は popover の中の別の画面に切り替え（「‹ 戻る」。窓は増やさない。D-7）、高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の 640pt をやめた。主画面に ScrollView を置かないので 1pt に潰れない。PR #100）。削除の有効化と根拠 B の「`ENABLE` を入力させる」を「赤いボタンを 3 秒長押しさせる」に変えた（クリック 1 回・チェックボックスでは通らない。途中で離すと取り消し。押している間はリングが満ちる）。UI は長押しの完了で `confirmation` に定数 `"ENABLE"` を渡し、`DeletionEnabler.enable(confirmation:)` の完全一致の判定は残す（安全の二重化）。`EnableError.notConfirmed` の文言は「赤いボタンを 3 秒長押ししてください」。無効化は確認なしの 1 クリックのまま。docs/E2E.md の E2E-10・E2E-17・§3.7（根拠 B）の手順を長押しに直した |
+| F-66 | 欠 | §5.4・§5.6・付録 A.2 | （2026-09-23 に利用者が決定）自動の要約は 0:00（`stale_day`）と `idle` のまま、パネルから「今すぐここまでを要約する」を手動で行えるようにした。`WorkerJob.summarizeNow(reply:)` を `closeIdleSessions` の段の終わりで行い、LLM のガードを積まずに判定して当たれば何も閉じずに失敗、通れば今日の OPEN を `OPEN→READY`（detail `summarize_now`）にして閉じた数を返す。要約は同じ tick の `processReadySessions` が進め、その後に届いた同じ日の録音は既存の再オープン（§5.6）で要約し直す。辺・ログのイベント・設定キーは増やさない。パネルのボタンと `AppServices` の口はパネルの作り直しの後に足す |

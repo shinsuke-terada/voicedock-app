@@ -14,6 +14,9 @@ public enum WorkerJob: Sendable {
     case backlog(BacklogAction)
     /// 手動で消した分を完了にする（PLAN §8.9.9。T-41）
     case resolveAbsent(BacklogAction)
+    /// 今すぐ要約（PLAN §5.4・F-66）。返事は閉じた Session の数（対象が無ければ 0）か、行わなかった理由。
+    /// closeIdleSessions の段で行い、要約は同じ tick の processReadySessions が進める（返事はその前に返る）
+    case summarizeNow(reply: @Sendable (Result<Int, SummarizeNowFailure>) -> Void)
 }
 
 /// 状態機械を 1 本の直列ループで回す（PLAN §5.4）。
