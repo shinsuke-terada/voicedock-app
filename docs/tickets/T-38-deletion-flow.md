@@ -2,6 +2,8 @@
 
 > （F-67・issue #97、2026-09-23）走査の `lstat` が `ENOENT` 以外で失敗したら一覧は不完全（`complete = false`）になり、そのデバイスは snapshot の `devices` に載らない。以後、深さの上限の内側では一覧は完全な列挙で、F-64 の `sourceIsObservedAbsent` の「一覧は完全な列挙を保証しない」という記述は上限の外（と `maxScanDepth` を下げた場合）に限られる（PLAN §8.1・§8.9.5）。
 
+> （F-69・issue #98、2026-09-23）一覧に在るのに `canDeleteSource` が偽のまま変わらない RAW_SAVED の Part は、期限（backoff を使い切った）を過ぎ、観測できた失敗が同じ接続で 2 回続いたら、消さずに RAW_SAVED→COMPLETED（detail `not_deletable`、原因の語を `error_message` に）にする（§4.5 の手順 5a・`UndeletableStreaks`）。要対応の `undeletableSources` と状態の詳細の一覧は T-32 の型に足した（PLAN §8.9.2・§8.9.5・§8.11・§8.12）。テストは §6.13。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-38 |
@@ -55,6 +57,8 @@ Worker の tick の空の段（T-18）と、Raw の直後・SAVED の直後の�
 | `Tests/NoDeleteTests/DeletionFlowNDTests.swift` | 正の対照・ND-41（起動）・42・46・47・層 A の全故障 |
 | `Tests/VDPipelineTests/DeleteQueueTests.swift` | |
 | `Tests/VDPipelineTests/DeletionRequesterTests.swift` | |
+| `Sources/VDPipeline/UndeletableStreaks.swift`（F-69 で追加） | `UndeletableStreaks`（internal。観測できた失敗の連続回数。Worker が tick をまたいで持ち、`TickContext.undeletableStreaks` → `DeletionDependencies.streaks` で渡す） |
+| `Tests/VDPipelineTests/UndeletableSettlementTests.swift`（F-69 で追加） | 期限での決着と、要対応・状態の詳細の数え方（§6.13） |
 | `Tests/VDPipelineTests/SessionDeletionStageTests.swift` | |
 | `Tests/VDPipelineTests/ResultCollectorTests.swift` | |
 | `Tests/VDPipelineTests/RunReaperTests.swift` | |
@@ -226,7 +230,13 @@ struct DeletionRequester {
    4a. （**F-64 で追加**）`part.status == .rawSaved && Self.sourceIsObservedAbsent(part, in: snapshot, zone: deps.zone)` なら、要求を書かずに
        `do { try deps.store.recordPartTransition(partkey: part.partkey, from: .rawSaved, to: .completed, detail: DeletionReason.alreadyAbsent) } catch is TransitionConflict { deps.logStatusChanged(recordingKey: part.partkey); continue }`、
        `deps.log.info(.sourceDeleteSkipped, [(.recordingKey, .string(part.partkey)), (.reason, .string(DeletionReason.alreadyAbsent))])`、飛ばす（`source_deleted_at` は入れない）
-   5. `DeletionPolicy.canDeleteSource(DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx)` が偽なら飛ばす
+   5. `DeletionPolicy.canDeleteSource(DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx)` が偽なら飛ばす。
+   5a. （**F-69 で追加**）5 が偽で `part.status == .rawSaved` なら、飛ばす前に `considerSettling(part, session:, parts:, snapshot:, ctx:)`:
+       `failureIsObserved` が偽なら `deps.streaks.reset(partkey)`、真なら `n = deps.streaks.record(partkey, connectEpoch: snapshot.connectEpoch)`。
+       `n >= observedFailuresToSettle`（2）かつ `deadlineHasPassed` なら `settleAsNotDeletable(part, cause: undeletableCause(…))` して `reset`:
+       `recordPartTransition(partkey:, from: .rawSaved, to: .completed, errorMessage: cause, detail: DeletionReason.notDeletable)`（TransitionConflict → `deps.logStatusChanged(recordingKey:)`）、
+       `deps.log.info(.sourceDeleteSkipped, [(.recordingKey, …), (.reason, .string(DeletionReason.notDeletable)), (.detail, .string(cause))])`（`source_deleted_at` は入れない。消していない）。
+       5 が真なら `deps.streaks.reset(partkey)` してから 6 へ
    6. `guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: session.sessionKey) else { continue }`（①②）
    7. ③ `do { try deps.store.recordPartTransition(partkey: part.partkey, from: part.status, to: .sourceDeleting) } catch is TransitionConflict { deps.logStatusChanged(recordingKey: part.partkey); continue }`（RAW_SAVED か SOURCE_DELETE_PENDING から）
    8. `deps.log.info(.deleteRequested, [(.requestID, .string(id)), (.recordingKey, .string(part.partkey)), (.sessionKey, .string(session.sessionKey))])`
@@ -239,6 +249,17 @@ struct DeletionRequester {
   その relpath が `observation.relpaths` に（`DeletionPolicy.sameKey` で）**無い**ときだけ真。新鮮さは手順 1 が確かめる。`readOnly` は見ない（消さないので）。
   一覧は深さの上限の外と読めないディレクトリを含まない（完全な列挙の保証ではない）。照合はスカラー列の一致で NFC / NFD を正規化しない。どちらも「無い」に見えうるが、完了は消さない側（PLAN §8.9.5）。
   これが無いと、削除が有効なのに元ファイルが消えた RAW_SAVED の Part は事前確認が永久に偽で、削除段が `delete_attempts += 1` を繰り返し Session が完了しなかった（PLAN §8.9.5・F-64）
+- 決着の関数（internal。**F-69 で追加**。PLAN §8.9.5）:
+  - `static let observedFailuresToSettle = 2`
+  - `static func deadlineHasPassed(_ part: RecordingRow, session: SessionRow, backoff: [Int], now: Instant, zone: ZonedTime) -> Bool`:
+    backoff が空でなく、`session.deleteAttempts >= backoff.count`、`zone.parseISO(part.updatedAt)` が読めて `now − updated >= backoff の合計 × 1000` ミリ秒
+  - `static func failureIsObserved(_ part: RecordingRow, parts: [RecordingRow], snapshot: DeviceSnapshot, ctx: DeletionContext) -> Bool`:
+    (a) `parts` がすべて `PartStates.terminal`、(b) `snapshot.unavailable[part.deviceID] == nil`・`snapshot.devices[part.deviceID]` が在り `DeviceWritability.observe` が `.writable`、
+    (c) `VaultCheck.evaluate(path:marker:).isAvailable`、(d) `part.sourcePath` が nil か空なら真、そうでなければ relpath が一覧に（`sameKey` で）**在る**ときだけ真
+    （無いものは 4a の F-64 が先に拾う。期限の後の新鮮な snapshot は必ず取り込みより後なので、d は防御で、壊しても落ちるテストは無い）
+  - `static func undeletableCause(_ part:, session:, parts:, ctx:) -> String`: `source_info`（source_path・size・mtime のどれかが無い）→ `pre_identity`（`preIdentityCheck` が偽）→ `transcript` → `raw_note`、どれでもなければ `pre_identity`
+  - `func considerSettling(…)`・`func settleAsNotDeletable(_ part: RecordingRow, cause: String)`（衝突のテストから直接呼ぶ）
+  - 新しい設定キーは作らない（既定の backoff で SAVED から約 81 分。PLAN §8.9.5）
 - **Session の状態で門前払いしない**（OPEN・READY でも評価する。AY-1）
 - 結果の回収はここでしない（voicedock は先頭で回収していた。本アプリは tick の段で全件を回収する。§8.9.6）
 
@@ -758,6 +779,32 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `secondPartReopensAndRewrites` | 1 tick 目の後の Session は COMPLETED。2 tick 目の後は Part A・B とも COMPLETED、Session COMPLETED、足された events の to が `MERGING`〜`SAVED`・`CLEANUP`・`COMPLETED`（COMPLETED の Session も再オープンできる。`SessionStates.reopenable`） |
 | `missingVaultPausesThenResumes` | 2 回目の tick の後は Part COMPLETED、Session COMPLETED |
 
+### 6.13 `Tests/VDPipelineTests/UndeletableSettlementTests.swift`（`@Suite("UndeletableSettlement")`。F-69 で追加）
+
+舞台は `DeletionScene`。原因は `appendToRawNote`（Raw ノートの手の編集 → `raw_note`）・`updateRecording(pk, [.sourceSize(8192)])`（→ `pre_identity`）・transcript の削除（→ `transcript`）・`setSourcePath(nil)`（→ `source_info`）。
+期限は `updateSession(key, [.deleteAttempts(n)])` と時計（Part の updated_at は `DeletionScene.now`）で作る。連続回数は 1 本のテストの中で 1 つの `UndeletableStreaks` を `deletionDependencies(…, streaks:)` に渡して共有する。
+一時的な失敗はテストの中の `RejectingVolumeOpener`（`.rejected(not_a_mount_point)`）で作る。
+
+| 関数名 | 表示名 | 入力 | 期待 |
+|---|---|---|---|
+| `beforeTheDeadlineWaits` | F-69 期限の前は待つ（パラメータ化: backoff を使い切っていない・RAW_SAVED から合計に 1 秒足りない） | (attempts 2, 100000 秒)・(4, 4859 秒)、2 回評価 | Session SAVED・attempts + 2、Part RAW_SAVED、`reason=not_deletable` のログが無い |
+| `atTheDeadlineSettlesWithoutDeleting` | F-69 期限を過ぎ、観測できた失敗が 2 回続いたら消さずに RAW_SAVED→COMPLETED（detail not_deletable・原因を記録）で Session も完了する（パラメータ化: 原因 4 つ） | (4, 4860 秒)、1 回目・2 回目 | 1 回目は待つ。2 回目で Part COMPLETED・`sourceDeletedAt == nil`・`errorMessage` が原因の語、最後の遷移の detail `not_deletable`、ログ `… reason=not_deletable detail=<語>`、要求なし、元ファイルが残る、Session COMPLETED |
+| `evaluationsFollowTheBackoffUntilSettled` | F-69 backoff どおりに評価を重ねると、直後の 1 回と backoff の 3 回が偽で、backoff の 4 回目（SAVED から 4860 秒）の評価で決着する | SAVED の直後の 1 回と `dueSessionKeys` に従う 4 回 | 3 回目までは RAW_SAVED、4 回目で COMPLETED |
+| `firstEvaluationAfterLongAbsenceDoesNotSettle` | F-69 長く抜いた後の最初の評価では、一時的な失敗で決着しない（パラメータ化: ボリュームを開けない・後続の Part が処理中で Raw ノートが未更新） | attempts 30・7 日後・connectEpoch 2。(a) `RejectingVolumeOpener` で 1 回、次に通常の opener で 1 回 (b) TRANSCRIBED の Part を足して 3 回 | (a) 1 回目は待ち、2 回目は SOURCE_DELETING・要求 1 件 (b) 決着しない |
+| `streakRestartsOnReconnect` | F-69 観測できた失敗が同じ接続で 2 回続いて初めて決着する。挿し直す（connectEpoch が変わる）と数え直す | epoch 1 → 2 → 2 | 2 回目の後は待った姿、3 回目で決着 |
+| `unobservedDoesNotSettle` | F-69 期限を過ぎても観測できなければ決着しない（パラメータ化: 未接続・列挙できない・unavailable が優先・snapshot が古い（呼び手の新鮮さで）・Vault が使えない） | (4, 4860 秒) と各 snapshot / `.obsidian` の削除、2 回評価 | 待った姿 |
+| `absentSourceIsLeftToF64` | F-69 一覧に無いのは F-64 の担当（detail already_absent。not_deletable にしない） | 別の録音だけの一覧 | detail `already_absent`、数えない |
+| `readOnlyDeviceIsNotSettledAsUndeletable` | F-69 接続中で読み取り専用なら従来どおり device_readonly の完了（not_deletable にしない・要対応に数えない） | `readOnly: true` | COMPLETED・detail nil、数えない |
+| `deletablePartIsRequestedEvenPastTheDeadline` | F-69 消せるなら期限を過ぎていても要求を書く（決着は canDeleteSource が偽のときだけ） | 原因なし・(4, 4860 秒) | SOURCE_DELETING、要求 1 件 |
+| `mixedSessionRequestsOneAndSettlesTheOther` | F-69 同じ Session に消せる Part と決着する Part が混ざれば、前者は要求を書き、後者だけ消さずに完了する | 2 本目の Part（size を壊す）、(4, 4860 秒)、2 回評価 | 1 本目 SOURCE_DELETING・要求 1 件、2 本目 COMPLETED・detail `not_deletable`、Session SOURCE_DELETING |
+| `settleConflictLogsStatusChanged` | F-69 決着の遷移が衝突したら status_changed を出して飛ばす（not_deletable のログを出さない） | 読んだ行の後に COMPLETED へ進め、`settleAsNotDeletable` を直接呼ぶ | `reason=status_changed`、`not_deletable` のログ・`config_warning` が無い |
+| `onlyStillListedPartsAreAttention` | F-69 要対応に数えるのは、最新の snapshot で接続中かつ一覧にまだ在るものだけ（抜いている・一覧に無い・snapshot 無しは数えない） | 決着後 | `completedParts(lastDetail:)` が 1 件、`undeletableStillListed` が在る → 1 件・未接続 / 一覧に無い / nil → 0 件、`items == [.undeletableSources(1)]`・操作 `[.openDetails]` |
+| `settledWithoutSourcePathIsNotAttention` | F-69 source_path が無いまま決着した Part は要対応に数えない（一覧と照らせない） | `source_path` が無いまま決着 | DB に 1 件、要対応 0 件 |
+| `deletedOrRetargetedPartIsNotCounted` | F-69 過去分の削除で消えた（source_deleted_at が在る）・再び対象になった Part は数えない | `sourceDeletedAt` を入れる・COMPLETED→SOURCE_DELETING | 0 件 |
+| `settledPartIsRetargetedByBacklog` | F-69 決着した Part は「過去分を削除対象にする」で再び評価され、原因が直れば対象になる | 決着後に `planBacklog`、size を戻して再び | 対象外 `not_deletable` → 対象 |
+| `statusReportListsSettledParts` | F-69 状態の詳細に決着した Part を全部、原因とデバイスでの在否を添えて出す（パラメータ化: 在る・一覧に無い・観測できない） | Raw ノートの編集で決着、各 snapshot で `StatusReporter.build` | 「消せなかった録音（1 件。消さずに完了にしたもの）」、次の行が `  <partkey>`、その次が `    Raw ノートの照合が合わない、デバイスに在る / デバイスの一覧に無い / デバイスを観測できない` |
+| `noSettledPartsIsEmpty` | TEST-28 決着した Part が 0 件なら空・要対応に出さない・状態の詳細に行を出さない | 既定の舞台 | `[]`・items `[]`・「消せなかった録音」の行が無い |
+
 ## 7. 破壊による証明
 
 | # | 壊し方（1 か所だけ） | 落ちるべきテスト |
@@ -806,6 +853,15 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 42 | （F-64）`sourceIsObservedAbsent` の「取り込みより後」の条件を消す | `snapshotBeforeIngestionDoesNotComplete`(−60000・0・999)、`unobservedAbsenceWaits`(取り込み前) |
 | 43 | （F-64）「取り込みより後」の `+ 1000` を消す（秒の切り捨てを考えない） | `snapshotBeforeIngestionDoesNotComplete`(999) |
 | 44 | （F-64）手順 4a を手順 3（`delete_request_id` の飛ばし）より前に移す | `absentAwaitingResultIsNotCompleted` |
+| 45 | （F-69）`deadlineHasPassed` の期限を消す（即決着） | `beforeTheDeadlineWaits`(両方)、`evaluationsFollowTheBackoffUntilSettled` |
+| 46 | （F-69）`failureIsObserved` の観測 (b) を消す（未接続でも決着） | `unobservedDoesNotSettle`(未接続・列挙できない・unavailable が優先) |
+| 47 | （F-69）手順 5a で `source_deleted_at` を入れる | `atTheDeadlineSettlesWithoutDeleting`、`mixedSessionRequestsOneAndSettlesTheOther`、`onlyStillListedPartsAreAttention`、`settledWithoutSourcePathIsNotAttention`、`statusReportListsSettledParts`、`settledPartIsRetargetedByBacklog`（source_deleted_at が在ると数えない・過去分の対象外） |
+| 48 | （F-69）`AttentionEvaluator.items` が `undeletableSources` を出さない | `onlyStillListedPartsAreAttention`、`orderFollowsTheSpecTable` |
+| 49 | （F-69）`failureIsObserved` の (a)（Part がすべて終端）を消す | `firstEvaluationAfterLongAbsenceDoesNotSettle`(Raw ノートが未更新) |
+| 50 | （F-69）`observedFailuresToSettle` を 1 にする（連続を求めない） | `firstEvaluationAfterLongAbsenceDoesNotSettle`(開けない)、`streakRestartsOnReconnect`、`atTheDeadlineSettlesWithoutDeleting` |
+| 51 | （F-69）`failureIsObserved` の (c)（Vault）を消す | `unobservedDoesNotSettle`(Vault が使えない) |
+| 52 | （F-69）`undeletableStillListed` が `.unobserved` も数える（抜いている間・source_path が無いものも要対応に出す） | `onlyStillListedPartsAreAttention`、`settledWithoutSourcePathIsNotAttention` |
+| — | （F-69）`failureIsObserved` の (d)（一覧に在る）を消す | 落ちるテストは無い（確かめた）。期限の後の新鮮な snapshot は必ず取り込みより後なので、一覧に無い RAW_SAVED は手順 4a（F-64）が先に `already_absent` で完了させ、5a に届かない。d は防御として残す |
 
 ## 8. 受け入れ条件
 
@@ -819,6 +875,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 ## 9. SPEC の変更
 
 なし（A.4 は反映済み）。F-64 で A.2 の注記に「元ファイルが無いと観測できた RAW_SAVED は既存の RAW_SAVED→COMPLETED を detail `already_absent` で使う」を足した（辺も語も増やさない。`tools/spec/make-spec.py` で SPEC を作り直した）。
+F-69 で A.2 の注記に detail `not_deletable` を、A.4 の `source_delete_skipped` の理由語に `not_deletable` と原因の `detail=source_info|pre_identity|transcript|raw_note` を足した（辺は増やさない。SPEC を作り直した）。
 
 ## 10. マージ後にやること
 

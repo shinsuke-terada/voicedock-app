@@ -1,5 +1,9 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-69・issue #98、2026-09-23。マージ後の追記）要対応の末尾に `undeletableSources(Int)`（「消せなかった録音 <n> 本」、操作 `[.openDetails]` =「詳細・診断を開く」）、`AttentionInput.undeletableSources`、
+> `SourcePresence`・`AttentionEvaluator.sourcePresence(_:snapshot:)`・`undeletableStillListed(_:snapshot:)`、`ReadOnlyStore.completedParts(lastDetail:)`、`StatusReport.UndeletablePart`・`undeletable` / `undeletableTotal` と状態の詳細の「消せなかった録音」の行を足した（PLAN §8.11・§8.12。決着そのものは T-38 §4.5 の手順 5a）。
+> 下の表はその分を直した。テストは T-38 §6.13 の `UndeletableSettlementTests`。
+
 | 項目 | 内容 |
 |---|---|
 | ID | T-32 |
@@ -521,6 +525,7 @@ public enum AttentionAction: Equatable, Sendable {
     case openModels            // モデルの節を開く
     case openDeletionFlow      // 有効化フローを開く
     case runDiagnostics        // 「詳細」を開いて診断を実行する（PLAN §8.11 の toolMissing の操作）
+    case openDetails           // 「詳細・診断」を開く（F-69 の undeletableSources の操作）
 }
 
 /// PLAN §8.11 の表の 1 行。宣言順 = 表示順。
@@ -539,6 +544,7 @@ public enum AttentionItem: Equatable, Sendable {
     case diskSpaceLow
     case lockMismatch
     case reaperUpdateRequired
+    case undeletableSources(Int)            // F-69。消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（1 以上）
 
     public enum ToolKind: String, Equatable, Sendable { case whisperCLI, llamaServer }
     /// 表示の順（宣言順に振った 0 始まりの番号）
@@ -555,6 +561,7 @@ public struct AttentionInput: Equatable, Sendable {
     public var vault: VaultStatus = .notConfigured
     public var reaper: ReaperStatus = .notInstalled
     public var snapshotMaxAgeSeconds = 900
+    public var undeletableSources = 0       // F-69。undeletableStillListed の件数（AppServices が DB と最新の snapshot から数える）
     public var now: Instant
     public init(now: Instant)
 }
@@ -564,6 +571,10 @@ public enum AttentionEvaluator {
     public static func items(_ input: AttentionInput) -> [AttentionItem]
     /// 沈黙の検出（#117。コピー中に誤報しない）。テストから直接呼ぶ。
     public static func isIngestSilent(_ input: AttentionInput) -> Bool
+    /// F-69。元ファイルがいまデバイスに在るか。snapshot が無い・unavailable・devices に無い・source_path が無いか空 → .unobserved、一覧に在る → .listed、無い → .notListed
+    public static func sourcePresence(_ part: RecordingRow, snapshot: DeviceSnapshot?) -> SourcePresence
+    /// F-69。消せないまま完了にした録音のうち sourcePresence が .listed のものだけ（抜いている間・一覧に無い・source_path が無いものは要対応に出さない）
+    public static func undeletableStillListed(_ parts: [RecordingRow], snapshot: DeviceSnapshot?) -> [RecordingRow]
 }
 ```
 
@@ -581,6 +592,7 @@ public enum AttentionEvaluator {
 | `deviceNeedsReplug` / `deviceNameInvalid` | `[]`（手順を表示するだけ） |
 | `ingestSilent` / `diskSpaceLow` / `lockMismatch` | `[]` |
 | `reaperUpdateRequired` | `[.openDeletionFlow]` |
+| `undeletableSources` | `[.openDetails]`（F-69） |
 
 **`items(_:)`**（この順に判定し、当たったものを並べる）:
 
@@ -603,6 +615,7 @@ public enum AttentionEvaluator {
 | 15 | `diskSpaceLow` | `input.paused.contains(.diskSpaceLow)` |
 | 16 | `lockMismatch` | `input.violations` に `rule == "CV-30"` か `"CV-33"` が在る |
 | 17 | `reaperUpdateRequired` | `if case .versionMismatch = input.reaper` |
+| 18 | `undeletableSources(n)` | `input.undeletableSources > 0`（F-69） |
 
 - **ガードの判定を書き直さない**（2〜10・15 は `PauseReason`（Worker の `PauseBook`）をそのまま読む。§9.1 原則 2 / CR-06）。
   `PauseReason.license` は要対応にしない（v1 は常に許可。PLAN §8.14）
@@ -708,6 +721,7 @@ public enum StatusReporter {
    - `if let f = try? ro.failedParts(limit: 20) { failedParts = f.rows.map { FailedPart(partkey: $0.partkey, startedAt: $0.startedAt, errorCode: $0.errorCodeRaw, retryCount: $0.retryCount) }、failedTotal = f.total }`（**`errorCode?.rawValue` ではなく `errorCodeRaw`**。未知のコードを `unknown` に潰さない。T-11 §4.5）
    - `awaitingDeleteResult = (try? ro.awaitingDeleteResultCount()) ?? 0`
    - `let leftoverPaths = (try? ro.inboxPaths(statuses: PartStates.inboxLeftover)) ?? []`
+   - （F-69）`undeletable = ((try? ro.completedParts(lastDetail: DeletionReason.notDeletable)) ?? []).map { UndeletablePart(partkey: $0.partkey, cause: $0.errorMessage, presence: AttentionEvaluator.sourcePresence($0, snapshot: snapshot)) }`（決着した Part を全部）。報告には先頭 20 件と総数
 3. `inbox = InboxScan.counts(layout: layout, leftoverRelativePaths: leftoverPaths)`
 4. `deleteRequested = queue/delete 直下の *.json の数`（`contentsOfDirectory`。読めなければ 0）
 5. `stagingBytes = InboxScan.directoryBytes(layout.staging)`、`stagingMaxBytes = config?.audio.stagingMaxBytes ?? 0`
@@ -730,6 +744,9 @@ public enum StatusReporter {
 | — | `失敗した Part（<failedTotal> 件）`（`failedTotal == 0` ならこの行と以降を出さない） |
 | … | `  <partkey>` と `    <detail>` の 2 行を `failedParts` の順に |
 | — | `  … ほか <failedTotal - failedParts.count> 件`（超過があるときだけ） |
+| — | （F-69）`消せなかった録音（<undeletableTotal> 件。消さずに完了にしたもの）`（0 件なら以降を出さない。失敗した Part の有無によらない） |
+| … | `  <partkey>` と `    <原因>、<在否>` の 2 行を partkey 順に最大 20 件（原因は `StatusReporter.causeTexts`、無ければ `原因不明`。在否は `presenceTexts`: `デバイスに在る` / `デバイスの一覧に無い` / `デバイスを観測できない`。文言は PLAN §8.12） |
+| — | `  … ほか <undeletableTotal - undeletable.count> 件`（超過があるときだけ） |
 
 - `デバイス:` の観測: `deviceSnapshotPresent == false` → `まだ走査していません`。`devices.isEmpty` → `StatusTexts.writabilityWord(.absent)`（`デバイス未接続`）。
   それ以外 → 各台の `"<id> " + StatusTexts.writabilityWord(w) + " 空き " + StatusTexts.gib(free)`（`freeBytes` が nil なら `空き 不明`）を `"、"` でつないだもの
@@ -828,9 +845,10 @@ s.attention = AttentionEvaluator.items(attention)
 | `diskSpaceLow` | `空き容量が足りません` | `不要なファイルを消すか、staging の上限を上げてください` |
 | `lockMismatch` | `削除の設定が食い違っています` | `アプリと reaper.conf の設定が合いません。「元音声の削除」を開いて無効化し直してください` |
 | `reaperUpdateRequired` | `削除モジュールの更新が必要です` | `「元音声の削除」を開いて有効化をやり直してください` |
+| `undeletableSources(n)` | `消せなかった録音 <n> 本` | `削除の条件を満たさないまま時間がたったので、消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。直したら「過去分を削除対象にする」で再評価できます。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください`（F-69） |
 
 ボタンの文言（`AttentionTexts.button(_:)`）: `.revealConfig` → `設定ファイルを Finder で表示`、`.reloadConfig` → `設定を読み直す`、
-`.chooseVault` → `Vault を選び直す`、`.openSystemSettings` → `システム設定を開く`、`.openModels` → `モデルの節を開く`、`.openDeletionFlow` → `有効化フローを開く`、`.runDiagnostics` → `診断を実行`（`Strings.buttonRunDiagnostics` をそのまま使う）。
+`.chooseVault` → `Vault を選び直す`、`.openSystemSettings` → `システム設定を開く`、`.openModels` → `モデルの節を開く`、`.openDeletionFlow` → `有効化フローを開く`、`.runDiagnostics` → `診断を実行`（`Strings.buttonRunDiagnostics` をそのまま使う）、`.openDetails` → `詳細・診断を開く`（F-69。`AppModel.perform` は `show(.details)` だけ）。
 
 `AttentionSection`: `snapshot.attention` が空なら何も出さない。そうでなければ `SectionBox(title: Strings.sectionAttention)` に 1 項目 1 ブロック（`title` を太字、`detail`、`actions` のボタン）。
 F-65: 主画面では状態の直下のカードで、先頭の `AttentionSection.mainLimit`（2）件と `Strings.attentionMore(n)` のボタン（`show(.attention)`）。要対応の画面（`limit: nil`）では全件。件数の切り方は `static func split(_:limit:)`（T-30 §5.6）。
@@ -1120,8 +1138,8 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `noLockMismatchForOtherRules` | `rule: "CV-01"` | 含まない |
 | `reaperUpdateRequired` | `reaper = .versionMismatch(found: "0.9.0")` | 含む、`actions == [.openDeletionFlow]` |
 | `reaperValidIsQuiet` | `.valid(version: "1.0.0")` | 含まない |
-| `orderFollowsTheSpecTable` / 「並びは §8.11 の表の順」 | 全部の条件を同時に立てる | `map(\.order)` が昇順で、`configInvalid` が先頭・`reaperUpdateRequired` が末尾 |
-| `failedPartsAreNotAttention` / 「FAILED は要対応にしない」 | FAILED の Part が在る DB（`AttentionInput` に FAILED の情報を渡す口が無いことを型で確かめる） | `AttentionItem` に FAILED を表す case が無い（コンパイル時に保証。テストは `allCases` 相当の列挙で件数 14 を固定。F-61 で `coexistenceBlocked` を外した） |
+| `orderFollowsTheSpecTable` / 「並びは §8.11 の表の順」 | 全部の条件を同時に立てる（F-69 で `undeletableSources = 2` も） | 18 件、`map(\.order)` が昇順で、`configInvalid` が先頭・`undeletableSources(2)` が末尾 |
+| `failedPartsAreNotAttention` / 「FAILED は要対応にしない」 | FAILED の Part が在る DB（`AttentionInput` に FAILED の情報を渡す口が無いことを型で確かめる） | `AttentionItem` に FAILED を表す case が無い（コンパイル時に保証。テストは `allCases` 相当の列挙で件数 15 を固定。F-61 で `coexistenceBlocked` を外し、F-69 で `undeletableSources` を足した） |
 
 ### 5.7 `StatusReporterTests.swift`（`@Suite("StatusReporter")`）
 

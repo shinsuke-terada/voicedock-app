@@ -231,11 +231,12 @@ struct AttentionEvaluatorTests {
             notListableErrno: [:])
         i.violations = [Self.violation("CV-30")]
         i.reaper = .versionMismatch(found: nil)
+        i.undeletableSources = 2
         let items = AttentionEvaluator.items(i)
-        #expect(items.count == 17)
+        #expect(items.count == 18)
         #expect(items.map(\.order) == items.map(\.order).sorted())
         #expect(items.first == .configInvalid)
-        #expect(items.last == .reaperUpdateRequired)
+        #expect(items.last == .undeletableSources(2))
     }
 
     @Test("FAILED は要対応にしない")
@@ -245,18 +246,18 @@ struct AttentionEvaluatorTests {
             .configInvalid, .vaultNotConfigured, .vaultUnavailable(.missingRoot), .modelMissing(.whisper),
             .llmNotSelected, .llmInsufficientMemory, .toolMissing(.whisperCLI), .deviceNotListable("A"),
             .deviceNeedsReplug("A"), .deviceNameInvalid("A"), .ingestSilent, .diskSpaceLow, .lockMismatch,
-            .reaperUpdateRequired,
+            .reaperUpdateRequired, .undeletableSources(1),
         ]
         for item in all {
             // 網羅の switch（ケースが増えたらここがコンパイルで落ちる）
             switch item {
             case .configInvalid, .vaultNotConfigured, .vaultUnavailable, .modelMissing, .llmNotSelected,
                 .llmInsufficientMemory, .toolMissing, .deviceNotListable, .deviceNeedsReplug, .deviceNameInvalid,
-                .ingestSilent, .diskSpaceLow, .lockMismatch, .reaperUpdateRequired:
+                .ingestSilent, .diskSpaceLow, .lockMismatch, .reaperUpdateRequired, .undeletableSources:
                 break
             }
         }
-        #expect(all.count == 14)
-        #expect(all.map(\.order) == Array(0..<14))
+        #expect(all.count == 15)
+        #expect(all.map(\.order) == Array(0..<15))
     }
 }

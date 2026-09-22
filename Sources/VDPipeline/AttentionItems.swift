@@ -3,6 +3,17 @@ import Darwin
 import VDCore
 import VDDevice
 import VDNotes
+import VDStore
+
+/// 元ファイルがいまデバイスに在るか（F-69。AttentionEvaluator.sourcePresence）。
+public enum SourcePresence: Equatable, Sendable {
+    /// 接続中で一覧に在る
+    case listed
+    /// 接続中で列挙できた一覧に無い
+    case notListed
+    /// 観測できない（snapshot が無い・抜いている・列挙できない・source_path が無い）
+    case unobserved
+}
 
 /// 要対応の項目に付ける操作ボタン（PLAN §8.11 の「操作ボタン」の列）。
 public enum AttentionAction: Equatable, Sendable {
@@ -20,6 +31,8 @@ public enum AttentionAction: Equatable, Sendable {
     case openDeletionFlow
     /// 「詳細」を開いて診断を実行する（whisper-cli / llama-server が無いとき。PLAN §8.11）
     case runDiagnostics
+    /// 「詳細・診断」を開く（消せなかった録音の一覧は状態の詳細に出る。F-69）
+    case openDetails
 }
 
 /// PLAN §8.11 の表の 1 行。宣言順 = 表示順。
@@ -39,6 +52,8 @@ public enum AttentionItem: Equatable, Sendable {
     case diskSpaceLow
     case lockMismatch
     case reaperUpdateRequired
+    /// 消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（F-69。1 以上）
+    case undeletableSources(Int)
 
     public enum ToolKind: String, Equatable, Sendable { case whisperCLI, llamaServer }
 
@@ -59,6 +74,7 @@ public enum AttentionItem: Equatable, Sendable {
         case .diskSpaceLow: 11
         case .lockMismatch: 12
         case .reaperUpdateRequired: 13
+        case .undeletableSources: 14
         }
     }
 
@@ -75,6 +91,7 @@ public enum AttentionItem: Equatable, Sendable {
         case .deviceNeedsReplug, .deviceNameInvalid: []
         case .ingestSilent, .diskSpaceLow, .lockMismatch: []
         case .reaperUpdateRequired: [.openDeletionFlow]
+        case .undeletableSources: [.openDetails]
         }
     }
 }
@@ -89,6 +106,8 @@ public struct AttentionInput: Equatable, Sendable {
     public var vault: VaultStatus = .notConfigured
     public var reaper: ReaperStatus = .notInstalled
     public var snapshotMaxAgeSeconds = 900
+    /// 消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（AttentionEvaluator.undeletableStillListed の件数。F-69）
+    public var undeletableSources = 0
     public var now: Instant
 
     public init(now: Instant) {
@@ -122,7 +141,26 @@ public enum AttentionEvaluator {
         if paused.contains(.diskSpaceLow) { items.append(.diskSpaceLow) }
         if input.violations.contains(where: { lockRules.contains($0.rule) }) { items.append(.lockMismatch) }
         if case .versionMismatch = input.reaper { items.append(.reaperUpdateRequired) }
+        if input.undeletableSources > 0 { items.append(.undeletableSources(input.undeletableSources)) }
         return items
+    }
+
+    /// 元ファイルがいまデバイスに在るか（F-69。要対応と状態の詳細が共有する）。
+    /// snapshot が無い・デバイスが unavailable か devices に無い（抜いている・列挙できない）・source_path が無いか空 → .unobserved、
+    /// 一覧に在る（sameKey）→ .listed、無い → .notListed
+    public static func sourcePresence(_ part: RecordingRow, snapshot: DeviceSnapshot?) -> SourcePresence {
+        guard let snapshot, snapshot.unavailable[part.deviceID] == nil,
+            let observation = snapshot.devices[part.deviceID],
+            let relpath = part.sourcePath, !relpath.isEmpty
+        else { return .unobserved }
+        return observation.relpaths.contains(where: { DeletionPolicy.sameKey($0, relpath) }) ? .listed : .notListed
+    }
+
+    /// 消せないまま完了にした録音（ReadOnlyStore.completedParts(lastDetail: not_deletable)）のうち、
+    /// 最新の snapshot でデバイスが接続中で一覧にまだ在るもの（sourcePresence が .listed）だけ（F-69）。要対応の件数はこの数。
+    /// 抜いている間・一覧に無い（手で消した）・source_path が無いものは要対応に出さない（状態の詳細には出る）
+    public static func undeletableStillListed(_ parts: [RecordingRow], snapshot: DeviceSnapshot?) -> [RecordingRow] {
+        parts.filter { sourcePresence($0, snapshot: snapshot) == .listed }
     }
 
     /// 沈黙の検出（#117。コピー中に誤報しない）。テストから直接呼ぶ。

@@ -29,6 +29,7 @@ enum AttentionTexts {
         case .diskSpaceLow: "空き容量が足りません"
         case .lockMismatch: "削除の設定が食い違っています"
         case .reaperUpdateRequired: "削除モジュールの更新が必要です"
+        case .undeletableSources(let n): "消せなかった録音 " + String(n) + " 本"
         }
     }
 
@@ -55,6 +56,9 @@ enum AttentionTexts {
         case .diskSpaceLow: "不要なファイルを消すか、staging の上限を上げてください"
         case .lockMismatch: "アプリと reaper.conf の設定が合いません。「元音声の削除」を開いて無効化し直してください"
         case .reaperUpdateRequired: "「元音声の削除」を開いて有効化をやり直してください"
+        case .undeletableSources:
+            "削除の条件を満たさないまま時間がたったので、消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。"
+                + "直したら「過去分を削除対象にする」で再評価できます。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください"
         }
     }
 
@@ -67,6 +71,7 @@ enum AttentionTexts {
         case .openModels: "モデルの節を開く"
         case .openDeletionFlow: "有効化フローを開く"
         case .runDiagnostics: Strings.buttonRunDiagnostics
+        case .openDetails: "詳細・診断を開く"
         }
     }
 }

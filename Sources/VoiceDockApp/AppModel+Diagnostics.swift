@@ -60,6 +60,9 @@ extension AppModel {
                 await show(.details)
                 await runDiagnostics()
             }
+        case .openDetails:
+            // 状態の詳細は、この画面に入ったときに読む（F-65）
+            Task { await show(.details) }
         }
     }
 

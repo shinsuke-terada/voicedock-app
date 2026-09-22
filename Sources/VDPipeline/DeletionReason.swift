@@ -29,6 +29,11 @@ public enum DeletionReason {
     public static let notDeletable = "not_deletable"
     public static let deviceAbsent = "device_absent"
     public static let stillPresent = "still_present"
+    // 期限で消さずに完了した原因（F-69。source_delete_skipped … reason=not_deletable detail=<語>、Part の error_message）
+    public static let causeSourceInfo = "source_info"
+    public static let causePreIdentity = "pre_identity"
+    public static let causeTranscript = "transcript"
+    public static let causeRawNote = "raw_note"
     // events.detail（§8.9.9 の手動で消した分）
     public static let resolveAbsentDetail = "resolve_absent"
 }
