@@ -425,8 +425,9 @@ struct RequestProcessor {
 
 ### 4.11 `ReaperMain.swift`（「// 起動時の検査 → flock → 走査 → 1 件ずつ（PLAN §8.9.4）。」）
 
+（`import Darwin` は使わないので書かない。レビューで外した）
+
 ```swift
-import Darwin
 import Foundation
 import VDContract
 
@@ -594,13 +595,17 @@ struct ReaperBench {
     func sourceExists(_ relpath: String = ReaperBench.relpath) -> Bool
     /// queue/result の外にファイルが作られていないこと（ND-38）
     func filesUnderQueue() -> [String]
+
+    /// 実機に触れ得る舞台を拒む（hdiutil を使わずに確かめられるよう static）: deviceID が `"DJIMIC3"`、
+    /// または volumesRoot の realpath（無ければ標準化したパス）か標準化したパスが `/Volumes` かその下（末尾の `/` は落として比べる）→ `BenchError`
+    static func refuseUnsafe(volumesRoot: URL, deviceID: String) throws
 }
 ```
 
 `init` の手順:
 1. `tmp` を使う（nil なら `try TempDirectory()`）。`layout = HomeLayout(root: tmp.url/"home")`、`createDirectories()`、`bin` を作る
 2. **ビルドした reaper を `layout.reaperExecutable` に複製し `chmod 0o755`**（RV-00 は `<HOME>/bin/voicedock-reaper` からの起動だけを許すため。`Data(contentsOf:)` → `write(to:)` → `chmod`）
-3. `volumesRoot = diskImage?.volumesRoot ?? tmp.url/"Volumes"`、`deviceRoot = volumesRoot/ReaperBench.deviceID`。ディスクイメージの `deviceID` が `ReaperBench.deviceID` でなければ `BenchError`。ディスクイメージでなければ `deviceRoot` を作る
+3. ディスクイメージの `deviceID` が `ReaperBench.deviceID` でなければ `BenchError`。`root = diskImage?.volumesRoot ?? tmp.url/"Volumes"` を **`Self.refuseUnsafe(volumesRoot: root, deviceID: diskImage?.deviceID ?? ReaperBench.deviceID)` に通してから** `volumesRoot = root`、`deviceRoot = volumesRoot/ReaperBench.deviceID`。ディスクイメージでなければ `deviceRoot` を作る（構造で守る。レビューで足した）
 4. `placeSource()`
 5. `writeReaperConf(deleteSourceAudio: deleteSourceAudio, volumesRoot: p(volumesRoot))`
 
@@ -629,6 +634,15 @@ struct ReaperBench {
 | `rv00HomeInsideABundleIsRefused` | `RV-00 <HOME> が .app/Contents/ の下なら 3` | 舞台の `<HOME>` を `<tmp>/VoiceDock.app/Contents/home` へ移し、その `bin/voicedock-reaper` を `--home <移した先>` で起動（置き場所の一致は通る） | exit 3、stdout・stderr 空、ログが無い、要求が残る、結果 0 件（§6 の 2 のために足した。`nd40BundledReaperDoesNothing` は一致の検査でも弾かれるので、`bundleMarker` の検査を消しても緑のままだった） |
 | `rv00MissingHomeIsRefused` | `RV-00 --home が無いディレクトリなら 3` | `--home <tmp>/nope` | exit 3 |
 | `badArgumentsExitTwo` | 引数が不正なら 2（キューに触らない） | `[]`・`["--help"]`・`["-h"]`・`["--home"]`・`["--home", "<HOME>", "--x"]`・`["--version", "x"]`（パラメタ化） | exit 2、stderr == `ReaperArguments.usage`、`logs/reaper.log` が無い、要求が残る |
+
+同じファイルの `@Suite("ReaperBench は実機に触れ得る舞台を拒む") struct ReaperBenchSafetyTests`（hdiutil を使わない。レビューで足した）:
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `volumesRootUnderVolumesIsRefused` | volumesRoot が /Volumes かその下なら舞台を作らない | `refuseUnsafe(volumesRoot:)` に `/Volumes`・`/Volumes/`・`/Volumes/VDT0037`（パラメタ化。何も書かない） | `BenchError` を投げる |
+| `symlinkToVolumesIsRefused` | /Volumes を指す symlink も realpath で拒む | 一時ディレクトリに `Volumes -> /Volumes` の symlink を作り、それを渡す | `BenchError` を投げる |
+| `realDeviceNameIsRefused` | deviceID が DJIMIC3 なら舞台を作らない | 一時ディレクトリの volumesRoot と `deviceID: "DJIMIC3"` | `BenchError` を投げる |
+| `temporaryRootIsAccepted` | 一時ディレクトリの下で VDT0037 なら通る（対照） | 一時ディレクトリの volumesRoot と `VDT0037`、続けて `ReaperBench(in: tmp)` | 投げない。舞台の volumesRoot が一時ディレクトリの下 |
 
 ### 5.2 `ReaperConfGateTests.swift`（`@Suite("reaper.conf とロック 1（層 R1）")`）
 
@@ -701,7 +715,7 @@ struct ReaperBench {
 | `theLockIsReleasedAfterTheRun` | 実行が終わればロックは外れる（対照） | 1 回走らせた後にテスト側で `FileLock.tryAcquire` | 取れる（nil でない） |
 | `theLogRotatesAtFiveMiB` | ログは 5 MiB を超える書き込みの前に `.1` へ回る | `logs/reaper.log` に `ReaperLog.maxBytes` バイトの詰め物を置いてから 1 回走らせる | `reaper.log.1` が詰め物と同じ、`reaper.log` が今回の行だけ |
 | `theLogDoesNotRotateAtExactlyFiveMiB` | 書いた後がちょうど 5 MiB になる行では回さない（境界） | `logs/reaper.log` に `5 MiB − 47` バイトの詰め物（最初の行 `<ts 25 桁> INFO  reaper_started\n` が 47 バイト）を置いてから 1 回走らせる | `reaper.log.1` が 5 MiB ちょうどで詰め物 ＋ `reaper_started` の行、`reaper.log` が `reaper_completed` の 1 行だけ（§6 の 18 のために足した。詰め物が 5 MiB ちょうどだと `>` と `>=` のどちらでも回り、`theLogRotatesAtFiveMiB` は緑のままだった） |
-| `sigtermStopsBetweenRequests` | SIGTERM は処理中の 1 件を終えてから止まる | `processed.log` に 50,000 行の詰め物（1 件あたりの照合を重くする）＋ 通らない要求（`partkey_mismatch`）を 50 件。`start()` → `results()` が空でなくなる（= ハンドラを入れた後に走査が始まった）まで 1 ms ごとに待ち（最大 10 秒）→ `sendTermination()` → `wait()`（60 ms 固定では、複製したばかりの実行ファイルの起動が間に合わず、ハンドラを入れる前の SIGTERM で終了コード 143 になった。実装時に確かめた） | exit 0、**どの要求も中途半端でない**（結果が在るなら要求が消えている、結果が無いなら要求が残っている）、要求が 1 件以上残る、`reaper_completed requests=<結果の数>` |
+| `sigtermStopsBetweenRequests` | SIGTERM は処理中の 1 件を終えてから止まる | 通らない要求（`partkey_mismatch`）を 500 件（1 件ごとに processed.log の fsync・結果の AtomicFile の fsync 2 回・要求の unlink があり、1 件目の結果が見えてから SIGTERM が届くまでに全部は片付かない。processed.log の詰め物は読み込みを遅くするだけで 1 件あたりの照合は重くならないので使わない。10 回続けて緑を確かめた）。`start()` → `results()` が空でなくなる（= ハンドラを入れた後に走査が始まった）まで 1 ms ごとに待ち（最大 10 秒）→ `sendTermination()` → `wait()`（60 ms 固定では、複製したばかりの実行ファイルの起動が間に合わず、ハンドラを入れる前の SIGTERM で終了コード 143 になった。実装時に確かめた） | exit 0、**どの要求も中途半端でない**（結果が在るなら要求が消えている、結果が無いなら要求が残っている）、要求が 1 件以上残る、`reaper_completed requests=<結果の数>` |
 
 - `ReaperLog.format` / `ReaperLog.value` の単体（同じファイル内の `@Suite("ReaperLog の行") struct ReaperLogLineTests`。`infoIsPaddedToFive`「INFO は 5 桁左寄せ（INFO と 2 つの空白の後に event）」・`fieldsAreAppendedInOrder`「フィールドは順に k=v で足される」・`valuesAreQuoted`「値は §8.15 のとおりに引用される」（パラメタ化））: 空白を含む値・`=` を含む値・空文字列・`"` を含む値・改行を含む値・非 ASCII が §8.15 のとおりに引用されること、`INFO` が 5 桁左寄せ（`"INFO  "` の後に event）であること
 
@@ -826,3 +840,4 @@ struct ReaperBench {
    加えて、`_NSGetExecutablePath` が `import Darwin` だけで見えない場合は **`MachO`** を足す必要がある（実装時に確かめ、必要なら PLAN §3.4・PT-07 の許可リストと同じ PR で直す）
 5. PLAN §8.9.4 に**書き込みに失敗したときの扱い**を足す（本チケット §4.10 で決めた）: 「processed.log への追記の失敗は無視して先へ進む」「結果を書けなかったら要求を残して次へ回す（拒否の場合は `source_delete_rejected` も出さない。成功の場合は `source_deleted` を出す）」「要求ファイルの unlink の失敗は無視する」
 6. PLAN §8.9.4 の `reaper_completed requests=<N>` を「要求が 0 件でも出す」と明記する（voicedock は 0 件のとき出さなかった）
+7. `ProcessedLog.append` と `ReaperLog` の追記用の `open` に **`O_NOFOLLOW` を足す**（利用者の判断待ち。未実装）。いまは `state/processed.log` や `logs/reaper.log` が symlink だと、それを辿って `<HOME>` の外のファイルへ追記できる（`ReaperLog` の回転の `rename` は symlink そのものを動かすので外には書かない）。足すなら、symlink のときは追記に失敗し、processed.log は「追記の失敗は無視」、ログは「書けなければ何もしない」の既存の規則に落ちる

@@ -265,8 +265,11 @@ struct ReaperDiskImageTests {
         #expect(try bench.result(Self.id).status == .deleted)
         var st = stat()
         let path = bench.deviceRoot.appendingPathComponent(ReaperBench.relpath).path(percentEncoded: false)
-        #expect(lstat(path, &st) != 0)
-        #expect(errno == ENOENT)
+        // errno は #expect の中の処理で上書きされ得るので、先に受けてから比べる
+        let rc = lstat(path, &st)
+        let e = errno
+        #expect(rc != 0)
+        #expect(e == ENOENT)
     }
 
     @Test("2 件の要求が両方とも消える（走査の続き）")

@@ -463,11 +463,10 @@ struct ReaperQueueTests {
     @Test("SIGTERM は処理中の 1 件を終えてから止まる")
     func sigtermStopsBetweenRequests() throws {
         let bench = try ReaperBench()
-        // 1 件あたりの照合を重くする詰め物
-        let filler = (0..<50_000).map { String(format: "20260101T000000Z-0000000000000000-%06x", $0) }
-        try Data((filler.joined(separator: "\n") + "\n").utf8).write(to: bench.layout.processedLog)
+        // 1 件ごとに processed.log の fsync・結果の AtomicFile（fsync ＋ ディレクトリの fsync）・要求の unlink がある。
+        // 500 件あれば、1 件目の結果が見えてから SIGTERM が届くまでに全部は片付かない
         var names: [String] = []
-        for index in 0..<50 {
+        for index in 0..<500 {
             let id = String(format: "20260912T090000Z-a5d046dce76cfedc-b%05d", index)
             names.append(try bench.writeRequest(requestID: id, partkey: "VDT0037/other.wav"))
         }

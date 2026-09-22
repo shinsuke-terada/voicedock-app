@@ -160,3 +160,45 @@ struct ReaperArgumentsTests {
         Self.expectNothingWritten(bench, request: name)
     }
 }
+
+/// 舞台そのものの安全の検査（hdiutil を使わない。/Volumes には何も書かない。symlink は一時ディレクトリの中にだけ作る）
+@Suite("ReaperBench は実機に触れ得る舞台を拒む")
+struct ReaperBenchSafetyTests {
+    @Test("volumesRoot が /Volumes かその下なら舞台を作らない", arguments: ["/Volumes", "/Volumes/", "/Volumes/VDT0037"])
+    func volumesRootUnderVolumesIsRefused(_ path: String) {
+        #expect(throws: BenchError.self) {
+            try ReaperBench.refuseUnsafe(
+                volumesRoot: URL(fileURLWithPath: path, isDirectory: true), deviceID: "VDT0037")
+        }
+    }
+
+    @Test("/Volumes を指す symlink も realpath で拒む")
+    func symlinkToVolumesIsRefused() throws {
+        let tmp = try TempDirectory()
+        // 末尾に / の付かない URL で作る（ディレクトリの URL の path は末尾に / が付き symlink を作れない）
+        let link = tmp.url.appendingPathComponent("Volumes", isDirectory: false)
+        try FileManager.default.createSymbolicLink(
+            atPath: link.path(percentEncoded: false), withDestinationPath: "/Volumes")
+        #expect(throws: BenchError.self) {
+            try ReaperBench.refuseUnsafe(volumesRoot: link, deviceID: "VDT0037")
+        }
+    }
+
+    @Test("deviceID が DJIMIC3 なら舞台を作らない")
+    func realDeviceNameIsRefused() throws {
+        let tmp = try TempDirectory()
+        let root = tmp.url.appendingPathComponent("Volumes", isDirectory: true)
+        #expect(throws: BenchError.self) {
+            try ReaperBench.refuseUnsafe(volumesRoot: root, deviceID: "DJIMIC3")
+        }
+    }
+
+    @Test("一時ディレクトリの下で VDT0037 なら通る（対照）")
+    func temporaryRootIsAccepted() throws {
+        let tmp = try TempDirectory()
+        let root = tmp.url.appendingPathComponent("Volumes", isDirectory: true)
+        try ReaperBench.refuseUnsafe(volumesRoot: root, deviceID: "VDT0037")
+        let bench = try ReaperBench(in: tmp)
+        #expect(bench.volumesRoot.path(percentEncoded: false).hasPrefix(tmp.url.path(percentEncoded: false)))
+    }
+}

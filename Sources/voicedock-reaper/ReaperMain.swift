@@ -1,5 +1,4 @@
 // 起動時の検査 → flock → 走査 → 1 件ずつ（PLAN §8.9.4）。
-import Darwin
 import Foundation
 import VDContract
 

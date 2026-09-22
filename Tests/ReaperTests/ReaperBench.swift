@@ -43,14 +43,37 @@ struct ReaperBench {
         if let diskImage, diskImage.deviceID != Self.deviceID {
             throw BenchError(description: "ディスクイメージの名前は ReaperBench.deviceID にする: " + diskImage.deviceID)
         }
+        let root = diskImage?.volumesRoot ?? tmp.url.appendingPathComponent("Volumes", isDirectory: true)
+        // 何かを置く前に、実機に触れ得る舞台を拒む（構造で守る。PLAN §10.2）
+        try Self.refuseUnsafe(volumesRoot: root, deviceID: diskImage?.deviceID ?? Self.deviceID)
         image = diskImage
-        volumesRoot = diskImage?.volumesRoot ?? tmp.url.appendingPathComponent("Volumes", isDirectory: true)
+        volumesRoot = root
         deviceRoot = volumesRoot.appendingPathComponent(Self.deviceID, isDirectory: true)
         if diskImage == nil {
             try FileManager.default.createDirectory(at: deviceRoot, withIntermediateDirectories: true)
         }
         try placeSource()
         try writeReaperConf(deleteSourceAudio: deleteSourceAudio)
+    }
+
+    /// 実機に触れ得る舞台を拒む: volumesRoot の realpath（無ければ標準化したパス）が `/Volumes` かその下、
+    /// または deviceID が実機と同じ `DJIMIC3`。hdiutil を使わずに確かめられるよう static に分ける
+    static func refuseUnsafe(volumesRoot: URL, deviceID: String) throws {
+        guard deviceID != "DJIMIC3" else {
+            throw BenchError(description: "ReaperBench: 実機と同じ名前 DJIMIC3 は使わない")
+        }
+        let raw = volumesRoot.standardizedFileURL.path(percentEncoded: false)
+        var resolved = raw
+        if let real = Darwin.realpath(raw, nil) {
+            resolved = String(decoding: Data(bytes: real, count: strlen(real)), as: UTF8.self)
+            free(real)
+        }
+        for path in [raw, resolved] {
+            let trimmed = path.count > 1 && path.hasSuffix("/") ? String(path.dropLast()) : path
+            if trimmed == "/Volumes" || trimmed.hasPrefix("/Volumes/") {
+                throw BenchError(description: "ReaperBench: volumesRoot が /Volumes の下にある: " + path)
+            }
+        }
     }
 
     // MARK: - 準備
