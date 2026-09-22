@@ -120,9 +120,12 @@ struct ReaperDiskImageTests {
             try FileManager.default.removeItem(at: folder)
         }
         try bench.placeSource("REAL/" + ReaperBench.fileName)
-        try FileManager.default.createSymbolicLink(
-            atPath: folder.path(percentEncoded: false), withDestinationPath: "REAL")
-        try bench.writeRequest()
+        // 末尾に "/" の付いたパスには symlink を作れない（ENOENT）ので、ディレクトリの URL から末尾の "/" を落とす
+        let linkPath = bench.deviceRoot.appendingPathComponent(ReaperBench.folder).path(percentEncoded: false)
+        try FileManager.default.createSymbolicLink(atPath: linkPath, withDestinationPath: "REAL")
+        // 要求の size / mtime は実ファイルから取る（FAT の上で symlink を経由した stat に頼らない）
+        let real = try bench.actualStat("REAL/" + ReaperBench.fileName)
+        try bench.writeRequest(size: real.size, mtime: real.mtime)
         try Self.expectRefused(bench, "path_contains_symlink")
         #expect(bench.sourceExists("REAL/" + ReaperBench.fileName))
     }
