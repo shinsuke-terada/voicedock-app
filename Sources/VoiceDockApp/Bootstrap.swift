@@ -21,7 +21,10 @@ final class AppContext {
     let config: ConfigStore
     let store: Store
     let runner: ProcessRunner
-    // locks は本チケットでは持たない（T-32 が `locks: any LockObserving` と `diagnostics: DiagnosticsDependencies` を足し、T-36 が LockEvaluator に替える）
+    /// ロックの観測（Phase 7 は DisabledLockObserver。T-36 が LockEvaluator に替える）
+    let locks: any LockObserving
+    /// 診断の依存（書ける Store を持たない。PT-17）
+    let diagnostics: DiagnosticsDependencies
     let llama: LlamaServerSupervisor
     let ingest: IngestService
     let worker: Worker
@@ -38,7 +41,8 @@ final class AppContext {
 
     init(
         layout: HomeLayout, paths: AppPaths, clock: any AppClock, log: AppLog, catalog: ModelCatalog,
-        config: ConfigStore, store: Store, runner: ProcessRunner, llama: LlamaServerSupervisor, ingest: IngestService,
+        config: ConfigStore, store: Store, runner: ProcessRunner, locks: any LockObserving,
+        diagnostics: DiagnosticsDependencies, llama: LlamaServerSupervisor, ingest: IngestService,
         worker: Worker, models: ModelManager, downloader: ModelDownloader, loginItem: any LoginItemControlling,
         uiState: UIStateStore, physicalMemoryBytes: UInt64
     ) {
@@ -50,6 +54,8 @@ final class AppContext {
         self.config = config
         self.store = store
         self.runner = runner
+        self.locks = locks
+        self.diagnostics = diagnostics
         self.llama = llama
         self.ingest = ingest
         self.worker = worker
@@ -110,7 +116,8 @@ enum Bootstrap {
         var log = AppLog(sink: sink, level: .info, unsafeContent: false, zone: bootZone, clock: clock, category: "app")
         // 5. 子プロセス
         let runner = ProcessRunner()
-        // 6. ロックの評価器はまだ作らない（Phase 8 の T-36 が LockEvaluator をここに入れる）
+        // 6. ロックの観測（何も読まない・何も起動しない。Phase 8 の T-36 が LockEvaluator に替える）
+        let locks: any LockObserving = DisabledLockObserver()
         // 7. 設定（無ければ既定を書く）。T-36 が observeReaperConf を locks.observeReaperConf() に替える
         let config = ConfigStore(
             layout: layout, catalog: catalog, log: log.withCategory("pipeline"), observeReaperConf: { .missing })
@@ -162,6 +169,12 @@ enum Bootstrap {
                 clock: clock, sleeper: TaskSleeper(), log: log.withCategory("pipeline"),
                 license: AlwaysAllowLicenseGate(), catalog: catalog,
                 physicalMemoryBytes: physicalMemoryBytes))
+        // 12 の後. 診断の依存（Worker とは別。書ける Store を渡さない。PT-17）
+        let diagnostics = DiagnosticsDependencies(
+            layout: layout, paths: paths, catalog: catalog, config: config, ingest: ingest, locks: locks,
+            runner: runner, verificationCache: verificationCache, signature: SecAppSignatureReader(),
+            bundleURL: Bundle.main.bundleURL, physicalMemoryBytes: physicalMemoryBytes, clock: clock,
+            log: log.withCategory("pipeline"))
         // 13. ロック 1 の修復をつなぐ（T-40 が `await config.setLock1Reconciler { await enabler.reconcileLock1() }` を書く）
         // 14. モデル
         let hashChunkBytes =
@@ -175,7 +188,8 @@ enum Bootstrap {
         // 15. Worker.start()（復旧）を終えてから Worker のループと IngestService.start()（走査）を始める（PLAN §8.15）
         let ctx = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,
-            runner: runner, llama: llama, ingest: ingest, worker: worker, models: models, downloader: downloader,
+            runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
+            models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
             physicalMemoryBytes: physicalMemoryBytes)
         ctx.workerTask = await startServices(

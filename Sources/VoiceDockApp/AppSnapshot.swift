@@ -6,14 +6,6 @@ import VDDevice
 import VDNotes
 import VDPipeline
 
-/// 未処理の件数と長さ（ReadOnlyStore.backlog() の写し）。
-struct BacklogCounts: Equatable, Sendable {
-    var count: Int = 0
-    var seconds: Double = 0
-    var unknownDuration: Int = 0
-    static let empty = BacklogCounts()
-}
-
 /// パネルが見る観測の写し。すべて Equatable（等しければ AppModel は書き換えない）。
 struct AppSnapshot: Equatable, Sendable {
     var now: Instant
@@ -27,6 +19,7 @@ struct AppSnapshot: Equatable, Sendable {
     /// devices が空でない snapshot を最後に見た時刻（AppModel が覚える。起動で忘れる）
     var lastConnectedAt: Instant? = nil
     var worker: WorkerStatus = WorkerStatus(activity: .idle, paused: [])
+    /// BacklogCounts は VDPipeline（StatusReport.swift。状態の詳細と同じ型。T-32）
     var backlog: BacklogCounts = .empty
     var vault: VaultStatus = .notConfigured
     var vaultPath: String? = nil
@@ -49,7 +42,11 @@ struct AppSnapshot: Equatable, Sendable {
     var uiState = UIState()
     /// 改名の案内を出すデバイス名（snapshot の devices と unavailable を合わせて集める）
     var renameCandidates: [String] = []
-    // T-32 が attention / statusReport / diagnostics、T-40 が lockDisplay を足す
+    // T-32
+    var attention: [AttentionItem] = []
+    /// 「詳細」を開いている間だけ作る（毎回 inbox を走査しない）
+    var statusReport: StatusReport? = nil
+    // T-40 が lockDisplay を足す
 
     init(now: Instant) {
         self.now = now

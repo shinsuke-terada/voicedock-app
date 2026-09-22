@@ -6,6 +6,13 @@ import VDDevice
 import VDNotes
 import VDStore
 
+/// パネルが Worker に頼む仕事（PLAN §8.11）。Worker の直列ループで 1 件ずつ実行する。
+public enum WorkerJob: Sendable {
+    /// DR-09。返事は Worker の文脈で呼ばれる（受け手が MainActor へ移す）
+    case llmProbe(reply: @Sendable (DiagnosticResult) -> Void)
+    // T-41 が case backlog(BacklogAction) / case resolveAbsent(BacklogAction) を足す
+}
+
 /// 状態機械を 1 本の直列ループで回す（PLAN §5.4）。
 public actor Worker {
     public static let pollSeconds = 30
@@ -25,7 +32,8 @@ public actor Worker {
     /// Vault 索引と、それを作った Vault のパス（tick をまたいで持つ。voicedock 変更 BK-3）
     var vaultIndex: VaultIndex? = nil
     var vaultIndexPath: String? = nil
-    // T-32 がジョブの列を足す
+    /// パネルが要求した仕事（入れた順。stagePendingJobs が毎 tick 空にして回す。PLAN §8.11）
+    var pendingJobs: [WorkerJob] = []
 
     public init(deps: WorkerDependencies) {
         self.init(deps: deps, assertion: ProcessInfoSleepAssertion(), onStage: nil)
@@ -200,6 +208,10 @@ public actor Worker {
     /// 停止要求。実行中の子プロセスは止めない（アプリの終了処理が ProcessRunner.terminateAll で止める。PLAN §8.15）。
     public func requestStop() {
         stop.set()
+        // 待っている仕事にも返事を返す（返さないとパネルが「実行中…」のまま固まる）
+        let jobs = pendingJobs
+        pendingJobs = []
+        for job in jobs { Self.replyStopped(job) }
         wakeContinuation?.yield(())
         if !stoppingLogged {
             deps.log.info(.serviceStopping, [(.version, .string(AppVersion.string))])
@@ -210,6 +222,16 @@ public actor Worker {
     /// 実行は次の tick の先頭の manualRequeue（tick の途中で行を動かさない）。
     public func requeue(_ reason: RequeueReason) async {
         pendingRequeues.append(reason)
+        wakeContinuation?.yield(())
+    }
+
+    /// パネルの仕事を入れて、待ちを起こす。停止要求の後なら入れずに `.skip` で返事をする（返事は必ず返す）。
+    public func enqueue(_ job: WorkerJob) async {
+        if stop.isSet {
+            Self.replyStopped(job)
+            return
+        }
+        pendingJobs.append(job)
         wakeContinuation?.yield(())
     }
 
