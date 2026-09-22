@@ -32,7 +32,24 @@ struct AppSnapshot: Equatable, Sendable {
     var vaultPath: String? = nil
     var deletionEnabled: Bool = false
     var version: String = AppVersion.string
-    // T-31 が models…、T-32 が attention / statusReport / diagnostics、T-40 が lockDisplay を足す
+    // T-31
+    /// 設定の vault.marker の写し（Vault を選ぶときの VaultCheck に渡す）
+    var vaultMarker = ".obsidian"
+    /// カタログに載る whisper / vad の選択中の項目（設定の ID から引いたもの。CV-44 / CV-45 が保証する）
+    var whisperEntry: ModelEntry? = nil
+    var vadEntry: ModelEntry? = nil
+    var whisperPresent = false
+    var vadPresent = false
+    var vadEnabled = true
+    var llmModelID: String? = nil
+    var llmPresent = false
+    var llmChoices: [LLMChoice] = []
+    var physicalMemoryBytes: UInt64 = 0
+    var loginItem: LoginItemStatus = .notFound
+    var uiState = UIState()
+    /// 改名の案内を出すデバイス名（snapshot の devices と unavailable を合わせて集める）
+    var renameCandidates: [String] = []
+    // T-32 が attention / statusReport / diagnostics、T-40 が lockDisplay を足す
 
     init(now: Instant) {
         self.now = now

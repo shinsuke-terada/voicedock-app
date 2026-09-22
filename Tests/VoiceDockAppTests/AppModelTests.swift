@@ -38,8 +38,9 @@ struct AppModelTests {
         quits: QuitCounter = QuitCounter()
     ) -> AppModel {
         AppModel(
-            services: fake, openFinder: finder, layout: layout, sleeper: sleeper, now: fixed,
-            quit: { quits.count += 1 })
+            services: fake, openFinder: finder, layout: layout, catalog: TestCatalogs.minimal,
+            chooser: FakeFolderChooser(nil), fileChooser: FakeFileChooser(nil), presentModal: { $0() },
+            sleeper: sleeper, now: fixed, quit: { quits.count += 1 })
     }
 
     /// 条件が立つまで主アクターを譲る（上限つき。立たなければ偽）
@@ -292,14 +293,16 @@ struct AppModelTests {
                 },
                 clock: clock, sleeper: RecordingSleeper(), log: log, license: AlwaysAllowLicenseGate(),
                 catalog: catalog, physicalMemoryBytes: 16 * 1024 * 1024 * 1024))
+        let downloader = ModelDownloader(
+            layout: layout, factory: EphemeralDownloadSessionFactory(), log: log, hashChunkBytes: 1_048_576)
         let models = ModelManager(
-            layout: layout, catalog: catalog,
-            downloader: ModelDownloader(
-                layout: layout, factory: EphemeralDownloadSessionFactory(), log: log, hashChunkBytes: 1_048_576),
-            cache: ModelVerificationCache(), log: log, hashChunkBytes: 1_048_576)
+            layout: layout, catalog: catalog, downloader: downloader, cache: ModelVerificationCache(), log: log,
+            hashChunkBytes: 1_048_576)
         let context = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,
-            runner: runner, llama: llama, ingest: ingest, worker: worker, models: models, loginItem: SystemLoginItem())
+            runner: runner, llama: llama, ingest: ingest, worker: worker, models: models, downloader: downloader,
+            loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
+            physicalMemoryBytes: 16 * 1024 * 1024 * 1024)
         let services = LiveServices(context: context)
 
         let s = await services.read(lastConnectedAt: nil)
@@ -310,8 +313,9 @@ struct AppModelTests {
         #expect(s.lastConnectedAt == nil)
         #expect(!FileManager.default.fileExists(atPath: layout.database.path(percentEncoded: false)))
         let model = AppModel(
-            services: services, openFinder: FakeFinder(), layout: layout, sleeper: RecordingSleeper(), now: Self.fixed,
-            quit: {})
+            services: services, openFinder: FakeFinder(), layout: layout, catalog: catalog,
+            chooser: FakeFolderChooser(nil), fileChooser: FakeFileChooser(nil), presentModal: { $0() },
+            sleeper: RecordingSleeper(), now: Self.fixed, quit: {})
         await model.refresh()
         #expect(model.backlogLine == "未処理なし")
     }

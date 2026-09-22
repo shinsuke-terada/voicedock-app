@@ -27,8 +27,8 @@ GUI で変えられる設定は 4 つだけ（PLAN §6.3）——Vault の場所
 |---|---|
 | `Sources/VoiceDockApp/UIState.swift` | `UIState`、`UIStateStore` |
 | `Sources/VoiceDockApp/Onboarding.swift` | `OnboardingStep`、`OnboardingItem`、`OnboardingEvaluator` |
-| `Sources/VoiceDockApp/ModelChoices.swift` | `LLMChoice`、`ModelChoices`、`ModelPresence` |
-| `Sources/VoiceDockApp/FolderChooser.swift` | `FolderChooser`（プロトコル）、`OpenPanelFolderChooser`、`FileChooser`・`OpenPanelFileChooser` |
+| `Sources/VoiceDockApp/ModelChoices.swift` | `LLMChoice`、`ModelChoices` |
+| `Sources/VoiceDockApp/FolderChooser.swift` | `FolderChooser`（プロトコル）、`OpenPanelFolderChooser`、`FileChooser`・`OpenPanelFileChooser`（拡張子の絞り込みは private の `ExtensionFilter`） |
 | `Sources/VoiceDockApp/DownloadState.swift` | `DownloadState`、`ModelSlot` |
 | `Sources/VoiceDockApp/AppModel+Vault.swift` | Vault の選択 |
 | `Sources/VoiceDockApp/AppModel+Models.swift` | モデルの入手・選択・取り込み・キャンセル |
@@ -37,12 +37,16 @@ GUI で変えられる設定は 4 つだけ（PLAN §6.3）——Vault の場所
 | 変更 `Sources/VoiceDockApp/Panel/VaultSection.swift` | §8.12 の 4（T-30 が作った空の節の本体を書く） |
 | 変更 `Sources/VoiceDockApp/Panel/ModelsSection.swift` | §8.12 の 5（T-30 が作った空の節の本体を書く） |
 | 変更 `Sources/VoiceDockApp/Panel/GeneralSection.swift` | §8.12 の 6（T-30 が作った空の節の本体を書く） |
-| 変更 `Sources/VoiceDockApp/LoginItem.swift` | `register` / `unregister` / `openSystemSettingsLoginItems` を足す |
+| 変更 `Sources/VoiceDockApp/LoginItem.swift` | `LoginItemResult`、`register` / `unregister` / `openSystemSettingsLoginItems` を足す |
 | 変更 `Sources/VoiceDockApp/AppSnapshot.swift` | §4.1 のフィールドを足す |
 | 変更 `Sources/VoiceDockApp/AppServices.swift` | §4.2 の口を足す |
-| 変更 `Sources/VoiceDockApp/AppModel.swift` | `downloads`・`vaultError`・`modelError` と導出を足す |
+| 変更 `Sources/VoiceDockApp/AppModel.swift` | `downloads`・`vaultError`・`modelError`・`modelNotice`・`loginItemError`・`uiStateSaveFailed` と、init の `catalog`・`chooser`・`fileChooser`・`presentModal` を足す |
 | 変更 `Sources/VoiceDockApp/Bootstrap.swift` | `AppContext` に `downloader`・`uiState`・`physicalMemoryBytes` を足す |
 | 変更 `Sources/VoiceDockApp/Strings.swift` | §4.10 の文言 |
+| 変更 `Sources/VoiceDockApp/AppDelegate.swift` | `AppModel` の init に `catalog`・`OpenPanelFolderChooser()`・`OpenPanelFileChooser()`・`presentModal`（`StatusItemController.runModal`）を渡す（§4.6） |
+| 変更 `Tests/VoiceDockAppTests/FakeServices.swift` | §4.2 の口の偽物（呼び出しの記録・結果の差し替え・ダウンロードの保留）と `FakeFolderChooser` / `FakeFileChooser` |
+| 変更 `Tests/VoiceDockAppTests/AppModelTests.swift` | `AppModel` / `AppContext` の init に足した引数を渡す（T-30 のテストの中身は変えない） |
+| `Tests/PolicyTests/PanelPolicyTests.swift` | §7 の `PanelPolicyTests` |
 | `Tests/VoiceDockAppTests/UIStateTests.swift` | |
 | `Tests/VoiceDockAppTests/OnboardingTests.swift` | |
 | `Tests/VoiceDockAppTests/ModelChoicesTests.swift` | |
@@ -95,8 +99,8 @@ T-30 §4.0 の全体の規則を適用する。**このチケットのコード�
     /// 利用者が選んだ .gguf を読み込む（PLAN §8.10「ファイルから読み込む」）。
     func importGGUF(from source: URL) async -> Result<(id: String, url: URL), ModelError>
     /// ログイン項目の操作（PLAN §8.12 の 6）。
-    func registerLoginItem() -> Result<Void, String>
-    func unregisterLoginItem() -> Result<Void, String>
+    func registerLoginItem() -> LoginItemResult
+    func unregisterLoginItem() -> LoginItemResult
     func openSystemSettingsLoginItems()
     /// 「今はしない」などの記録。
     func saveUIState(_ state: UIState) -> Bool
@@ -250,11 +254,15 @@ struct OpenPanelFileChooser: FileChooser { … }
    `panel.message = message`、`panel.prompt = prompt`
 3. `return panel.runModal() == .OK ? panel.url : nil`
 
-`OpenPanelFileChooser.chooseFile`: `canChooseFiles = true`、`canChooseDirectories = false`、`canCreateDirectories = false`、
-`panel.allowedContentTypes = allowedExtensions.compactMap { UTType(filenameExtension: $0) }`（`.gguf` は登録が無いので、空になったら制限しない）
+`OpenPanelFileChooser.chooseFile`: `canChooseFiles = true`、`canChooseDirectories = false`、`allowsMultipleSelection = false`、`canCreateDirectories = false`、`showsHiddenFiles = false`、`message` / `prompt`、
+拡張子の絞り込みは下の実装の注記（`UTType` は使わない）
 
 - **`runModal` を呼ぶ側**（`AppModel`）は `StatusItemController.runModal { … }`（T-30 §4.6）で包む。popover が閉じて、選び終わったら開き直る
-- `AppModel` には `chooser: any FolderChooser` / `fileChooser: any FileChooser` と、`presentModal: @MainActor (() -> Void) -> Void`（`StatusItemController.runModal` を差す）を注入する。テストは全部偽物
+- `AppModel` には `catalog: ModelCatalog`（§4.7 の `entryFor`）、`chooser: any FolderChooser` / `fileChooser: any FileChooser` と、`presentModal: @MainActor (@MainActor () -> URL?) -> URL?`（`StatusItemController.runModal` を差す）を注入する。テストは全部偽物
+  - init: `AppModel(services:openFinder:layout:catalog:chooser:fileChooser:presentModal:sleeper:now:quit:)`（新しい 4 つに既定値を置かない。テストが本物の `NSOpenPanel` を出さないため）
+  - `presentModal` の型を `URL?` を返す形にするのは、`@MainActor` の関数型が `Sendable` で、Void の本体に選んだ値を捕まえた `var` で持ち出せないため（Swift 6。実装時に確認）。呼び出しは `let picked = presentModal { … }` のまま
+  - `AppDelegate` は `presentModal: { [weak self] body in guard let controller = self?.statusItem else { return body() }; return controller.runModal(body) }` を渡す（`StatusItemController` は `AppModel` の後に作るので、呼ばれた時点のものを使う）
+- **実装の注記**: `UTType` は `UniformTypeIdentifiers` の型で、VoiceDockApp の import 許可リスト（PT-07）に無く、AppKit / SwiftUI からは見えない。`allowedContentTypes` の代わりに `NSOpenSavePanelDelegate` の `panel(_:shouldEnable:)` でディレクトリと指定の拡張子（大小を区別しない）だけを選べるようにする（private の `ExtensionFilter`。`panel.delegate` は weak なので `runModal` の間 `withExtendedLifetime` で生かす）。`allowedExtensions` が空なら絞らない
 
 ### 4.7 `DownloadState.swift` と `AppModel+Models.swift`
 
@@ -273,10 +281,13 @@ enum DownloadState: Equatable, Sendable {
 
 `AppModel` に足す状態と操作:
 ```swift
-    private(set) var downloads: [ModelSlot: DownloadState] = [:]
-    private(set) var vaultError: String?
-    private(set) var modelError: String?
-    private(set) var uiStateSaveFailed = false
+    // 別ファイルの拡張（AppModel+Vault / +Models / +LoginItem）が書くので private(set) にできない（Swift の private は同じファイルの中だけ）
+    var downloads: [ModelSlot: DownloadState] = [:]
+    var vaultError: String?
+    var modelError: String?
+    var modelNotice: String?
+    var loginItemError: String?
+    var uiStateSaveFailed = false
 
     // Vault
     func chooseVault() async
@@ -342,20 +353,26 @@ enum DownloadState: Equatable, Sendable {
 ### 4.9 `LoginItem.swift`（T-30 のファイルへの追加）と `AppModel+LoginItem.swift`
 
 ```swift
+/// `Result` の失敗側は `Error` を要り String は `Error` でないため包み型にする（ConfigUpdateResult と同じ形。ケース名は `Result` と同じ）
+enum LoginItemResult: Equatable, Sendable {
+    case success
+    case failure(String)
+}
+
 protocol LoginItemControlling: Sendable {
     func status() -> LoginItemStatus
     /// 成功なら .success、失敗なら表示する文言
-    func register() -> Result<Void, String>
-    func unregister() -> Result<Void, String>
+    func register() -> LoginItemResult
+    func unregister() -> LoginItemResult
     func openSystemSettings()
 }
 
 extension SystemLoginItem {
-    func register() -> Result<Void, String> {
-        do { try SMAppService.mainApp.register(); return .success(()) }
+    func register() -> LoginItemResult {
+        do { try SMAppService.mainApp.register(); return .success }
         catch { return .failure(ErrorText.describe(error)) }
     }
-    func unregister() -> Result<Void, String> { …同じ形で SMAppService.mainApp.unregister()… }
+    func unregister() -> LoginItemResult { …同じ形で SMAppService.mainApp.unregister()… }
     func openSystemSettings() { SMAppService.openSystemSettingsLoginItems() }
 }
 ```
@@ -410,7 +427,7 @@ extension SystemLoginItem {
 | `labelLoginItem` | `ログイン時に起動` |
 | `buttonOpenLoginItemSettings` | `システム設定を開く` |
 | `loginItemRequiresApproval` | `システム設定で許可が要ります` |
-| `loginItemNotFound` | `アプリの場所が不明です（`/Applications` に置いてから試してください）` |
+| `loginItemNotFound` | `アプリの場所が不明です（/Applications に置いてから試してください）` |
 | `uiStateSaveFailed` | `選択を記録できませんでした（<HOME>/ui-state.json に書けません）` |
 | `configRejected(_:)` | `設定に書けませんでした: ` ＋ 違反の `rendered` を `"、"` でつないだもの |
 | `modelError(_:)` | 下の表 |
@@ -500,7 +517,7 @@ extension SystemLoginItem {
 | `catalogOrderIsKept` / 「カタログの順のまま」 | 2 件 | `map(\.id)` がカタログの順 |
 | `insufficientMemoryIsNotSelectable` / 「メモリ不足は選べない」 | `minMemoryGB: 32`、`physicalMemoryBytes = 16 GiB` | `selectable == false`、`note == メモリが足りません（32 GB 以上が必要。この Mac は 16 GB）` |
 | `exactMemoryIsSelectable` / 「ちょうどなら選べる」 | `minMemoryGB: 16`、`16 GiB` ちょうど | `selectable == true`、`note == nil` |
-| `noMinMemoryIsSelectable` / 「minMemoryGB が無ければ選べる」 | `minMemoryGB: nil`、`0` バイト | `selectable == true` |
+| `noMinMemoryIsSelectable` / 「minMemoryGB が無ければ選べる」 | `minMemoryGB: nil`、`0` バイト（カタログの llm は `minMemoryGB` が必須なので、nil になる custom の行で見る） | `selectable == true` |
 | `insufficientStaysInTheList` / 「選べなくても一覧から消さない」 | 全件メモリ不足 | 件数が減らない |
 | `customIsAppendedLast` / 「custom は末尾に足す」 | `currentID = "custom:<64 hex>"` | 最後の要素が `isCustom`、`note == 動作保証外のモデルです` |
 | `customNameShowsShortSHA` / 「custom の名前は SHA 先頭 8」 | 同上 | `読み込んだモデル（<先頭 8>）` |
@@ -599,6 +616,8 @@ extension SystemLoginItem {
 1. `## S22. はじめに（オンボーディング）` — `| # | 項目 | 完了の条件 |` の 3 列で ①〜⑤ を写す。`OnboardingTests` が SPEC から読んで `OnboardingStep.allCases` と件数・順を突き合わせる
 2. `## S23. ui-state.json` — 鍵と型の表（`schema: 整数（1）`、`loginItemDecided: 真偽`）。`UIStateTests` が `savedFileHasOnlyTwoKeys` で突き合わせる
 
+**実装の注記（T-31 の実装時）**: この節は T-31 の PR では実装していない。`docs/SPEC.md` は `tools/spec/make-spec.py` が PLAN から作る（手で直さない）もので、見出しの登録・`SpecDocument` の読み手はどれも T-05 の持ち物で §3 に無い。T-30 の S20 / S21 と同じく issue #18（SPEC 同期の拡張）に回す。当面は `OnboardingTests.orderIsTheSpecOrder` が 5 項目の順と題を、`UIStateTests.savedFileHasOnlyTwoKeys` が鍵を固定値で照合する
+
 ## 9. マージ後にやること
 
 1. T-24（カタログの確定）のマージで `verified` が真になった LLM が `ModelsSection` に出ることを確かめる
@@ -608,7 +627,7 @@ extension SystemLoginItem {
 
 1. §12 に `Onboarding.swift`（`OnboardingStep` / `OnboardingItem` / `OnboardingEvaluator`）、`ModelChoices.swift`（`LLMChoice` / `ModelChoices`）、`FolderChooser.swift`（`FolderChooser` / `FileChooser` / `OpenPanelFolderChooser` / `OpenPanelFileChooser`）、`DownloadState.swift`（`DownloadState` / `ModelSlot`）、`AppModel+Vault.swift` / `AppModel+Models.swift` / `AppModel+LoginItem.swift` を足す
 2. §12 の `UIState.swift` を `UIState`（`schema` / `loginItemDecided`）と `UIStateStore`（`load` / `save`）にする
-3. §12 の `LoginItem.swift` の `LoginItemControlling` に `register() -> Result<Void, String>` / `unregister() -> Result<Void, String>` / `openSystemSettings()` を足す（T-31）
+3. §12 の `LoginItem.swift` の `LoginItemControlling` に `register() -> LoginItemResult` / `unregister() -> LoginItemResult` / `openSystemSettings()` と `enum LoginItemResult { case success, failure(String) }` を足す（T-31。`Result<Void, String>` は String が `Error` でないのでコンパイルできない）
 4. `ModelManager` の取り込みの口の名前は **T-23 が正**の `importCustomLLM(from:)`（`ModelImporter` を `layout` と `chunkBytes` 付きで呼ぶ包み）。`AppServices` 側の名前は `importGGUF(from:)` のままにする（UI の語） → 00-api-map §10 に反映済み（整合修正 M-5）
 5. §10 の `ModelDownloader.download` の `progress` が `@escaping` であることを明記する（`AppServices.download` が転送するため）
 6. （整合修正 M-5）`ModelDownloader.init(layout:factory:log:hashChunkBytes:)` と `ModelManager.init(layout:catalog:downloader:cache:log:hashChunkBytes:)`（T-23 §4 が正。`clock:` は無い）を前提にする → 00-api-map §10 に反映済み

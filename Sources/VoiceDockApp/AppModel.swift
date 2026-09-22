@@ -27,8 +27,27 @@ final class AppModel {
     private(set) var isPanelOpen = false
     /// 「設定を読み直す」の結果（nil = まだ押していない）
     private(set) var reloadResult: ReloadResult?
+    // T-31（別ファイルの拡張が書くので private(set) にできない。書くのは AppModel+Vault / +Models / +LoginItem だけ）
+    /// 進行中のダウンロード・取り込み（画面にだけ在る値）
+    var downloads: [ModelSlot: DownloadState] = [:]
+    /// Vault の選択の失敗（panelDidClose で消す）
+    var vaultError: String?
+    /// モデルの入手・選択・取り込みの失敗
+    var modelError: String?
+    /// 取り込んだモデルの注意（警告だけ。PLAN §8.10）
+    var modelNotice: String?
+    /// ログイン項目の操作の失敗（SMAppService の文言そのまま）
+    var loginItemError: String?
+    /// ui-state.json に書けなかった
+    var uiStateSaveFailed = false
 
-    @ObservationIgnored private let services: any AppServices
+    @ObservationIgnored let services: any AppServices
+    /// ModelSlot.llm(id) の項目を引く（T-31）
+    @ObservationIgnored let catalog: ModelCatalog
+    @ObservationIgnored let chooser: any FolderChooser
+    @ObservationIgnored let fileChooser: any FileChooser
+    /// StatusItemController.runModal を差す（popover を閉じてから modal を出し、終わったら開き直す。PLAN §8.12）
+    @ObservationIgnored let presentModal: @MainActor (@MainActor () -> URL?) -> URL?
     @ObservationIgnored private let openFinder: any FinderOpening
     @ObservationIgnored private let layout: HomeLayout
     @ObservationIgnored private let quitHandler: @MainActor () -> Void
@@ -40,11 +59,17 @@ final class AppModel {
     @ObservationIgnored private var iconContinuation: AsyncStream<Void>.Continuation?
 
     init(
-        services: any AppServices, openFinder: any FinderOpening, layout: HomeLayout,
+        services: any AppServices, openFinder: any FinderOpening, layout: HomeLayout, catalog: ModelCatalog,
+        chooser: any FolderChooser, fileChooser: any FileChooser,
+        presentModal: @escaping @MainActor (@MainActor () -> URL?) -> URL?,
         sleeper: any Sleeper = TaskSleeper(), now: Instant,
         quit: @escaping @MainActor () -> Void
     ) {
         self.services = services
+        self.catalog = catalog
+        self.chooser = chooser
+        self.fileChooser = fileChooser
+        self.presentModal = presentModal
         self.openFinder = openFinder
         self.layout = layout
         self.sleeper = sleeper
@@ -140,6 +165,7 @@ final class AppModel {
         isPanelOpen = false
         // 次に開いたときに古い結果を出さない
         reloadResult = nil
+        vaultError = nil
     }
 
     func requeueManual() async {

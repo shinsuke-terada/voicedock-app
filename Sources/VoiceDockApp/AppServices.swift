@@ -1,6 +1,8 @@
 // AppModel が外の世界に触れる唯一の口（テストは FakeServices で差し替える）。
 import Foundation
+import VDContract
 import VDCore
+import VDModels
 import VDNotes
 import VDPipeline
 import VDStore
@@ -17,6 +19,21 @@ protocol AppServices: Sendable {
     func scanNow() async
     /// IngestService からの更新の通知（走査の終わり）。
     func updates() async -> AsyncStream<Void>
+    /// 設定の 1 つのキーを変えて保存する（GUI で変えてよい 4 つだけ。PLAN §6.3）。
+    func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult
+    /// モデルを 1 件ダウンロードする（進捗は progress に。取り消しは cancelDownload）。
+    func download(
+        kind: ModelKind, entry: ModelEntry, progress: @escaping @Sendable (Int64, Int64) -> Void
+    ) async -> Result<URL, ModelError>
+    func cancelDownload(id: String) async
+    /// 利用者が選んだ .gguf を読み込む（PLAN §8.10「ファイルから読み込む」）。
+    func importGGUF(from source: URL) async -> Result<(id: String, url: URL), ModelError>
+    /// ログイン項目の操作（PLAN §8.12 の 6）。
+    func registerLoginItem() -> LoginItemResult
+    func unregisterLoginItem() -> LoginItemResult
+    func openSystemSettingsLoginItems()
+    /// 「今はしない」などの記録。
+    func saveUIState(_ state: UIState) -> Bool
     // T-32 が enqueue(_ job: WorkerJob) を足す
 }
 
@@ -37,10 +54,30 @@ struct LiveServices: AppServices {
             // stat と opendir だけで、何も作らない（NOTE-16）
             s.vault = VaultCheck.evaluate(path: c.vault.path, marker: c.vault.marker)
         }
+        // T-31: モデル・ログイン項目・パネルの記憶
+        s.physicalMemoryBytes = context.physicalMemoryBytes
+        s.loginItem = context.loginItem.status()
+        s.uiState = context.uiState.load()
+        if let c = config {
+            let catalog = context.catalog
+            let layout = context.layout
+            s.vaultMarker = c.vault.marker
+            s.whisperEntry = catalog.entry(kind: .whisper, id: c.transcription.whisperModelID)
+            s.whisperPresent = s.whisperEntry.map { ModelFiles.isPresent($0, kind: .whisper, layout: layout) } ?? false
+            s.vadEnabled = c.transcription.vad.enabled
+            s.vadEntry = catalog.entry(kind: .vad, id: c.transcription.vad.modelID)
+            s.vadPresent = s.vadEntry.map { ModelFiles.isPresent($0, kind: .vad, layout: layout) } ?? false
+            s.llmModelID = c.llm.modelID
+            s.llmPresent = ModelChoices.llmIsPresent(id: c.llm.modelID, catalog: catalog, layout: layout)
+            s.llmChoices = ModelChoices.llm(
+                catalog: catalog, physicalMemoryBytes: s.physicalMemoryBytes, currentID: c.llm.modelID,
+                layout: layout)
+        }
         s.ingestState = await context.ingest.state()
         s.ingestActivity = await context.ingest.activity()
         s.device = await context.ingest.latestSnapshot()
         s.lastConnectedAt = (s.device?.devices.isEmpty == false) ? s.device?.completedAt : lastConnectedAt
+        s.renameCandidates = OnboardingEvaluator.renameCandidates(s.device)
         s.worker = await context.worker.status()
         // 開けない・投げたら .empty のまま（DB が無ければ全 0。PLAN §8.12）
         if let ro = ReadOnlyStore.open(url: context.layout.database), let b = try? ro.backlog() {
@@ -56,4 +93,29 @@ struct LiveServices: AppServices {
     func scanNow() async { _ = await context.ingest.scanNow() }
 
     func updates() async -> AsyncStream<Void> { await context.ingest.updates() }
+
+    func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult {
+        await context.config.update(mutate)
+    }
+
+    /// UI は ModelManager だけを使う（00-api-map §10・T-23 §10）。ModelManager が状態を動かす。
+    func download(
+        kind: ModelKind, entry: ModelEntry, progress: @escaping @Sendable (Int64, Int64) -> Void
+    ) async -> Result<URL, ModelError> {
+        await context.models.download(entry.id, kind: kind, progress: progress)
+    }
+
+    func cancelDownload(id: String) async { await context.models.cancel(id: id) }
+
+    func importGGUF(from source: URL) async -> Result<(id: String, url: URL), ModelError> {
+        await context.models.importCustomLLM(from: source)
+    }
+
+    func registerLoginItem() -> LoginItemResult { context.loginItem.register() }
+
+    func unregisterLoginItem() -> LoginItemResult { context.loginItem.unregister() }
+
+    func openSystemSettingsLoginItems() { context.loginItem.openSystemSettings() }
+
+    func saveUIState(_ state: UIState) -> Bool { context.uiState.save(state) }
 }

@@ -36,8 +36,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // 以降の組み立ての途中で終了が来ても、applicationShouldTerminate が部品を止められるように先に持つ
                 self?.context = ctx
             }
+            // presentModal は呼ばれた時点の StatusItemController で包む（popover を閉じてから出し、終わったら開き直す）
             let model = AppModel(
                 services: LiveServices(context: ctx), openFinder: NSWorkspaceFinder(), layout: ctx.layout,
+                catalog: ctx.catalog, chooser: OpenPanelFolderChooser(), fileChooser: OpenPanelFileChooser(),
+                presentModal: { [weak self] body in
+                    guard let controller = self?.statusItem else { return body() }
+                    return controller.runModal(body)
+                },
                 now: ctx.clock.now(), quit: { [weak self] in self?.requestTerminate() })
             let controller = StatusItemController(model: model)
             model.start()
