@@ -132,6 +132,9 @@ struct RunReaperTests {
         #expect(Self.logged(f.scene, "reaper_run exit=" + String(code)))
         let reason = code == 4 ? "busy" : "exit_" + String(code)
         #expect(Self.logged(f.scene, "reaper_failed reason=" + reason))
+        if code == 4 {
+            #expect(!Self.logged(f.scene, "reaper_failed reason=exit_4"))
+        }
         #expect(await f.ingest.scanNowCalls == 1)
     }
 

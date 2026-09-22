@@ -60,8 +60,12 @@ struct DeletionStagesWiringTests {
         return Wired(world: w, runner: runner, pk: pk)
     }
 
+    /// queue/delete の . 始まりでない .json（実装の DeleteQueue.names を使わずに数える）
     static func requests(_ w: PipelineWorld) -> [String] {
-        DeleteQueue.names(in: w.layout.queueDelete)
+        let names =
+            (try? FileManager.default.contentsOfDirectory(atPath: w.layout.queueDelete.path(percentEncoded: false)))
+            ?? []
+        return names.filter { !$0.hasPrefix(".") && $0.hasSuffix(".json") }
     }
 
     /// DB の delete_request_id の DELETED 結果を queue/result に置く

@@ -109,6 +109,7 @@ struct ResultCollector {
 
     /// snapshot が新鮮な tick だけ呼ぶ（呼び手が確かめる）。戻り値は新しい reaperScanGeneration（起動しなければ引数のまま）
     func runReaperIfNeeded(reaperScanGeneration: UInt64) async -> UInt64 {
+        // 確かめる順は 要求 → writable → readiness（安いものから。無駄に --version の子プロセスを起動しない）
         guard DeleteQueue.hasPendingRequests(layout: deps.layout) else { return reaperScanGeneration }
         guard let snapshot = await deps.ingest.latestSnapshot(),
             snapshot.devices.keys.contains(where: {

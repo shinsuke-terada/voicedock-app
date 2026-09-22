@@ -269,6 +269,18 @@ struct SessionDeletionStageTests {
         )
     }
 
+    @Test("TEST-28 Part 0 件の Session は要求を書かずに完了する")
+    func emptySessionCompletesWithoutRequest() async throws {
+        let scene = try DeletionScene()
+        let empty = "DJIMIC3:20260913"
+        try scene.addSession(key: empty, dayDate: "2026-09-13")
+        try scene.moveSession(to: .saved, sessionKey: empty)
+        await Self.stage(scene).deleteSourcesIfSafe(sessionKey: empty)
+        #expect(scene.requests() == [])
+        #expect(try Self.session(scene, empty).status == .completed)
+        #expect(!Self.hasSkippedLog(scene))
+    }
+
     @Test("対象は deleteEvaluated だけ、updated_at, session_key の順")
     func dueSessionKeysFiltersAndOrders() throws {
         let scene = try DeletionScene()

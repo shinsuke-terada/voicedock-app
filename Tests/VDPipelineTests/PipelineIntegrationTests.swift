@@ -85,7 +85,7 @@ struct PipelineIntegrationTests {
             ])
         #expect(
             w.sink.lines.contains {
-                $0.hasSuffix("source_delete_skipped session_key=" + Self.key + " reason=delete_source_audio_disabled")
+                $0.hasSuffix(" source_delete_skipped session_key=" + Self.key + " reason=delete_source_audio_disabled")
             })
         #expect(events.count > 2 && events[1].detail == pk && events[2].detail == "stale_day")
         #expect(s.rawOutputPath == Self.rawRel)

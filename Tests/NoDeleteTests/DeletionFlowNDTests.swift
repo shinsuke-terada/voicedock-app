@@ -159,7 +159,7 @@ struct DeletionFlowNDTests {
         #expect(!LayerAFault.allCases.isEmpty)
     }
 
-    @Test("層 A の全故障で要求ファイルが書かれない（パラメータ化: LayerAFault.allCases）", arguments: LayerAFault.allCases)
+    @Test("層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）", arguments: LayerAFault.allCases)
     func everyLayerAFaultWritesNoRequest(_ fault: LayerAFault) async throws {
         let scene = try fault.scene()
         try fault.inject(scene)
