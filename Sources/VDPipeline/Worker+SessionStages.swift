@@ -24,7 +24,9 @@ extension Worker {
         }
         // 最終的な処理順は session_key（コードポイント）昇順
         keys.sort { $0.unicodeScalars.map(\.value).lexicographicallyPrecedes($1.unicodeScalars.map(\.value)) }
-        let steps = SessionSteps(ctx: ctx)
+        var c = ctx
+        c.vaultIndex = vaultIndex
+        let steps = SessionSteps(ctx: c)
         let retry = InProcessRetry(ctx: ctx)
         for key in keys {
             if ctx.stop.isSet { break }

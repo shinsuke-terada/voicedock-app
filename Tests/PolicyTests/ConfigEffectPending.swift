@@ -8,7 +8,6 @@ enum ConfigEffectPending {
         "cleanup.deleteSourceAudio": "T-38",
         "cleanup.deleteEvaluationBackoffSeconds": "T-38",
         "cleanup.deleteResultTimeoutSeconds": "T-38",
-        "obsidian.wiki.vaultIndexCacheSeconds": "T-29",
         "obsidian.raw.folderTemplate": "T-33",
         "cleanup.deleteSkippedSource": "T-39",
     ]

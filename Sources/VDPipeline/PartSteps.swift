@@ -22,12 +22,14 @@ struct PartSteps {
     var log: AppLog { ctx.deps.log }
     var cfg: AppConfig { ctx.config }
 
-    /// ensureNormalized → ensureTranscribed → ensureRawNote（Raw の直後の削除評価は T-29 が足す）。
+    /// ensureNormalized → ensureTranscribed → ensureRawNote → Raw の直後の削除評価（PLAN §5.5）。
+    /// 削除評価は RAW_SAVED 以降の Part でも呼ぶ（voicedock pipeline.py:281 と同じ）。
     func process(partkey: String) async -> PartStepResult {
         guard let r0 = (try? store.recording(partkey)) ?? nil else { return .stopped }
         guard await ensureNormalized(r0) else { return .stopped }
         guard let r1 = reload(partkey), await ensureTranscribed(r1) else { return .stopped }
         guard let r2 = reload(partkey), await ensureRawNote(r2) else { return .stopped }
+        if let key = reload(partkey)?.sessionKey { _ = await requestDeletionsAfterRawNote(sessionKey: key) }
         return .readyForSession
     }
 
