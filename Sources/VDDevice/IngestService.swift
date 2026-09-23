@@ -175,18 +175,31 @@ public actor IngestService {
         final: URL, duration: Double?, recopyRow: RecordingRow?
     ) throws -> Bool {
         guard let inboxRel = deps.layout.relativePath(of: final) else { throw CopyError.writeError(EINVAL) }
-        if recopyRow != nil {
+        if let row = recopyRow {
             // 状態は変えない（PLAN §5.4 の契機 4 が再評価する）
-            try deps.store.updateRecording(
-                partkey,
-                [
-                    .inboxPath(inboxRel), .sha256Helper(sha256), .sourceSize(stat.size), .sourceMtime(stat.mtime),
-                    .needsRecopy(false),
-                ])
+            var fields: [RecordingField] = [
+                .inboxPath(inboxRel), .sha256Helper(sha256), .sourceSize(stat.size), .sourceMtime(stat.mtime),
+                .needsRecopy(false),
+            ]
+            // 長さは取り直したファイルで測り直す（F-81）。機器がヘッダを直した原本を取り直しても、登録したときの短い長さの
+            // ままだと 16 kHz 変換の長さの照合（NORMALIZE_VERIFY_FAILED「長さが入力と…ずれています」）が通らず自動で直らない。
+            // ended_at は登録済みの started_at + 長さ（§7.2 の規則。読めなければ最初のコピーと同じくファイル名の時刻から）。
+            // 測れない（nil）・登録と同じなら従来の値を残し、Session の集計も書き直さない（updated_at を動かさない）
+            var remeasured = false
+            if let duration, duration != row.durationSeconds {
+                let start = deps.zone.parseISO(row.startedAt) ?? deps.zone.instant(of: parsed.local)
+                fields += [.durationSeconds(duration), .endedAt(endedAtISO(start: start, duration: duration))]
+                remeasured = true
+            }
+            try deps.store.updateRecording(partkey, fields)
+            // Session の recorded_seconds・ended_at は Part の長さから作るので、属していれば数え直す（§5.6 の集計と同じ SQL）
+            if remeasured, let key = row.sessionKey {
+                try deps.store.refreshSessionAggregates(key)
+            }
             return false
         }
         let start = deps.zone.instant(of: parsed.local)  // ファイル名の時刻にタイムゾーンを付与するだけ（TIME-03）
-        let endedAt = duration.flatMap(Self.durationMillis).map { deps.zone.iso(start.adding(milliseconds: $0)) }
+        let endedAt = endedAtISO(start: start, duration: duration)
         try deps.store.insertRecording(
             NewRecording(
                 partkey: partkey, deviceID: deviceID, sourceFolder: RelPath.parent(relpath),
@@ -202,6 +215,11 @@ public actor IngestService {
     static func durationMillis(_ seconds: Double) -> Int64? {
         guard let micros = Int64(exactly: (seconds * 1_000_000).rounded(.toNearestOrEven)) else { return nil }
         return micros / 1000
+    }
+
+    /// ended_at = start + duration（秒未満切り捨て）。duration が nil・µ 秒で表せなければ nil（最初のコピーと再コピーで共有する。CR-06）
+    func endedAtISO(start: Instant, duration: Double?) -> String? {
+        duration.flatMap(Self.durationMillis).map { deps.zone.iso(start.adding(milliseconds: $0)) }
     }
 
     /// copy_failed。changed だけ INFO、ほかは WARNING
