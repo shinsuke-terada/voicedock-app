@@ -155,8 +155,8 @@ public enum AttentionEvaluator {
     static let lockRules: Set<String> = ["CV-30", "CV-33"]
 
     /// 再マウントの unmount は成功し mount が失敗したデバイスの unavailable の理由語（F-81 の IngestService が載せる。
-    /// VDDevice の Remounter が返す語と同じ綴り。deviceNeedsReplug に写す。F-80）
-    static let mountFailedReason = "mount_failed"
+    /// VDDevice の `RemountOutcome.mountFailedReason` そのもの（綴りを 1 か所に持つ）。deviceNeedsReplug に写す。F-80）
+    static let mountFailedReason = RemountOutcome.mountFailedReason
 
     /// deviceNeedsReplug に写す unavailable の理由語（挿し直しを促す: mount_name_mismatch と mount_failed）
     static let replugReasons: Set<String> = [DetectionReason.mountNameMismatch.rawValue, mountFailedReason]
