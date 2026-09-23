@@ -91,8 +91,8 @@ extension PartSteps {
 }
 
 extension PartSteps {
-    /// F-77 の「入力のヘッダの長さと実データの量が合いません（…）」の先頭（VDAudio の `InputExtentCheck` の文言。
-    /// 文言が変われば `PartStepsRecopyTests` の本物の変換のテストが落ちる）
+    /// F-77 の「入力のヘッダの長さと実データの量が合いません（…）」の先頭。同じ文言は VDAudio（`InputExtentCheck.check`）と
+    /// ここの 2 か所にある（VDAudio は持ち物の外で公開の見分け方を足せない）。ずれは `extentMismatchFlagsRecopy` が検出する
     static let inputExtentMismatchPrefix = "入力のヘッダの長さと実データの量が合いません"
 
     /// 変換の失敗のうち、デバイスから取り直せば直りうるもの（needs_recopy を立てる。PLAN §8.3 手順 6）。

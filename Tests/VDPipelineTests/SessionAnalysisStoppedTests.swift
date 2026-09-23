@@ -70,6 +70,20 @@ struct SessionAnalysisStoppedTests {
         #expect(try w.session().status == .merged)
     }
 
+    @Test("F-82 TEST-28 応答が 0 件の LLM（空の応答列）でも、停止要求の下では ANALYZING のまま")
+    func emptyResponsesUnderStopLeaveAnalyzing() async throws {
+        let w = try await SessionAnalysisTests.world(chat: FakeChatTransport(responses: []))
+        try w.addSession(status: .ready)
+        try w.addSessionPart(hour: 9)
+
+        _ = try await Self.process(w, stopRequested: true)
+
+        let s = try w.session()
+        #expect(s.status == .analyzing)
+        #expect(s.retryCount == 0)
+        #expect(w.lines("llm_failed").isEmpty)
+    }
+
     @Test(
         "F-82 停止要求が無ければ、起動の失敗も通信の失敗も従来どおり ANALYZING→FAILED（LLM_UNAVAILABLE・retry_count 1）",
         arguments: Failure.allCases)

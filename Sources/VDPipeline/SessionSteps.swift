@@ -34,8 +34,10 @@ struct SessionSteps {
             // KeyError（device_id が不正）は分組しない
             guard let key = try? targetKey(part, day) else { continue }
             // Session の作成・session_key・集計・OPEN→OPEN（新規作成の直後も書く。SM-02）を 1 トランザクションで（F-82）
-            let status = try store.groupPart(
-                part.partkey, into: NewSession(sessionKey: key, dayDate: day.dashed, deviceID: part.deviceID))
+            guard
+                let status = try store.groupPart(
+                    part.partkey, into: NewSession(sessionKey: key, dayDate: day.dashed, deviceID: part.deviceID))
+            else { continue }
             // 工程の skip / fail は session_key の無い Part の再オープンを呼べない。閉じた Session（SAVED / COMPLETED など）に
             // 除外の Part が黙って増えると Daily に警告行が載らない（NOTE-05）ので、ここで再オープンする（既存の辺。F-82）
             if status != .open, PartStates.terminal.contains(part.status) {

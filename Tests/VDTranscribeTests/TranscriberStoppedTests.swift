@@ -77,6 +77,18 @@ struct TranscriberStoppedTests {
         #expect(TranscriberTests.isTranscribed(outcome))
     }
 
+    @Test("F-82 TEST-28 止めた印があっても 0 で終わり、生 JSON が空（0 バイト）なら .stopped にせず WHISPER_FAILED「生 JSON を読めません」")
+    func emptyJSONAfterStopIsUnreadable() async throws {
+        let f = try Fixture()
+        try FakeWhisper.write(to: f.script)
+        let runner = WritingRunner(json: f.whisperJSON, document: "", result: Self.result(.exited(0), stopped: true))
+        let outcome = await Self.transcriber(f, runner: runner).transcribe(f.request())
+        #expect(
+            outcome
+                == .failure(
+                    StageFailure(.whisperFailed, "生 JSON を読めません: staging/\(TranscriberTests.slug)/whisper.json")))
+    }
+
     @Test("F-82 止めた印の無いシグナル 15（利用者が whisper を止めたなど）は従来どおり WHISPER_FAILED")
     func signalWithoutStopIsFailure() async throws {
         let f = try Fixture()
@@ -89,6 +101,8 @@ struct TranscriberStoppedTests {
         arguments: [
             (ENOENT, "spawn: errno 2"), (EACCES, "spawn: errno 13"), (EPERM, "spawn: errno 1"),
             (ENOEXEC, "spawn: errno 8"), (EBADARCH, "spawn: errno 86"), (EINVAL, "spawn: errno 22"),
+            (ENOTDIR, "spawn: errno 20"), (ELOOP, "spawn: errno 62"), (ENAMETOOLONG, "spawn: errno 63"),
+            (EBADEXEC, "spawn: errno 85"), (EBADMACHO, "spawn: errno 88"),
         ])
     func executableProblemsAreExecMissing(errno code: Int32, message: String) async throws {
         let f = try Fixture()

@@ -80,24 +80,24 @@ extension Store {
     /// 分組の 1 件（PLAN §5.6。F-82）。Session が無ければ作り（OPEN。events に NULL→OPEN）、Part に session_key を書き、
     /// Session の集計列を数え直し、Session が OPEN なら `OPEN→OPEN`（detail = partkey。新規作成の直後も書く。SM-02）までを
     /// **1 トランザクション**で行う（途中で落ちて、分組したのに集計も events も無い行を残さない）。閉じた Session への追加は events を書かない。
-    /// 返り値は分組した時点の Session の状態（新規作成なら OPEN）。再オープンするかは呼び手が決める（SM-11 / SM-12）
-    public func groupPart(_ partkey: String, into session: NewSession) throws -> SessionStatus {
+    /// 返り値は分組した時点の Session の状態（新規作成なら OPEN）。再オープンするかは呼び手が決める（SM-11 / SM-12）。
+    /// Part の行が無ければ（空の partkey を含む）何も書かずに nil
+    public func groupPart(_ partkey: String, into session: NewSession) throws -> SessionStatus? {
         guard TransitionTable.allows(Edge(SessionStatus.open, .open), kind: .normal) else {
             throw IllegalTransition(from: SessionStatus.open.rawValue, to: SessionStatus.open.rawValue, kind: .normal)
         }
         let key = session.sessionKey
         let now = nowISO()
         return try pool.write { db in
+            guard try Store.recording(db, partkey: partkey) != nil else { return nil }
             let status: SessionStatus
-            if let row = try Row.fetchOne(db, sql: "SELECT * FROM sessions WHERE session_key = ?", arguments: [key]) {
-                status = try SessionRow(row: row).status
+            if let row = try Store.session(db, key: key) {
+                status = row.status
             } else {
                 try Store.insertSessionRow(db, session, now: now)
                 status = .open
             }
-            try db.execute(
-                sql: "UPDATE recordings SET session_key = ?, updated_at = ? WHERE partkey = ?",
-                arguments: [key, now, partkey])
+            try Store.applyRecordingUpdate(db, partkey: partkey, fields: [.sessionKey(key)], now: now)
             try Store.refreshSessionAggregates(db, key: key, now: now)
             if status == .open {
                 try Store.applyTransition(

@@ -1,4 +1,4 @@
-// whisper の生 JSON の寛容な読み方（PLAN §8.4 手順 7・付録 D の X-39。F-82・issue #119 の E9。利用者の決定 2026-09-23）。
+// whisper の生 JSON の寛容な読み方（PLAN §8.4 手順 7・付録 D の X-41。F-82・issue #119 の E9。利用者の決定 2026-09-23）。
 import Foundation
 import TestSupport
 import Testing
@@ -76,6 +76,22 @@ struct WhisperOutputParserLenientTests {
         // \" は文字列を閉じない
         let escapedQuote = Data([0x22, 0x5C, 0x22, 0x01, 0x22])
         #expect(Array(WhisperOutputParser.lenientText(escapedQuote).utf8) == Array(#""\"\u0001""#.utf8))
+    }
+
+    @Test("F-82 手前処理が入力を直したかを添える（正常な JSON は偽、生の制御文字・割れた UTF-8 は真）")
+    func repairIsReported() throws {
+        let valid = try #require(
+            WhisperOutputParser.parseReportingRepair(Data(FakeWhisper.rawDocument().utf8), fallbackLanguage: "ja"))
+        #expect(valid.repaired == false)
+        let control = try #require(
+            WhisperOutputParser.parseReportingRepair(Self.document(textBytes: [0x41, 0x01]), fallbackLanguage: "ja"))
+        #expect(control.repaired)
+        #expect(control.text == "A\u{01}")
+        let broken = try #require(
+            WhisperOutputParser.parseReportingRepair(
+                Self.document(textBytes: [0x41, 0xE3, 0x81]), fallbackLanguage: "ja"))
+        #expect(broken.repaired)
+        #expect(broken.text == "A\u{FFFD}")
     }
 
     @Test("F-82 TEST-28 空の生 JSON は空のまま、読めない（nil）")

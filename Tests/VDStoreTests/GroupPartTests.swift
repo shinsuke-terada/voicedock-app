@@ -85,6 +85,16 @@ struct GroupPartTests {
         #expect(try f.store.recording(pk)?.sessionKey == Self.sessionKey)
     }
 
+    @Test("F-82 TEST-28 行の無い partkey（空文字）では Session も events も作らず nil")
+    func missingPartWritesNothing() throws {
+        let f = try StoreFixture()
+
+        #expect(try f.store.groupPart("", into: Builders.session()) == nil)
+
+        #expect(try f.store.session(Self.sessionKey) == nil)
+        #expect(try f.eventCount() == 0)
+    }
+
     @Test("F-82 途中（OPEN→OPEN の events）で失敗したら、Session の作成も session_key も集計も残さない")
     func failureRollsBackEverything() throws {
         let f = try StoreFixture(stepping: true)

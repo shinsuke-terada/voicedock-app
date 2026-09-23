@@ -1,7 +1,7 @@
 # T-11 VDStore: スキーマ・マイグレーション・遷移・列更新・問い合わせ・読み取り専用
 
-> （F-82・issue #119。2026-09-23。マージ後の追記）`Transitions.swift` に `groupPart(_ partkey: String, into session: NewSession) throws -> SessionStatus` を足した（分組の 1 件: Session の作成（無ければ。events に NULL→OPEN）・`session_key`・集計・OPEN なら `OPEN→OPEN`（detail = partkey）を 1 トランザクションで行い、分組した時点の状態を返す。PLAN §5.2・§5.6）。
-> 同じトランザクションで使うため、遷移の SQL（`applyTransition`）・Session の行の作成（`insertSessionRow`）・集計（`Queries.swift` の `refreshSessionAggregates(_ db:key:now:)`）を `Database` を受ける static 関数に分けた（SQL は 1 か所のまま。CR-06）。テストは `Tests/VDStoreTests/GroupPartTests.swift`（表示名は `F-82` で始まる）。
+> （F-82・issue #119。2026-09-23。マージ後の追記）`Transitions.swift` に `groupPart(_ partkey: String, into session: NewSession) throws -> SessionStatus` を足した（分組の 1 件: Session の作成（無ければ。events に NULL→OPEN）・`session_key`・集計・OPEN なら `OPEN→OPEN`（detail = partkey）を 1 トランザクションで行い、分組した時点の状態を返す。Part の行が無ければ何も書かずに nil（`-> SessionStatus?`）。PLAN §5.2・§5.6）。
+> 同じトランザクションで使うため、遷移の SQL（`applyTransition`）・Session の行の作成（`insertSessionRow`）・列更新（`Updates.swift` の `applyRecordingUpdate`）・集計（`Queries.swift` の `refreshSessionAggregates(_ db:key:now:)`）・行の読み取り（`Queries.swift` の `recording(_ db:partkey:)`・`session(_ db:key:)`）を `Database` を受ける static 関数に分けた（SQL は 1 か所のまま。CR-06）。テストは `Tests/VDStoreTests/GroupPartTests.swift`（表示名は `F-82` で始まる）。
 
 - Phase: 2（記録の土台）
 - 前提: T-08（`PartStatus` / `SessionStatus` / `TransitionTable` / `PartStates` / `SessionStates` / `ErrorCode`）、T-10（`Instant` / `AppClock` / `ZonedTime` / `TextLimit`、TestSupport の `FixedClock` / `SteppingClock`）。TestSupport の `TempDirectory`（T-01）は T-08 の前提として入っている

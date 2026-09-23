@@ -53,6 +53,19 @@ struct PartStepsTranscribeStoppedTests {
         #expect(try w.part(pk).status == .normalized)
     }
 
+    @Test("F-82 TEST-28 空の台本（止めた印の無い終了 0・出力なし）は止めたことにせず、生 JSON が無いので WHISPER_FAILED")
+    func emptyScriptIsNotStopped() async throws {
+        let (w, pk) = try await PartStepsTranscribeTests.prepared()
+        let ctx = try await Self.context(w, runner: ScriptedProcessRunner(results: []))
+
+        #expect(await PartSteps(ctx: ctx).ensureTranscribed(try w.part(pk)) == false)
+
+        let row = try w.part(pk)
+        #expect(row.status == .failed)
+        #expect(row.errorCode == .whisperFailed)
+        #expect(row.errorMessage == "生 JSON を読めません: staging/" + KeySlug.of(pk) + "/whisper.json")
+    }
+
     @Test("F-82 一時的な起動の失敗（EAGAIN）は WHISPER_FAILED（attempts）で FAILED にし、工程内リトライの対象になる")
     func transientSpawnFailureIsRetried() async throws {
         let (w, pk) = try await PartStepsTranscribeTests.prepared()

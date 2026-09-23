@@ -146,10 +146,20 @@ public struct Transcriber: Sendable {
 
         // 9. RK-34: 成功は「終了 0 かつ JSON が在って読める」。
         guard let raw = try? Data(contentsOf: rawJSON),
-            let parsed = WhisperOutputParser.parse(raw, fallbackLanguage: config.language)
+            let parsed = WhisperOutputParser.parseReportingRepair(raw, fallbackLanguage: config.language)
         else {
             let shown = layout.relativePath(of: rawJSON) ?? WhisperArgs.p(rawJSON)
             return .failure(StageFailure(.whisperFailed, "生 JSON を読めません: \(shown)"))
+        }
+        // F-82（X-41）: 手前処理が生 JSON を直した（割れた多バイト文字・生の制御文字）ときは、直した文字（U+FFFD と
+        // U+0000〜U+001F）を除いた文字数が minChars に届かなければ、無音（NO_SPEECH_DETECTED の SKIPPED。根拠 B で元の録音を
+        // 消しうる）にも文字起こし済みにもせず、消さない側の失敗にする（transcript も書かない）
+        if parsed.repaired {
+            let readable = Self.readableScalarCount(parsed.text)
+            if readable < config.minChars {
+                let detail = "\(readable) 文字（min_chars=\(config.minChars)）"
+                return .failure(StageFailure(.whisperFailed, "生 JSON に壊れた文字があり、無音と判定できません: \(detail)"))
+            }
         }
 
         // 10〜11. ASR-09: 無音判定より前に保存する（根拠 B の証拠）。
@@ -184,6 +194,11 @@ public struct Transcriber: Sendable {
     static func wasStopped(_ result: ProcessResult) -> Bool {
         if result.termination == .spawnFailed(errno: ProcessRunner.closedErrno) { return true }
         return result.stoppedByTerminateAll && result.termination != .exited(0)
+    }
+
+    /// 手前処理が直しうる文字（U+FFFD と U+0000〜U+001F）を除いたスカラー数（F-82。X-41）
+    static func readableScalarCount(_ text: String) -> Int {
+        text.unicodeScalars.filter { $0.value >= 0x20 && $0 != "\u{FFFD}" }.count
     }
 
     /// Int(min(max(duration × timeoutFactor, minTimeoutSeconds), maxTimeoutSeconds))。duration 不明なら maxTimeoutSeconds（ASR-08）。

@@ -7,17 +7,23 @@ extension Store {
     static let knownPartkeysChunk = 500
 
     public func recording(_ partkey: String) throws -> RecordingRow? {
-        try pool.read { db in
-            try Row.fetchOne(db, sql: "SELECT * FROM recordings WHERE partkey = ?", arguments: [partkey])
-                .map { row throws(StoreError) in try RecordingRow(row: row) }
-        }
+        try pool.read { db in try Store.recording(db, partkey: partkey) }
     }
 
     public func session(_ key: String) throws -> SessionRow? {
-        try pool.read { db in
-            try Row.fetchOne(db, sql: "SELECT * FROM sessions WHERE session_key = ?", arguments: [key])
-                .map { row throws(StoreError) in try SessionRow(row: row) }
-        }
+        try pool.read { db in try Store.session(db, key: key) }
+    }
+
+    /// recording(_:) の本体を与えられた db で行う（分組の groupPart が同じトランザクションで使う。F-82）
+    static func recording(_ db: Database, partkey: String) throws -> RecordingRow? {
+        try Row.fetchOne(db, sql: "SELECT * FROM recordings WHERE partkey = ?", arguments: [partkey])
+            .map { row throws(StoreError) in try RecordingRow(row: row) }
+    }
+
+    /// session(_:) の本体を与えられた db で行う（分組の groupPart が同じトランザクションで使う。F-82）
+    static func session(_ db: Database, key: String) throws -> SessionRow? {
+        try Row.fetchOne(db, sql: "SELECT * FROM sessions WHERE session_key = ?", arguments: [key])
+            .map { row throws(StoreError) in try SessionRow(row: row) }
     }
 
     public func ungroupedRecordings() throws -> [RecordingRow] {

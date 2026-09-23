@@ -16,6 +16,7 @@ struct WorkerLicenseReplyTests {
         let probe = Mutex<[DiagnosticResult]>([])
         let summarize = Mutex<[Result<Int, SummarizeNowFailure>]>([])
         let backlog = Mutex<[Result<BacklogPlan, BacklogFailure>]>([])
+        let resolveAbsent = Mutex<[Result<BacklogPlan, BacklogFailure>]>([])
     }
 
     static func worker(_ w: PipelineWorld, recorder: StageRecorder) -> Worker {
@@ -24,7 +25,7 @@ struct WorkerLicenseReplyTests {
             onStage: { recorder.record($0) })
     }
 
-    @Test("F-82 ライセンスで止めた tick は、待っている DR-09・今すぐ要約・後追いに「ライセンス」の失敗で 1 回ずつ返事をする")
+    @Test("F-82 ライセンスで止めた tick は、待っている DR-09・今すぐ要約・後追い・手動で消した分の完了に「ライセンス」の失敗で 1 回ずつ返事をする")
     func licenseStoppedTickRepliesToPendingJobs() async throws {
         let w = try await PipelineWorld.make()
         let recorder = StageRecorder()
@@ -33,6 +34,7 @@ struct WorkerLicenseReplyTests {
         await worker.enqueue(.llmProbe(reply: { r in replies.probe.withLock { $0.append(r) } }))
         await worker.enqueue(.summarizeNow(reply: { r in replies.summarize.withLock { $0.append(r) } }))
         await worker.enqueue(.backlog(.preview(reply: { r in replies.backlog.withLock { $0.append(r) } })))
+        await worker.enqueue(.resolveAbsent(.preview(reply: { r in replies.resolveAbsent.withLock { $0.append(r) } })))
 
         await worker.tick()
         await worker.tick()
@@ -44,6 +46,7 @@ struct WorkerLicenseReplyTests {
         #expect(probe.first?.details == ["ライセンス"])
         #expect(replies.summarize.withLock { $0 } == [.failure(SummarizeNowFailure(message: "ライセンス"))])
         #expect(replies.backlog.withLock { $0 } == [.failure(BacklogFailure(message: "ライセンス"))])
+        #expect(replies.resolveAbsent.withLock { $0 } == [.failure(BacklogFailure(message: "ライセンス"))])
         #expect(recorder.recorded.isEmpty)
         #expect(await worker.pendingJobs.isEmpty)
     }

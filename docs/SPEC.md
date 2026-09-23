@@ -121,7 +121,7 @@ RetryPolicy: `none`（再評価の契機まで待たない。FAILED なら reque
 | 16 | `NORMALIZED_MISSING` | nextConnect | FAILED | `needs_recopy = 1` |
 | 17 | `WHISPER_EXEC_MISSING` | none | FAILED | 実行ファイル（か起動の指定）の問題で起動できないときだけ（ENOENT・EACCES・EPERM・ENOEXEC など。§8.4 手順 6。F-82）。**実行ファイルが無いことは工程に入る前のガード**（§5.4） |
 | 18 | `WHISPER_MODEL_MISSING` | none | — | **ガードの理由（要対応の表示）にだけ使い、行には書かない**（voicedock では設定検証のコード） |
-| 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない、起動の前に前回の生 JSON を消せない（F-76）、一時的な起動の失敗（EAGAIN・EMFILE・ENOMEM など。F-82）。アプリの終了で止めたものは書かない（F-82） |
+| 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない、起動の前に前回の生 JSON を消せない（F-76）、一時的な起動の失敗（EAGAIN・EMFILE・ENOMEM など。F-82）、手前処理が直した生 JSON で読める文字が minChars に届かない（無音にしない。§8.4。F-82）。アプリの終了で止めたものは書かない（F-82） |
 | 20 | `WHISPER_TIMEOUT` | attempts | FAILED | |
 | 21 | `NO_SPEECH_DETECTED` | none | SKIPPED | |
 | 22 | `OBSIDIAN_RAW_WRITE_FAILED` | attempts | Part FAILED | 99 を超えた同名ファイルも。トリガが Raw に載らない・書き直しで RAW_SAVED 以降の Part の本文が消えるときも書かずにこれ（F-75。§8.6） |

@@ -4,11 +4,20 @@ import VDCore
 
 public enum WhisperOutputParser {
     /// JSON として読めない（またはトップレベルが null）なら nil。それ以外は壊れた要素を飛ばして必ず結果を返す。
-    /// 読む前に `lenientText` で手前処理をする（whisper の生 JSON に限る寛容な読み方。F-82・X-39）。
+    /// 読む前に `lenient` で手前処理をする（whisper の生 JSON に限る寛容な読み方。F-82・X-41）。
     public static func parse(
         _ data: Data, fallbackLanguage: String
     ) -> (language: String, text: String, segments: [TranscriptSegment])? {
-        guard let document = PyJSON.decode(lenientText(data)), document != .null else { return nil }
+        parseReportingRepair(data, fallbackLanguage: fallbackLanguage).map { ($0.language, $0.text, $0.segments) }
+    }
+
+    /// parse と同じ結果に、手前処理が入力を直した（不正な UTF-8 を置き換えた・生の制御文字をエスケープした）かを添える。
+    /// 直した transcript の文字数が minChars に届かなくても無音にしない（Transcriber。F-82・X-41）ために使う
+    static func parseReportingRepair(
+        _ data: Data, fallbackLanguage: String
+    ) -> (language: String, text: String, segments: [TranscriptSegment], repaired: Bool)? {
+        let prepared = lenient(data)
+        guard let document = PyJSON.decode(prepared.text), document != .null else { return nil }
         let body: [(String, PyJSONValue)]
         if case .object(let o) = document { body = o } else { body = [] }
 
@@ -33,16 +42,20 @@ public enum WhisperOutputParser {
             segments.append(TranscriptSegment(start: start, end: end, text: t))
         }
         let text = PyText.strip(segments.map(\.text).joined())
-        return (language, text, segments)
+        return (language, text, segments, prepared.repaired)
     }
 
     /// whisper.cpp の `-oj` は文字列の中の `"` と `\` しかエスケープしないので、区間の境目で割れた多バイト文字（不正な UTF-8）や
-    /// 生の制御文字（U+0000〜U+001F）が 1 つあるだけで全体が読めず、Part が毎回失敗する（voicedock も同じ。X-39）。F-82 の手前処理:
+    /// 生の制御文字（U+0000〜U+001F）が 1 つあるだけで全体が読めず、Part が毎回失敗する（voicedock も同じ。X-41）。F-82 の手前処理:
     /// (a) 不正な UTF-8 は U+FFFD に置き換える、(b) 文字列の中の生の制御文字だけを `\u00XX`（小文字の 16 進）にする。
     /// 文字列の外と、`\` の直後の 1 文字（エスケープの続き）は触らない。正常な JSON は 1 バイトも変えない。
     /// 引用符・逆斜線・制御文字はどれも ASCII なので、UTF-8 のバイト列のまま判定してよい（多バイト文字のバイトは 0x80 以上）。
-    static func lenientText(_ data: Data) -> String {
+    static func lenientText(_ data: Data) -> String { lenient(data).text }
+
+    /// lenientText の本体。`repaired` は入力を 1 バイトでも変えたか（不正な UTF-8 の置き換え・制御文字のエスケープ）
+    static func lenient(_ data: Data) -> (text: String, repaired: Bool) {
         let text = String(decoding: data, as: UTF8.self)
+        var repaired = !text.utf8.elementsEqual(data)
         var out: [UInt8] = []
         out.reserveCapacity(text.utf8.count)
         var inString = false
@@ -58,6 +71,7 @@ public enum WhisperOutputParser {
                 } else if byte < firstNonControl {
                     out.append(contentsOf: [backslash, lowerU, zero, zero])
                     out.append(contentsOf: [hexDigits[Int(byte >> 4)], hexDigits[Int(byte & 0x0F)]])
+                    repaired = true
                     continue
                 }
             } else if byte == quote {
@@ -65,7 +79,7 @@ public enum WhisperOutputParser {
             }
             out.append(byte)
         }
-        return String(decoding: out, as: UTF8.self)
+        return (String(decoding: out, as: UTF8.self), repaired)
     }
 
     static let quote = UInt8(ascii: "\"")

@@ -102,10 +102,21 @@ extension Store {
         let a = try RecordingField.assignments(fields)
         let now = nowISO()
         try pool.write { db in
-            try db.execute(
-                sql: "UPDATE recordings SET \(a.sql), updated_at = ? WHERE partkey = ?",
-                arguments: StatementArguments(a.values + [now, partkey]))
+            try Store.executeRecordingUpdate(db, partkey: partkey, a, now: now)
         }
+    }
+
+    /// updateRecording の SQL を与えられた db で実行する（分組の groupPart が同じトランザクションで使う。F-82）
+    static func applyRecordingUpdate(_ db: Database, partkey: String, fields: [RecordingField], now: String) throws {
+        guard !fields.isEmpty else { return }
+        try executeRecordingUpdate(db, partkey: partkey, try RecordingField.assignments(fields), now: now)
+    }
+
+    /// updateRecording と applyRecordingUpdate が共有する SQL（同じ SQL を 2 か所に書かない。CR-06）
+    private static func executeRecordingUpdate(_ db: Database, partkey: String, _ a: Assignments, now: String) throws {
+        try db.execute(
+            sql: "UPDATE recordings SET \(a.sql), updated_at = ? WHERE partkey = ?",
+            arguments: StatementArguments(a.values + [now, partkey]))
     }
 
     public func updateSession(_ key: String, _ fields: [SessionField]) throws {
