@@ -1,5 +1,9 @@
 # T-29 VDPipeline: Raw / Daily ノートの工程・Timeline の保存・Vault 索引・tick の配線の完成
 
+> （F-75・issue #115、2026-09-23。マージ後の追記）`ensureRawNote` は、トリガの Part が載せる Part に居なければ（transcript・started_at が読めない）Raw を書かずに `RAW_WRITING→FAILED`（`OBSIDIAN_RAW_WRITE_FAILED`）にする（手順 2 の「空 → false」をやめ、手順 6a を足した）。
+> 書き込み先の既存の Raw ノートに RAW_SAVED 以降の Part の鍵が在るのに新しい内容から抜けるなら、書かずにトリガを FAILED にする（手順 9a）。`noMembersStaysTranscribed` は取り下げ、
+> テストは `RawNoteTextProtectionTests.swift`（PLAN §8.6〜§8.8・X-38）。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-29 |
@@ -91,13 +95,14 @@ extension PartSteps {
 **`ensureRawNote(_ row:)`**（この順。voicedock pipeline.py:467-547 ＋ v1.1 のガード）:
 0. `PartStates.rawSavedOrBeyond.contains(row.status)` → true。`!PartStates.rawWritable.contains(row.status)` か `row.sessionKey == nil` → false。以降 `guarded`
 1. `key = row.sessionKey`、`guard let session = try store.session(key), let day = LocalDate(dashed: session.dayDate) else { return false }`
-2. `parts = try rawParts(sessionKey: key)`。空 → false（遷移しない。voicedock どおり）
+2. `parts = try rawParts(sessionKey: key)`。~~空 → false（遷移しない。voicedock どおり）~~（F-75: 空でも止まらない。トリガが載らなければ手順 6a）
 3. **ガード**: `status = VaultCheck.evaluate(path: cfg.vault.path, marker: cfg.vault.marker)`。`.available` でなければ
    `ctx.pauses.trip(status == .notConfigured ? .vaultNotConfigured : .vaultUnavailable)` → **遷移せず** false
 4. `ctx.activity.set(.writingRawNote(sessionKey: key))`
 5. `row.status == .transcribed` なら `TRANSCRIBED→RAW_WRITING`（RAW_WRITING から来たら記録しない）
 6. **もう一度確かめる**: `status2 = VaultCheck.evaluate(…)`。`.available` でなければ
    `try fail(row, from: .rawWriting, code: .obsidianNotFound, message: status2.message(path: cfg.vault.path ?? "", marker: cfg.vault.marker), event: .rawNoteFailed, reason: "vault")` → false
+6a. （F-75）トリガが `parts` に居なければ `fail(row, from: .rawWriting, code: .obsidianRawWriteFailed, message: <「文字起こしを読めません: <HOME 相対>」か「開始時刻を読めません: <started_at>」>, event: .rawNoteFailed, reason: "write")` → false
 7. `vault = VaultPaths.root(cfg.vault.path!)`（`guard let`）、`content = RawNote.render(parts: parts, day: day, sessionKey: key, config: cfg.obsidian)`
 8. `folder = try NoteFolder.ensure(relative: RawNote.folder(config: cfg.obsidian, day: day), vault: vault)`。投げたら
    `try fail(row, from: .rawWriting, code: .obsidianRawWriteFailed, message: NoteErrorText.describe(e), event: .rawNoteFailed, reason: "write")` → false
@@ -105,6 +110,8 @@ extension PartSteps {
    `existing = session.rawOutputPath.map { VaultPaths.url($0, vault: vault) }`、
    `OutputPathResolver.resolve(folder: folder, baseName: RawNote.baseName(config: cfg.obsidian, day: day), existing: existing, sessionKey: key, ownedPartkeys: owned, kind: .raw)`。
    `.failure(f)`（99 超え）→ `fail(row, from: .rawWriting, code: f.code, message: f.message, event: .rawNoteFailed, reason: "write")` → false
+9a. （F-75）`OutputPathResolver.keysLostByOverwrite(target, protectedKeys: <rawSavedOrBeyond の Part の鍵の配列>, newKeys: <parts の鍵の配列>)` が nil か空でなければ、書かずに
+    `fail(… .obsidianRawWriteFailed, …, reason: "write")` → false（文言は PLAN §8.6）
 10. `sha = try NoteWriter.write(content, to: target)`。投げたら `fail(… .obsidianRawWriteFailed, NoteErrorText.describe(e), reason: "write")` → false
 11. `v = NoteVerifier.verify(url: target, kind: .raw, sessionKey: key, expectedSHA256: sha, expectedKeys: Set(parts.map(\.partkey)), summaryHeading: DailyNote.summaryHeading(config: cfg))`。
     `!v.passed` → `fail(… .obsidianRawVerifyFailed, v.failureMessage, reason: "verify")` → false（`落ちた規則: RN-1, RN-5` の形）
@@ -288,7 +295,7 @@ extension Recovery {
 | `vaultLostAfterTransitionFails` / 「遷移の後に Vault が消えたら OBSIDIAN_NOT_FOUND」 | `world.context(assertion: RecordingSleepAssertion(onBegin: { .obsidian を消す }))` で `PartSteps` を作る | FAILED(OBSIDIAN_NOT_FOUND)、message `<vault> に .obsidian/ がありません（Vault が未マウントか、別の場所を指しています）`、`raw_note_failed recording_key=… error_code=OBSIDIAN_NOT_FOUND reason=vault` |
 | `rawWritingEntryRecordsNoPhantom` / 「RAW_WRITING から入っても遷移を記録しない」（voicedock test_part_resume :207） | Part を RAW_WRITING に | RAW_SAVED、`TRANSCRIBED→RAW_WRITING` の events が無い |
 | `membersUseTheSharedFunction` / 「載せる Part は RawNoteMembership（読めない transcript は載せない）」 | ほかに RAW_SAVED で transcript の無い Part と、TRANSCRIBING の Part | frontmatter の鍵は A だけ、検証は通る |
-| `noMembersStaysTranscribed` / 「載せる Part が無ければ何もしない」 | A の transcript を消す | 偽、TRANSCRIBED、events 増えない |
+| ~~`noMembersStaysTranscribed` / 「載せる Part が無ければ何もしない」~~（F-75 で取り下げ。`RawNoteTextProtectionTests.unreadableTriggerAloneFails` へ） | A の transcript を消す | ~~偽、TRANSCRIBED、events 増えない~~ → 偽、FAILED(OBSIDIAN_RAW_WRITE_FAILED) |
 | `existingOutputPathIsKept` / 「DB の出力パスがあればそこへ書く」 | `raw_output_path = "Daily/Voice/Raw/20260829/2026-08-29 raw (2).md"`（ファイル無し） | そのパスに書かれ、基本名のファイルは無い |
 | `foreignNoteIsNotOverwritten` / 「X-11 DB に無い鍵を持つノートは上書きしない」 | `2026-08-29 raw.md` に同じ session_key で `DJIMIC3/other_orig.wav` を持つ frontmatter | 元のファイルは変わらず、` (2).md` に書かれる |
 | `ownNoteIsOverwritten` / 「自分の鍵だけのノートは上書きする（rename の後に落ちた場合）」 | `2026-08-29 raw.md` に A の鍵だけ（raw_output_path は NULL） | 基本名のファイルが書き直される |
@@ -496,7 +503,7 @@ tags:
 | ensureRawNote のガードを消す | `missingMarkerIsAGuard`・`missingVaultPausesThenResumes`・`vaultNotConfiguredIsAGuard`・`stoppedWhenRawFails` |
 | Raw の遷移の後の再確認を消す | `vaultLostAfterTransitionFails`（6.1） |
 | Daily の遷移の後の再確認を消す | `vaultLostAfterTransitionFails`（6.2） |
-| rawParts で transcript の読めない Part も載せる | `membersUseTheSharedFunction`・`noMembersStaysTranscribed` |
+| rawParts で transcript の読めない Part も載せる | `membersUseTheSharedFunction`・`noMembersStaysTranscribed`（F-75 で取り下げ） |
 | NoteVerifier に渡す期待 SHA を `""` にする | `writesVerifiedRawNote` ほか Raw を保存する 11 本 |
 | Raw の失敗でほかの TRANSCRIBED の Part も FAILED にする | `onlyTheTriggerFails` |
 | raw_saved の inbox の削除を消す | `ceAudioInboxRetainRawSavedReleases` |

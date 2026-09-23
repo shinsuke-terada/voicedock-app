@@ -70,9 +70,12 @@ public struct Normalizer: Sendable {
             return .failure(StageFailure(.importFailed, "staging の slug が衝突しています（\(slug) は \(claimedBy) が使用中）"))
         }
 
-        // 2. 再利用（冪等。DEV-18: 再利用でも入力の SHA-256 を計算し直して照合する）
+        // 2. 再利用（冪等。DEV-18: 再利用でも入力の SHA-256 を計算し直して照合する）。
+        //    F-77: 入力のヘッダの照合も通るときだけ。通らなければ変換し直し、手順 6 で落とす
         let tolerance = config.durationToleranceSeconds
-        if OutputVerifier.verify(output: output, inputDuration: req.durationSeconds, tolerance: tolerance) == nil {
+        if OutputVerifier.verify(output: output, inputDuration: req.durationSeconds, tolerance: tolerance) == nil,
+            InputExtentCheck.check(input: req.input) == nil
+        {
             let hashed: (sha256: String, bytes: Int64)
             do {
                 hashed = try InputHasher.hash(req.input, chunkBytes: config.hashChunkBytes, deadline: nil)
@@ -135,8 +138,9 @@ public struct Normalizer: Sendable {
             return .failure(mismatch)
         }
 
-        // 6. 出力の検証（ASR-01）
+        // 6. 出力の検証（ASR-01）→ 入力のヘッダの長さと実データの量の照合（F-77。後半を欠いた出力を合格にしない）
         if let message = OutputVerifier.verify(output: output, inputDuration: req.durationSeconds, tolerance: tolerance)
+            ?? InputExtentCheck.check(input: req.input)
         {
             discard(output)
             return .failure(StageFailure(.normalizeVerifyFailed, message))

@@ -36,7 +36,7 @@ struct ProcessReadySessionsTests {
         return TickContext(
             deps: w.deps(sleeper: sleeper), config: config, zone: PipelineFixtures.zone, snapshot: nil,
             pauses: PauseBook(log: w.log), activity: ActivityBoard(assertion: RecordingSleepAssertion()),
-            stop: StopFlag())
+            stop: StopFlag(), undeletableStreaks: UndeletableStreaks())
     }
 
     @Test("Part が全部終端でなければ処理しない")

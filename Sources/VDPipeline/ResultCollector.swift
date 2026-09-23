@@ -10,8 +10,9 @@ import VDStore
 struct ResultCollector {
     let deps: DeletionDependencies
 
-    /// 回収を待つ Part の状態（PLAN §8.9.6）= awaitingDeletion ∪ {SKIPPED}
-    static let collectableStatuses: Set<PartStatus> = PartStates.awaitingDeletion.union([.skipped])
+    /// 回収を待つ Part の状態（PLAN §8.9.6）= awaitingDeletion ∪ {SKIPPED, COMPLETED}。
+    /// COMPLETED は「過去分」の ①② の後・③ の前に止まり、ID と要求を持ったまま残った Part（F-74）
+    static let collectableStatuses: Set<PartStatus> = PartStates.awaitingDeletion.union([.skipped, .completed])
 
     /// 毎 tick（新鮮でなくても）と reaper の後。
     func collectDeleteResults(reaperScanGeneration: UInt64) async {
@@ -36,7 +37,14 @@ struct ResultCollector {
                 }
                 switch result.status {
                 case .sourceIdentityMismatch:
-                    if try pend(part, code: .sourceIdentityMismatch, reason: result.detail) {
+                    // 決着した Part を後追いで要求し、reaper がまた拒否した → pend せずに決着し直す（F-78）
+                    let retried =
+                        try part.status == .sourceDeleting
+                        && Self.retriesASettledPart(deps.store.events(entity: .recording, key: pk))
+                    if try retried
+                        ? resettle(part, reason: result.detail)
+                        : pend(part, code: .sourceIdentityMismatch, reason: result.detail)
+                    {
                         DeleteQueue.discard(q.url, layout: layout)
                     }
                 case .deleted:
@@ -51,9 +59,10 @@ struct ResultCollector {
                             DeleteQueue.discard(q.url, layout: layout)
                         }
                     } else {
+                        // 遷移が先、ID を外すのは最後（F-74）。遷移が失敗したら ID と結果が残り、次の tick に同じ結果でやり直す
+                        try advanceToCompleted(part)
                         try deps.store.updateRecording(
                             pk, [.sourceDeletedAt(deps.zone.iso(deps.clock.now())), .deleteRequestID(nil)])
-                        try advanceToCompleted(part)
                         deps.log.info(
                             .sourceDeleted, [(.recordingKey, .string(pk)), (.requestID, .string(result.requestID))])
                         DeleteQueue.discard(q.url, layout: layout)
@@ -65,7 +74,8 @@ struct ResultCollector {
         }
     }
 
-    /// SKIPPED 以外を COMPLETED まで進める（付録 A.2）。衝突は status_changed（source_deleted_at は既に書いた。結果は捨てる）
+    /// SKIPPED・COMPLETED 以外を COMPLETED まで進める（付録 A.2。COMPLETED は遷移させない。F-74）。
+    /// 衝突は status_changed を出して戻る（呼び手は source_deleted_at を書き、結果を捨てる）。ほかの例外は投げる（ID と結果が残る）
     private func advanceToCompleted(_ part: RecordingRow) throws {
         let pk = part.partkey
         do {
@@ -96,7 +106,7 @@ struct ResultCollector {
             }
             try deps.store.updateRecording(pk, [.deleteRequestID(nil)])
         } else {
-            // SKIPPED・RAW_SAVED・SOURCE_DELETE_PENDING は状態を動かさない（SM-20）
+            // SKIPPED・RAW_SAVED・SOURCE_DELETE_PENDING・COMPLETED は状態を動かさない（SM-20・F-74）
             guard try deps.store.updateRecordingIfStatus(pk, status: part.status, [.deleteRequestID(nil)]) else {
                 deps.logStatusChanged(recordingKey: pk)
                 return false
@@ -104,6 +114,42 @@ struct ResultCollector {
         }
         deps.log.warning(.sourceDeletePending, [(.recordingKey, .string(pk)), (.reason, .string(reason))])
         deps.pended.insert(pk)
+        return true
+    }
+
+    /// 決着した（最後の遷移が detail not_deletable の COMPLETED）Part を後追いで要求した試行か（F-78。PLAN §8.9.6）:
+    /// events の最後が COMPLETED→SOURCE_DELETING（detail 無し。後追いの ③）で、その前が →COMPLETED（detail not_deletable）
+    static func retriesASettledPart(_ events: [EventRow]) -> Bool {
+        guard events.count >= 2 else { return false }
+        let request = events[events.count - 1]
+        let settled = events[events.count - 2]
+        return request.fromStatus == PartStatus.completed.rawValue
+            && request.toStatus == PartStatus.sourceDeleting.rawValue && request.detail == nil
+            && settled.toStatus == PartStatus.completed.rawValue && settled.detail == DeletionReason.notDeletable
+    }
+
+    /// 決着した Part の後追いの要求を reaper がまた拒否した（F-78。PLAN §8.9.6）。pend すると COMPLETED の Session に
+    /// ID の無い SOURCE_DELETE_PENDING が残り、自動では評価されず「消せなかった録音」からも外れるので、既存の
+    /// SOURCE_DELETING→COMPLETED（detail not_deletable、error_message = 理由語）で消さずに決着し直し、ID を外す（遷移が先）。
+    /// source_delete_skipped recording_key=… reason=not_deletable detail=<理由語>。source_deleted_at は入れない。
+    /// 衝突は status_changed を出して偽（結果を残す）
+    func resettle(_ part: RecordingRow, reason: String) throws -> Bool {
+        let pk = part.partkey
+        do {
+            try deps.store.recordPartTransition(
+                partkey: pk, from: .sourceDeleting, to: .completed, errorMessage: reason,
+                detail: DeletionReason.notDeletable)
+        } catch is TransitionConflict {
+            deps.logStatusChanged(recordingKey: pk)
+            return false
+        }
+        try deps.store.updateRecording(pk, [.deleteRequestID(nil)])
+        deps.log.info(
+            .sourceDeleteSkipped,
+            [
+                (.recordingKey, .string(pk)), (.reason, .string(DeletionReason.notDeletable)),
+                (.detail, .string(reason)),
+            ])
         return true
     }
 

@@ -45,7 +45,11 @@ struct AttentionTextsTests {
         (.reaperUpdateRequired, "削除モジュールの更新が必要です", "「元音声の削除」を開いて有効化をやり直してください"),
         (
             .undeletableSources(3), "消せなかった録音 3 本",
-            "削除の条件を満たさないまま時間がたったので、消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。直したら「過去分を削除対象にする」で再評価できます。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください"
+            "消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください"
+        ),
+        (
+            .rawNoteBlocked(2), "書き直せない Raw ノート 2 件",
+            "文字起こしを読めなくなった録音があり、Raw ノートを書き直すとその本文が消えるので、書き直さずに止めています（その後の録音はまだ Raw ノートに載っていません）。文字起こしのファイルをバックアップから戻すか、Obsidian でその Raw ノートの名前を変えてから（新しい Raw ノートが書かれ、古い本文は名前を変えたノートにそのまま残ります）、「詳細・診断」の「再試行」を押してください"
         ),
     ]
 
@@ -79,11 +83,11 @@ struct AttentionTextsTests {
         }
     }
 
-    @Test("全ケースに題が在る（15 項目。F-61 で coexistenceBlocked を外し、F-69 で undeletableSources を足した）")
+    @Test("全ケースに題が在る（16 項目。F-61 で coexistenceBlocked を外し、F-69 で undeletableSources、F-75 で rawNoteBlocked を足した）")
     func everyItemHasATitle() {
         let kinds = Set(Self.table.map { $0.0.order })
-        #expect(kinds.count == 15)
-        #expect(kinds == Set(0..<15))
+        #expect(kinds.count == 16)
+        #expect(kinds == Set(0..<16))
         #expect(Self.table.allSatisfy { !AttentionTexts.title($0.0).isEmpty })
     }
 }

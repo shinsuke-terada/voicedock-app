@@ -42,7 +42,8 @@ extension SessionSteps {
             excluded: excluded.map {
                 ExcludedPart(
                     partkey: $0.partkey, status: $0.status, errorCode: $0.errorCode,
-                    unknownCode: $0.errorCode == nil ? $0.errorCodeRaw : nil)
+                    unknownCode: $0.errorCode == nil ? $0.errorCodeRaw : nil,
+                    rawNoteBlocked: PartSteps.isRawNoteBlocked($0))
             },
             recordedSeconds: row.recordedSeconds, blockCount: transcript.blocks.count, timeline: blocks, links: plan,
             zone: zone)

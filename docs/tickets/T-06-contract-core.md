@@ -4,6 +4,8 @@
 > `ReaperConf.observe` の open に `O_NONBLOCK`（FIFO で止まらない）、`FileLock.tryAcquire` の open に `O_NOFOLLOW`（symlink を辿らない）を足した。以下の本文の手順・フラグは記録として残す。
 > テストは `RelPathScalarTests`・`FileLockNoFollowTests`（reaper.conf の FIFO は `ReaperDefenseTests`）。
 
+> （F-76・issue #116。2026-09-23。マージ後の追記）`HomeLayout` に `appLock`（`state/app.lock`。アプリの単一起動のロック。reaper.lock とは別）を足した（§4.16 の表と `HomeLayoutTests` の「全プロパティ」の表）。
+
 | 項目 | 値 |
 |---|---|
 | Phase | 1（骨組みと防護柵） |
@@ -536,6 +538,7 @@ public struct HomeLayout: Equatable, Sendable {
 | `stateDirectory` | `state` | ○ |
 | `processedLog` | `state/processed.log` | |
 | `reaperLock` | `state/reaper.lock` | |
+| `appLock` | `state/app.lock`（F-76 で追加。アプリの単一起動のロック） | |
 | `runDirectory` | `run` | ○ |
 | `llamaAPIKeyFile` | `run/llama-api-key` | |
 | `binDirectory` | `bin` | **作らない**（ロック 2-A） |

@@ -1,5 +1,7 @@
 # T-36 VDPipeline: 削除条件（DeletionPolicy）・ロックの評価（LockEvaluator）・署名検証
 
+> （F-76・issue #116。2026-09-23。マージ後の追記）`LockEvaluator` は、ProcessRunner が閉じた後（アプリの終了の途中）で reaper の `--version` を起動できなかった（`.spawnFailed(errno: ProcessRunner.closedErrno)`。`ReaperRunner.versionRun()` が `.notLaunched` を返す）ときは版を観測できなかったとして扱い、キャッシュせず `reaper_failed` も出さず、readiness を `.unconfirmed`（`DeletionReadiness` に足した値）にする（`.disabled(reaper_invalid)` にすると削除段が RAW_SAVED→COMPLETED を永続化するため）。`reaperStatus` は表示用に `.versionMismatch(found: nil)` を返す。テストは `Tests/VDPipelineTests/LockEvaluatorClosedRunnerTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-36 |

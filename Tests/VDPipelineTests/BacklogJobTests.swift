@@ -70,7 +70,8 @@ struct BacklogJobTests {
         let preview = BacklogReplies<BacklogPlan>()
         let execute = BacklogReplies<BacklogExecution>()
         await worker.enqueue(.backlog(.preview(reply: preview.reply)))
-        await worker.enqueue(.resolveAbsent(.execute(reply: execute.reply)))
+        await worker.enqueue(
+            .resolveAbsent(.execute(preview: BacklogPlan(eligible: [], skipped: []), reply: execute.reply)))
         await worker.tick()
         await worker.tick()
         #expect(preview.results == [.failure(Self.unavailable)])
@@ -83,7 +84,7 @@ struct BacklogJobTests {
         let w = try await PipelineWorld.make()
         let worker = w.worker()
         let queued = BacklogReplies<BacklogExecution>()
-        await worker.enqueue(.backlog(.execute(reply: queued.reply)))
+        await worker.enqueue(.backlog(.execute(preview: BacklogPlan(eligible: [], skipped: []), reply: queued.reply)))
         await worker.requestStop()
         let after = BacklogReplies<BacklogPlan>()
         await worker.enqueue(.resolveAbsent(.preview(reply: after.reply)))

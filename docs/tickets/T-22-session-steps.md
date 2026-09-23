@@ -1,5 +1,8 @@
 # T-22 VDPipeline: Session の工程（分組・閉じる・再オープン・統合・解析）と LLM のガード
 
+> （F-74・issue #114、2026-09-23。マージ後の追記）統合で segment が 0 件でも、有効な Part（FAILED / SKIPPED でない）の transcript が読めなければ `session_empty` にせず `MERGING→FAILED`（`SESSION_MERGE_FAILED`、「文字起こしを読めない Part があります: <partkey>, …」）。
+> MERGED 以降で統合結果が空になった Session は `→ANALYZING`（MERGED から通常の辺、ANALYZED / WRITING から ★ `stale_analysis`）→ `ANALYZING→FAILED`（同じコード）にする（`SessionSteps.failUnreadableAfterMerge`・`unreadableTranscriptPartkeys`。PLAN §5.6）。テストは `UnreadableTranscriptMergeTests`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-22 |
@@ -38,6 +41,7 @@ T-18 が置いた `SessionSteps` の骨組みに本体を書く: Part の分組�
 | `Tests/TestSupport/FakeLLMServer.swift` | `FakeLLMServer`（actor） |
 | `Tests/VDPipelineTests/PipelineFixtures.swift`（変更） | LLM の部品を足す |
 | `Tests/VDPipelineTests/SessionGroupTests.swift` ほか 7 本（`ModelFilesTests` は T-09） | §6 |
+| `Tests/VDPipelineTests/UnreadableTranscriptMergeTests.swift`（F-74 で追加） | 有効な Part の transcript が読めないときの統合の失敗（PLAN §5.6） |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | 7 キーを消す |
 
 ## 4. 仕様
@@ -555,6 +559,18 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 
 `timeZone`、`session.blockGapSeconds`、`session.idleCloseSeconds`、`session.allowReopen`、`session.maxParts`、`session.maxDurationSeconds`、`llm.modelID` の 7 行を消す。
 
+### 6.11 `UnreadableTranscriptMergeTests.swift`（`@Suite("UnreadableTranscriptMerge")`。F-74 で追加。PLAN §5.6）
+
+読めない transcript は、09 時の Part の `transcripts/parts/<slug>.json` を消す（無い）か `{` にする（壊れている）。
+
+| 関数名 / 表示名 | 準備 | 期待 |
+|---|---|---|
+| `unreadableTranscriptFailsTheMerge` / 「F-74 有効な Part の transcript が読めず segment が 0 件なら session_empty にせず MERGING→FAILED（SESSION_MERGE_FAILED）（パラメータ化: 無い・壊れている）」 | READY、09 時 RAW_SAVED（読めない）・10 時 SKIPPED | `.stopped`、FAILED・`SESSION_MERGE_FAILED`・error_message「文字起こしを読めない Part があります: <09 時の partkey>」、events `READY→MERGING`・`MERGING→FAILED`、ログ `session_merge_failed session_key=DJIMIC3:20260912 error_code=SESSION_MERGE_FAILED`、`session_empty` が無い |
+| `readableButBlankTranscriptIsStillEmpty` / 「F-74 有効な Part の transcript が読めて text が空白だけなら、従来どおり本当に空として session_empty で COMPLETED」 | READY、09 時 RAW_SAVED（text `" \u{3000} "`） | `.empty`、COMPLETED、`session_empty … parts=1`、`session_merge_failed` が無い |
+| `unreadableAfterMergeFailsTheSession` / 「F-74 MERGED 以降で transcript が読めなくなった Session は黙って止まらず、→ANALYZING→FAILED（SESSION_MERGE_FAILED）にする（パラメータ化: MERGED・ANALYZING・ANALYZED・WRITING）」 | `installLLM()`、その状態の Session、09 時 RAW_SAVED（transcript 無し） | `.stopped`、FAILED・同じコードと文言、最後の events が MERGED `[MERGED→ANALYZING, ANALYZING→FAILED]`・ANALYZING `[ANALYZING→FAILED]`・ANALYZED / WRITING `[<状態>→ANALYZING（stale_analysis）, ANALYZING→FAILED]`、`session_merge_failed`、`llm.ensureCalls` と `chat.calls` が空（LLM を起動しない）、もう一度処理しても `session_merge_failed` は 1 件のまま |
+| `partiallyUnreadableStillMerges` / 「F-74 一部の Part だけ transcript が読めないなら、従来どおり読めない Part を飛ばして MERGED にする（失敗にしない）」 | READY、09 時 RAW_SAVED（読める）・10 時 RAW_SAVED（transcript 無し）、LLM なし | `.stopped`、MERGED、`session_merged … parts=2 excluded=0 chars=10`、`session_merge_failed` が無い |
+| `noPartsIsNotAFailure` / 「F-74 TEST-28 Part が 0 件なら読めない Part も 0 件で、MERGED の Session を失敗にしない」 | MERGED、Part 0 | `unreadableTranscriptPartkeys([]) == []`、`failUnreadableAfterMerge == false`、MERGED のまま、`session_merge_failed` が無い |
+
 ## 7. 破壊による証明
 
 | 壊し方（1 か所だけ） | 落ちるべきテスト |
@@ -574,6 +590,12 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | ガードを MERGED→ANALYZING の後に置く | `guardFailureDoesNotTransition` |
 | processReadySessions の終わりの `llama.stop()` を対象があるときだけにする | `serverIsAlwaysStopped`（対象なし・停止要求） |
 | processReadySessions で Part 0 件の Session も対象にする | `sessionWithoutPartsIsNotReady` |
+| （F-74）ensureMerged の「有効な Part の transcript が読めない」分岐を消す（従来どおり session_empty） | `unreadableTranscriptFailsTheMerge`（両方） |
+| （F-74）`unreadableTranscriptPartkeys` が読めるかを見ない（有効な Part を全部数える） | `readableButBlankTranscriptIsStillEmpty` |
+| （F-74）process の MERGED 以降の `guard let t` を `return .stopped` だけに戻す | `unreadableAfterMergeFailsTheSession`（全部） |
+| （F-74）MERGED 以降で統合結果が空のまま解析へ進める（空の SessionTranscript を渡す） | `unreadableAfterMergeFailsTheSession`（`llm.ensureCalls` が空でない・文言が「チャンクが 0 個」） |
+| （F-74）buildSessionTranscript で読めない Part があれば nil を返す（一部だけ読めなくても失敗にする） | `partiallyUnreadableStillMerges` |
+| （F-74）`failUnreadableAfterMerge` の「読めない Part が 0 件なら何もしない」を消す | `noPartsIsNotAFailure` |
 
 ## 8. 受け入れ条件
 

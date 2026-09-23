@@ -10,6 +10,9 @@ public enum DeletionReadiness: Equatable, Sendable {
     case configured
     /// T-36 の DeletionReason の readiness の 5 語のどれか
     case disabled(String)
+    /// 観測できなかった（ProcessRunner が閉じた後で reaper の `--version` を起動できない。アプリの終了の途中。F-76）。
+    /// `.configured` でないので要求を書かず、`.disabled` でないので削除せずに完了もしない（決着させない）
+    case unconfirmed
 }
 
 /// デバイスの書き込みの可否の観測（PLAN §8.9.2 の 2。#107 / #148）。

@@ -41,6 +41,9 @@ final class AppContext {
     let physicalMemoryBytes: UInt64
     /// Worker.run() を回しているタスク（終了で待つ）
     var workerTask: Task<Void, Never>?
+    /// 単一起動のロック（`<HOME>/state/app.lock`。F-76）。アプリが生きている間ずっと持つ（手放すと 2 つ目の起動を拒めない）。
+    /// 本番は Bootstrap が渡す。テストの組み立ては持たない（nil）
+    let instanceLock: FileLock?
 
     init(
         layout: HomeLayout, paths: AppPaths, clock: any AppClock, log: AppLog, catalog: ModelCatalog,
@@ -48,7 +51,7 @@ final class AppContext {
         diagnostics: DiagnosticsDependencies, llama: LlamaServerSupervisor, ingest: IngestService,
         worker: Worker, enabler: DeletionEnabler, models: ModelManager, downloader: ModelDownloader,
         loginItem: any LoginItemControlling,
-        uiState: UIStateStore, physicalMemoryBytes: UInt64
+        uiState: UIStateStore, physicalMemoryBytes: UInt64, instanceLock: FileLock? = nil
     ) {
         self.layout = layout
         self.paths = paths
@@ -69,6 +72,7 @@ final class AppContext {
         self.loginItem = loginItem
         self.uiState = uiState
         self.physicalMemoryBytes = physicalMemoryBytes
+        self.instanceLock = instanceLock
     }
 }
 
@@ -80,12 +84,16 @@ enum BootFailure: Error, Equatable {
     case catalog(String)
     /// Store(url:clock:zone:) が投げた
     case database(String)
+    /// 単一起動のロック（`state/app.lock`）が取れない = 別のインスタンスが動いている（F-76）。知らせずに終わる
+    case alreadyRunning
 
-    var message: String {
+    /// 警告の本文。nil なら何も出さずに終わる（alreadyRunning。パネルは先に起動したほうにある。D-7）
+    var message: String? {
         switch self {
         case .directories(let e): Strings.bootFailureDirectories(e)
         case .catalog(let e): Strings.bootFailureCatalog(e)
         case .database(let e): Strings.bootFailureDatabase(e)
+        case .alreadyRunning: nil
         }
     }
 }
@@ -119,6 +127,13 @@ enum Bootstrap {
         let bootZone = ZonedTime(timeZone: TimeZone.current)
         let sink = TeeSink([OSLogSink(subsystem: logSubsystem), LogFile(url: layout.appLog)])
         var log = AppLog(sink: sink, level: .info, unsafeContent: false, zone: bootZone, clock: clock, category: "app")
+        // 4 の後. 単一起動（F-76）。設定・DB・復旧・Worker より前に <HOME>/state/app.lock を取る。取れなければ別のインスタンスが
+        // 動いている（2 つ目の復旧が 1 つ目の処理中の行を戻さないように）。ログの 1 行のほかは何もせずに終わる
+        guard let instanceLock = acquireInstanceLock(layout: layout) else {
+            log.info(
+                .serviceStopping, [(.version, .string(AppVersion.string)), (.reason, .string(alreadyRunningReason))])
+            return .failure(.alreadyRunning)
+        }
         // 5. 子プロセス
         let runner = ProcessRunner()
         // 6. 三重ロックの評価（init は検証しない。署名の要件は AppIdentity から。T-36）
@@ -208,12 +223,22 @@ enum Bootstrap {
             runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
             enabler: enabler, models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
-            physicalMemoryBytes: physicalMemoryBytes)
+            physicalMemoryBytes: physicalMemoryBytes, instanceLock: instanceLock)
         ctx.workerTask = await startServices(
             workerStart: { await worker.start() }, workerRun: { await worker.run() },
             ingestStart: { await ingest.start() })
         // 16.
         return .success(ctx)
+    }
+
+    /// 2 つ目の起動が出す `service_stopping` の reason（付録 A.4。F-76）
+    static let alreadyRunningReason = "already_running"
+
+    /// 単一起動のロック（F-76）。`<HOME>/state/app.lock`（reaper.lock とは別）を `FileLock.tryAcquire` で取る（待たない）。
+    /// 取れなければ nil（別のインスタンスが持っている。開けないときも同じ）。state/ は先に作っておくこと（手順 2）。
+    /// fd は O_CLOEXEC なので子プロセス（whisper-cli・llama-server・reaper）はロックを受け継がない（アプリが落ちれば外れる）
+    static func acquireInstanceLock(layout: HomeLayout) -> FileLock? {
+        FileLock.tryAcquire(url: layout.appLock)
     }
 
     /// 起動の順（PLAN §8.15）: 復旧（`Worker.start()`）を**待ってから** Worker のループを作り、最後に走査を始める。

@@ -56,8 +56,16 @@ extension SessionSteps {
             if row.status == .ready {
                 try store.recordSessionTransition(sessionKey: key, from: .ready, to: .merging)
             }
-            // 4. ノートを作らない。FAILED にしない
+            // 4. ノートを作らない。FAILED にしない。ただし有効な Part の transcript が読めないなら「本当に空」ではないので、
+            //    session_empty にせず SESSION_MERGE_FAILED で失敗にする（F-74）
             guard let t else {
+                let unreadable = unreadableTranscriptPartkeys(parts)
+                if !unreadable.isEmpty {
+                    try failSession(
+                        key, from: .merging, code: .sessionMergeFailed,
+                        message: Self.unreadableTranscriptMessage(unreadable), event: .sessionMergeFailed)
+                    return false
+                }
                 try store.recordSessionTransition(sessionKey: key, from: .merging, to: .completed)
                 log.info(.sessionEmpty, [(.sessionKey, .string(key)), (.parts, .of(parts.count))])
                 return false
@@ -73,6 +81,43 @@ extension SessionSteps {
                 ])
             return true
         }
+    }
+
+    /// MERGED 以降で統合結果が空になった（有効な Part の transcript が統合の後で読めなくなった）Session を、黙って止めずに
+    /// 解析と同じ経路で失敗にする（F-74。PLAN §5.6。辺を足さない。LLM は起動しない）:
+    /// MERGED→ANALYZING、ANALYZED / WRITING →ANALYZING（★ stale_analysis）、ANALYZING はそのまま → ANALYZING→FAILED（SESSION_MERGE_FAILED）。
+    /// 読めない Part が無い・それ以外の状態なら何もしない。失敗にしたら true
+    func failUnreadableAfterMerge(_ key: String) -> Bool {
+        guarded {
+            guard let row = try store.session(key) else { return false }
+            let unreadable = unreadableTranscriptPartkeys(try store.recordings(inSession: key))
+            if unreadable.isEmpty { return false }
+            switch row.status {
+            case .merged:
+                try store.recordSessionTransition(sessionKey: key, from: .merged, to: .analyzing)
+            case .analyzed, .writing:
+                try store.recordSessionTransition(
+                    sessionKey: key, from: row.status, to: .analyzing, detail: Self.staleDetail)
+            case .analyzing:
+                break
+            default:
+                return false
+            }
+            try failSession(
+                key, from: .analyzing, code: .sessionMergeFailed,
+                message: Self.unreadableTranscriptMessage(unreadable), event: .sessionMergeFailed)
+            return true
+        }
+    }
+
+    /// 有効な Part（FAILED / SKIPPED でない）のうち transcript が読めないもの（無い・壊れている）の partkey（渡された順。F-74）
+    func unreadableTranscriptPartkeys(_ parts: [RecordingRow]) -> [String] {
+        parts.filter { !Self.excludedStatuses.contains($0.status) && readTranscript($0.partkey) == nil }.map(\.partkey)
+    }
+
+    /// 「文字起こしを読めない Part があります: <partkey>, …」（Session の error_message。F-74）
+    static func unreadableTranscriptMessage(_ partkeys: [String]) -> String {
+        "文字起こしを読めない Part があります: " + partkeys.joined(separator: ", ")
     }
 
     /// transcripts/parts/<slug>.json を読み PartTranscriptCodec.decode。読めなければ nil（列は見ない）。

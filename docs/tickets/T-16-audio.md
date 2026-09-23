@@ -1,5 +1,9 @@
 # T-16 VDAudio: 16 kHz 変換・出力の検証・空き容量
 
+> （F-77・issue #117 で入力のヘッダの照合を足した。2026-09-23）変換は `AVAudioFile.length`（data チャンクの宣言したサイズ）で読むのを止めるので、ヘッダが実データより短い入力は後半を欠いた出力が長さの照合を通っていた。
+> §4.6 の手順 6 は `OutputVerifier.verify` を通った後に internal の `InputExtentCheck.check(input:)`（`Sources/VDAudio/InputExtentCheck.swift`）を呼び、文言が返れば同じく `discard(output)` して `NORMALIZE_VERIFY_FAILED`。手順 2 の再利用はこの照合も通るときだけ。
+> 規則と文言は PLAN §8.3 手順 6。公開 API は変えない。以下の §3・§4.6 と §6 の表は記録として残す（テストは `Tests/VDAudioTests/InputExtentCheckTests.swift`・`NormalizerInputExtentTests.swift`、VDPipelineTests の `PartStepsNormalizeExtentTests.swift`。表示名は `F-77` で始まる）。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-16 |

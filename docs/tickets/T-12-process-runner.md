@@ -1,5 +1,7 @@
 # T-12 VDProcess: ProcessRunner（run / spawn / terminateAll）
 
+> （F-76・issue #116。2026-09-23）`terminateAll(grace:)` は**まず閉じる**ようにした（以後の `run` は起動せずに `.spawnFailed(errno: ECANCELED)`、`spawn` は `SpawnError.spawnFailed(errno: ECANCELED)`。開き直さない）。SIGTERM の後は全部が終われば grace を待たずに戻る（50 ms ごとに見直す。呼び手の取り消しでも待つのをやめて SIGKILL へ進む）。テストは `Tests/VDProcessTests/ProcessRunnerShutdownTests.swift`。下の本文の terminateAll の手順は記録として残す。
+
 - Phase: 2（記録の土台）
 - 前提: T-10（`BlockingIO`）。TestSupport の `TempDirectory`（T-01）は T-10 の前提として入っている
 - 見積もり: 実装 約 450 行、テスト 約 400 行
