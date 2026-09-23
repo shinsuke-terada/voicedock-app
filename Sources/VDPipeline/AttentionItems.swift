@@ -5,14 +5,27 @@ import VDDevice
 import VDNotes
 import VDStore
 
-/// 元ファイルがいまデバイスに在るか（F-69。AttentionEvaluator.sourcePresence）。
+/// 元ファイルがいまデバイスに在るか（F-69。SourcePresence.of）。
 public enum SourcePresence: Equatable, Sendable {
     /// 接続中で一覧に在る
     case listed
     /// 接続中で列挙できた一覧に無い
     case notListed
-    /// 観測できない（snapshot が無い・抜いている・列挙できない・source_path が無い）
+    /// 観測できない（snapshot が無いか古い・抜いている・列挙できない・source_path が無い）
     case unobserved
+
+    /// 元ファイルがデバイスの一覧に在るか。「一覧に在るか」の判定はここ 1 か所（F-80。削除の段の failureIsObserved の d と
+    /// sourceIsObservedAbsent、要対応と状態の詳細が共有する）。新鮮さは呼び手が確かめる（削除の段は DEL-20、表示は
+    /// snapshotMaxAgeSeconds。AttentionEvaluator.freshSnapshot）。
+    /// snapshot が無い・デバイスが unavailable に在るか devices に無い（抜いている・列挙できない）・source_path が無いか空 → .unobserved、
+    /// 一覧に在る（sameKey）→ .listed、無い → .notListed
+    static func of(_ part: RecordingRow, in snapshot: DeviceSnapshot?) -> SourcePresence {
+        guard let snapshot, snapshot.unavailable[part.deviceID] == nil,
+            let observation = snapshot.devices[part.deviceID],
+            let relpath = part.sourcePath, !relpath.isEmpty
+        else { return .unobserved }
+        return observation.relpaths.contains(where: { DeletionPolicy.sameKey($0, relpath) }) ? .listed : .notListed
+    }
 }
 
 /// 要対応の項目に付ける操作ボタン（PLAN §8.11 の「操作ボタン」の列）。
@@ -118,6 +131,20 @@ public struct AttentionInput: Equatable, Sendable {
     public init(now: Instant) {
         self.now = now
     }
+
+    /// DB から数える要対応の件数（F-69 の undeletableSources・F-75 の rawNoteBlocked）を入れる（F-80。LiveServices.read の配線を
+    /// テストで固定できるようにここへ寄せた）。snapshot・now・snapshotMaxAgeSeconds を先に入れておく。
+    /// snapshotMaxAgeSeconds より古い snapshot では「一覧に在る」と数えない（F-80。他の要対応と同じ新鮮さ）。読めない表の件数は 0 のまま
+    public mutating func countStoredItems(from store: ReadOnlyStore) {
+        let fresh = AttentionEvaluator.freshSnapshot(snapshot, now: now, maxAgeSeconds: snapshotMaxAgeSeconds)
+        if let settled = try? store.completedParts(lastDetail: DeletionReason.notDeletable) {
+            undeletableSources = AttentionEvaluator.undeletableStillListed(settled, snapshot: fresh).count
+        }
+        // FAILED は全件（上限を付けない）
+        if let failed = try? store.failedParts(limit: Int.max) {
+            rawNoteBlocked = AttentionEvaluator.rawNoteBlockedSessions(failed.rows)
+        }
+    }
 }
 
 /// 要対応の判定（PLAN §8.11）。
@@ -128,7 +155,8 @@ public enum AttentionEvaluator {
     /// PLAN §8.11 の表の順に、条件を満たす項目だけを返す。
     public static func items(_ input: AttentionInput) -> [AttentionItem] {
         var items: [AttentionItem] = []
-        let paused = Set(input.paused)
+        // 設定エラー中は Worker が段を回さず停止理由が古いまま残るので、停止理由から作る項目を出さない（F-80）
+        let paused = input.configPresent ? Set(input.paused) : []
         if !input.configPresent { items.append(.configInvalid) }
         if paused.contains(.vaultNotConfigured) { items.append(.vaultNotConfigured) }
         if paused.contains(.vaultUnavailable) { items.append(.vaultUnavailable(input.vault)) }
@@ -151,10 +179,10 @@ public enum AttentionEvaluator {
         return items
     }
 
-    /// F-75: 渡された Part（AppServices は FAILED の全件を渡す）のうち、書き直すと本文が消えるので Raw ノートを書かずに
+    /// F-75: 渡された Part（countStoredItems は FAILED の全件を渡す）のうち、書き直すと本文が消えるので Raw ノートを書かずに
     /// FAILED にした Part（PartSteps.isRawNoteBlocked）が居る Session の数（session_key をスカラー列で数える）。
     /// transcript を戻すか Raw ノートの名前を変えて再試行し、RAW_SAVED になれば数えない。ほかの FAILED（一時的な失敗）は数えない
-    public static func rawNoteBlockedSessions(_ parts: [RecordingRow]) -> Int {
+    static func rawNoteBlockedSessions(_ parts: [RecordingRow]) -> Int {
         var sessions = Set<[Unicode.Scalar]>()
         for part in parts where PartSteps.isRawNoteBlocked(part) {
             if let key = part.sessionKey { sessions.insert(Array(key.unicodeScalars)) }
@@ -162,26 +190,22 @@ public enum AttentionEvaluator {
         return sessions.count
     }
 
-    /// 元ファイルがいまデバイスに在るか（F-69。要対応と状態の詳細が共有する）。
-    /// snapshot が無い・デバイスが unavailable か devices に無い（抜いている・列挙できない）・source_path が無いか空 → .unobserved、
-    /// 一覧に在る（sameKey）→ .listed、無い → .notListed
-    public static func sourcePresence(_ part: RecordingRow, snapshot: DeviceSnapshot?) -> SourcePresence {
-        guard let snapshot, snapshot.unavailable[part.deviceID] == nil,
-            let observation = snapshot.devices[part.deviceID],
-            let relpath = part.sourcePath, !relpath.isEmpty
-        else { return .unobserved }
-        return observation.relpaths.contains(where: { DeletionPolicy.sameKey($0, relpath) }) ? .listed : .notListed
+    /// snapshot が now から maxAgeSeconds 以内（DeviceSnapshot.isFresh）ならそのまま、古いか無ければ nil（F-80。表示の側の新鮮さ）
+    static func freshSnapshot(_ snapshot: DeviceSnapshot?, now: Instant, maxAgeSeconds: Int) -> DeviceSnapshot? {
+        guard let snapshot, snapshot.isFresh(now: now, maxAgeSeconds: maxAgeSeconds) else { return nil }
+        return snapshot
     }
 
     /// 消せないまま完了にした録音（ReadOnlyStore.completedParts(lastDetail: not_deletable)）のうち、
-    /// 最新の snapshot でデバイスが接続中で一覧にまだ在るもの（sourcePresence が .listed）だけ（F-69）。要対応の件数はこの数。
-    /// 抜いている間・一覧に無い（手で消した）・source_path が無いものは要対応に出さない（状態の詳細には出る）
-    public static func undeletableStillListed(_ parts: [RecordingRow], snapshot: DeviceSnapshot?) -> [RecordingRow] {
-        parts.filter { sourcePresence($0, snapshot: snapshot) == .listed }
+    /// snapshot でデバイスが接続中で一覧にまだ在るもの（SourcePresence.of が .listed）だけ（F-69）。要対応の件数はこの数。
+    /// 抜いている間・一覧に無い（手で消した）・source_path が無いものは要対応に出さない（状態の詳細には出る）。
+    /// snapshot は新鮮なものを渡す（呼び手が freshSnapshot で確かめる。F-80）
+    static func undeletableStillListed(_ parts: [RecordingRow], snapshot: DeviceSnapshot?) -> [RecordingRow] {
+        parts.filter { SourcePresence.of($0, in: snapshot) == .listed }
     }
 
     /// 沈黙の検出（#117。コピー中に誤報しない）。テストから直接呼ぶ。
-    public static func isIngestSilent(_ input: AttentionInput) -> Bool {
+    static func isIngestSilent(_ input: AttentionInput) -> Bool {
         // デバイスが接続されている
         guard let s = input.snapshot, !s.devices.isEmpty else { return false }
         // 走査中でもなく

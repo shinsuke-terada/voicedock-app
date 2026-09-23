@@ -46,7 +46,8 @@ struct ReaperDiskImageTests {
         #expect(result.status == .deleted)
         #expect(result.detail == ReaperBench.relpath)
         #expect(result.partkey == "VDT0037/" + ReaperBench.relpath)
-        #expect(bench.processedLines() == [Self.id])
+        // 成功の行は `<request_id> DELETED`（F-80）
+        #expect(bench.processedLines() == [Self.id + " DELETED"])
         #expect(bench.requests() == [])
         #expect(
             Self.logged(bench, "INFO  source_deleted request_id=\(Self.id) partkey=VDT0037/" + ReaperBench.relpath))

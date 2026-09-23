@@ -257,8 +257,8 @@
 | `LicenseGate.swift` | `public protocol LicenseGate: Sendable { func allowsProcessing() -> Bool }`、`public struct AlwaysAllowLicenseGate: LicenseGate` |
 | `ImportedKeysScanner.swift` | — 取り下げ（T-33。PLAN §8.13・F-60）。作らない |
 | `Diagnostics/Diagnostics.swift` | `public enum DiagnosticStatus: String, Sendable { case ok, notice, fail, skip }`、`public struct DiagnosticResult: Sendable, Equatable { id: String /* "DR-nn" */; status: DiagnosticStatus; label: String; details: [String] }`、`public struct Diagnostics: Sendable { func run(loginItemStatus: LoginItemStatus) async -> [DiagnosticResult] }`、`public enum LoginItemStatus: Sendable { case enabled, requiresApproval, notRegistered, notFound }` |
-| `AttentionItems.swift` | `public enum AttentionItem: Equatable, Sendable { … §8.11 の表。case undeletableSources(Int)（F-69）、末尾に case rawNoteBlocked(Int)（F-75） }`、`public enum AttentionAction`（`case openDetails` を足す。F-69）、`public struct AttentionInput`（`var undeletableSources = 0`。F-69。`var rawNoteBlocked = 0`。F-75）、`public enum AttentionEvaluator { static func items(…) -> [AttentionItem]; static func sourcePresence(_ part: RecordingRow, snapshot: DeviceSnapshot?) -> SourcePresence; static func undeletableStillListed(_ parts: [RecordingRow], snapshot: DeviceSnapshot?) -> [RecordingRow] /* F-69 */; static func rawNoteBlockedSessions(_ parts: [RecordingRow]) -> Int /* F-75 */ }`、`public enum SourcePresence: Equatable, Sendable { case listed, notListed, unobserved }`（F-69） |
-| `StatusReport.swift` | `public struct StatusReport: Sendable { … §8.12 の状態の詳細。var undeletable: [UndeletablePart] = []・var undeletableTotal = 0（F-69） }`、`public struct StatusReport.UndeletablePart: Equatable, Sendable { partkey: String; cause: String?; presence: SourcePresence; var detail: String }`（F-69）、`public enum StatusReporter { static func build(…) -> StatusReport }` |
+| `AttentionItems.swift` | `public enum AttentionItem: Equatable, Sendable { … §8.11 の表。case undeletableSources(Int)（F-69）、末尾に case rawNoteBlocked(Int)（F-75） }`、`public enum AttentionAction`（`case openDetails` を足す。F-69）、`public struct AttentionInput`（`var undeletableSources = 0`。F-69。`var rawNoteBlocked = 0`。F-75。`mutating func countStoredItems(from store: ReadOnlyStore)`＝ DB から数える 2 つの件数を入れる。LiveServices.read が呼ぶ。F-80）、`public enum AttentionEvaluator { static func items(…) -> [AttentionItem] }`（`undeletableStillListed`・`rawNoteBlockedSessions`・`freshSnapshot`・`isIngestSilent` は internal。F-80）、`public enum SourcePresence: Equatable, Sendable { case listed, notListed, unobserved }`（F-69。「一覧に在るか」の判定 `static func of(_:in:)` は internal。`AttentionEvaluator.sourcePresence` を置き換えた。F-80） |
+| `StatusReport.swift` | `public struct StatusReport: Sendable { … §8.12 の状態の詳細。var undeletable: [UndeletablePart] = []・var undeletableTotal = 0（F-69） }`、`public struct StatusReport.UndeletablePart: Equatable, Sendable { partkey: String; cause: String?; presence: SourcePresence }`（F-69。init と `detail` は internal。F-80）、`public struct StatusReport.FailedPart { …; note: String? }`（どの録音の失敗かの注記。init と `detail(maxAttempts:)` は internal。F-80）、`public enum StatusReporter { static func build(…) -> StatusReport }`（`causeTexts`・`presenceTexts`・`partOrder` などの表と `failureNote` は internal。F-80） |
 
 ---
 
@@ -292,7 +292,7 @@
 | `ReaperMain.swift` | 起動時の検査 → flock → 走査 → 1 件ずつ `RequestProcessor` |
 | `RequestProcessor.swift` | RV-02〜RV-13 |
 | `QueueFiles.swift` | 列挙・rejected への rename・結果の書き込み（AtomicFile） |
-| `ProcessedLog.swift` | processed.log の照合と追記 |
+| `ProcessedLog.swift` | processed.log の照合と追記（行は `<request_id>`、成功は `<request_id> DELETED`。`recordedDeleted` で RV-04 が DELETED を書き直す。F-80） |
 | `ReaperLog.swift` | reaper.log の行と回転 |
 | `ReaperClock.swift` | 時刻（PT-09 の許可場所） |
 | `Unlinker.swift` | `unlinkat` と要求ファイルの削除（PT-01 の許可場所） |

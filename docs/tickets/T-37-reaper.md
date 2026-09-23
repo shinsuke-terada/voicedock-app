@@ -1,5 +1,10 @@
 # T-37 voicedock-reaper（削除を実行する唯一の実行ファイル）
 
+> （F-80・issue #119、2026-09-23。マージ後の追記）processed.log の成功の行は `<request_id> DELETED`（拒否は従来どおり `<request_id>`。`ProcessedLog.append(_:deleted:)`・`recordedDeleted(_:)`）。
+> RV-04 は `<request_id> DELETED` と記録した要求（unlink の後に結果を書けずに残った）を拒否せず、結果が無ければ結果 DELETED（detail = 要求の relpath）を書き直して要求を消す（`RequestOutcome.redelivered`。unlink もボリュームを開くこともしない。ログは出さない）。
+> 従来の ID だけの行・読めない processed.log は従来どおり `replayed`。下の本文の「1 行 1 request_id」「照合は行の完全一致」はその分を読み替える（PLAN §8.9.4・付録 B.2）。
+> ディスクイメージの成功のテスト（`ReaperDiskImageTests`・`ReaperDefenseDiskImageTests`）の processed.log の期待も `<request_id> DELETED` に直した。テストは `ProcessedLogTests`。
+
 > （F-73・issue #113。2026-09-23）reaper は各要求の unlink（RV-13）の直前に reaper.conf を読み直し、ロック 1 が閉じていればその要求を残して `reaper_disabled` を出し、走査を終える（`RequestOutcome.stopped`・`RequestProcessor.unlinkIfLock1Open`・`ReaperMain.scan`）。
 > `QueueFiles.readRequest` は `RequestRead`（`.read` / `.gone` / `.unreadable`）を返し、`ENOENT`（`.gone`）は何も書かずに次へ（`RequestOutcome.gone`。数えない）。RV-04 の `replayed` は結果を書けたときだけ要求を消してログを出す。
 > reaper.conf・processed.log・要求の読みは `O_NONBLOCK` ＋ `fstat` で通常ファイル、processed.log の追記と reaper.log の作成・追記は `O_NOFOLLOW | O_NONBLOCK`。以下の本文は記録として残す。テストは `ReaperDefenseTests`。

@@ -280,12 +280,15 @@ struct SessionDeletionStageTests {
         "deleteEvaluated に無い Session は何もしない（パラメータ化: READY・COMPLETED）", arguments: [SessionStatus.ready, .completed])
     func notEvaluatedStatesAreIgnored(_ status: SessionStatus) async throws {
         let scene = try DeletionScene(sessionStatus: status)
+        // COMPLETED の Session の Part は COMPLETED（後から RAW_SAVED になった Part は F-80 で評価する。DeletionRemainderTests）
+        if status == .completed { try scene.movePart(Self.pk, to: .completed) }
+        let partBefore = try Self.part(scene)
         let before = try Self.session(scene)
         await Self.stage(scene).deleteSourcesIfSafe(sessionKey: Self.key)
         let after = try Self.session(scene)
         #expect(after.status == status)
         #expect(after.deleteAttempts == before.deleteAttempts)
-        #expect(try Self.part(scene).status == .rawSaved)
+        #expect(try Self.part(scene).status == partBefore.status)
         #expect(scene.requests() == [])
     }
 

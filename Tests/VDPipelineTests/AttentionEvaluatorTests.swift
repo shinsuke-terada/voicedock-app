@@ -216,8 +216,8 @@ struct AttentionEvaluatorTests {
 
     @Test("並びは §8.11 の表の順")
     func orderFollowsTheSpecTable() {
-        var i = AttentionInput(now: Self.now)
-        i.configPresent = false
+        // 設定エラー中は停止理由から作る項目を出さない（F-80）ので、設定が読めている入力で全部を並べる（configInvalid の順は order が固定する）
+        var i = Self.input()
         i.paused = PauseReason.allCases
         i.vault = .missingRoot
         i.snapshot = DeviceSnapshot(
@@ -234,9 +234,9 @@ struct AttentionEvaluatorTests {
         i.undeletableSources = 2
         i.rawNoteBlocked = 1
         let items = AttentionEvaluator.items(i)
-        #expect(items.count == 19)
+        #expect(items.count == 18)
         #expect(items.map(\.order) == items.map(\.order).sorted())
-        #expect(items.first == .configInvalid)
+        #expect(items.first == .vaultNotConfigured)
         #expect(items.last == .rawNoteBlocked(1))
     }
 
