@@ -18,13 +18,16 @@ public actor ProcessRunner: ProcessRunning {
     static let terminatePollInterval: Duration = .milliseconds(50)
 
     private var active: Set<pid_t> = []  // run 中と spawn 中の子（= プロセスグループ）
+    /// terminateAll が SIGTERM を送った子（run が結果の `stoppedByTerminateAll` に写す。F-82）
+    private var stoppedByTerminateAll: Set<pid_t> = []
     /// terminateAll の後は真。以後は子を起動しない（開き直さない。アプリの終了の後に子を残さない。F-76）
     private var closed = false
 
     public init() {}
 
     /// 完了まで待つ。起動の失敗は投げずに .spawnFailed で返す。タイムアウトと呼び手の取り消しは .timedOut。
-    /// terminateAll の後は起動せずに .spawnFailed(errno: ECANCELED)（F-76）
+    /// terminateAll の後は起動せずに .spawnFailed(errno: ECANCELED)（F-76）。
+    /// 実行中に terminateAll が止めた子の結果は `stoppedByTerminateAll` が真（呼び手が失敗として記録しないため。F-82）
     public func run(_ spec: ProcessSpec, timeout: Duration) async -> ProcessResult {
         if closed {
             return ProcessResult(
@@ -57,9 +60,10 @@ public actor ProcessRunner: ProcessRunning {
         Self.signalGroup(child.pid, SIGKILL)  // 子の終了後に同じグループに残った孫を消す（ASR-07）
         await Self.finishReaders(readers, [stdout, stderr])
         active.remove(child.pid)
+        let stopped = stoppedByTerminateAll.remove(child.pid) != nil
         return ProcessResult(
             termination: timedOut ? .timedOut : WaitStatus.termination(raw), stdoutTail: stdout.snapshot,
-            stderrTail: stderr.snapshot)
+            stderrTail: stderr.snapshot, stoppedByTerminateAll: stopped)
     }
 
     /// 起動して手放す（llama-server）。止めるのは RunningProcess.terminate。
@@ -97,6 +101,7 @@ public actor ProcessRunner: ProcessRunning {
         closed = true
         let pids = active
         if pids.isEmpty { return }
+        stoppedByTerminateAll.formUnion(pids)
         for pid in pids { Self.signalGroup(pid, SIGTERM) }
         var waited: Duration = .zero
         while waited < grace, !pids.isDisjoint(with: active) {
@@ -106,7 +111,11 @@ public actor ProcessRunner: ProcessRunning {
         for pid in pids.intersection(active) { Self.signalGroup(pid, SIGKILL) }
     }
 
-    func unregister(_ pid: pid_t) { active.remove(pid) }
+    /// spawn の子の終わり（spawn の子は結果を返さないので、止めた印もここで捨てる）
+    func unregister(_ pid: pid_t) {
+        active.remove(pid)
+        stoppedByTerminateAll.remove(pid)
+    }
 
     /// プロセスグループへシグナルを送る（ESRCH は無視）
     static func signalGroup(_ pgid: pid_t, _ signal: Int32) { _ = kill(-pgid, signal) }
