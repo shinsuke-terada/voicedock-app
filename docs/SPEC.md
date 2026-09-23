@@ -239,7 +239,7 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
   検証の中の算術（CV-10 の 2 倍・CV-51 の和）は桁あふれを報告する形で行い、あふれたらその CV の違反にする（§6.1「違反してもアプリを落とさない」。文言は CV-10 `chunkOverlapChars の 2 倍より大きいこと（chunkOverlapChars の 2 倍が桁あふれ: <値>）`、CV-51 `maxCharsPerRequest + maxOutputTokens + 2048（桁あふれ）以上であること（<contextSize>）`）。
   上限を置かない秒のキー: `stabilityFastPathSeconds`・`requestTimeoutSeconds`・`maxDurationSeconds`・`vaultIndexCacheSeconds`（Double か `Duration` でしか使わず、桁あふれしない）
 - **backoff の要素数（F-83）**: CV-52・CV-53 の backoff の配列は要素が **64 個以下**（合計 × 1000 のミリ秒を要素数によらず Int64 に収める。既定は 4 個と 3 個）。超えたら `要素は 64 個以下であること（<個数>）`（keyPath は配列そのもの）の 1 件だけにし、要素ごとの範囲の違反は出さない
-- **スカラー単位（F-83。§5.7）**: CV-13 の `{…}` の走査・CV-14 の `{title}` の探索・CV-41 の `/`・`.`・`..` の判定は Unicode スカラー単位で行う（書記素単位だと `{bad}\u0301` の `}`・`a/\u0301b` の `/` が結合文字と 1 文字になり、違反を見逃した。`NoteTemplate.render` もスカラー単位で置換するので、見逃した `{…}` はフォルダ名・ファイル名に残った）。検証が厳しくなる側の変更だけ
+- **スカラー単位（F-83。§5.7）**: CV-13 の `{…}` の走査・CV-14 の `{title}` の探索・CV-41 の `/`・`.`・`..` の判定は Unicode スカラー単位で行う（書記素単位だと `{bad}\u0301` の `}`・`a/\u0301b` の `/` が結合文字と 1 文字になり、違反を見逃した。`NoteTemplate.render` もスカラー単位で置換するので、見逃した `{…}` はフォルダ名・ファイル名に残った）。Python と同じ判定にする: 多くは厳しくなる側だが、旧実装が違反にしていたものが通るようになる例もある（`{date}\u0301x}` は `{date}` だけが名前で通る。旧実装は `date}\u0301x` を名前として違反にした）
 - CV-54 の 4 語は `LogLevel` の 1 か所に書く（CR-06。`ConfigValidator` は `LogLevel(configValue:)` で判定し、文言の語も `LogLevel` から作る）
 
 ## S6. 診断 DR（PLAN §8.11）

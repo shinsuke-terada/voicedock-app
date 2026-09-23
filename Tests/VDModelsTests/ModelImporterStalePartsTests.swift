@@ -84,6 +84,59 @@ struct ModelImporterStalePartsTests {
         #expect(try Data(contentsOf: outside) == Data("keep".utf8))
     }
 
+    @Test("F-83 名前が一致しても FIFO とディレクトリは消さない（通常のファイルだけ）")
+    func fifoAndDirectoryAreKept() throws {
+        let (tmp, layout) = try world()
+        defer { tmp.remove() }
+        let fifo = llm(layout).appendingPathComponent(".custom-import-0123456789abcdef.gguf.part")
+        #expect(mkfifo(fifo.path(percentEncoded: false), 0o600) == 0)
+        try FileManager.default.createDirectory(
+            at: llm(layout).appendingPathComponent(".custom-import-fedcba9876543210.gguf.part", isDirectory: true),
+            withIntermediateDirectories: false)
+        #expect(ModelImporter.discardStaleParts(layout: layout) == 0)
+        #expect(
+            try names(layout) == [
+                ".custom-import-0123456789abcdef.gguf.part", ".custom-import-fedcba9876543210.gguf.part",
+            ])
+    }
+
+    @Test("F-83 起動時の掃除は、走っている取り込みの途中のファイルを消さない")
+    func startupCleanupKeepsARunningImport() async throws {
+        let (tmp, layout) = try world()
+        defer { tmp.remove() }
+        // 取り込みが数十ミリ秒以上かかる大きさ（4 KiB ずつ読む）
+        let source = tmp.url.appendingPathComponent("big.gguf", isDirectory: false)
+        let size = 48 * 1_048_576
+        try Data(repeating: UInt8(ascii: "b"), count: size).write(to: source)
+        let m = try manager(layout)
+        let running = Task { await m.importCustomLLM(from: source) }
+        // 取り込みの途中のファイルが現れるまで待つ
+        var seen = false
+        for _ in 0..<5_000 {
+            let current = (try? names(layout)) ?? []
+            if current.contains(where: { $0.hasPrefix(".custom-import-") && $0.hasSuffix(".gguf.part") }) {
+                seen = true
+                break
+            }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        #expect(seen)
+        #expect(await m.discardStaleImports() == 0)
+        let result = await running.value
+        let imported = try result.get()
+        #expect(try Data(contentsOf: imported.url).count == size)
+    }
+
+    @Test("F-83 起動時の掃除は、取り込みが走っていなければ残りを消す")
+    func startupCleanupRemovesLeftovers() async throws {
+        let (tmp, layout) = try world()
+        defer { tmp.remove() }
+        try put(layout, ".custom-import-0123456789abcdef.gguf.part")
+        let m = try manager(layout)
+        #expect(await m.discardStaleImports() == 1)
+        #expect(try names(layout) == [])
+    }
+
     @Test("F-83 llm のフォルダが空なら何も消さない（TEST-28）")
     func emptyFolder() throws {
         let (tmp, layout) = try world()
@@ -103,7 +156,7 @@ struct ModelImporterStalePartsTests {
         #expect(try Data(contentsOf: try r.get().url) == Data(repeating: UInt8(ascii: "a"), count: 1_000_000))
     }
 
-    @Test("F-83 meetsMemory は ModelMemory と同じ式（負の値・掛け算のあふれで落ちない。CR-06・CR-16）")
+    @Test("CR-16 meetsMemory は負の値・掛け算のあふれで落ちない（F-83。CR-06: ModelMemory と同じ式）")
     func meetsMemoryUsesTheSharedFormula() {
         func entry(_ gb: Int) -> ModelEntry {
             ModelEntry(

@@ -9,25 +9,38 @@ import VDContract
 @testable import VDCore
 @testable import VDModels
 
-/// 途中まで返して止まり（ETag・Accept-Ranges・Last-Modified を付けるので URLSession が再開データを作る）、
-/// 再開の要求（Range 付き）には残りを 206 で返す。**ネットワークには決して出ない**（登録の無い URL は失敗させる）。
+/// 最初の要求には途中まで返して止まり（ETag・Accept-Ranges・Last-Modified を付けるので URLSession が再開データを作る）、
+/// 再開の要求（Range 付き）には残りを 206 で返す（rangeStatus を決めればその状態の誤り）。2 本目以降の要求には全部を 200 で返す。
+/// **ネットワークには決して出ない**（登録の無い URL・URL の無い要求は失敗させる）。
 final class ResumableHostURLProtocol: URLProtocol {
     struct Host {
         let payload: Data
         let half: Int
         /// 再開の要求が届いた時点で在るかを見るファイル（`.resume`）
         let watched: URL
+        /// 最初の（Range の無い）要求を途中で止めるか
+        let stallFirst: Bool
+        /// Range の要求に返す誤りの状態（nil なら 206 で残り）
+        let rangeStatus: Int?
         /// 届いた再開の要求（Range の値と、その時点で watched が在ったか）
         var resumed: [String] = []
         var watchedExisted: [Bool] = []
+        /// 届いた Range の無い要求の数
+        var fresh = 0
     }
 
     static let hosts = Mutex<[String: Host]>([:])
     static let etag = "\"f83\""
     static let lastModified = "Wed, 23 Sep 2026 00:00:00 GMT"
 
-    static func register(_ url: String, payload: Data, watched: URL) {
-        hosts.withLock { $0[url] = Host(payload: payload, half: payload.count / 2, watched: watched) }
+    static func register(
+        _ url: String, payload: Data, watched: URL, stallFirst: Bool = true, rangeStatus: Int? = nil
+    ) {
+        hosts.withLock {
+            $0[url] = Host(
+                payload: payload, half: payload.count / 2, watched: watched, stallFirst: stallFirst,
+                rangeStatus: rangeStatus)
+        }
     }
 
     static func unregister(_ url: String) {
@@ -54,6 +67,12 @@ final class ResumableHostURLProtocol: URLProtocol {
                 hosts[url.absoluteString]?.resumed.append(range)
                 hosts[url.absoluteString]?.watchedExisted.append(existed)
             }
+            if let status = host.rangeStatus {
+                respond(url, status: status, headers: ["Content-Length": "2"])
+                client?.urlProtocol(self, didLoad: Data("no".utf8))
+                client?.urlProtocolDidFinishLoading(self)
+                return
+            }
             let rest = host.payload.subdata(in: host.half..<total)
             respond(
                 url, status: 206,
@@ -62,10 +81,19 @@ final class ResumableHostURLProtocol: URLProtocol {
                 ])
             client?.urlProtocol(self, didLoad: rest)
             client?.urlProtocolDidFinishLoading(self)
-        } else {
-            respond(url, status: 200, headers: ["Content-Length": "\(total)"])
-            // 前半だけ返して止まる（止めるのはテストの stopAllKeepingResumeData）
+            return
+        }
+        let count = Self.hosts.withLock { hosts -> Int in
+            hosts[url.absoluteString]?.fresh += 1
+            return hosts[url.absoluteString]?.fresh ?? 0
+        }
+        respond(url, status: 200, headers: ["Content-Length": "\(total)"])
+        if host.stallFirst && count == 1 {
+            // 前半だけ返して止まる（止めるのはテストの stopAllKeepingResumeData・cancel）
             client?.urlProtocol(self, didLoad: host.payload.subdata(in: 0..<host.half))
+        } else {
+            client?.urlProtocol(self, didLoad: host.payload)
+            client?.urlProtocolDidFinishLoading(self)
         }
     }
 
@@ -199,6 +227,65 @@ struct ModelDownloaderResumeTests {
         #expect(await next.download(entry, kind: .whisper, progress: { _, _ in }) == .success(w.final))
         #expect(ResumableHostURLProtocol.host(w.entry.url)?.watchedExisted == [true])
         #expect(size(w.resume) == nil)
+    }
+
+    /// 最初の要求を途中で止め、stopAllKeepingResumeData で .resume を残す
+    func leaveResumeData(_ w: World) async throws {
+        let written = Mutex<Int64>(0)
+        let downloader = w.downloader
+        let entry = w.entry
+        let first = Task {
+            await downloader.download(entry, kind: .whisper, progress: { done, _ in written.withLock { $0 = done } })
+        }
+        try await waitUntil { written.withLock { $0 } >= 100_000 }
+        await downloader.stopAllKeepingResumeData()
+        #expect(await first.value == .failure(.cancelled))
+        #expect((size(w.resume) ?? 0) >= 16)
+    }
+
+    @Test("F-83 再開データの URL が今の URL と違えば、捨てて最初から落とす（別の URL へ Range の要求を出さない）")
+    func resumeDataForAnotherURLIsDiscarded() async throws {
+        let w = try world("f83-url-a")
+        ResumableHostURLProtocol.register(w.entry.url, payload: Self.payload, watched: w.resume)
+        defer { ResumableHostURLProtocol.unregister(w.entry.url) }
+        try await leaveResumeData(w)
+        let other = ModelEntry(
+            id: w.entry.id, displayName: w.entry.displayName, file: w.entry.file,
+            url: "https://huggingface.co/a/f83-url-b/resolve/\(Self.commit)/ggml-t.bin", sha256: w.entry.sha256,
+            bytes: w.entry.bytes, license: w.entry.license, minMemoryGB: nil, verified: nil)
+        ResumableHostURLProtocol.register(other.url, payload: Self.payload, watched: w.resume, stallFirst: false)
+        defer { ResumableHostURLProtocol.unregister(other.url) }
+        #expect(await w.downloader.download(other, kind: .whisper, progress: { _, _ in }) == .success(w.final))
+        #expect(ResumableHostURLProtocol.host(w.entry.url)?.resumed == [])
+        #expect(ResumableHostURLProtocol.host(other.url)?.resumed == [])
+        #expect(ResumableHostURLProtocol.host(other.url)?.fresh == 1)
+        #expect(size(w.resume) == nil)
+    }
+
+    @Test("F-83 読めない .resume（16 バイト以上の壊れた再開データ）は捨てて最初から落とす")
+    func garbageResumeStartsFresh() async throws {
+        let w = try world("f83-garbage")
+        ResumableHostURLProtocol.register(w.entry.url, payload: Self.payload, watched: w.resume, stallFirst: false)
+        defer { ResumableHostURLProtocol.unregister(w.entry.url) }
+        try Data(repeating: 7, count: 64).write(to: w.resume)
+        #expect(await w.downloader.download(w.entry, kind: .whisper, progress: { _, _ in }) == .success(w.final))
+        #expect(ResumableHostURLProtocol.host(w.entry.url)?.fresh == 1)
+        #expect(size(w.resume) == nil)
+    }
+
+    @Test("F-83 再開の要求が HTTP の誤り（403）で終わったら、最初から 1 回だけやり直す")
+    func expiredResumeRestartsOnce() async throws {
+        let w = try world("f83-expired")
+        ResumableHostURLProtocol.register(w.entry.url, payload: Self.payload, watched: w.resume, rangeStatus: 403)
+        defer { ResumableHostURLProtocol.unregister(w.entry.url) }
+        try await leaveResumeData(w)
+        #expect(await w.downloader.download(w.entry, kind: .whisper, progress: { _, _ in }) == .success(w.final))
+        let host = try #require(ResumableHostURLProtocol.host(w.entry.url))
+        #expect(host.resumed == ["bytes=100000-"])
+        #expect(host.fresh == 2)
+        #expect(try Data(contentsOf: w.final) == Self.payload)
+        #expect(w.sink.lines.filter { $0.contains("model_download_failed") }.isEmpty)
+        #expect(w.sink.lines.filter { $0.contains(" model_downloaded id=test-whisper") }.count == 1)
     }
 
     @Test("F-83 走っていなければ止めても何も書かない（TEST-28）")

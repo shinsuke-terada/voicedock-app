@@ -43,7 +43,7 @@ struct RecoveryVaultTmpTests {
 
     // F-83: raw_output_path があっても、今のフォルダの候補名の tmp も消す（書き手は DB のパスを使えなければ候補名へ書く）。
     // 以前は「その tmp だけ消す」で、base を残すことを確かめていた
-    @Test("raw_output_path があればその tmp と、今のフォルダの候補名の tmp を消す（F-83）")
+    @Test("F-83 raw_output_path があればその tmp と、今のフォルダの候補名の tmp を消す")
     func rawTmpByOutputPath() async throws {
         let w = try await Self.world()
         let pk = try w.addPart(PipelineFixtures.partA, status: .rawWriting)

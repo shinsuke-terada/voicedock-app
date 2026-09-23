@@ -59,15 +59,14 @@ public enum LogLevel: Int, Comparable, Sendable, CaseIterable {
     case warning = 30
     case error = 40
 
-    /// 行に出す表記（5 桁左寄せ。WARNING は 7 桁のまま。voicedock `{level:<5}`）。
+    /// 行に出す表記（`configValue` を 5 桁に左寄せ。WARNING は 7 桁のまま。voicedock `{level:<5}`）。
+    /// F-83: 語は `configValue` の 1 か所から作る（CR-06）
     public var token: String {
-        switch self {
-        case .debug: "DEBUG"
-        case .info: "INFO "
-        case .warning: "WARNING"
-        case .error: "ERROR"
-        }
+        configValue + String(repeating: " ", count: max(0, Self.tokenWidth - configValue.unicodeScalars.count))
     }
+
+    /// token の最小の桁数（voicedock `{level:<5}`）
+    static let tokenWidth = 5
 
     /// config.json の `logging.level` の語（大文字。CV-54）。F-83: 4 語はここだけに書く（CR-06。ConfigValidator もこれを使う）
     var configValue: String {

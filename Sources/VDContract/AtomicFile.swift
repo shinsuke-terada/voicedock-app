@@ -8,7 +8,8 @@ public enum AtomicFile {
     /// 途中のどこで失敗しても、tmp を作った後なら tmp を消して元の誤りを投げる。最終ファイルは差し替えない（CR-21）。
     /// url が symlink なら rename が symlink そのものを置き換える（リンク先には書かない）。
     /// F-83: fullSync が真なら、tmp と親ディレクトリを `fsync` の代わりに `fullFsync`（F_FULLFSYNC。ドライブのキャッシュまで流す）で書き出す。
-    /// 既定は偽（今までどおり fsync）。原本の削除の根拠になるファイル（Vault のノート・transcript）の書き手が真にする。
+    /// 既定は偽（今までどおり fsync）。原本の削除の根拠になるファイルの書き手が真にする（Vault のノートは NoteWriter。
+    /// transcript は統合で Transcriber を真にする）。
     public static func write(
         _ data: Data, to url: URL, permissions: mode_t = 0o644, verifyReadBack: Bool = false, fullSync: Bool = false
     ) throws(AtomicFileError) {
@@ -47,8 +48,8 @@ public enum AtomicFile {
         }
     }
 
-    /// F-83: `fcntl(F_FULLFSYNC)`。macOS の `fsync` はドライブのキャッシュまでは流さない。ファイルシステムが F_FULLFSYNC に
-    /// 対応しなければ（ENOTSUP・ENODEV など）`fsync` に戻す。成功なら nil、失敗なら fsync の errno。
+    /// F-83: `fcntl(F_FULLFSYNC)`。macOS の `fsync` はドライブのキャッシュまでは流さない。F_FULLFSYNC が**どの errno で失敗しても**
+    /// `fsync` に戻す（対応しないファイルシステム・デバイスでも書き出しを諦めない。SQLite と同じ）。成功なら nil、失敗なら fsync の errno。
     /// VDModels も使う（照合したモデルの rename の前。§8.10）。
     public static func fullFsync(_ fd: Int32) -> Int32? {
         if fcntl(fd, F_FULLFSYNC) == 0 { return nil }

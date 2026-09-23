@@ -72,6 +72,8 @@ public actor ModelManager {
     private var failures: [Key: ModelError] = [:]
     /// 走っている取り込みの数（F-83。0 のときだけ前回の途中のファイルを消す）
     private var importsInFlight = 0
+    /// 走っている「前回の取り込みの残り」の掃除（F-83。終わるまで取り込みは tmp を作らない）
+    private var staleCleanup: Task<Int, Never>?
 
     public init(
         layout: HomeLayout, catalog: ModelCatalog, downloader: ModelDownloader,
@@ -161,17 +163,42 @@ public actor ModelManager {
 
     /// 利用者の .gguf を取り込む。
     /// F-83: ほかの取り込みが走っていなければ、始める前に前回の途中で残った `.custom-import-*.gguf.part` を消す
-    /// （判定と削除の間に await を挟まない。走っている取り込みの途中のファイルは消さない）。
+    /// （`discardStaleImports` と同じ掃除。掃除が終わるまで tmp を作らないので、走っている取り込みの途中のファイルは消さない）。
     public func importCustomLLM(from source: URL) async -> Result<(id: String, url: URL), ModelError> {
         let l = layout
         let c = hashChunkBytes
-        if importsInFlight == 0 {
-            ModelImporter.discardStaleParts(layout: l)
-        }
+        // 数えるのは actor の上で（判定と数え上げの間に await を挟まない）。消すのは BlockingIO の中
+        let cleanup = importsInFlight == 0 ? (staleCleanup ?? startStaleCleanup()) : staleCleanup
         importsInFlight += 1
         defer { importsInFlight -= 1 }
+        if let cleanup { await finish(cleanup) }
         return (try? await BlockingIO.run { ModelImporter.importGGUF(from: source, layout: l, chunkBytes: c) })
             ?? .failure(.io("blocking_io"))
+    }
+
+    /// F-83: 前回の取り込みが途中で終わって残った `models/llm/.custom-import-<16 桁の小文字 16 進>.gguf.part` を消す
+    /// （起動時に呼ぶ口。配線は VoiceDockApp の Bootstrap）。取り込みが走っていれば何もせずに 0（その tmp を消さない）。
+    /// 数えるのは actor の上、消すのは BlockingIO の中。消えるまで新しい取り込みは tmp を作らない。消した数を返す
+    @discardableResult
+    public func discardStaleImports() async -> Int {
+        guard importsInFlight == 0 else { return 0 }
+        return await finish(staleCleanup ?? startStaleCleanup())
+    }
+
+    /// 掃除を BlockingIO で始めて覚える（呼び手は actor の上で、importsInFlight が 0 を確かめた直後）
+    private func startStaleCleanup() -> Task<Int, Never> {
+        let l = layout
+        let task = Task { (try? await BlockingIO.run { ModelImporter.discardStaleParts(layout: l) }) ?? 0 }
+        staleCleanup = task
+        return task
+    }
+
+    /// 掃除の終わりを待ち、覚えているのがその掃除なら忘れる
+    @discardableResult
+    private func finish(_ task: Task<Int, Never>) async -> Int {
+        let removed = await task.value
+        if staleCleanup == task { staleCleanup = nil }
+        return removed
     }
 
     /// physicalMemoryBytes >= minMemoryGB × 1024³（minMemoryGB が nil なら真）。T-22 のガードと同じ式。

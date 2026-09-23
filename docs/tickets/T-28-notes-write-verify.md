@@ -4,8 +4,9 @@
 > `resolve` は DB の出力パスの親フォルダが無ければそれを使わずに基本名の探索へ進む。書き直しで消える鍵を返す `keysLostByOverwrite(_:protectedKeys:newKeys:)` を足した（呼び手は T-29 の Raw の工程）。
 > 仕様は PLAN §8.6・§8.8、テストは `OutputPathResolverOverwriteTests.swift`。既存の `OutputPathResolverTests` の Raw として解決するノートは `type: "voice-raw"` にした。
 
-> （F-83・issue #119、2026-09-23。マージ後の追記）`NoteWriter` は `AtomicFile.write(…, fullSync: true)`（F_FULLFSYNC）で書き、`NoteFolder.ensure` の `/` の分割はスカラー単位にした。保存検証の規則 3 と `mayOverwrite`・`keysLostByOverwrite` は
-> ノートを `Frontmatter.readNote`（64 MiB の上限・O_NOFOLLOW | O_NONBLOCK）で読む（symlink・FIFO・大きすぎるノートは読めない扱い）。PLAN §8.7・§8.8。テストは `NoteWriterFullSyncTests.swift`・`NoteReadLimitTests.swift`。
+> （F-83・issue #119、2026-09-23。マージ後の追記）`NoteWriter` は `AtomicFile.write(…, fullSync: true)`（F_FULLFSYNC。PolicyTests の `DurableWriteCallTests` が字句で固定）で書き、`Frontmatter.maxNoteBytes` を超える内容は書く前に `.write(errno: EFBIG)` で断る。
+> `NoteFolder.ensure` の `/` の分割はスカラー単位にした。保存検証の規則 3 と `mayOverwrite`・`keysLostByOverwrite` はノートを `Frontmatter.readNote`（64 MiB の上限・O_NOFOLLOW | O_NONBLOCK）で読む
+> （symlink・FIFO・大きすぎるノートは読めない扱い）。PLAN §8.7・§8.8。テストは `NoteWriterFullSyncTests.swift`・`NoteReadLimitTests.swift`。
 
 | 項目 | 内容 |
 |---|---|

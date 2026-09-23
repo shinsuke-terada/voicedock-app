@@ -70,23 +70,22 @@ public actor ModelDownloader {
         // 照合と rename が終わるまで同じ ID の 2 本目を通さない（戻る直前に 1 か所で消す）。
         defer { running[e.id] = nil }
         // F-83: 使える `.resume` は読んだ後も残す（このダウンロードの途中で終了・クラッシュしても、次はそこから再開できる）。
-        // 消すのは、落とし終えたとき・HTTP の誤り・新しい再開データが得られずに失敗したとき（saveResume）。
+        // 消すのは、落とし終えたとき・HTTP の誤り・新しい再開データが得られずに失敗したとき（saveResume）・
+        // 再開データの URL が remote と違うとき（transfer）。
         // 使えない（短い・読めない）`.resume` はここで捨てる
         let resume = ResumeStore.load(e, layout: layout)
         if resume == nil {
             ResumeStore.discard(e, layout: layout)
             removePart(part)
         }
-        let delegate = ModelDownloadDelegate(
-            partURL: part, layout: layout, expectedBytes: e.bytes, progress: progress)
-        let session = URLSession(configuration: factory.configuration(), delegate: delegate, delegateQueue: nil)
-        let task =
-            resume.map { session.downloadTask(withResumeData: $0) }
-            ?? session.downloadTask(with: URLRequest(url: remote))
-        running[e.id] = RunningDownload(entry: e, task: task, delegate: delegate)
-        task.resume()
-        let outcome = await delegate.wait()
-        session.finishTasksAndInvalidate()
+        var (outcome, delegate, resumed) = await transfer(
+            e, remote: remote, part: part, resume: resume, progress: progress)
+        if resumed, case .http = outcome {
+            // F-83: 再開の要求が HTTP の誤り（403 など。再開データの期限切れ）で終わったら、最初から 1 回だけやり直す
+            ResumeStore.discard(e, layout: layout)
+            removePart(part)
+            (outcome, delegate, _) = await transfer(e, remote: remote, part: part, resume: nil, progress: progress)
+        }
         switch outcome {
         case .http(let code):
             removePart(part)
@@ -130,6 +129,38 @@ public actor ModelDownloader {
         ModelFileSync.syncParent(of: final)
         log.info(.modelDownloaded, [(.id, .string(e.id))])
         return .success(final)
+    }
+
+    /// 1 本のタスクを走らせて結末を待つ。resumed は再開のタスクで走ったか。
+    /// F-83: 再開データの元の要求の URL が remote と違えば（壊れた・別の版の再開データ）、そのタスクは始めずに捨て、
+    /// `.resume` と `.part` を消して最初から落とす。代理は始めたタスクの知らせだけを受ける（捨てたタスクの知らせは無視する）
+    private func transfer(
+        _ e: ModelEntry, remote: URL, part: URL, resume: Data?, progress: @escaping @Sendable (Int64, Int64) -> Void
+    ) async -> (outcome: DownloadOutcome, delegate: ModelDownloadDelegate, resumed: Bool) {
+        let delegate = ModelDownloadDelegate(
+            partURL: part, layout: layout, expectedBytes: e.bytes, progress: progress)
+        let session = URLSession(configuration: factory.configuration(), delegate: delegate, delegateQueue: nil)
+        let task: URLSessionDownloadTask
+        var resumed = false
+        if let resume, case let candidate = session.downloadTask(withResumeData: resume) {
+            if ModelSource.sameURL(candidate.originalRequest?.url, remote) {
+                task = candidate
+                resumed = true
+            } else {
+                candidate.cancel()
+                ResumeStore.discard(e, layout: layout)
+                removePart(part)
+                task = session.downloadTask(with: URLRequest(url: remote))
+            }
+        } else {
+            task = session.downloadTask(with: URLRequest(url: remote))
+        }
+        delegate.activate(task)
+        running[e.id] = RunningDownload(entry: e, task: task, delegate: delegate)
+        task.resume()
+        let outcome = await delegate.wait()
+        session.finishTasksAndInvalidate()
+        return (outcome, delegate, resumed)
     }
 
     /// 実行中なら止める（再開データが得られれば models/.<file>.resume に残る）。
@@ -200,6 +231,12 @@ enum ModelSource {
         return url
     }
 
+    /// F-83: 2 つの URL が同じか（`absoluteString` のスカラー列で比べる。nil は違う）
+    static func sameURL(_ a: URL?, _ b: URL) -> Bool {
+        guard let a else { return false }
+        return a.absoluteString.unicodeScalars.elementsEqual(b.absoluteString.unicodeScalars)
+    }
+
     /// file が [A-Za-z0-9._-] だけで、空でなく、"." で始まらず、".." を含まない（voicedock fetch-models.sh:38-50）。
     static func isSafeFileName(_ file: String) -> Bool {
         guard !file.isEmpty, !file.hasPrefix("."), !file.contains("..") else { return false }
@@ -259,6 +296,8 @@ enum DownloadOutcome: Sendable, Equatable {
 /// 進捗・完了・再開データを受け取る（NSObject の派生でも Sendable にできる。可変の状態は Mutex で守る。PT-14）。
 final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendable {
     struct State {
+        /// F-83: 知らせを受けるタスク（`activate`。ほかのタスクの知らせは無視する）
+        var active: Int?
         var moved: DownloadOutcome?
         var resume: Data?
         var result: DownloadOutcome?
@@ -298,6 +337,16 @@ final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendabl
         state.withLock { $0.resume }
     }
 
+    /// F-83: 知らせを受けるタスクを決める（`resume()` の前に呼ぶ）
+    func activate(_ task: URLSessionTask) {
+        state.withLock { $0.active = task.taskIdentifier }
+    }
+
+    /// 始めたタスクの知らせか
+    private func isActive(_ task: URLSessionTask) -> Bool {
+        state.withLock { $0.active == task.taskIdentifier }
+    }
+
     /// F-83: `cancelByProducingResumeData` で得た再開データを渡す（まだ無いときだけ入れる）。
     func offerResume(_ data: Data) {
         state.withLock { s in
@@ -309,6 +358,7 @@ final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendabl
         _ session: URLSession, downloadTask: URLSessionDownloadTask, didWriteData bytesWritten: Int64,
         totalBytesWritten: Int64, totalBytesExpectedToWrite: Int64
     ) {
+        guard isActive(downloadTask) else { return }
         progress(totalBytesWritten, totalBytesExpectedToWrite > 0 ? totalBytesExpectedToWrite : expectedBytes)
     }
 
@@ -316,6 +366,7 @@ final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendabl
     func urlSession(
         _ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL
     ) {
+        guard isActive(downloadTask) else { return }
         let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
         if status < 200 || status >= 300 {
             state.withLock { $0.moved = .http(status) }
@@ -333,6 +384,7 @@ final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendabl
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        guard isActive(task) else { return }
         if let u = error as? URLError, let d = u.userInfo[NSURLSessionDownloadTaskResumeData] as? Data {
             state.withLock { s in
                 if s.resume == nil { s.resume = d }

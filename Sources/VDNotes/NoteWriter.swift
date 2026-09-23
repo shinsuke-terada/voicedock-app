@@ -4,16 +4,16 @@ import VDContract
 import VDCore
 
 public enum NoteWriter {
-    /// F-83: ノートは F_FULLFSYNC で書き出す（`AtomicFile.fullFsync`）。Raw ノートは原本の削除の根拠（§8.9.1）で、
-    /// macOS の `fsync` はドライブのキャッシュまでは流さない（電源断で「検証済み」のノートが消えうる）。
-    static let fullSync = true
-
     /// content を UTF-8 で書き、書いた内容の SHA-256（小文字 16 進）を返す。
     /// tmp は同じディレクトリの `.<ファイル名>.tmp`。失敗したら tmp を消して元のエラーを投げる（NOTE-14）。
+    /// F-83: F_FULLFSYNC で書き出す（`fullSync: true`。Raw ノートは原本の削除の根拠（§8.9.1）で、macOS の `fsync` は
+    /// ドライブのキャッシュまでは流さない。PolicyTests が字句で固定する）。読み手（`Frontmatter.readNote`）の上限
+    /// `Frontmatter.maxNoteBytes` を超える内容は書く前に `.write(errno: EFBIG)` で断る（書いても検証が読めず ` (2)` が増えるだけ）
     public static func write(_ content: String, to url: URL) throws(AtomicFileError) -> String {
         let data = Data(content.utf8)
+        guard data.count <= Frontmatter.maxNoteBytes else { throw .write(errno: EFBIG) }
         let sha = FileHasher.sha256(data)
-        try AtomicFile.write(data, to: url, permissions: 0o644, verifyReadBack: true, fullSync: fullSync)
+        try AtomicFile.write(data, to: url, permissions: 0o644, verifyReadBack: true, fullSync: true)
         return sha
     }
 }

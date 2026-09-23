@@ -1,4 +1,4 @@
-// frontmatter の quote が YAML の読み手の拒む文字を `\uXXXX` で書くことのテスト（F-83。PLAN §8.6・X-39。issue #119 の F3）。
+// frontmatter の quote が YAML の読み手の拒む文字を `\uXXXX` で書くことのテスト（F-83。PLAN §8.6・X-40。issue #119 の F3）。
 import Foundation
 import TestSupport
 import Testing

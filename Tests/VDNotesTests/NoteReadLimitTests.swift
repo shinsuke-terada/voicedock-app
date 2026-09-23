@@ -1,5 +1,6 @@
 // 保存検証と上書きの判定がノートを `Frontmatter.readNote`（64 MiB の上限・O_NOFOLLOW）で読むことのテスト（F-83。PLAN §8.7・§8.8。issue #119）。
 import Foundation
+import Synchronization
 import TestSupport
 import Testing
 import VDCore
@@ -105,6 +106,54 @@ struct NoteReadLimitTests {
                 == false)
         #expect(try resolved(temp) == temp.url.path(percentEncoded: false) + "2026-08-29 raw (2).md")
         #expect(try Data(contentsOf: target) == Data(Self.ownedNote().utf8))
+    }
+
+    final class Outcome: Sendable {
+        let may = Mutex<Bool?>(nil)
+        let path = Mutex<String?>(nil)
+    }
+
+    /// `.timeLimit` は同期の open / read を中断できないので、別スレッドで呼んでセマフォで待つ（F-71 と同じ番犬）。
+    /// 時間切れなら FIFO を書き手として開いて閉じ（読み手は EOF で戻る）、止まったことを Issue に記録する。止まらなければ true
+    static func returnsWithoutBlocking(fifo path: String, _ work: @escaping @Sendable () -> Void) -> Bool {
+        let done = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            work()
+            done.signal()
+        }
+        if done.wait(timeout: .now() + 10) == .timedOut {
+            for _ in 0..<50 {
+                let writer = open(path, O_WRONLY | O_NONBLOCK)
+                if writer >= 0 { close(writer) }
+                if done.wait(timeout: .now() + 0.2) == .success { break }
+            }
+            Issue.record("FIFO を読もうとして止まった（10 秒で戻らなかった）")
+            return false
+        }
+        return true
+    }
+
+    @Test("F-83 FIFO のノートは開かずに読めない扱い（mayOverwrite は偽・resolve は ` (2)`。止まらない）")
+    func fifoIsNotReadByTheResolver() throws {
+        let temp = try TempDirectory()
+        let url = base(temp)
+        let path = url.path(percentEncoded: false)
+        #expect(mkfifo(path, 0o600) == 0)
+        let outcome = Outcome()
+        let folder = temp.url
+        let ok = Self.returnsWithoutBlocking(fifo: path) {
+            let may = OutputPathResolver.mayOverwrite(
+                url, sessionKey: NotesFixtures.sessionKey, ownedPartkeys: [NotesFixtures.keyA], kind: .raw)
+            let resolved = try? OutputPathResolver.resolve(
+                folder: folder, baseName: Self.baseName, existing: nil, sessionKey: NotesFixtures.sessionKey,
+                ownedPartkeys: [NotesFixtures.keyA], kind: .raw
+            ).get().path(percentEncoded: false)
+            outcome.may.withLock { $0 = may }
+            outcome.path.withLock { $0 = resolved }
+        }
+        guard ok else { return }
+        #expect(outcome.may.withLock { $0 } == false)
+        #expect(outcome.path.withLock { $0 } == temp.url.path(percentEncoded: false) + "2026-08-29 raw (2).md")
     }
 
     @Test("F-83 上限の内側の自分のノートは今までどおり上書きする")

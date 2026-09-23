@@ -35,6 +35,11 @@ struct ConfigValidatorScalarTests {
         #expect(Self.check { $0.obsidian.raw.filenameTemplate = "{date}\u{301} raw" }.isEmpty)
     }
 
+    @Test("CV-13 {date}\\u{301}x} は Python と同じく {date} だけが名前で通る（旧実装は違反にした）（F-83）")
+    func cv13MatchesPythonForATrailingBrace() {
+        #expect(Self.check { $0.obsidian.raw.filenameTemplate = "{date}\u{301}x}" }.isEmpty)
+    }
+
     @Test("CV-13 { の中の結合文字は名前の一部（{date\\u{301}} は未知）（F-83）")
     func cv13CombiningMarkInsideTheName() {
         #expect(

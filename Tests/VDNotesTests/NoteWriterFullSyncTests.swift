@@ -2,6 +2,7 @@
 import Foundation
 import TestSupport
 import Testing
+import VDContract
 import VDCore
 
 @testable import VDNotes
@@ -13,9 +14,16 @@ struct NoteWriterFullSyncTests {
         return lstat(url.path(percentEncoded: false), &info) == 0 && (info.st_mode & S_IFMT) == S_IFDIR
     }
 
-    @Test("F-83 ノートは F_FULLFSYNC で書き出す（Raw ノートは原本の削除の根拠）")
-    func notesUseFullSync() {
-        #expect(NoteWriter.fullSync == true)
+    // `fullSync: true` を渡していることは PolicyTests の DurableWriteCallTests が字句で固定する
+
+    @Test("F-83 読み手の上限（64 MiB）を超える内容は書く前に EFBIG で断る（tmp も作らない）")
+    func oversizedContentIsRefused() throws {
+        let temp = try TempDirectory()
+        let url = temp.url.appendingPathComponent("big.md", isDirectory: false)
+        let content = String(repeating: "a", count: 67_108_865)
+        #expect(throws: AtomicFileError.write(errno: EFBIG)) { try NoteWriter.write(content, to: url) }
+        #expect(!FileManager.default.fileExists(atPath: url.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: temp.url.appendingPathComponent(".big.md.tmp").path))
     }
 
     @Test("F-83 F_FULLFSYNC でも中身と SHA-256 は今までどおり")
