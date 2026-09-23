@@ -30,6 +30,7 @@ struct HomeLayoutTests {
         Row(name: "stateDirectory", property: { $0.stateDirectory }, relative: "state"),
         Row(name: "processedLog", property: { $0.processedLog }, relative: "state/processed.log"),
         Row(name: "reaperLock", property: { $0.reaperLock }, relative: "state/reaper.lock"),
+        Row(name: "appLock", property: { $0.appLock }, relative: "state/app.lock"),
         Row(name: "runDirectory", property: { $0.runDirectory }, relative: "run"),
         Row(name: "llamaAPIKeyFile", property: { $0.llamaAPIKeyFile }, relative: "run/llama-api-key"),
         Row(name: "binDirectory", property: { $0.binDirectory }, relative: "bin"),

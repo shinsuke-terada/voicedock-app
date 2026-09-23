@@ -1,5 +1,7 @@
 # T-17 VDTranscribe: whisper-cli の起動・出力の正規化・無音判定
 
+> （F-76・issue #116。2026-09-23）`transcribe` は whisper を起動する前に staging の前回の `whisper.json` を `SafeUnlink.remove(…, under: .staging, missingOK: true)` で消す（落ちた前回の残りを成功として読まない。RK-34）。消せなければ起動せずに `WHISPER_FAILED`「前回の生 JSON を消せません: <HOME からの相対パス>」。テストは `Tests/VDTranscribeTests/TranscriberStaleJSONTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-17 |

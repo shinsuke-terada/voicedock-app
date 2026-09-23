@@ -5,6 +5,10 @@ import VDCore
 public enum DailyWarnings {
     /// FAILED の行。`%ld` に本数が入る（`⚠` は U+26A0、その後に半角空白）
     public static let failedLineTemplate = "> ⚠ この日の録音のうち %ld 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"
+    /// F-75: 書き直すと本文が消えるので Raw ノートを書かずに FAILED にした Part の行（自動では直らない。「再試行されます」と書かない）
+    public static let rawNoteBlockedLineTemplate =
+        "> ⚠ この日の録音のうち %ld 本は Raw ノートに書けませんでした（書き直すと、文字起こしを読めなくなった録音の本文が Raw ノートから消えるため）。"
+        + "自動では直りません。VoiceDock の要対応を確かめてください。"
     public static let retryAction = "デバイスから採り直してください。"
 
     static let actionableMark = "⚠ "
@@ -20,11 +24,16 @@ public enum DailyWarnings {
         .noSpeechDetected: "無音",
     ]
 
-    /// 見出しの直後に入れる行（最大 2 行。FAILED が先）。
+    /// 見出しの直後に入れる行（最大 3 行。FAILED、Raw ノートを書かずに止めた FAILED（F-75）、SKIPPED の順）。
     public static func lines(failed: [ExcludedPart], skipped: [ExcludedPart]) -> [String] {
         var out: [String] = []
-        if !failed.isEmpty {
-            out.append(String(format: failedLineTemplate, failed.count))
+        let retrying = failed.filter { !$0.rawNoteBlocked }
+        let blocked = failed.filter(\.rawNoteBlocked)
+        if !retrying.isEmpty {
+            out.append(String(format: failedLineTemplate, retrying.count))
+        }
+        if !blocked.isEmpty {
+            out.append(String(format: rawNoteBlockedLineTemplate, blocked.count))
         }
         if !skipped.isEmpty {
             // 許可リストで判定する。未知のコード・理由なしは操作が要る側

@@ -232,32 +232,35 @@ struct AttentionEvaluatorTests {
         i.violations = [Self.violation("CV-30")]
         i.reaper = .versionMismatch(found: nil)
         i.undeletableSources = 2
+        i.rawNoteBlocked = 1
         let items = AttentionEvaluator.items(i)
-        #expect(items.count == 18)
+        #expect(items.count == 19)
         #expect(items.map(\.order) == items.map(\.order).sorted())
         #expect(items.first == .configInvalid)
-        #expect(items.last == .undeletableSources(2))
+        #expect(items.last == .rawNoteBlocked(1))
     }
 
-    @Test("FAILED は要対応にしない")
+    @Test("FAILED は要対応にしない（F-75 の本文を守って止めた Session の数だけは別の項目）")
     func failedPartsAreNotAttention() {
-        // AttentionInput に FAILED を渡す口が無い（型で保証）。全ケースを 1 つずつ並べ、件数と順を固定する
+        // AttentionInput に FAILED の Part を渡す口は無い（型で保証）。F-75 の rawNoteBlocked は Session の数だけを受ける。
+        // 全ケースを 1 つずつ並べ、件数と順を固定する
         let all: [AttentionItem] = [
             .configInvalid, .vaultNotConfigured, .vaultUnavailable(.missingRoot), .modelMissing(.whisper),
             .llmNotSelected, .llmInsufficientMemory, .toolMissing(.whisperCLI), .deviceNotListable("A"),
             .deviceNeedsReplug("A"), .deviceNameInvalid("A"), .ingestSilent, .diskSpaceLow, .lockMismatch,
-            .reaperUpdateRequired, .undeletableSources(1),
+            .reaperUpdateRequired, .undeletableSources(1), .rawNoteBlocked(1),
         ]
         for item in all {
             // 網羅の switch（ケースが増えたらここがコンパイルで落ちる）
             switch item {
             case .configInvalid, .vaultNotConfigured, .vaultUnavailable, .modelMissing, .llmNotSelected,
                 .llmInsufficientMemory, .toolMissing, .deviceNotListable, .deviceNeedsReplug, .deviceNameInvalid,
-                .ingestSilent, .diskSpaceLow, .lockMismatch, .reaperUpdateRequired, .undeletableSources:
+                .ingestSilent, .diskSpaceLow, .lockMismatch, .reaperUpdateRequired, .undeletableSources,
+                .rawNoteBlocked:
                 break
             }
         }
-        #expect(all.count == 15)
-        #expect(all.map(\.order) == Array(0..<15))
+        #expect(all.count == 16)
+        #expect(all.map(\.order) == Array(0..<16))
     }
 }

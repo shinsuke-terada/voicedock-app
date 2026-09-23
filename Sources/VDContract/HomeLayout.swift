@@ -65,6 +65,8 @@ public struct HomeLayout: Equatable, Sendable {
     public var stateDirectory: URL { directory("state") }
     public var processedLog: URL { stateDirectory.appendingPathComponent("processed.log", isDirectory: false) }
     public var reaperLock: URL { stateDirectory.appendingPathComponent("reaper.lock", isDirectory: false) }
+    /// アプリの単一起動のロック（F-76）。reaper.lock とは別。アプリが生きている間ずっと持つ
+    public var appLock: URL { stateDirectory.appendingPathComponent("app.lock", isDirectory: false) }
     public var runDirectory: URL { directory("run") }
     public var llamaAPIKeyFile: URL { runDirectory.appendingPathComponent("llama-api-key", isDirectory: false) }
     /// ロック 2-A: createDirectories() では作らない。

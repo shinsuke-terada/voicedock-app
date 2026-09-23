@@ -41,8 +41,9 @@ public actor LockEvaluator: LockObserving {
         if config.device.mode == .ro {
             return .disabled(DeletionReason.mountModeRO)
         }
-        // 4.
-        switch await reaperStatus(useCache: useCache) {
+        // 4. 版を観測できなかった（ProcessRunner が閉じた後。アプリの終了の途中）は決着させない（F-76）
+        guard let status = await verify(useCache: useCache) else { return .unconfirmed }
+        switch status {
         case .notInstalled:
             return .disabled(DeletionReason.reaperNotInstalled)
         case .signatureInvalid, .versionMismatch:
@@ -92,10 +93,18 @@ public actor LockEvaluator: LockObserving {
         return LockObservation(readiness: readiness, snapshot: snapshot, volumesRoot: volumesRoot, confState: confState)
     }
 
+    /// 版を観測できなかったとき（ProcessRunner が閉じた後。F-76）は、表示のために版の不明（`.versionMismatch(found: nil)`）を
+    /// 返す（キャッシュもログもしない。readiness は `.unconfirmed` にする）。
+    public func reaperStatus(useCache: Bool) async -> ReaperStatus {
+        await verify(useCache: useCache) ?? .versionMismatch(found: nil)
+    }
+
     /// 署名と版のキャッシュ（PLAN §8.9.2「(inode, size, mtime) が変わらない限りキャッシュ」）。
     /// actor の再入: await の間に別の呼び出しが同じ検証をしてもよい（結果は同じ。キャッシュは最後の書き込みが残る）。
     /// キャッシュの鍵は検証の前に読んだ値で、検証中にファイルが替わっても次の呼び出しで鍵が一致せず検証し直す。
-    public func reaperStatus(useCache: Bool) async -> ReaperStatus {
+    /// nil = 版を観測できなかった（ProcessRunner が閉じた後で `--version` を起動できない）。キャッシュせず、ログも出さない
+    /// （版の不一致として決着させない。次の呼び出しで検証し直す。F-76）
+    private func verify(useCache: Bool) async -> ReaperStatus? {
         // 1.
         guard case .present(let key) = reaper.installation() else {
             cache = nil
@@ -107,7 +116,13 @@ public actor LockEvaluator: LockObserving {
         }
         // 3. 署名の後に版（未検証のコードを実行しない）
         let signatureValid = reaper.signatureIsValid()
-        let stdout = signatureValid ? await reaper.runVersion() : nil
+        var stdout: String? = nil
+        if signatureValid {
+            switch await reaper.versionRun() {
+            case .notLaunched: return nil
+            case .stdout(let text): stdout = text
+            }
+        }
         // 4.
         let entry = CachedVerification(key: key, signatureValid: signatureValid, stdout: stdout)
         cache = entry

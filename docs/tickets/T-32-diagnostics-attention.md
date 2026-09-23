@@ -1,8 +1,23 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-78・issue #124、2026-09-23。マージ後の追記）reaper の拒否が 3 回続いて打ち切った Part（T-38 §4.5 の手順 5b）も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と「消せなかった録音」に同じ数え方で入る。原因の語は reaper の理由語（付録 B.2）なので、
+> `StatusReporter.causeText(_:)`（internal）を足し、`causeTexts` に無く `IdentityReason.all` に在る語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（`UndeletablePart.detail` はこれを使う。型は変えない。テストは T-38 の `ReaperRejectionSettlementTests`）。
+> 要対応 `undeletableSources` の説明を、5a（直せば再評価できる）と 5b（削除モジュールの拒否。再評価しても同じ）の両方に合う文言に直した（下の表・`AttentionTextsTests`。PLAN §8.11）。
+
+> （F-76・issue #116。2026-09-23）DR-09（`LLMProbeCheck`）は `ensureRunning` を呼んだら、応答の後（成功でも失敗でも）`llama.stop()` を呼ぶ（止めないと `pendingJobs` で起動したサーバが次の tick の Part 工程（whisper）と重なる。PLAN §2.1・LLM-15）。下の §4 の「llama-server を止めない」・§5 の `probeDoesNotStopTheServer`・§6 の 19 は記録として残す（テストは `probeStopsTheServerAfterTheReply` ほか 3 本に置き換えた）。`DeletionReadiness` に `unconfirmed`（reaper の版を観測できなかった。T-36 の注記）を足した。
+
+> （F-75・issue #115、2026-09-23。マージ後の追記）要対応の末尾に `rawNoteBlocked(Int)`（「書き直せない Raw ノート <n> 件」、操作 `[.openDetails]`）と `AttentionInput.rawNoteBlocked`、
+> `AttentionEvaluator.rawNoteBlockedSessions(_:)`（FAILED・`OBSIDIAN_RAW_WRITE_FAILED`・error_message が PLAN §8.6 の文言で始まる Part の Session の数）を足した。
+> AppServices は `ReadOnlyStore.failedParts(limit: Int.max)` の全件から数える。「FAILED は要対応にしない」の例外（PLAN §8.11）。テストは `RawNoteBlockedAttentionTests.swift`。
+
+> （F-74・issue #114、2026-09-23。マージ後の追記）SOURCE_DELETE_PENDING から決着した Part も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と状態の詳細の「消せなかった録音」に同じ数え方で入る（型・文言は変えない。テストは T-38 の `PendingSettlementTests`）。
+
 > （F-69・issue #98、2026-09-23。マージ後の追記）要対応の末尾に `undeletableSources(Int)`（「消せなかった録音 <n> 本」、操作 `[.openDetails]` =「詳細・診断を開く」）、`AttentionInput.undeletableSources`、
 > `SourcePresence`・`AttentionEvaluator.sourcePresence(_:snapshot:)`・`undeletableStillListed(_:snapshot:)`、`ReadOnlyStore.completedParts(lastDetail:)`、`StatusReport.UndeletablePart`・`undeletable` / `undeletableTotal` と状態の詳細の「消せなかった録音」の行を足した（PLAN §8.11・§8.12。決着そのものは T-38 §4.5 の手順 5a）。
 > 下の表はその分を直した。テストは T-38 §6.13 の `UndeletableSettlementTests`。
+
+> （F-72・issue #112、2026-09-23。マージ後の追記）診断の結果（`AppModel.diagnostics`）は `panelDidClose` で `.idle` に戻し、閉じた後に届いた結果も捨てる（`diagnosticsGeneration`。DR-09 の `probeGeneration` と同じ形）。「元音声の削除」の事前確認に前に開いたときの結果を「最新」として出さないため（PLAN §8.9.8 の 1）。
+> 閉じる前に始めた診断が走っている間に開き直して押されたら、その診断が終わるのを待ってから次を起動する（`diagnosticsTask` を持って直列にする。診断を同時に 2 本走らせない。前の結果は世代で捨てる）。下の §4 の `runDiagnostics()`・`panelDidClose()` の箇条はその分を直した。テストは `AppModelConsentTests`。
 
 | 項目 | 内容 |
 |---|---|
@@ -545,6 +560,7 @@ public enum AttentionItem: Equatable, Sendable {
     case lockMismatch
     case reaperUpdateRequired
     case undeletableSources(Int)            // F-69。消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（1 以上）
+    case rawNoteBlocked(Int)                // F-75。書き直すと本文が消えるので Raw ノートを書かずに止めた Session の数（1 以上）
 
     public enum ToolKind: String, Equatable, Sendable { case whisperCLI, llamaServer }
     /// 表示の順（宣言順に振った 0 始まりの番号）
@@ -562,6 +578,7 @@ public struct AttentionInput: Equatable, Sendable {
     public var reaper: ReaperStatus = .notInstalled
     public var snapshotMaxAgeSeconds = 900
     public var undeletableSources = 0       // F-69。undeletableStillListed の件数（AppServices が DB と最新の snapshot から数える）
+    public var rawNoteBlocked = 0           // F-75。rawNoteBlockedSessions の件数（AppServices が DB の FAILED の全件から数える）
     public var now: Instant
     public init(now: Instant)
 }
@@ -575,6 +592,8 @@ public enum AttentionEvaluator {
     public static func sourcePresence(_ part: RecordingRow, snapshot: DeviceSnapshot?) -> SourcePresence
     /// F-69。消せないまま完了にした録音のうち sourcePresence が .listed のものだけ（抜いている間・一覧に無い・source_path が無いものは要対応に出さない）
     public static func undeletableStillListed(_ parts: [RecordingRow], snapshot: DeviceSnapshot?) -> [RecordingRow]
+    /// F-75。書き直すと本文が消えるので Raw ノートを書かずに FAILED にした Part（PartSteps.isRawNoteBlocked）が居る Session の数
+    public static func rawNoteBlockedSessions(_ parts: [RecordingRow]) -> Int
 }
 ```
 
@@ -745,7 +764,7 @@ public enum StatusReporter {
 | … | `  <partkey>` と `    <detail>` の 2 行を `failedParts` の順に |
 | — | `  … ほか <failedTotal - failedParts.count> 件`（超過があるときだけ） |
 | — | （F-69）`消せなかった録音（<undeletableTotal> 件。消さずに完了にしたもの）`（0 件なら以降を出さない。失敗した Part の有無によらない） |
-| … | `  <partkey>` と `    <原因>、<在否>` の 2 行を partkey 順に最大 20 件（原因は `StatusReporter.causeTexts`、無ければ `原因不明`。在否は `presenceTexts`: `デバイスに在る` / `デバイスの一覧に無い` / `デバイスを観測できない`。文言は PLAN §8.12） |
+| … | `  <partkey>` と `    <原因>、<在否>` の 2 行を partkey 順に最大 20 件（原因は `StatusReporter.causeTexts`、付録 B.2 の reaper の理由語なら `削除モジュールの検証で拒否され続けた（<理由語>）`（F-78。`StatusReporter.causeText`）、どれでもなければ `原因不明`。在否は `presenceTexts`: `デバイスに在る` / `デバイスの一覧に無い` / `デバイスを観測できない`。文言は PLAN §8.12） |
 | — | `  … ほか <undeletableTotal - undeletable.count> 件`（超過があるときだけ） |
 
 - `デバイス:` の観測: `deviceSnapshotPresent == false` → `まだ走査していません`。`devices.isEmpty` → `StatusTexts.writabilityWord(.absent)`（`デバイス未接続`）。
@@ -799,6 +818,8 @@ s.attention = AttentionEvaluator.items(attention)
     enum DiagnosticsPanelState: Equatable { case idle, running, done([DiagnosticResult]) }
     // 書くのは AppModel+Diagnostics（別ファイルの拡張）なので private(set) にできない（T-31 の欄と同じ）
     var diagnostics: DiagnosticsPanelState = .idle
+    @ObservationIgnored var diagnosticsGeneration = 0                           // F-72。押すたび・閉じるたびに 1 増やす
+    @ObservationIgnored var diagnosticsTask: Task<[DiagnosticResult], Never>?   // F-72。最後に起動した診断（閉じた後も走り続けうる）
     var probe: DiagnosticsPanelState = .idle   // DR-09（結果は 1 件）
     var detailsExpanded = false
     var modelsHighlighted = false
@@ -811,11 +832,15 @@ s.attention = AttentionEvaluator.items(attention)
     func perform(_ action: AttentionAction)
 ```
 - `runDiagnostics()`: `.running` にして `diagnostics = .done(await services.runDiagnostics())`。**実行中は二重に押せない**
+  - （F-72 で直した手順）`guard diagnostics != .running else { return }` → `diagnostics = .running` → `diagnosticsGeneration += 1` して控える →
+    `let previous = diagnosticsTask`、`let task = Task { _ = await previous?.value; return await services.runDiagnostics() }`、`diagnosticsTask = task` →
+    `let results = await task.value` → 世代が控えと違えば捨てる（閉じた後に届いた結果）→ `diagnostics = .done(results)`。
+    前の診断（閉じる前に始めたもの）が終わるまで次を起動しない（閉じて開き直した後の押下で 2 本同時に走らせない）
 - `runLLMProbe()`: `probe = .running` → `await services.enqueue(.llmProbe(reply: { r in Task { @MainActor in self.receiveProbe(r) } }))`。
   `receiveProbe`: `guard probe == .running else { return }`（閉じた後の返事は捨てる）→ `probe = .done([r])`
 - `toggleDetails()`: `detailsExpanded.toggle()`。真にしたときだけ `statusReport` を読み直す（**閉じている間は inbox も staging も走査しない**）。偽にしたら `setStatusReport(nil)`
 - `refresh()`: `services.read` は `statusReport` を作らないので、`detailsExpanded` の間は前の `snapshot.statusReport` を持ち越す（偽なら nil）
-- `panelDidClose()`: `probe = .idle` にする（閉じた後に届いた DR-09 の返事を `receiveProbe` が捨てる）
+- `panelDidClose()`: `probe = .idle` にする（閉じた後に届いた DR-09 の返事を `receiveProbe` が捨てる）。F-72: `diagnostics = .idle`、`diagnosticsGeneration += 1`（閉じた後に届いた診断の結果を `runDiagnostics` が捨てる。T-30 §4.11 の `panelDidClose()`）
 - `perform(_:)`: `.revealConfig` → `revealConfigInFinder()`、`.reloadConfig` → `Task { await reloadConfig() }`、`.chooseVault` → `Task { await chooseVault() }`（T-31）、
   `.openSystemSettings` → `openSystemSettingsPrivacyFilesAndFolders()`（`NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)`。**`URL(string:)` は PT-02 の対象外**（`URLSession` ではない）だが、`!` を使わないよう `URLComponents` で作る）、
   `.openModels` → `modelsHighlighted = true`（節を目立たせるだけ。F-65 で `show(.main)` も）、`.openDeletionFlow` → `deletionHighlighted = true`（F-65 で `show(.deletion)` も）、
@@ -845,7 +870,7 @@ s.attention = AttentionEvaluator.items(attention)
 | `diskSpaceLow` | `空き容量が足りません` | `不要なファイルを消すか、staging の上限を上げてください` |
 | `lockMismatch` | `削除の設定が食い違っています` | `アプリと reaper.conf の設定が合いません。「元音声の削除」を開いて無効化し直してください` |
 | `reaperUpdateRequired` | `削除モジュールの更新が必要です` | `「元音声の削除」を開いて有効化をやり直してください` |
-| `undeletableSources(n)` | `消せなかった録音 <n> 本` | `削除の条件を満たさないまま時間がたったので、消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。直したら「過去分を削除対象にする」で再評価できます。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください`（F-69） |
+| `undeletableSources(n)` | `消せなかった録音 <n> 本` | `消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください`（F-69） |
 
 ボタンの文言（`AttentionTexts.button(_:)`）: `.revealConfig` → `設定ファイルを Finder で表示`、`.reloadConfig` → `設定を読み直す`、
 `.chooseVault` → `Vault を選び直す`、`.openSystemSettings` → `システム設定を開く`、`.openModels` → `モデルの節を開く`、`.openDeletionFlow` → `有効化フローを開く`、`.runDiagnostics` → `診断を実行`（`Strings.buttonRunDiagnostics` をそのまま使う）、`.openDetails` → `詳細・診断を開く`（F-69。`AppModel.perform` は `show(.details)` だけ）。
