@@ -1,5 +1,9 @@
 # T-28 VDNotes: Vault の確認・ノートの書き込み・保存検証・出力先の決定
 
+> （F-75・issue #115、2026-09-23。マージ後の追記）`mayOverwrite` は `type` が書こうとしている種類（`voice-raw` / `voice-daily`）と一致することも見る（Raw と Daily のフォルダが大文字小文字だけ違うと APFS では同じファイルになり、Daily が Raw を置き換えた）。
+> `resolve` は DB の出力パスの親フォルダが無ければそれを使わずに基本名の探索へ進む。書き直しで消える鍵を返す `keysLostByOverwrite(_:protectedKeys:newKeys:)` を足した（呼び手は T-29 の Raw の工程）。
+> 仕様は PLAN §8.6・§8.8、テストは `OutputPathResolverOverwriteTests.swift`。既存の `OutputPathResolverTests` の Raw として解決するノートは `type: "voice-raw"` にした。
+
 | 項目 | 内容 |
 |---|---|
 | ID | T-28 |
@@ -184,6 +188,8 @@ public enum OutputPathResolver {
                                ownedPartkeys: Set<String>, kind: NoteKind) -> Result<URL, StageFailure>
     /// 上書きしてよいか（§8.8）
     public static func mayOverwrite(_ url: URL, sessionKey: String, ownedPartkeys: Set<String>, kind: NoteKind) -> Bool
+    /// F-75: 書き直しで消える鍵（§8.6・§8.8）。ファイルが無ければ空、在るのに読めなければ nil
+    public static func keysLostByOverwrite(_ url: URL, protectedKeys: Set<String>, newKeys: Set<String>) -> [String]?
 }
 ```
 
@@ -191,7 +197,7 @@ public enum OutputPathResolver {
 - `ownedPartkeys` = アプリの DB でこの Session に属する Part の partkey の全部（状態を問わない）。呼び手が作る
 
 **`resolve`** の手順:
-1. `existing != nil` なら: `!exists(existing) || mayOverwrite(existing, …)` のとき `.success(existing)`
+1. `existing != nil` で（F-75）`existing` の親が（symlink を辿って）ディレクトリなら: `!exists(existing) || mayOverwrite(existing, …)` のとき `.success(existing)`
 2. 候補を順に: `folder/<baseName>.md`、`folder/<baseName> (2).md`、…、`folder/<baseName> (99).md`（`(n)` の前は半角空白 1 つ、括弧は半角）。
    最初に `!exists(c) || mayOverwrite(c, …)` を満たすものを `.success(c)`
 3. どれも満たさなければ `.failure(StageFailure(kind == .raw ? .obsidianRawWriteFailed : .obsidianWriteFailed, "同名ファイルが多すぎます: " + baseName + ".md"))`
@@ -202,6 +208,7 @@ public enum OutputPathResolver {
 1. `Data(contentsOf:)` が失敗 → 偽
 2. `String(validating:as: UTF8.self)` が nil → 偽
 3. `doc = Frontmatter.parse(text)` が nil → 偽
+3a. （F-75）`(doc[Frontmatter.keyType] as? String).map { PyText.scalarsEqual($0, kind == .raw ? RawNote.noteType : DailyNote.noteType) } ?? false` が偽 → 偽
 4. `(doc[Frontmatter.keySessionKey] as? String).map { PyText.scalarsEqual($0, sessionKey) } ?? false` が偽 → 偽
 5. `keys = stringList(doc, Frontmatter.keyRecordingKeys)`。Daily なら `+ stringList(doc, Frontmatter.keyFailedParts) + stringList(doc, Frontmatter.keySkippedParts)`
 6. `keys` の全要素が `ownedPartkeys` に含まれれば真、1 つでも含まれなければ偽（`keys` が空なら真）。スカラー列で照合する（`NoteVerifier.scalarSet(keys).isSubset(of: NoteVerifier.scalarSet(ownedPartkeys))`。00-api-map §0）

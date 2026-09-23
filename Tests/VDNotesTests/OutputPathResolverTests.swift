@@ -39,7 +39,19 @@ struct OutputPathResolverTests {
 
     /// 他人（voicedock）のノート: session_key は一致するが鍵が owned に無い
     func putForeign(_ url: URL) throws {
-        try put(url, buildNote(keys: [keyV]))
+        try put(url, rawNote(keys: [keyV]))
+    }
+
+    /// Raw のノート（F-75 で上書きの条件に `type` が入ったので、Raw として解決するテストは voice-raw のノートを置く）
+    func rawNote(
+        sessionKey: String = NotesFixtures.sessionKey, keys: [String], extra: [(String, FrontmatterValue)] = []
+    ) -> String {
+        Frontmatter.render(
+            [
+                (Frontmatter.keyType, .string("voice-raw")),
+                (Frontmatter.keySessionKey, .string(sessionKey)),
+                (Frontmatter.keyRecordingKeys, .array(keys)),
+            ] + extra) + defaultNoteBody
     }
 
     @Test("無ければ基本名")
@@ -51,14 +63,14 @@ struct OutputPathResolverTests {
     @Test("自分のノートは上書きする")
     func ownNoteOverwritten() throws {
         let temp = try TempDirectory()
-        try put(candidate(temp.url, 1), buildNote(keys: [keyA]))
+        try put(candidate(temp.url, 1), rawNote(keys: [keyA]))
         #expect(try resolvedPath(resolve(temp.url)) == path(temp.url) + "2026-08-29 raw.md")
     }
 
     @Test("rename の後・DB 更新の前に落ちても (2) にしない")
     func crashBeforeDBUpdateReusesBase() throws {
         let temp = try TempDirectory()
-        try put(candidate(temp.url, 1), buildNote(keys: [keyA, keyB]))
+        try put(candidate(temp.url, 1), rawNote(keys: [keyA, keyB]))
         #expect(try resolvedPath(resolve(temp.url, existing: nil)) == path(temp.url) + "2026-08-29 raw.md")
     }
 
@@ -72,7 +84,7 @@ struct OutputPathResolverTests {
     @Test("別の Session のノートは上書きしない")
     func otherSessionNumbered() throws {
         let temp = try TempDirectory()
-        try put(candidate(temp.url, 1), buildNote(sessionKey: Self.otherSession, keys: [keyA]))
+        try put(candidate(temp.url, 1), rawNote(sessionKey: Self.otherSession, keys: [keyA]))
         #expect(try resolvedPath(resolve(temp.url)) == path(temp.url) + "2026-08-29 raw (2).md")
     }
 
@@ -80,11 +92,11 @@ struct OutputPathResolverTests {
     func twoSessionsSameDay() throws {
         let temp = try TempDirectory()
         // Session 1（keyA・keyB）が基本名に書いた
-        try put(candidate(temp.url, 1), buildNote(keys: [keyA, keyB]))
+        try put(candidate(temp.url, 1), rawNote(keys: [keyA, keyB]))
         // Session #2（自分の Part は keyC）
         let second = resolve(temp.url, sessionKey: Self.otherSession, owned: [keyC])
         #expect(try resolvedPath(second) == path(temp.url) + "2026-08-29 raw (2).md")
-        try put(candidate(temp.url, 2), buildNote(sessionKey: Self.otherSession, keys: [keyC]))
+        try put(candidate(temp.url, 2), rawNote(sessionKey: Self.otherSession, keys: [keyC]))
         // その後 Session 1 が DB の出力パス = 基本名で
         let first = resolve(temp.url, existing: candidate(temp.url, 1))
         #expect(try resolvedPath(first) == path(temp.url) + "2026-08-29 raw.md")
@@ -147,7 +159,7 @@ struct OutputPathResolverTests {
     func existingPreferred() throws {
         let temp = try TempDirectory()
         let existing = candidate(temp.url, 2)
-        try put(existing, buildNote(keys: [keyA]))
+        try put(existing, rawNote(keys: [keyA]))
         #expect(try resolvedPath(resolve(temp.url, existing: existing)) == path(temp.url) + "2026-08-29 raw (2).md")
     }
 
@@ -186,7 +198,12 @@ struct OutputPathResolverTests {
         let allOwned: Set<String> = [keyA, keyB, keyV]
         #expect(
             try resolvedPath(resolve(temp.url, owned: allOwned, kind: .daily)) == path(temp.url) + "2026-08-29 raw.md")
-        // Raw は failed / skipped を見ない
+        // Raw は failed / skipped を見ない（F-75: Raw として解決するので voice-raw のノートに置き換える）
+        try put(
+            candidate(temp.url, 1),
+            rawNote(
+                keys: [keyA],
+                extra: [(Frontmatter.keyFailedParts, .array([keyB])), (Frontmatter.keySkippedParts, .array([keyV]))]))
         #expect(try resolvedPath(resolve(temp.url, kind: .raw)) == path(temp.url) + "2026-08-29 raw.md")
     }
 
@@ -194,7 +211,7 @@ struct OutputPathResolverTests {
     func emptyKeysOverwritable() throws {
         let temp = try TempDirectory()
         let url = candidate(temp.url, 1)
-        try put(url, buildNote(keys: []))
+        try put(url, rawNote(keys: []))
         #expect(try String(contentsOf: url, encoding: .utf8).contains("voicedock_recording_keys: []\n"))
         #expect(try resolvedPath(resolve(temp.url, owned: [])) == path(temp.url) + "2026-08-29 raw.md")
     }
