@@ -116,21 +116,17 @@ struct LiveServices: AppServices {
         attention.paused = s.worker.paused
         attention.vault = s.vault
         attention.reaper = await context.locks.reaperStatus()
+        // 削除が有効な間だけ reaper の版の食い違いを要対応にする（F-80）
+        attention.deletionEnabled = config?.cleanup.deleteSourceAudio == true
         attention.snapshotMaxAgeSeconds = config?.device.snapshotMaxAgeSeconds ?? 900
         // 開けない・投げたら .empty のまま（DB が無ければ全 0。PLAN §8.12）
         if let ro = ReadOnlyStore.open(url: context.layout.database) {
             if let b = try? ro.backlog() {
                 s.backlog = BacklogCounts(count: b.count, seconds: b.seconds, unknownDuration: b.unknownDuration)
             }
-            // 消せなかった録音のうち、デバイスの一覧にまだ在るもの（F-69）
-            if let settled = try? ro.completedParts(lastDetail: DeletionReason.notDeletable) {
-                attention.undeletableSources =
-                    AttentionEvaluator.undeletableStillListed(settled, snapshot: s.device).count
-            }
-            // 書き直すと本文が消えるので Raw ノートを書かずに止めた Session（F-75）。FAILED は全件（上限を付けない）
-            if let failed = try? ro.failedParts(limit: Int.max) {
-                attention.rawNoteBlocked = AttentionEvaluator.rawNoteBlockedSessions(failed.rows)
-            }
+            // 消せなかった録音のうち新鮮な snapshot で一覧にまだ在るもの（F-69）と、書き直すと本文が消えるので Raw ノートを
+            // 書かずに止めた Session（F-75）。数え方は AttentionInput.countStoredItems の 1 か所（F-80。テストが固定する）
+            attention.countStoredItems(from: ro)
         }
         s.attention = AttentionEvaluator.items(attention)
         return s

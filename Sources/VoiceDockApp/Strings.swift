@@ -107,12 +107,17 @@ enum Strings {
     static let onboardingLoginItem = "ログイン時に起動する"
     static let onboardingDeviceName = "デバイスの名前を変える"
     static let onboardingLater = "今はしない"
-    /// アプリは改名しない（DEV-10）。手順を見せるだけ
+    /// アプリは改名しない（DEV-10）。手順を見せるだけ。既定の include（["DJIMIC3"]）と食い違わない文言（F-81。PLAN §8.12）
     static func renameInstructions(_ names: [String]) -> String {
         names.joined(separator: "、")
-            + " という名前のデバイスがつながっています。VoiceDock はデバイスに一切書き込みません。次の手順で利用者が名前を変えてください。\n"
-            + "1. Finder のサイドバーでデバイスを選び、名前をゆっくり 2 回クリックして「DJIMIC3」などに変えます\n"
-            + "2. 変えたらデバイスを取り外して、もう一度つなぎ直してください"
+            + " という名前のデバイスがつながっています。VoiceDock が取り込むのは、名前が設定の device.includeVolumes"
+            + "（既定は DJIMIC3 だけ。空なら全部）に合うデバイスです。VoiceDock はデバイスに一切書き込みません。"
+            + "DJI Mic 3 なら、次のどちらかを利用者が行ってください。\n"
+            + "1. Finder のサイドバーでデバイスを選び、名前をゆっくり 2 回クリックして「DJIMIC3」に変えます。"
+            + "変えたらデバイスを取り外して、もう一度つなぎ直してください\n"
+            + "2. 名前を変えずに使うなら、config.json の device.includeVolumes にこの名前を足して、「設定を読み直す」を押してください\n"
+            + "名前が「DJIMIC3 1」のように番号付きなら、名前は変えずに取り外して、もう一度つなぎ直してください。"
+            + "録音の写しを入れたメモリなど DJI Mic 3 でなければ、何もしなくてかまいません（取り込みも削除もしません）"
     }
 
     // T-31: 保存先（Vault）（PLAN §8.12 の 4）

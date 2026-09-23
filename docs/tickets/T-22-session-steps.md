@@ -1,7 +1,12 @@
 # T-22 VDPipeline: Session の工程（分組・閉じる・再オープン・統合・解析）と LLM のガード
 
+> （F-82・issue #119、2026-09-23。マージ後の追記）`groupNewParts` は分組の 1 件を `Store.groupPart`（Session の作成・`session_key`・集計・`OPEN→OPEN` を 1 トランザクション）で書き、分組した Part が既に `partTerminal`（分組より先に FAILED / SKIPPED になったもの）なら既存の `reopenSession` を呼ぶ（SAVED / COMPLETED の日の Daily に除外の警告行が載らなかった。NOTE-05。処理待ちの Part は従来どおり契機にしない）。PLAN §5.6。テストは `SessionGroupingReopenTests`。
+> 解析（`ensureAnalysis`）は、`ensureRunning` の失敗と `Analyzer` の失敗のとき停止要求（`ctx.stop`）が立っていれば `failSession` せずに ANALYZING のまま返す（終了のときの `server_start_failed: cancelled` と止められたサーバとの通信の失敗を記録しない。次回起動時の復旧が戻す。PLAN §8.5・§8.15）。テストは `SessionAnalysisStoppedTests`。
+
 > （F-74・issue #114、2026-09-23。マージ後の追記）統合で segment が 0 件でも、有効な Part（FAILED / SKIPPED でない）の transcript が読めなければ `session_empty` にせず `MERGING→FAILED`（`SESSION_MERGE_FAILED`、「文字起こしを読めない Part があります: <partkey>, …」）。
 > MERGED 以降で統合結果が空になった Session は `→ANALYZING`（MERGED から通常の辺、ANALYZED / WRITING から ★ `stale_analysis`）→ `ANALYZING→FAILED`（同じコード）にする（`SessionSteps.failUnreadableAfterMerge`・`unreadableTranscriptPartkeys`。PLAN §5.6）。テストは `UnreadableTranscriptMergeTests`。
+
+> （F-83・issue #119、2026-09-23。マージ後の追記）`LLMGuard` のメモリの条件は独自の `bytesPerGB` と式をやめ、`ModelMemory.hasEnough`（T-30）の 1 か所にした（CR-06。振る舞いは同じ）。
 
 | 項目 | 値 |
 |---|---|

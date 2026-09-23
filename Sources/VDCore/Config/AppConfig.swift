@@ -36,13 +36,16 @@ public struct AppConfig: Codable, Equatable, Sendable {
     }
 
     /// PLAN §6.2 の JSON と同じ値。既定値はここにだけ書く（CR-06）。
+    /// includeVolumes の既定は ["DJIMIC3"]（F-81。利用者の決定。ルートに DJI 形式のフォルダがある外付けを何でもデバイスと
+    /// みなさない。既定値は config.json が無いときだけ書くので、既存の config.json の値は変わらない。§6.1）
     public static func defaults(timeZone: String) -> AppConfig {
         AppConfig(
             schemaVersion: 1,
             timeZone: timeZone,
             vault: VaultConfig(path: nil, marker: ".obsidian"),
             device: DeviceConfig(
-                includeVolumes: [], excludeVolumes: ["Macintosh HD", "com.apple.TimeMachine.*", ".*"], mountMode: "ro",
+                includeVolumes: ["DJIMIC3"], excludeVolumes: ["Macintosh HD", "com.apple.TimeMachine.*", ".*"],
+                mountMode: "ro",
                 stabilityFastPathSeconds: 60, stabilityIntervalSeconds: 3, stabilityChecks: 2,
                 maxScanDepth: 3, scanIntervalSeconds: 300, snapshotMaxAgeSeconds: 900),
             audio: AudioConfig(

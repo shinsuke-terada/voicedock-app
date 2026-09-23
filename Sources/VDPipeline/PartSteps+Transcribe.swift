@@ -50,6 +50,10 @@ extension PartSteps {
         case .prerequisiteMissing(let m):
             if let r = PauseReason(rawValue: m.rawValue) { ctx.pauses.trip(r) }
             return false
+        case .stopped:
+            // アプリの終了で止めた・閉じた後で起動しなかった。失敗にせず行を動かさない（TRANSCRIBING のまま。
+            // 次回起動時の復旧が TRANSCRIBING→NORMALIZED に戻す。PLAN §8.15。F-82）
+            return false
         case .noSpeech(_, let message):
             try store.updateRecording(pk, [.transcriptPath(transcriptRel)])
             try skip(row, from: .transcribing, code: .noSpeechDetected, message: message)
@@ -79,13 +83,18 @@ extension PartSteps {
     }
 
     /// 16 kHz が無いとき（voicedock pipeline.py:1623-1652）。inbox が在れば NORMALIZING に戻すだけ、無ければ NORMALIZED_MISSING。
+    /// F-82: inbox を先に確かめ、無ければ**今の状態のまま** needs_recopy = 1 を書いてから →NORMALIZING に進む。
+    /// 遷移を先に書くと、間で落ちたとき needs_recopy = 0 の NORMALIZING が残り、復旧（→DISCOVERED）の後に
+    /// SOURCE_MISSING の SKIPPED（終端）になって再コピーされない。
     func renormalizeOrFail(_ row: RecordingRow) throws -> Bool {
         let pk = row.partkey
-        try store.recordPartTransition(partkey: pk, from: row.status, to: .normalizing)
-        if let inboxPath = row.inboxPath, FileProbe.isNonEmptyRegularFile(layout.url(relative: inboxPath)) {
-            return false
+        let inboxPresent = row.inboxPath.map { FileProbe.isNonEmptyRegularFile(layout.url(relative: $0)) } ?? false
+        if !inboxPresent {
+            // 状態が変わっていれば（TransitionConflict と同じく）何も書かずに次へ
+            guard try store.updateRecordingIfStatus(pk, status: row.status, [.needsRecopy(true)]) else { return false }
         }
-        _ = try store.updateRecordingIfStatus(pk, status: .normalizing, [.needsRecopy(true)])
+        try store.recordPartTransition(partkey: pk, from: row.status, to: .normalizing)
+        if inboxPresent { return false }
         try fail(
             row, from: .normalizing, code: .normalizedMissing,
             message: "16 kHz 音声も inbox の原本もありません（\(row.normalizedPath ?? "")）。デバイスから採り直す必要があります",

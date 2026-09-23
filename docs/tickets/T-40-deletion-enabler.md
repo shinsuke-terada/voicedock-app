@@ -6,6 +6,10 @@
 > `DeletionEnabler.enable(confirmation:)` と完全一致の判定はそのまま残し、UI は長押しの完了で定数 `DeletionStrings.confirmationWord` を渡す（`AppModel.enableDeletion()`・`enableSkippedDeletion()` は引数を持たない。§4.5）。
 > `.notConfirmed` の文言は「赤いボタンを 3 秒長押ししてください」。「元音声の削除」は主画面の行から開く別の画面になった（T-30 §4.13）。以下の本文は F-65 に合わせて直した。
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）無効化の config の段は `ConfigStore.turnDeletionOff` を当てる（3 つの値は 1 か所。CR-06）。`update` は今の `config.json` を読み直してから当てるので、手の編集は残る（PLAN §6.1）。
+> 段が書けなかったとき（壊れている・読めない・書けない・検証に落ちた）は違反を `config_warning`（「無効化で config.json を書けません（メモリの設定だけ無効側にしました）: <keyPath>: <message>」）に 1 件ずつ出し、
+> `ConfigStore.disableDeletionInMemory()` でメモリの設定だけを無効側に倒す（段 5 の再マウントが読み取り専用に戻せる）。`mountModeRO` の定数は消した。テストは `DeletionEnablerHandEditTests.swift`。
+
 > （F-72・issue #112、2026-09-23。マージ後の追記）無効化の段 5 は、`scanNow()` の後の snapshot（`latestSnapshot()`。返った generation 以上）で接続中（`devices`）の全デバイスが `DeviceWritability` で `.readOnly` と観測できなければ `remount` の失敗にする（見送り・`.writable`・`.unknown` は失敗、0 台は成功。§4 の段 5 の本文はこれに合わせて直した。PLAN §8.9.8）。
 > `EnablerBench` の既定の走査は読み取り専用の snapshot を返す（再マウントが通った観測）。有効化の事前確認の「最新の診断結果」は、パネルを閉じたら捨てる（`AppModel.panelDidClose`・`diagnosticsGeneration`。PLAN §8.9.8 の 1）。テストは `DisableRemountCheckTests`・`AppModelConsentTests`。
 

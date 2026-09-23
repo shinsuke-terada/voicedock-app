@@ -103,8 +103,11 @@ public enum SafeUnlink {
         let targetPath = target.path(percentEncoded: false)
         // 1. 絶対パスだけ
         guard targetPath.hasPrefix("/") else { throw .notAbsolute }
-        // 2. `..` を含まない
-        guard !targetPath.split(separator: "/", omittingEmptySubsequences: false).contains("..") else {
+        // 2. `..` を含まない。要素は Unicode スカラーの "/"（UTF-8 の 0x2F。カーネルと同じ区切り）で分ける。
+        //    Character（書記素）で分けると "/" の直後の結合文字（U+0301 など）で区切りを見落とし、"a/../\u{301}b" の
+        //    ".." を見逃す（F-81。RelPath と同じ。F-73）
+        let components = targetPath.unicodeScalars.split(separator: "/", omittingEmptySubsequences: false)
+        guard !components.contains(where: { $0.elementsEqual("..".unicodeScalars) }) else {
             throw .containsDotDot
         }
         // 3. ルートの realpath

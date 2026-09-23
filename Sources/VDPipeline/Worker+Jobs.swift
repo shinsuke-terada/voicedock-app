@@ -85,6 +85,16 @@ extension Worker {
         }
     }
 
+    /// ガードで止めた tick（ライセンス）の仕事に、実行せずに失敗で返事をする。文言はガードの理由の語（F-82。今すぐ要約の
+    /// 「当たった理由の pauseWord」と同じ。PLAN §5.4・§8.14）
+    static func replyPaused(_ job: WorkerJob, _ message: String) {
+        switch job {
+        case .llmProbe(let reply): reply(LLMProbeCheck.fail(message))
+        case .backlog(let action), .resolveAbsent(let action): replyFailure(action, message)
+        case .summarizeNow(let reply): reply(.failure(SummarizeNowFailure(message: message)))
+        }
+    }
+
     /// 後追いの仕事を実行せずに失敗で返事をする（設定エラー中・停止要求の後。文言は DR-09 と同じ）
     static func replyFailure(_ action: BacklogAction, _ message: String) {
         switch action {

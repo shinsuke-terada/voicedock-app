@@ -10,7 +10,7 @@ struct SessionDeletionStage {
 
     func deleteSourcesIfSafe(sessionKey key: String) async {
         do {
-            guard let first = try deps.store.session(key), SessionStates.deleteEvaluated.contains(first.status) else {
+            guard let first = try deps.store.session(key), try isEvaluated(first) else {
                 return
             }
             if first.status == .cleanup {
@@ -19,7 +19,7 @@ struct SessionDeletionStage {
             }
             let requested = await DeletionRequester(deps: deps).requestDeletions(sessionKey: key)
             // 読み直し
-            guard let row = try deps.store.session(key), SessionStates.deleteEvaluated.contains(row.status) else {
+            guard let row = try deps.store.session(key), try isEvaluated(row) else {
                 return
             }
             let parts = try deps.store.recordings(inSession: key)
@@ -123,11 +123,32 @@ struct SessionDeletionStage {
         }
     }
 
-    /// evaluateDeletions の対象（deleteEvaluated に在り、backoff を過ぎた Session。updated_at, session_key 順）
+    /// 削除段で評価する Session か: deleteEvaluated に在るか、COMPLETED で ID の無い RAW_SAVED の Part を持つ（F-80。
+    /// allowReopen が偽のとき、完了した Session に後から RAW_SAVED になった Part は再オープンされず、ここで拾わないと
+    /// Raw の直後（§5.5）の 1 回の後は誰も評価しない。Session は COMPLETED のまま遷移させない）
+    func isEvaluated(_ row: SessionRow) throws -> Bool {
+        if SessionStates.deleteEvaluated.contains(row.status) { return true }
+        guard row.status == .completed else { return false }
+        return try deps.store.recordings(inSession: row.sessionKey).contains(where: Self.isLateRawSaved)
+    }
+
+    /// COMPLETED の Session で後から RAW_SAVED になった、要求を書いていない Part（F-80。ID を持つものは回収 §8.9.6 が先に片付ける）
+    static func isLateRawSaved(_ part: RecordingRow) -> Bool {
+        part.status == .rawSaved && part.deleteRequestID == nil
+    }
+
+    /// evaluateDeletions の対象（deleteEvaluated に在るか、COMPLETED で ID の無い RAW_SAVED の Part を持ち（F-80）、
+    /// backoff を過ぎた Session。updated_at, session_key 順）
     func dueSessionKeys() -> [String] {
         let rows: [SessionRow]
+        let late: Set<[Unicode.Scalar]>
         do {
             rows = try deps.store.sessionsForDeleteEvaluation()
+            // RAW_SAVED は少ない（全 Session の Part を読まない）。照合はスカラー列
+            late = Set(
+                try deps.store.recordings(status: .rawSaved).filter(Self.isLateRawSaved).compactMap {
+                    $0.sessionKey.map { Array($0.unicodeScalars) }
+                })
         } catch {
             deps.warn(error)
             return []
@@ -137,7 +158,8 @@ struct SessionDeletionStage {
         return
             rows
             .filter {
-                SessionStates.deleteEvaluated.contains($0.status)
+                (SessionStates.deleteEvaluated.contains($0.status)
+                    || ($0.status == .completed && late.contains(Array($0.sessionKey.unicodeScalars))))
                     && Self.isDue(
                         updatedAt: $0.updatedAt, attempts: $0.deleteAttempts, now: now, backoff: backoff,
                         zone: deps.zone)

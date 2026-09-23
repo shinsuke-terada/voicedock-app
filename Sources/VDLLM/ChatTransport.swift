@@ -5,7 +5,7 @@ import VDCore
 public enum ChatResult: Equatable, Sendable {
     /// choices[0].message.content。外形が壊れていれば ""（修復へ回す）。
     case content(String)
-    /// LLM_UNAVAILABLE（接続失敗・HTTP 400 以上）。
+    /// LLM_UNAVAILABLE（接続失敗・HTTP 2xx 以外。3xx を含む。F-79）。
     case failure(StageFailure)
 }
 

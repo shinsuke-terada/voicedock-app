@@ -3,10 +3,23 @@ import Foundation
 import VDContract
 
 public enum ConfigLoader {
+    /// ファイル全体の違反の keyPath（`ConfigViolation.keyPath`）。F-83: ConfigStore も使う 1 か所（CR-06）
+    public static let fileKeyPath = "<file>"
+
     /// PLAN §6.1 の読み込みの手順（JSON・移行・キー照合・型・意味の検証）。段ごとに違反があればそこで止め、意味の検証だけは全 CV を評価する。
     public static func load(data: Data, catalog: ModelCatalog, reaperConfObservation: ReaperConfObservation)
         -> ConfigLoadResult
     {
+        let structure = decodeStructure(data: data)
+        guard case .valid(let config) = structure else { return structure }
+        let violations = ConfigValidator.validate(
+            config, catalog: catalog, reaperConfObservation: reaperConfObservation)
+        return violations.isEmpty ? .valid(config) : .invalid(violations)
+    }
+
+    /// PLAN §6.1 の読み込みの手順 1〜3（JSON・移行・キー照合・型）だけ。`.valid` は「構造が正しい」で、**意味の検証（CV）はしていない**。
+    /// F-83: `ConfigStore` が書く前に今の config.json を読み直すとき・CV-30 の修復で読むときも、load と同じこの厳密な経路で読む（CR-06）
+    public static func decodeStructure(data: Data) -> ConfigLoadResult {
         guard let parsed = try? JSONSerialization.jsonObject(with: data) else {
             return .invalid([fileViolation("JSON として読めません")])
         }
@@ -24,28 +37,23 @@ public enum ConfigLoader {
             return .invalid(keyViolations)
         }
         // v1 では移行で値を変えないので元の data を渡す。
-        let config: AppConfig
         do {
-            config = try JSONDecoder().decode(AppConfig.self, from: data)
+            return .valid(try JSONDecoder().decode(AppConfig.self, from: data))
         } catch let error as DecodingError {
             return .invalid([decodingViolation(error, object: migrated)])
         } catch {
             return .invalid([
-                ConfigViolation(rule: "CV-39", code: .configInvalidValue, keyPath: "<file>", message: "読めません")
+                ConfigViolation(rule: "CV-39", code: .configInvalidValue, keyPath: fileKeyPath, message: "読めません")
             ])
         }
-        let violations = ConfigValidator.validate(
-            config, catalog: catalog, reaperConfObservation: reaperConfObservation)
-        return violations.isEmpty ? .valid(config) : .invalid(violations)
     }
 
     /// config.json の書き出し。JSONEncoder（[.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]）＋ 末尾 "\n"。
-    public static func encode(_ config: AppConfig) -> Data {
+    /// F-83: 符号化できなければ投げる（以前は空の Data を返し、呼び手がそれを config.json に書いた）。
+    public static func encode(_ config: AppConfig) throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        guard var data = try? encoder.encode(config) else {
-            return Data()
-        }
+        var data = try encoder.encode(config)
         data.append(contentsOf: Array("\n".utf8))
         return data
     }
@@ -110,7 +118,7 @@ public enum ConfigLoader {
             message = "型が違います"
         }
         return ConfigViolation(
-            rule: "CV-39", code: .configInvalidValue, keyPath: joined.isEmpty ? "<file>" : joined, message: message)
+            rule: "CV-39", code: .configInvalidValue, keyPath: joined.isEmpty ? fileKeyPath : joined, message: message)
     }
 
     /// 整数の位置に置かれた整数でない数（`1.5` など）のキーのパス（配列の要素は末尾に添字）。`allKeyPaths` の順で最初のもの。
@@ -170,6 +178,6 @@ public enum ConfigLoader {
     }
 
     private static func fileViolation(_ message: String) -> ConfigViolation {
-        ConfigViolation(rule: "CV-39", code: .configInvalidValue, keyPath: "<file>", message: message)
+        ConfigViolation(rule: "CV-39", code: .configInvalidValue, keyPath: fileKeyPath, message: message)
     }
 }

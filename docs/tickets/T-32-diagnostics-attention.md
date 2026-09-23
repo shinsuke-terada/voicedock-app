@@ -1,5 +1,17 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-80・issue #119、2026-09-23。マージ後の追記）(1) 「一覧に在るか」は `SourcePresence.of(_:in:)`（internal）の 1 か所にまとめ、`AttentionEvaluator.sourcePresence` を置き換えた（削除の段と共有。PLAN §8.9.5）。
+> (2) 要対応の `undeletableSources` と状態の詳細の在否は、`snapshotMaxAgeSeconds` より古い snapshot では「一覧に在る」と数えない（`AttentionEvaluator.freshSnapshot`。状態の詳細は「デバイスを観測できない」）。
+> (3) DB から数える 2 つの件数は `AttentionInput.countStoredItems(from: ReadOnlyStore)`（public）で入れ、AppServices（`LiveServices.read`）はそれを呼ぶだけ（配線は PolicyTests の `AttentionWiringTests` がトークンで固定）。
+> (4) 設定エラー中（`configPresent == false`）は、停止理由（`PauseReason`）から作る項目を出さない（Worker は設定エラー中に停止理由を更新しない。PLAN §8.11）。§5 の `orderFollowsTheSpecTable` は設定が読めている入力で全部を並べる形に直した（18 件）。
+> (5) 状態の詳細の失敗した Part は、F-75 の定型の error_message（`OBSIDIAN_RAW_WRITE_FAILED` で PLAN §8.6 の 2 つの文言で始まるもの）だけを 3 行目 `    <error_message>` に出す（`StatusReport.FailedPart.note`・`StatusReporter.failureNote`。PLAN §8.12）。
+> (6) VDPipeline の中だけで使う `public` を internal にした（`undeletableStillListed`・`rawNoteBlockedSessions`・`isIngestSilent`・`StatusReporter` の表・`FailedPart` / `UndeletablePart` の init と `detail`）。下の §4 のコードの `public` はその分を読み替える。テストは T-38 の `DeletionRemainderTests`。
+> (7) `snapshot.unavailable` の理由語 `mount_failed`（F-81。再マウントの mount の失敗）も `deviceNeedsReplug` に写す（`AttentionEvaluator.mountFailedReason`・`replugReasons`）。
+> (8) `reaperUpdateRequired` は削除が有効な間だけ出す（`AttentionInput.deletionEnabled`（public。既定 false）。AppServices が `config.cleanup.deleteSourceAudio` を入れる）。§5 の `reaperUpdateRequired`・`orderFollowsTheSpecTable` は `deletionEnabled = true` で試す。
+
+> （F-81・issue #119。2026-09-23）DR-11 は `not_included`（改名の案内だけ）を数えず、`not_listable` が無く `mount_failed`（再マウントでアンマウントされたまま）が在れば 0 台でも ok にせず notice
+> 「<名前> は読み取り専用への切り替えの途中でアンマウントされたままです。取り外して、もう一度つなぎ直してください」（`DiagnosticTexts.leftUnmounted`）。PLAN §8.11 の表（SPEC S6）。テストは `DiagnosticDeviceNoticeTests`。
+
 > （F-84・issue #119。2026-09-23。マージ後の追記）(1) 状態の詳細は「詳細・診断」の画面に入ったときに加えて、同じ画面での「設定を読み直す」と後追いの実行の返事の後に読み直す（`AppModel.reloadStatusReport()`）。「再試行」は Worker に要求を積むだけなので、押した後に始まった refresh で Worker が idle と観測できたときに 1 回読み直す（`statusReportAwaitsWorker`。画面を出たら・閉じたら下ろす）。画面にいなければ読まない。読み込みは `statusReportGeneration` の世代を持ち、後から始まった読み込みの結果を残す。(2) `reaperUpdateRequired` の説明を「「元音声の削除」を開いて、「更新する」を 3 秒長押ししてください」に直した（§4.10 の表の行は記録として残す。PLAN §8.11 に逐語で置いた）。(3) `perform(.openDeletionFlow)` の `deletionHighlighted` は「元音声の削除」の画面の「更新する」のカードにだけ橙の枠を付ける（`View.attentionHighlight(_:)`。`modelsHighlighted` と同じ枠）。どちらも `panelDidClose` で戻す（モーダルのために閉じるときは残す）。(4) 「設定を読み直す」の下に、起動したときの値のまま動いている時刻帯・ログの設定（`AppSnapshot.settingsAwaitingRestart`・`EffectiveSettings`）と、主画面の「詳細・診断」の行に「再起動で反映される設定あり」を出す（PLAN §8.12。G10）
 
 > （F-78・issue #124、2026-09-23。マージ後の追記）reaper の拒否が 3 回続いて打ち切った Part（T-38 §4.5 の手順 5b）も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と「消せなかった録音」に同じ数え方で入る。原因の語は reaper の理由語（付録 B.2）なので、

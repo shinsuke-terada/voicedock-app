@@ -41,7 +41,9 @@ struct RecoveryVaultTmpTests {
         (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))) != nil
     }
 
-    @Test("raw_output_path があればその tmp だけ消す")
+    // F-83: raw_output_path があっても、今のフォルダの候補名の tmp も消す（書き手は DB のパスを使えなければ候補名へ書く）。
+    // 以前は「その tmp だけ消す」で、base を残すことを確かめていた
+    @Test("F-83 raw_output_path があればその tmp と、今のフォルダの候補名の tmp を消す")
     func rawTmpByOutputPath() async throws {
         let w = try await Self.world()
         let pk = try w.addPart(PipelineFixtures.partA, status: .rawWriting)
@@ -50,7 +52,7 @@ struct RecoveryVaultTmpTests {
         let base = try Self.place(w, Self.rawFolder + "/.2026-08-29 raw.md.tmp")
         try await Self.recover(w)
         #expect(!Self.present(own))
-        #expect(Self.present(base))
+        #expect(!Self.present(base))
         #expect(try w.part(pk).status == .transcribed)
     }
 

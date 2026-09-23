@@ -173,7 +173,9 @@ public actor LlamaServerSupervisor {
             if abortStart { return await abandon(process) }
             let started = clock.uptime()
             while true {
-                if await LoopbackHealth.check(endpoint, factory: factory) == 200 {
+                // 200 の後に子の生存を確かめる（F-79。子が bind に失敗して終わっても、ポートを取った別のプロセスが
+                // 200 を返しうる。死んでいれば下の「途中で終了した」と同じく exited(<n>) などで次の試行へ）
+                if await LoopbackHealth.check(endpoint, factory: factory) == 200, await process.isRunning {
                     if abortStart { return await abandon(process) }
                     launching = nil
                     let handle = LlamaServerHandle(endpoint: endpoint, apiKey: key, modelID: modelID)

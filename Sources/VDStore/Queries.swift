@@ -7,17 +7,23 @@ extension Store {
     static let knownPartkeysChunk = 500
 
     public func recording(_ partkey: String) throws -> RecordingRow? {
-        try pool.read { db in
-            try Row.fetchOne(db, sql: "SELECT * FROM recordings WHERE partkey = ?", arguments: [partkey])
-                .map { row throws(StoreError) in try RecordingRow(row: row) }
-        }
+        try pool.read { db in try Store.recording(db, partkey: partkey) }
     }
 
     public func session(_ key: String) throws -> SessionRow? {
-        try pool.read { db in
-            try Row.fetchOne(db, sql: "SELECT * FROM sessions WHERE session_key = ?", arguments: [key])
-                .map { row throws(StoreError) in try SessionRow(row: row) }
-        }
+        try pool.read { db in try Store.session(db, key: key) }
+    }
+
+    /// recording(_:) の本体を与えられた db で行う（分組の groupPart が同じトランザクションで使う。F-82）
+    static func recording(_ db: Database, partkey: String) throws -> RecordingRow? {
+        try Row.fetchOne(db, sql: "SELECT * FROM recordings WHERE partkey = ?", arguments: [partkey])
+            .map { row throws(StoreError) in try RecordingRow(row: row) }
+    }
+
+    /// session(_:) の本体を与えられた db で行う（分組の groupPart が同じトランザクションで使う。F-82）
+    static func session(_ db: Database, key: String) throws -> SessionRow? {
+        try Row.fetchOne(db, sql: "SELECT * FROM sessions WHERE session_key = ?", arguments: [key])
+            .map { row throws(StoreError) in try SessionRow(row: row) }
     }
 
     public func ungroupedRecordings() throws -> [RecordingRow] {
@@ -148,28 +154,32 @@ extension Store {
 
     /// Session の集計列を数え直す（PLAN §5.6。voicedock session.py:244-270）
     public func refreshSessionAggregates(_ key: String) throws {
-        try pool.write { db in
-            guard
-                let row = try Row.fetchOne(
-                    db,
-                    sql: "SELECT COUNT(*) AS parts, MIN(started_at) AS first_at, MAX(ended_at) AS last_at, "
-                        + "SUM(duration_seconds) AS seconds, "
-                        + "COALESCE(SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END), 0) AS excluded "
-                        + "FROM recordings WHERE session_key = ?",
-                    arguments: [PartStatus.failed.rawValue, PartStatus.skipped.rawValue, key])
-            else { return }
-            let parts = try row.decode(Int.self, forColumn: "parts")
-            let firstAt = try row.decode(String?.self, forColumn: "first_at")
-            let lastAt = try row.decode(String?.self, forColumn: "last_at")
-            let seconds = try row.decode(Double?.self, forColumn: "seconds")
-            let excluded = try row.decode(Int.self, forColumn: "excluded")
-            try Store.applySessionUpdate(
-                db, key: key,
-                fields: [
-                    .partCount(parts), .startedAt(firstAt), .endedAt(lastAt), .recordedSeconds(seconds),
-                    .failedPartCount(excluded),
-                ], now: nowISO())
-        }
+        let now = nowISO()
+        try pool.write { db in try Store.refreshSessionAggregates(db, key: key, now: now) }
+    }
+
+    /// refreshSessionAggregates の本体を与えられた db で行う（分組の groupPart が同じトランザクションで使う。F-82）
+    static func refreshSessionAggregates(_ db: Database, key: String, now: String) throws {
+        guard
+            let row = try Row.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) AS parts, MIN(started_at) AS first_at, MAX(ended_at) AS last_at, "
+                    + "SUM(duration_seconds) AS seconds, "
+                    + "COALESCE(SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END), 0) AS excluded "
+                    + "FROM recordings WHERE session_key = ?",
+                arguments: [PartStatus.failed.rawValue, PartStatus.skipped.rawValue, key])
+        else { return }
+        let parts = try row.decode(Int.self, forColumn: "parts")
+        let firstAt = try row.decode(String?.self, forColumn: "first_at")
+        let lastAt = try row.decode(String?.self, forColumn: "last_at")
+        let seconds = try row.decode(Double?.self, forColumn: "seconds")
+        let excluded = try row.decode(Int.self, forColumn: "excluded")
+        try Store.applySessionUpdate(
+            db, key: key,
+            fields: [
+                .partCount(parts), .startedAt(firstAt), .endedAt(lastAt), .recordedSeconds(seconds),
+                .failedPartCount(excluded),
+            ], now: now)
     }
 
     /// `IN (?, …)` の `?` を束縛する値の数から作る（値を SQL に埋め込まない）

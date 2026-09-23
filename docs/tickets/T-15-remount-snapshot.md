@@ -1,5 +1,18 @@
 # T-15 VDDevice: 再マウント・snapshot・IngestService の走査
 
+> （F-81 のレビュー・issue #119。2026-09-23）(1) `recordSkip` に `lookalike:` を足し、`detection.notIncludedDevices` の名前は `unavailable[名前] = "not_included"`（前回から変わったときだけ WARNING）。
+> (2) `unmountedByRemount` は名前と判定のときの node（internal の `UnmountedDevice`）を持ち、`carryUnmounted` は node の `reader.lstatKind` が `ENOENT` なら（抜かれた）外す。
+> (3) `RemountOutcome.mountFailedReason` を public にした（DR-11 と要対応が比べる）。(4) 再コピーの `ended_at` は `started_at` のオフセットで書き（`recopyEndedAt`・`isoOffsetSeconds`）、
+> Session の集計の失敗は `copy_failed` にせず `config_warning rule=store message=<型名>`。テストは `IngestServiceMountRecheckTests`・`IngestRecopyDurationTests`。
+
+> （F-81・issue #119。2026-09-23）走査の手順 4 を 3 つ変えた。
+> (1) 列挙の直後の statfs（T-14 の `DeviceIngestResult.mountAfterListing`）の `mountOnName` と `mountFromName` が列挙の前の `info` とスカラー列で一致しなければ、
+> `complete == false` と同じく `devices` に載せず `unavailable` に `not_listable`（`errno` なし）で載せる（internal の `IngestService.sameMount(_:_:)`。前も後も nil なら同じとみなす）。
+> (2) 再マウントが `.failed(reason: "mount_failed")`（internal の定数 `RemountOutcome.mountFailedReason`）で、その後マウント点でなくなったデバイスは `unavailable[名前] = "mount_failed"` にし、
+> actor の `unmountedByRemount` に覚えて、名前が判定に戻る（`devices` か `not_a_mount_point` 以外の `skipped`）まで毎回の snapshot の `unavailable` に載せ続ける（`carryUnmounted(_:into:)`）。
+> (3) `DiskutilRemounter` は mount の後のマウント一覧の `mountFromName == node` をスカラー列（`PyText.scalarsEqual`）で比べる。
+> テストは `IngestServiceMountRecheckTests`・`RemounterScalarTests`。ディスクイメージの舞台（`IngestServiceDiskImageTests`）は既定の include（`["DJIMIC3"]`）では検出されないので `includeVolumes = []` にした。
+>
 > （F-73・issue #113。2026-09-23）`remountReadOnly(path:node:)` の手順 3 の後に、手順 1 の `info` の `mountFromName == node` と `mountOnName == realpath(path)`（スカラー列）を確かめ、違えば diskutil を呼ばずに `.failed(reason: "no_device_node")` を返す手順を足した
 > （判定から再マウントまでに挿し直されて disk 番号が変わった・外れた場合に、別のディスクを unmount / mount しない）。`RemounterTests` の舞台は path のディレクトリを作って realpath にした。テストは `RemounterNodeCheckTests`。
 >

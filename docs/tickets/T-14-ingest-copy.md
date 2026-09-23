@@ -1,5 +1,10 @@
 # T-14 VDDevice: ファイルの走査・安定性判定・コピー・登録（＋ VDAudio の AudioProbe）
 
+> （F-81・issue #119。2026-09-23）`ingestDevice` は列挙（`scan`）の直後に `deps.inspector.mountInfo(path: mountPath)` をもう一度取り、internal の `DeviceIngestResult.mountAfterListing` で返す
+> （T-15 の走査が列挙の前の statfs と照らし、違えば snapshot に載せない）。取り込み（安定性判定とコピー）はこれまでどおり続ける。以下の本文の `DeviceIngestResult` の 2 つの項目は記録として残す。
+> `registerCopied` の再コピー（`recopyRow` あり）は、`AudioProbe` で測れた長さが登録済みの `duration_seconds` と違えば（NULL を含む）`duration_seconds` と `ended_at`（登録済みの `started_at` + 長さ。
+> 最初のコピーと共有する internal の `endedAtISO(start:duration:)`）も書き直し、Session に属していれば `store.refreshSessionAggregates` で数え直す（測れない・同じなら従来の値を残す）。テストは `IngestRecopyDurationTests`。
+>
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`IngestDependencies` の `coexistence: CoexistenceGuard` は外した。以下の本文の共存ガードの記述は記録として残す。
 >
 > （F-67・issue #97 で走査の完全さを直した。2026-09-23）`scan` の `walk` は、項目の `lstat` が `ENOENT` 以外で失敗したら `complete = false` にして飛ばす（`ENOENT` は列挙から `lstat` までの間に消えたので従来どおり黙って飛ばす）。

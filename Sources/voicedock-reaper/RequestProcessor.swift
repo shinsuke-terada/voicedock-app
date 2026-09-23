@@ -11,6 +11,9 @@ enum RequestOutcome: Equatable, Sendable {
     /// 残す（何も書かない。アプリ側の期限切れが取り下げる）
     case left(String)
     case deleted(relpath: String)
+    /// RV-04: 前回 unlink して DELETED と記録した要求の結果 DELETED を書き直した（書けなければ要求を残した）。
+    /// この実行では消していない（F-80）
+    case redelivered(relpath: String)
     /// 列挙の後に要求が消えていた（取り下げと重なった）。何も書かない（ログも出さない）。数えない（F-73）
     case gone
     /// unlink の直前に読み直した reaper.conf でロック 1 が閉じていた（lock1 / conf_invalid）。
@@ -59,6 +62,8 @@ struct RequestProcessor {
         }
         // RV-04。processed.log には再追記しない。結果が在れば書かない（DELETED を MISMATCH で上書きしない）
         if processed.contains(stem) {
+            // 前回 unlink して DELETED と記録したのに結果を書けなかった要求は、DELETED の結果を書き直す（F-80。消し直さない）
+            if processed.recordedDeleted(stem) { return redeliverDeleted(name: name, stem: stem, request: r) }
             if !queue.resultExists(requestID: stem) {
                 // 結果を書けなければ要求を残して次へ（拒否のログも出さない。refuse と同じ。F-73）
                 guard
@@ -123,8 +128,8 @@ struct RequestProcessor {
         case .success(.unlinked(.ok)):
             break
         }
-        // 成功の書き込み順: processed.log → 結果 DELETED → 要求を消す → ログ
-        processed.append(stem)
+        // 成功の書き込み順: processed.log（`<request_id> DELETED`。F-80）→ 結果 DELETED → 要求を消す → ログ
+        processed.append(stem, deleted: true)
         let written = queue.writeResult(
             result(stem: stem, deviceID: r.deviceID, partkey: r.partkey, status: .deleted, detail: r.target.relpath))
         // 結果を書けなければ要求を残して次へ（source_deleted は出す）
@@ -134,6 +139,23 @@ struct RequestProcessor {
         log.info(
             ReaperLog.Event.sourceDeleted, [(ReaperLog.Key.requestID, stem), (ReaperLog.Key.partkey, r.partkey)])
         return .deleted(relpath: r.target.relpath)
+    }
+
+    /// RV-04 で、processed.log に DELETED と記録した要求（前回 unlink して不在を確かめたが、結果を書けずに要求が残った）の結果を書き直す
+    /// （F-80）。デバイスには触れない（unlink もボリュームを開くこともしない）。detail は元の結果と同じ要求の relpath。
+    /// 結果が既に在れば書かない（上書きしない）。書けなければ要求を残して次へ。書けたら要求を消す。
+    /// ログは出さない（source_deleted は前回の実行で出している。数えを二重にしない）
+    private func redeliverDeleted(name: String, stem: String, request r: DeleteRequest) -> RequestOutcome {
+        if !queue.resultExists(requestID: stem) {
+            guard
+                queue.writeResult(
+                    result(
+                        stem: stem, deviceID: r.deviceID, partkey: r.partkey, status: .deleted,
+                        detail: r.target.relpath))
+            else { return .redelivered(relpath: r.target.relpath) }
+        }
+        _ = Unlinker.removeRequest(named: name, inQueueDelete: queue.deleteFD)
+        return .redelivered(relpath: r.target.relpath)
     }
 
     /// RV-02a / RV-02b。`rejected/` へ退避する（失敗は無視）。結果も processed.log も書かない

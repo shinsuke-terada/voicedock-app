@@ -79,9 +79,11 @@ public enum OutputPathResolver {
         return lost
     }
 
-    /// ノートの frontmatter。読めない・UTF-8 でない・frontmatter が読めなければ nil
+    /// ノートの frontmatter。読めない・UTF-8 でない・frontmatter が読めなければ nil。
+    /// F-83: 読むのは `Frontmatter.readNote`（lstat で通常ファイルかつ 64 MiB 以下 → O_NOFOLLOW | O_NONBLOCK → fstat。F-71）。
+    /// symlink・FIFO・大きすぎるノートは「読めない」（上書きしない・書き直さない側）
     static func frontmatter(of url: URL) -> [String: Any]? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
+        guard let data = Frontmatter.readNote(url) else { return nil }
         guard let text = String(validating: data, as: UTF8.self) else { return nil }
         return Frontmatter.parse(text)
     }

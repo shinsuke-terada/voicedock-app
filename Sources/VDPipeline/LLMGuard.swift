@@ -18,9 +18,6 @@ enum LLMGuardVerdict: Equatable, Sendable {
 struct LLMGuard {
     let ctx: TickContext
 
-    /// minMemoryGB の 1 GB（2^30 バイト）
-    static let bytesPerGB: UInt64 = 1_073_741_824
-
     /// ガードを通れば起動に使うモデル。通らなければ理由をすべて ctx.pauses.trip して nil（遷移しない）。
     func evaluate() -> LLMTarget? {
         switch inspect() {
@@ -49,12 +46,9 @@ struct LLMGuard {
             if !ModelFiles.isPresent(e, kind: .llm, layout: layout) {
                 reasons.append(.llmModelMissing)
             }
-            if let gb = e.minMemoryGB {
-                // UInt64(gb) * 1_073_741_824。範囲外の値でトラップしない（CR-16）: 溢れたら足りない側
-                let (need, overflow) = UInt64(clamping: gb).multipliedReportingOverflow(by: Self.bytesPerGB)
-                if overflow || ctx.deps.physicalMemoryBytes < need {
-                    reasons.append(.llmInsufficientMemory)
-                }
+            // F-83: メモリの条件は `ModelMemory.hasEnough` の 1 か所（CR-06。パネル・DR-08 と同じ式。溢れたら足りない側）
+            if !ModelMemory.hasEnough(minMemoryGB: e.minMemoryGB, physicalMemoryBytes: ctx.deps.physicalMemoryBytes) {
+                reasons.append(.llmInsufficientMemory)
             }
         } else if let u = ModelFiles.customLLMURL(id: id, layout: layout) {
             // 4. カスタムのモデル（メモリの目安は分からないので確かめない。警告は選ぶときの UI が出す）

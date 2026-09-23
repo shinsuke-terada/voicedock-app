@@ -7,8 +7,11 @@ public enum AtomicFile {
     /// url の親ディレクトリは在ること（作らない）。
     /// 途中のどこで失敗しても、tmp を作った後なら tmp を消して元の誤りを投げる。最終ファイルは差し替えない（CR-21）。
     /// url が symlink なら rename が symlink そのものを置き換える（リンク先には書かない）。
+    /// F-83: fullSync が真なら、tmp と親ディレクトリを `fsync` の代わりに `fullFsync`（F_FULLFSYNC。ドライブのキャッシュまで流す）で書き出す。
+    /// 既定は偽（今までどおり fsync）。原本の削除の根拠になるファイルの書き手が真にする（Vault のノートは NoteWriter、
+    /// transcript は Transcriber）。
     public static func write(
-        _ data: Data, to url: URL, permissions: mode_t = 0o644, verifyReadBack: Bool = false
+        _ data: Data, to url: URL, permissions: mode_t = 0o644, verifyReadBack: Bool = false, fullSync: Bool = false
     ) throws(AtomicFileError) {
         let tmp = tmpURL(for: url)
         let fd = open(
@@ -22,8 +25,7 @@ public enum AtomicFile {
             discard(tmp)
             throw .write(errno: code)
         }
-        if fsync(fd) != 0 {
-            let code = errno
+        if let code = fullSync ? fullFsync(fd) : plainFsync(fd) {
             close(fd)
             discard(tmp)
             throw .fsync(errno: code)
@@ -41,9 +43,22 @@ public enum AtomicFile {
         let dirFD = open(
             url.deletingLastPathComponent().path(percentEncoded: false), O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         if dirFD >= 0 {
-            _ = fsync(dirFD)
+            _ = fullSync ? fullFsync(dirFD) : plainFsync(dirFD)
             close(dirFD)
         }
+    }
+
+    /// F-83: `fcntl(F_FULLFSYNC)`。macOS の `fsync` はドライブのキャッシュまでは流さない。F_FULLFSYNC が**どの errno で失敗しても**
+    /// `fsync` に戻す（対応しないファイルシステム・デバイスでも書き出しを諦めない。SQLite と同じ）。成功なら nil、失敗なら fsync の errno。
+    /// VDModels も使う（照合したモデルの rename の前。§8.10）。
+    public static func fullFsync(_ fd: Int32) -> Int32? {
+        if fcntl(fd, F_FULLFSYNC) == 0 { return nil }
+        return plainFsync(fd)
+    }
+
+    /// `fsync`。成功なら nil、失敗なら errno。
+    private static func plainFsync(_ fd: Int32) -> Int32? {
+        fsync(fd) == 0 ? nil : errno
     }
 
     /// 同じディレクトリの ".<ファイル名>.tmp"

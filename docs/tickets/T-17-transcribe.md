@@ -1,5 +1,9 @@
 # T-17 VDTranscribe: whisper-cli の起動・出力の正規化・無音判定
 
+> （F-83・issue #119、2026-09-23。統合での配線）手順 11 の transcript の書き込みは `AtomicFile.write(PartTranscriptCodec.encode(t), to: target, fullSync: true)`（F_FULLFSYNC。根拠 B の証拠で、根拠 A の本文の 2 つ目の写し。PLAN §8.4 の 8・§8.7）。下の本文の手順 11 はその分を読み替える。テストは PolicyTests の `DurableWriteCallTests`（字句の検査と自己テスト）。
+
+> （F-82・issue #119。2026-09-23）(1) アプリの終了で止めた whisper（`stoppedByTerminateAll` が真で終了 0 でない）と閉じた後の起動の拒否（ECANCELED）は失敗にせず、新しい `TranscribeOutcome.stopped` を返す（呼び手は行を動かさない）。(2) 起動の失敗は実行ファイルの問題（ENOENT・EACCES・EPERM・ENOEXEC・ENOTDIR・ELOOP・ENAMETOOLONG・EINVAL・EBADARCH・EBADEXEC・EBADMACHO）だけを `WHISPER_EXEC_MISSING`、ほかは `WHISPER_FAILED`（文言は同じ `spawn: errno <n>`）。(3) 利用者の決定「寛容に読む」: `WhisperOutputParser.parse` は読む前に `lenientText`（不正な UTF-8 を U+FFFD、文字列の中の生の制御文字を `\u00XX`。正常な JSON は 1 バイトも変えない。X-41）を通す。直した transcript は、直した文字（U+FFFD と U+0000〜U+001F）を除いた文字数が minChars に届かなければ無音にせず `WHISPER_FAILED`「生 JSON に壊れた文字があり、無音と判定できません: <k> 文字（min_chars=<m>）」（transcript を書かない。`WhisperOutputParser.parseReportingRepair`）。PLAN §8.4 手順 6・7。テストは `TranscriberStoppedTests.swift`・`TranscriberRepairedTests.swift`・`WhisperOutputParserLenientTests.swift`。
+
 > （F-76・issue #116。2026-09-23）`transcribe` は whisper を起動する前に staging の前回の `whisper.json` を `SafeUnlink.remove(…, under: .staging, missingOK: true)` で消す（落ちた前回の残りを成功として読まない。RK-34）。消せなければ起動せずに `WHISPER_FAILED`「前回の生 JSON を消せません: <HOME からの相対パス>」。テストは `Tests/VDTranscribeTests/TranscriberStaleJSONTests.swift`。
 
 | 項目 | 値 |

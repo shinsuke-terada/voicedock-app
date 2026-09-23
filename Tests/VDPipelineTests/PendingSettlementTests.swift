@@ -40,12 +40,16 @@ struct PendingSettlementTests {
                 ingest: ScriptedIngest(snapshot: snapshot ?? scene.snapshot()), streaks: streaks))
     }
 
-    /// 同じ連続回数の記録で times 回評価する
+    /// 連続の 2 回目として数える観測の間隔の下限（既定の backoff の最初の値。F-80）
+    static let spacing = 60
+
+    /// 同じ連続回数の記録で times 回評価する。評価のたびに時計を spacing 秒進める（F-80。続けた評価が連続として数えられる間隔）
     static func evaluate(
         _ scene: DeletionScene, snapshot: DeviceSnapshot? = nil, streaks: UndeletableStreaks, times: Int = 2
     ) async {
         for _ in 0..<times {
             await Self.stage(scene, snapshot: snapshot, streaks: streaks).deleteSourcesIfSafe(sessionKey: Self.key)
+            scene.clock.advance(seconds: Self.spacing)
         }
     }
 
@@ -155,7 +159,8 @@ struct PendingSettlementTests {
     func pendingPartBeforeTheDeadlineWaits() async throws {
         let scene = try Self.pendingScene()
         try Self.breakDeletability(scene, "原本のサイズの食い違い")
-        try Self.elapse(scene, attempts: Self.backoffCount, seconds: Self.backoffTotal - 1)
+        // 2 回目の評価（spacing 秒後）がちょうど 1 秒足りない
+        try Self.elapse(scene, attempts: Self.backoffCount, seconds: Self.backoffTotal - 1 - Self.spacing)
         await Self.evaluate(scene, streaks: UndeletableStreaks())
         try Self.expectWaited(scene, attempts: Self.backoffCount)
     }
@@ -297,6 +302,7 @@ struct PendingSettlementTests {
         // 期限を過ぎ、観測できた失敗として 2 回数えても、原因が無いので決着しない
         for _ in 0..<2 {
             requester.considerSettling(healthy, session: session, parts: parts, snapshot: snapshot, ctx: ctx)
+            scene.clock.advance(seconds: Self.spacing)
         }
         #expect(try Self.part(scene).status == .rawSaved)
         #expect(!Self.settledLog(scene))
@@ -306,6 +312,7 @@ struct PendingSettlementTests {
         requester.considerSettling(broken, session: session, parts: parts, snapshot: snapshot, ctx: ctx)
         #expect(try Self.part(scene).status == .rawSaved)
         #expect(!Self.settledLog(scene))
+        scene.clock.advance(seconds: Self.spacing)
         requester.considerSettling(broken, session: session, parts: parts, snapshot: snapshot, ctx: ctx)
         let settled = try Self.part(scene)
         #expect(settled.status == .completed)
@@ -321,8 +328,17 @@ struct PendingSettlementTests {
         let config = try #require(await w.configStore.current())
         let first = await worker.makeContext(config, Worker.zone(for: config), snapshot: nil)
         let second = await worker.makeContext(config, Worker.zone(for: config), snapshot: nil)
-        #expect(DeletionDependencies(ctx: first).streaks.record(Self.pk, connectEpoch: 1) == 1)
-        #expect(DeletionDependencies(ctx: second).streaks.record(Self.pk, connectEpoch: 1) == 2)
-        #expect(second.undeletableStreaks.record(Self.pk, connectEpoch: 1) == 3)
+        // 間隔の下限 0 で、同じ接続の観測を 3 回数える
+        let connection = UndeletableStreaks.Connection(epoch: 1, deviceNode: nil)
+        let now = Instant(epochMillis: 0)
+        #expect(
+            DeletionDependencies(ctx: first).streaks.record(
+                Self.pk, session: Self.key, connection: connection, now: now, minIntervalSeconds: 0) == 1)
+        #expect(
+            DeletionDependencies(ctx: second).streaks.record(
+                Self.pk, session: Self.key, connection: connection, now: now, minIntervalSeconds: 0) == 2)
+        #expect(
+            second.undeletableStreaks.record(
+                Self.pk, session: Self.key, connection: connection, now: now, minIntervalSeconds: 0) == 3)
     }
 }

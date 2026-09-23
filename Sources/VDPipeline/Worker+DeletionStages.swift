@@ -10,7 +10,8 @@ extension Worker {
         await RequestExpirer(deps: DeletionDependencies(ctx: ctx)).expireDeleteRequests()
     }
 
-    /// deleteEvaluated の Session を updated_at, session_key の順に、backoff を過ぎたものだけ（DEL-14）
+    /// SessionDeletionStage.isEvaluated の Session（deleteEvaluated に在るか、COMPLETED で ID の無い RAW_SAVED の Part を持つ。F-80）を
+    /// updated_at, session_key の順に、backoff を過ぎたものだけ（DEL-14）
     func stageEvaluateDeletions(_ ctx: TickContext) async {
         let stage = SessionDeletionStage(deps: DeletionDependencies(ctx: ctx))
         for key in stage.dueSessionKeys() {

@@ -4,6 +4,10 @@
 > 書き込み先の既存の Raw ノートに RAW_SAVED 以降の Part の鍵が在るのに新しい内容から抜けるなら、書かずにトリガを FAILED にする（手順 9a）。`noMembersStaysTranscribed` は取り下げ、
 > テストは `RawNoteTextProtectionTests.swift`（PLAN §8.6〜§8.8・X-38）。
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）復旧の Vault の tmp の掃除は、DB のパスの tmp に加えて今の設定のテンプレートのフォルダの候補名の tmp も消す（`Recovery.tmpTargets`）。
+> 今のフォルダは realpath で 1 回だけ確かめ（`Recovery.folderState`）、無ければ候補名を見ず、Vault の外・途中の要素がファイルなら `config_warning rule=recovery` を 1 件だけ出して候補名を見ない（PLAN §5.3）。
+> `RecoveryVaultTmpTests.rawTmpByOutputPath` は「その tmp だけ消す」から「候補名の tmp も消す」に期待を変えた（表示名は F-83 で始める）。テストは `RecoveryVaultTmpFolderTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-29 |

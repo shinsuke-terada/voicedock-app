@@ -58,20 +58,22 @@ extension PartSteps {
                 row, from: .normalizing, code: .duplicateContent, message: "同じ内容の Part が既にあります: \(other)")
             return false
         case .failure(let f):
-            // 6. SOURCE_HASH_MISMATCH は列を遷移より先に書く（§11 の提案 5）
-            if f.code == .sourceHashMismatch {
+            // 6. 再コピーの要る失敗は列を遷移より先に書く（§11 の提案 5）。SOURCE_HASH_MISMATCH と、F-82 で
+            //    入力のヘッダが実データより短い NORMALIZE_VERIFY_FAILED（機器がヘッダを直していれば取り直しで直る）
+            if Self.needsRecopy(f) {
                 _ = try store.updateRecordingIfStatus(pk, status: .normalizing, [.needsRecopy(true)])
             }
             try fail(row, from: .normalizing, code: f.code, message: f.message, event: .normalizeFailed)
             return false
         case .success(let sha, let output, let inBytes, let outBytes, _):
-            // 7. DB を書いてから inbox を消す（CONC-08）
+            // 7. DB を書いてから inbox を消す（CONC-08）。needs_recopy も下ろす（F-82。立ったままだと、後で FAILED に
+            //    なったときに requeue（契機 1〜3）から外れ、済んだ Part を取り直す）
             try store.updateRecording(
                 pk,
                 [
                     .sha256(sha), .normalizedPath(layout.relativePath(of: output)),
                     .stagingDir(layout.relativePath(of: layout.stagingDirectory(slug: slug))), .errorCode(nil),
-                    .errorMessage(nil),
+                    .errorMessage(nil), .needsRecopy(false),
                 ])
             try store.recordPartTransition(partkey: pk, from: .normalizing, to: .normalized)
             log.info(
@@ -84,6 +86,25 @@ extension PartSteps {
                 try? SafeUnlink.remove(inbox, under: .inbox, layout: layout)
             }
             return true
+        }
+    }
+}
+
+extension PartSteps {
+    /// F-77 の「入力のヘッダの長さと実データの量が合いません（…）」の先頭。同じ文言は VDAudio（`InputExtentCheck.check`）と
+    /// ここの 2 か所にある（VDAudio は持ち物の外で公開の見分け方を足せない）。ずれは `extentMismatchFlagsRecopy` が検出する
+    static let inputExtentMismatchPrefix = "入力のヘッダの長さと実データの量が合いません"
+
+    /// 変換の失敗のうち、デバイスから取り直せば直りうるもの（needs_recopy を立てる。PLAN §8.3 手順 6）。
+    /// F-82: 入力のヘッダが実データより短い NORMALIZE_VERIFY_FAILED も（利用者の決定 2026-09-23）。取り直しは変換し直すたびに
+    /// 高々 1 回（requeueRecopied（契機 4）の対象にしないので、取り直した原本を変換し直すのは次の再評価の契機（接続・起動・
+    /// 再試行）。接続している間 走査ごとに繰り返さない。直っていなければまた不合格になるだけで、inbox の原本も元の録音も消さない）
+    static func needsRecopy(_ failure: StageFailure) -> Bool {
+        switch failure.code {
+        case .sourceHashMismatch: true
+        case .normalizeVerifyFailed:
+            failure.message.unicodeScalars.starts(with: inputExtentMismatchPrefix.unicodeScalars)
+        default: false
         }
     }
 }

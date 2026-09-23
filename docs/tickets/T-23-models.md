@@ -1,5 +1,11 @@
 # T-23 VDModels: モデルのダウンロード・取り込み・状態
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）使える `.resume` は読んだ後も結末まで残す（成功・HTTP の誤り・照合の失敗・新しい再開データの無い失敗で消す）。再開データの URL がカタログの URL と違えば捨てて最初から、
+> 再開の要求が HTTP の誤りで終わったら最初から 1 回だけやり直す（代理は始めたタスクの知らせだけを受ける）。`ModelDownloader.stopAllKeepingResumeData()` を足した（終了の後始末の口。配線は統合で）。
+> 照合した `.part` は rename の前に F_FULLFSYNC、後に親ディレクトリも書き出す（`ModelFileSync.swift`）。`ModelManager.discardStaleImports()`（起動時の口。配線は統合で）と取り込みの前に、取り込みが走っていなければ
+> `models/llm/.custom-import-<16 hex>.gguf.part` の残りを消す（数えるのは actor、消すのは BlockingIO）。読みを `autoreleasepool` で包み、書き出しの失敗を `.io("fsync")` で返す。`meetsMemory` は `ModelMemory.hasEnough` を使う。
+> PLAN §8.10。テストは `ModelDownloaderResumeTests.swift`・`ModelImporterStalePartsTests.swift`・PolicyTests の `DurableWriteCallTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-23 |
