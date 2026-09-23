@@ -40,9 +40,11 @@ struct DeletionRequester {
                 // 4. 同じ周回で再要求しない（DEL-11）
                 if deps.pended.contains(part.partkey) { continue }
                 // 4a. 新鮮な snapshot で元ファイルが無いと観測できた RAW_SAVED と ID の無い SOURCE_DELETE_PENDING は消す必要が無い
-                //     （F-64・F-78。手順 1〜3 の後に残るのはこの 2 つだけ）。要求を書かずに完了へ。
+                //     （F-64・F-78）。要求を書かずに完了へ。状態は明示する（将来 deletable に状態が足されても、ここを黙って通さない）。
                 //     source_deleted_at は入れない（アプリが消したのではない）。待っても変わらない条件で待たない（CR-15）
-                if Self.sourceIsObservedAbsent(part, in: snapshot, zone: deps.zone) {
+                if Self.settleableStatuses.contains(part.status)
+                    && Self.sourceIsObservedAbsent(part, in: snapshot, zone: deps.zone)
+                {
                     try completeAsAbsent(part)
                     continue
                 }
@@ -166,7 +168,7 @@ struct DeletionRequester {
     /// 決着に要る「観測できた状態で消せなかった評価」の連続回数（F-69。一時的な失敗 1 回で決着させない）
     static let observedFailuresToSettle = 2
 
-    /// 手順 5a で決着を考える状態（F-69 の RAW_SAVED と、F-74 の ID の無い SOURCE_DELETE_PENDING）
+    /// 手順 4a で完了させ、手順 5a で決着を考える状態（F-64・F-69 の RAW_SAVED と、F-74・F-78 の ID の無い SOURCE_DELETE_PENDING）
     static let settleableStatuses: Set<PartStatus> = [.rawSaved, .sourceDeletePending]
 
     /// 手順 5a（F-69・F-74）: 観測できた失敗なら連続回数を数え、期限を過ぎていて 2 回以上続いていれば消さずに完了させる。

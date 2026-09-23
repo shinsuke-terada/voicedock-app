@@ -1,7 +1,7 @@
 # T-41 後追い: 過去分を削除対象にする・手動で消した分を完了にする（プレビューと実行の 2 段）
 
 > （F-78・issue #124、2026-09-23。マージ後の追記）削除を評価中の Session の、ID の無い SOURCE_DELETE_PENDING で元ファイルが一覧に無いと観測できた Part は、T-38 §4.5 の手順 4a が「手動で消した分を完了にする」と同じ 2 遷移（`resolve_absent` → `already_absent`）・取り下げ・ID を外すで自動で完了させる。
-> 「手動で消した分を完了にする」の対象に残るのは、ID を持つ PENDING・COMPLETED の Session の PENDING・削除が無効な間の PENDING。reaper の拒否が 3 回続いて打ち切った Part（T-38 の手順 5b。COMPLETED・detail `not_deletable`）も「過去分を削除対象にする」の対象に入る（`canDeleteSource` が真なので対象。後追いの要求で拒否の回数は 0 から数え直す）。本チケットのコードは変えない（PLAN §8.9.9）。
+> 「手動で消した分を完了にする」の対象に残るのは、ID を持つ PENDING・COMPLETED の Session の PENDING・削除が無効な間の PENDING。reaper の拒否が 3 回続いて打ち切った Part（T-38 の手順 5b。COMPLETED・detail `not_deletable`）も「過去分を削除対象にする」の対象に入る（`canDeleteSource` が真なので対象）。決着した Part（5a / 5b）の後追いを reaper がまた拒否したら、T-38 の回収が pend せずに detail `not_deletable` の COMPLETED に決着し直す（COMPLETED の Session に PENDING を残さない）。本チケットのコードは変えない（PLAN §8.9.6・§8.9.9）。
 
 > （F-74・issue #114、2026-09-23。マージ後の追記）ID の無い SOURCE_DELETE_PENDING のまま期限を過ぎた Part も T-38 §4.5 の手順 5a で消さずに COMPLETED（detail `not_deletable`）になり、Session が完了するので「過去分を削除対象にする」の対象に入る。実行の ③ が失敗して ID と要求を持ったまま COMPLETED に残った Part は、T-38 の回収が COMPLETED のまま拾う（DELETED なら `source_deleted_at` を書いて ID を外す。PLAN §8.9.6・§8.9.9）。本チケットのコードは変えない。
 

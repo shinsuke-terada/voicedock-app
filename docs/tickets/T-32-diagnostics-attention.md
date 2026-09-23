@@ -1,7 +1,8 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
 > （F-78・issue #124、2026-09-23。マージ後の追記）reaper の拒否が 3 回続いて打ち切った Part（T-38 §4.5 の手順 5b）も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と「消せなかった録音」に同じ数え方で入る。原因の語は reaper の理由語（付録 B.2）なので、
-> `StatusReporter.causeText(_:)`（internal）を足し、`causeTexts` に無く `IdentityReason.all` に在る語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（`UndeletablePart.detail` はこれを使う。型・要対応の文言は変えない。テストは T-38 の `ReaperRejectionSettlementTests`）。
+> `StatusReporter.causeText(_:)`（internal）を足し、`causeTexts` に無く `IdentityReason.all` に在る語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（`UndeletablePart.detail` はこれを使う。型は変えない。テストは T-38 の `ReaperRejectionSettlementTests`）。
+> 要対応 `undeletableSources` の説明を、5a（直せば再評価できる）と 5b（削除モジュールの拒否。再評価しても同じ）の両方に合う文言に直した（下の表・`AttentionTextsTests`。PLAN §8.11）。
 
 > （F-74・issue #114、2026-09-23。マージ後の追記）SOURCE_DELETE_PENDING から決着した Part も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と状態の詳細の「消せなかった録音」に同じ数え方で入る（型・文言は変えない。テストは T-38 の `PendingSettlementTests`）。
 
@@ -850,7 +851,7 @@ s.attention = AttentionEvaluator.items(attention)
 | `diskSpaceLow` | `空き容量が足りません` | `不要なファイルを消すか、staging の上限を上げてください` |
 | `lockMismatch` | `削除の設定が食い違っています` | `アプリと reaper.conf の設定が合いません。「元音声の削除」を開いて無効化し直してください` |
 | `reaperUpdateRequired` | `削除モジュールの更新が必要です` | `「元音声の削除」を開いて有効化をやり直してください` |
-| `undeletableSources(n)` | `消せなかった録音 <n> 本` | `削除の条件を満たさないまま時間がたったので、消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。直したら「過去分を削除対象にする」で再評価できます。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください`（F-69） |
+| `undeletableSources(n)` | `消せなかった録音 <n> 本` | `消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください`（F-69） |
 
 ボタンの文言（`AttentionTexts.button(_:)`）: `.revealConfig` → `設定ファイルを Finder で表示`、`.reloadConfig` → `設定を読み直す`、
 `.chooseVault` → `Vault を選び直す`、`.openSystemSettings` → `システム設定を開く`、`.openModels` → `モデルの節を開く`、`.openDeletionFlow` → `有効化フローを開く`、`.runDiagnostics` → `診断を実行`（`Strings.buttonRunDiagnostics` をそのまま使う）、`.openDetails` → `詳細・診断を開く`（F-69。`AppModel.perform` は `show(.details)` だけ）。

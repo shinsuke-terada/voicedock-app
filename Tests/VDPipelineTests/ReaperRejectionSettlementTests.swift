@@ -177,7 +177,9 @@ struct ReaperRejectionSettlementTests {
         #expect(part.status == .completed)
     }
 
-    @Test("F-78 canDeleteSource が偽になれば、拒否が 3 回続いていても 5b では決着させない（5a の期限と観測の条件に従って待つ）")
+    @Test(
+        "F-78 canDeleteSource が偽になれば、拒否が 3 回続いていても 5b では決着させない（5a の期限と観測の条件に従って待つ。直して真に戻れば、保たれた回数で 5b が打ち切る）"
+    )
     func undeletablePartIsLeftToTheDeadline() async throws {
         let scene = try DeletionScene()
         for reason in ["size_mismatch", "size_mismatch", "size_mismatch"] {
@@ -196,10 +198,15 @@ struct ReaperRejectionSettlementTests {
         let session = try Self.session(scene)
         #expect(session.status == .sourceDeleting)
         #expect(session.deleteAttempts == 2)
+        // Raw ノートを直す（canDeleteSource が真に戻る）。要求を書かなかった評価は回数を切らないので、要求を書かずに打ち切る
+        try scene.writeRawNote()
+        await Self.evaluate(scene)
+        try Self.expectSettled(scene, cause: "size_mismatch")
+        #expect(Self.requestedCount(scene) == 3)
     }
 
     @Test(
-        "F-78 reaper の拒否で打ち切った Part も要対応・状態の詳細（削除モジュールの検証で拒否され続けた（<理由語>））に数え、「過去分を削除対象にする」で要求を書き、拒否の回数は 0 から数え直す"
+        "F-78 reaper の拒否で打ち切った Part も要対応・状態の詳細（削除モジュールの検証で拒否され続けた（<理由語>））に数え、「過去分を削除対象にする」で要求を書き、また拒否されたら COMPLETED の Session に PENDING を残さずに決着し直す"
     )
     func settledRejectionIsCountedAndRetargeted() async throws {
         let scene = try DeletionScene()
@@ -227,12 +234,91 @@ struct ReaperRejectionSettlementTests {
         #expect(plan.eligible == [Self.pk])
         #expect(try await planner.executeBacklog(plan) == 1)
         #expect(try Self.part(scene).status == .sourceDeleting)
-        // また拒否されても、後追いの要求で数え直しているので 1 回
+        // また拒否された → pend せずに SOURCE_DELETING→COMPLETED（not_deletable・理由語）で決着し直す
+        let eventsBefore = try Self.events(scene).count
+        try await Self.reject(scene, reason: "mtime_mismatch")
+        try Self.expectResettled(scene, cause: "mtime_mismatch", eventsBefore: eventsBefore)
+        #expect(try Self.session(scene).status == .completed)
+        let again = StatusReporter.build(
+            layout: scene.layout, config: scene.config, snapshot: scene.snapshot(), now: scene.clock.now(),
+            zone: scene.zone)
+        #expect(again.undeletableTotal == 1)
+    }
+
+    /// 後追いの拒否で決着し直した姿（SOURCE_DELETING→COMPLETED が 1 本だけ増え、PENDING を経ない。消さない）
+    static func expectResettled(_ scene: DeletionScene, cause: String, eventsBefore: Int) throws {
+        let part = try Self.part(scene)
+        #expect(part.status == .completed)
+        #expect(part.errorMessage == cause)
+        #expect(part.errorCode == nil)
+        #expect(part.deleteRequestID == nil)
+        #expect(part.sourceDeletedAt == nil)
+        let events = try Self.events(scene)
+        #expect(events.count == eventsBefore + 1)
+        let last = try #require(events.last)
+        #expect(last.fromStatus == "SOURCE_DELETING")
+        #expect(last.toStatus == "COMPLETED")
+        #expect(last.detail == "not_deletable")
+        #expect(scene.results() == [])
+        #expect(
+            scene.logLines.contains {
+                $0.hasSuffix(
+                    " source_delete_skipped recording_key=" + Self.pk + " reason=not_deletable detail=" + cause)
+            })
+        #expect(
+            !scene.logLines.contains {
+                $0.hasSuffix(" source_delete_pending recording_key=" + Self.pk + " reason=" + cause)
+            })
+        #expect(try Self.settledParts(scene).map(\.partkey) == [Self.pk])
+    }
+
+    @Test(
+        "F-78 後追いの拒否で決着し直すのは not_deletable で決着した Part だけ（パラメータ化: 5a で決着した Part は決着し直す・決着していない COMPLETED の Part は従来どおり PENDING）",
+        arguments: ["5a で決着した", "決着していない"])
+    func onlySettledPartsAreResettled(_ kind: String) async throws {
+        let scene = try DeletionScene()
+        if kind == "5a で決着した" {
+            let row = try Self.part(scene)
+            DeletionRequester(deps: Self.deps(scene)).settleAsNotDeletable(row, cause: "raw_note")
+        } else {
+            // 読み取り専用で完了したのと同じ姿（detail の無い RAW_SAVED→COMPLETED）
+            try scene.movePart(Self.pk, to: .completed)
+        }
+        try scene.moveSession(to: .completed)
+        // 後追い（原因は直っている・もともと無いので対象）
+        let planner = BacklogPlanner(deps: Self.deps(scene))
+        let plan = try await planner.planBacklog()
+        #expect(plan.eligible == [Self.pk])
+        #expect(try await planner.executeBacklog(plan) == 1)
+        #expect(try Self.part(scene).status == .sourceDeleting)
+        let eventsBefore = try Self.events(scene).count
         try await Self.reject(scene, reason: "size_mismatch")
-        #expect(try Self.part(scene).status == .sourceDeletePending)
-        let streak = DeletionRequester.reaperRejectionStreak(try Self.events(scene))
-        #expect(streak.count == 1)
-        #expect(streak.lastReason == "size_mismatch")
+        if kind == "5a で決着した" {
+            try Self.expectResettled(scene, cause: "size_mismatch", eventsBefore: eventsBefore)
+        } else {
+            let part = try Self.part(scene)
+            #expect(part.status == .sourceDeletePending)
+            #expect(part.errorCode == .sourceIdentityMismatch)
+            #expect(part.deleteRequestID == nil)
+            #expect(try Self.events(scene).last?.detail == "size_mismatch")
+            #expect(!Self.settledLog(scene))
+            #expect(try Self.settledParts(scene) == [])
+        }
+    }
+
+    @Test("F-78 TEST-28 events が 0 件なら決着した Part の後追いの試行ではない")
+    func emptyHistoryIsNotARetry() {
+        #expect(!ResultCollector.retriesASettledPart([]))
+    }
+
+    @Test(
+        "F-78 TEST-28 原因の語が空・無い・どの表にも無いときは「原因不明」（パラメータ化: 空文字・nil・未知の語）",
+        arguments: [String?.some(""), nil, "no_such_word"])
+    func unknownCauseIsShownAsUnknown(_ cause: String?) {
+        #expect(
+            StatusReport.UndeletablePart(partkey: Self.pk, cause: cause, presence: .listed).detail
+                == "原因不明、デバイスに在る")
+        if let cause { #expect(StatusReporter.causeText(cause) == nil) }
     }
 
     @Test("F-78 TEST-28 events が 0 件なら reaper の拒否は 0 回（理由語も無い）")

@@ -161,7 +161,7 @@ struct PendingSettlementTests {
     }
 
     @Test("F-74 一覧に無い SOURCE_DELETE_PENDING は not_deletable で決着させない（F-78 で手順 4a が already_absent で完了させる）")
-    func absentPendingIsNotSettled() async throws {
+    func absentPendingCompletesAsAlreadyAbsent() async throws {
         let scene = try Self.pendingScene()
         try Self.breakDeletability(scene, "Raw ノートの手の編集")
         try Self.elapse(scene, attempts: Self.backoffCount, seconds: Self.backoffTotal)

@@ -212,6 +212,21 @@ struct AbsentPendingCompletionTests {
         #expect(Self.absentLog(scene))
     }
 
+    @Test("F-78 failureIsObserved は元ファイルが一覧に無ければ偽（(d)。評価の経路では手順 4a が先に完了させる防御。一覧に在れば真）")
+    func failureIsNotObservedWhenTheSourceIsNotListed() async throws {
+        let scene = try Self.pendingScene()
+        let part = try Self.part(scene)
+        let parts = try scene.store.recordings(inSession: Self.key)
+        // 正の対照: 一覧に在る（ほかの条件 a〜c も満たす）
+        let listed = scene.snapshot()
+        let listedContext = await scene.context(snapshot: listed)
+        #expect(DeletionRequester.failureIsObserved(part, parts: parts, snapshot: listed, ctx: listedContext))
+        // 一覧に無い（接続中で列挙できている）
+        let absent = scene.snapshot(relpaths: [Self.otherRelpath])
+        let absentContext = await scene.context(snapshot: absent)
+        #expect(!DeletionRequester.failureIsObserved(part, parts: parts, snapshot: absent, ctx: absentContext))
+    }
+
     @Test("F-78 PENDING の完了の 1 つ目の遷移が衝突したら status_changed を出して飛ばす（already_absent のログも遷移も書かない）")
     func absentCompletionConflictLogsStatusChanged() async throws {
         let scene = try Self.pendingScene()

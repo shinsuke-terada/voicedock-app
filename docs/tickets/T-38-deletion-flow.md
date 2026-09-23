@@ -4,7 +4,9 @@
 
 > （F-78・issue #124、2026-09-23。マージ後の追記）手順 4a（F-64）を ID の無い SOURCE_DELETE_PENDING にも広げた: 一覧に無いと観測できたら「手動で消した分を完了にする」と同じ 2 遷移（detail `resolve_absent` → `already_absent`）・要求と結果の取り下げ・ID を外して自動で完了する（`completeAsAbsent`。`source_deleted_at` は入れない）。
 > 手順 5b を足した: `canDeleteSource` が真の ID の無い SOURCE_DELETE_PENDING で、reaper の拒否（回収の pend）が events の上で続けて `reaperRejectionsToSettle`（3）回に達していれば、要求を書かずに 5a と同じ 2 遷移（detail `not_deletable`、原因は最後の拒否の理由語）で決着する（`reaperRejectionStreak`・`persistentRejection`）。
-> 状態の詳細は reaper の理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（T-32 の `StatusReporter.causeText`）。§6.3 の `absentPendingIsLeftForResolveAbsent` を外し、§6.14 の `absentPendingIsNotSettled` の期待を直した。テストは §6.16・§6.17（PLAN §8.9.2・§8.9.5・§8.9.9）。
+> 状態の詳細は reaper の理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（T-32 の `StatusReporter.causeText`）。§6.3 の `absentPendingIsLeftForResolveAbsent` を外し、§6.14 の `absentPendingIsNotSettled` の期待と名前を直した（`absentPendingCompletesAsAlreadyAbsent`）。
+> レビューの後: 4a の状態の条件を明示した（`settleableStatuses`）。回収は、決着した Part を後追いで要求して reaper がまた拒否したら、pend せずに `SOURCE_DELETING→COMPLETED`（detail `not_deletable`、原因は理由語）で決着し直す（`retriesASettledPart`・`resettle`。COMPLETED の Session に PENDING を残さない）。
+> 要対応の説明は 5b では後追いを勧めない文言にした（T-32）。テストは §6.16・§6.17（PLAN §8.9.2・§8.9.5・§8.9.6・§8.9.9・§8.11）。
 
 > （F-74・issue #114、2026-09-23。マージ後の追記）手順 5a の決着を ID の無い SOURCE_DELETE_PENDING にも広げた（辺を足さず既存の PENDING→SOURCE_DELETING→COMPLETED、両方 detail `not_deletable`）。`undeletableCause` は何も見つからなければ nil を返し、決着を見送って連続を切る。
 > `TickContext.undeletableStreaks` と `DeletionDependencies.init(streaks:)` の既定値を外した。期限切れは読めて request_id と partkey が一致する結果のときだけ飛ばし、取り下げの後に要求が残れば pend しない（`DeleteQueue.hasRequest`・`DeleteQueue.result(requestID:)`）。
@@ -371,6 +373,12 @@ struct ResultCollector {
     func collectDeleteResults(reaperScanGeneration: UInt64) async
     /// 失敗・期限切れの後始末。状態を動かす／ID を外す。衝突したら status_changed を出して偽
     func pend(_ part: RecordingRow, code: ErrorCode, reason: String) throws -> Bool
+    /// （F-78）決着した（最後の遷移が detail not_deletable の COMPLETED）Part を後追いで要求した試行か:
+    /// events の最後が COMPLETED→SOURCE_DELETING（detail 無し）で、その前が →COMPLETED（detail not_deletable）
+    static func retriesASettledPart(_ events: [EventRow]) -> Bool
+    /// （F-78）その試行の拒否を pend せずに SOURCE_DELETING→COMPLETED（detail not_deletable、error_message = 理由語）で決着し直し、ID を外す（遷移が先）。
+    /// source_delete_skipped recording_key=… reason=not_deletable detail=<理由語>。衝突は status_changed を出して偽
+    func resettle(_ part: RecordingRow, reason: String) throws -> Bool
     /// snapshot が新鮮な tick だけ呼ぶ（呼び手が確かめる）。戻り値は新しい reaperScanGeneration（起動しなければ引数のまま）
     func runReaperIfNeeded(reaperScanGeneration: UInt64) async -> UInt64
     func logRun(_ result: ProcessResult)
@@ -387,7 +395,8 @@ for q in DeleteQueue.results(layout):                                   // . 始
     if !sameKey(result.requestID, part.deleteRequestID): discard(q.url); continue      // 古い試行（DEL-08 / ND-42）
     switch result.status:
     case .sourceIdentityMismatch:
-        if pend(part, code: .sourceIdentityMismatch, reason: result.detail) { discard(q.url) }
+        retried = part.status == .sourceDeleting && retriesASettledPart(store.events(entity: .recording, key: pk))   // F-78
+        if (retried ? resettle(part, reason: result.detail) : pend(part, code: .sourceIdentityMismatch, reason: result.detail)) { discard(q.url) }
     case .deleted:
         guard let s = snapshot, s.generation >= reaperScanGeneration, let obs = s.devices[part.deviceID] else continue    // 残す（判定できる観測を待つ。ND-46）
         if part.sourcePath == nil || obs.relpaths.contains(where: { sameKey($0, part.sourcePath) }):
@@ -849,7 +858,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 |---|---|---|---|
 | `pendingPartSettlesWithoutDeleting` | F-74 ID の無い SOURCE_DELETE_PENDING も期限を過ぎ観測できた失敗が 2 回続いたら、消さずに PENDING→SOURCE_DELETING→COMPLETED（detail not_deletable・原因を記録）で Session も完了する（パラメータ化: 原因 4 つ） | (4, 4860 秒)、1 回目・2 回目 | 1 回目は待つ（Part PENDING・Session SOURCE_DELETING・attempts + 1）。2 回目で Part COMPLETED・`errorCode == nil`・`errorMessage` が原因の語・`sourceDeletedAt == nil`、最後の 2 本の遷移 `SOURCE_DELETE_PENDING→SOURCE_DELETING`・`SOURCE_DELETING→COMPLETED` の detail が両方 `not_deletable`、ログ `… reason=not_deletable detail=<語>`、要求なし、元ファイルが残る、Session COMPLETED |
 | `pendingPartBeforeTheDeadlineWaits` | F-74 期限の前（PENDING にしてから backoff の合計に 1 秒足りない）は SOURCE_DELETE_PENDING のまま待つ | (4, 4859 秒)、2 回評価 | 待った姿 |
-| `absentPendingIsNotSettled` | F-74 一覧に無い SOURCE_DELETE_PENDING は not_deletable で決着させない（F-78 で手順 4a が already_absent で完了させる） | 別の録音だけの一覧、(4, 4860 秒)、2 回評価 | `not_deletable` のログが無い、`completedParts(lastDetail:)` が 0 件、Part COMPLETED・`sourceDeletedAt == nil`・最後の遷移の detail `already_absent`、要求なし（F-78 で期待を「待った姿」から直した） |
+| `absentPendingCompletesAsAlreadyAbsent` | F-74 一覧に無い SOURCE_DELETE_PENDING は not_deletable で決着させない（F-78 で手順 4a が already_absent で完了させる） | 別の録音だけの一覧、(4, 4860 秒)、2 回評価 | `not_deletable` のログが無い、`completedParts(lastDetail:)` が 0 件、Part COMPLETED・`sourceDeletedAt == nil`・最後の遷移の detail `already_absent`、要求なし（F-78 で期待を「待った姿」から直し、関数名を `absentPendingIsNotSettled` から改めた） |
 | `settledPendingIsCountedAndRetargeted` | F-74 SOURCE_DELETE_PENDING から決着した Part も要対応・状態の詳細に数え、「過去分を削除対象にする」で再評価され、原因が直れば対象になる | size を壊して決着、`StatusReporter.build`、`planBacklog`、size を戻して再び | `completedParts` と `undeletableStillListed` が 1 件、「消せなかった録音（1 件。…）」の次の行が `  <partkey>`・`    事前確認で原本が合わない（サイズ・時刻・場所）、デバイスに在る`、Session COMPLETED、対象外 `not_deletable` → 対象 |
 | `pendingSettleConflictLogsStatusChanged` | F-74 PENDING の決着の 1 つ目の遷移が衝突したら status_changed を出して飛ばす（not_deletable のログも遷移も書かない） | 読んだ行の後に `PENDING→SOURCE_DELETING` へ進め、`settleAsNotDeletable` を直接呼ぶ | `reason=status_changed`、`not_deletable` のログ・`config_warning`・detail `not_deletable` の遷移が無い |
 | `pendingAwaitingAResultIsNotSettled` | F-74 結果待ち（delete_request_id を持つ）SOURCE_DELETE_PENDING は、原因があり期限を過ぎていても決着させない（結果か期限切れを待つ） | `updateRecording(pk, [.deleteRequestID(id)])`、size を壊す、(4, 4860 秒)、2 回評価 | Part PENDING・ID のまま、`not_deletable` のログが無い、数えない、Session SOURCE_DELETING |
@@ -883,6 +892,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `snapshotBeforePendingDoesNotComplete` | F-78 PENDING にする前・同じ秒の snapshot では完了にしない（updated_at は秒に切り捨て。境界: ちょうど 1 秒後なら完了） | 時計を 60 秒進め、`completedAt: DeletionScene.now + (−60000 / 0 / 999 / 1000) ミリ秒` で `requestDeletions` | 0、要求なし、PENDING / PENDING / PENDING / COMPLETED、`already_absent` のログは最後だけ |
 | `absentPendingAwaitingAResultIsNotCompleted` | F-78 結果待ち（delete_request_id を持つ）SOURCE_DELETE_PENDING は一覧に無くても自動で完了にしない（結果か期限切れを待つ） | `updateRecording(pk, [.deleteRequestID(id)])`、一覧に無い走査 | 0、PENDING・ID のまま、`already_absent` のログが無い |
 | `strayRequestAndResultAreWithdrawn` | F-78 完了のとき、同じ Part の取り残しの要求・結果を取り下げる（「手動で消した分を完了にする」と同じ。ほかの Part の結果は残す） | `RequestWriter.write` の後に ID だけ外す、この Part の結果とほかの Part（`DJIMIC3/TX_MIC001_20260912_100000/…`）の結果を置く、一覧に無い走査 | 0、COMPLETED、要求なし、結果はほかの Part のものだけ、`already_absent` のログ |
+| `failureIsNotObservedWhenTheSourceIsNotListed` | F-78 failureIsObserved は元ファイルが一覧に無ければ偽（(d)。評価の経路では手順 4a が先に完了させる防御。一覧に在れば真） | 既定の一覧（正の対照）と、別の録音だけの一覧で `failureIsObserved` を直接呼ぶ | 在る → 真、無い → 偽 |
 | `absentCompletionConflictLogsStatusChanged` | F-78 PENDING の完了の 1 つ目の遷移が衝突したら status_changed を出して飛ばす（already_absent のログも遷移も書かない） | 読んだ行の後に `PENDING→SOURCE_DELETING` へ進め、`completeAsAbsent` を直接呼ぶ | `reason=status_changed`、`already_absent` のログ・`config_warning`・detail `resolve_absent` / `already_absent` の遷移が無い、SOURCE_DELETING のまま |
 
 ### 6.17 `Tests/VDPipelineTests/ReaperRejectionSettlementTests.swift`（`@Suite("ReaperRejectionSettlement")`。F-78 で追加）
@@ -893,9 +903,12 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 |---|---|---|---|
 | `threeRejectionsSettleWithoutDeleting` | F-78 アプリは消せると判断するのに reaper が続けて 3 回拒否したら、次の評価で要求を書かずに消さずに PENDING→SOURCE_DELETING→COMPLETED（detail not_deletable・原因は最後の拒否の理由語）で決着し Session も完了する（2 回までは要求を書く） | 評価 → 拒否を 3 回（`size_mismatch`・`size_mismatch`・`mtime_mismatch`）→ 評価 | 3 回とも評価で要求を書き（SOURCE_DELETING・要求 1 件）、拒否で PENDING・ID nil。`reaperRejectionStreak` が (3, `mtime_mismatch`)。4 回目の評価で Part COMPLETED・`errorMessage == "mtime_mismatch"`・`errorCode == nil`・`sourceDeletedAt == nil`、最後の 2 本の遷移の detail が両方 `not_deletable`、`… reason=not_deletable detail=mtime_mismatch`、要求なし・`delete_requested` は 3 回のまま、元ファイルが残る、Session COMPLETED |
 | `interveningOutcomeRestartsTheCount` | F-78 拒否の間に拒否でない結果（一覧にまだ在る・期限切れ・起動時の復旧）が挟まると 0 から数え直す（パラメータ化） | 拒否 2 回 → 評価（要求）→ (a) DELETED の結果で一覧にまだ在る (b) 時計を 3600 秒進めて期限切れ (c) `Recovery.run()` の後にその要求を拒否 → 拒否 2 回 → 評価 → 拒否 → 評価 | 挟まった後は PENDING・ID nil・`reaperRejectionStreak` が 0（(a) `SOURCE_DELETE_FAILED` (b) `DELETE_TIMEOUT` (c) 復旧が 2 行戻す）。その後の拒否 2 回では 3 回目の要求を書き、次の拒否（`unlink_failed`）の後の評価で打ち切る（原因 `unlink_failed`） |
-| `undeletablePartIsLeftToTheDeadline` | F-78 canDeleteSource が偽になれば、拒否が 3 回続いていても 5b では決着させない（5a の期限と観測の条件に従って待つ） | 拒否 3 回 → Raw ノートを手で編集 → 評価 2 回 | PENDING・`SOURCE_IDENTITY_MISMATCH` のまま、`not_deletable` のログが無い、要求なし、数えない、Session SOURCE_DELETING・`deleteAttempts == 2` |
-| `settledRejectionIsCountedAndRetargeted` | F-78 reaper の拒否で打ち切った Part も要対応・状態の詳細（削除モジュールの検証で拒否され続けた（<理由語>））に数え、「過去分を削除対象にする」で要求を書き、拒否の回数は 0 から数え直す | 拒否 3 回（`size_mismatch`）→ 評価で打ち切り → `StatusReporter.build` → `planBacklog`・`executeBacklog` → 拒否 | `completedParts` と `undeletableStillListed` が 1 件、「消せなかった録音（1 件。消さずに完了にしたもの）」の次の行が `  <partkey>`・`    削除モジュールの検証で拒否され続けた（size_mismatch）、デバイスに在る`、後追いの対象 `[pk]`・実行 1 件で SOURCE_DELETING、拒否の後は PENDING で `reaperRejectionStreak` が (1, `size_mismatch`) |
+| `undeletablePartIsLeftToTheDeadline` | F-78 canDeleteSource が偽になれば、拒否が 3 回続いていても 5b では決着させない（5a の期限と観測の条件に従って待つ。直して真に戻れば、保たれた回数で 5b が打ち切る） | 拒否 3 回 → Raw ノートを手で編集 → 評価 2 回 → `writeRawNote()` で直す → 評価 | 編集の間: PENDING・`SOURCE_IDENTITY_MISMATCH` のまま、`not_deletable` のログが無い、要求なし、数えない、Session SOURCE_DELETING・`deleteAttempts == 2`。直した後: 要求を書かずに打ち切り（原因 `size_mismatch`）、`delete_requested` は 3 回のまま |
+| `settledRejectionIsCountedAndRetargeted` | F-78 reaper の拒否で打ち切った Part も要対応・状態の詳細（削除モジュールの検証で拒否され続けた（<理由語>））に数え、「過去分を削除対象にする」で要求を書き、また拒否されたら COMPLETED の Session に PENDING を残さずに決着し直す | 拒否 3 回（`size_mismatch`）→ 評価で打ち切り → `StatusReporter.build` → `planBacklog`・`executeBacklog` → 拒否（`mtime_mismatch`） | `completedParts` と `undeletableStillListed` が 1 件、「消せなかった録音（1 件。消さずに完了にしたもの）」の次の行が `  <partkey>`・`    削除モジュールの検証で拒否され続けた（size_mismatch）、デバイスに在る`、後追いの対象 `[pk]`・実行 1 件で SOURCE_DELETING。拒否の後: COMPLETED・`errorMessage == "mtime_mismatch"`・ID nil・`sourceDeletedAt == nil`、events が 1 本（`SOURCE_DELETING→COMPLETED`・detail `not_deletable`）だけ増える、結果が無い、`… reason=not_deletable detail=mtime_mismatch`・`source_delete_pending` が無い、数える 1 件、Session COMPLETED |
+| `onlySettledPartsAreResettled` | F-78 後追いの拒否で決着し直すのは not_deletable で決着した Part だけ（パラメータ化: 5a で決着した Part は決着し直す・決着していない COMPLETED の Part は従来どおり PENDING） | (a) `settleAsNotDeletable(part, cause: "raw_note")` (b) `movePart(pk, to: .completed)`（detail 無し）。どちらも `moveSession(to: .completed)` → `planBacklog`・`executeBacklog` → 拒否（`size_mismatch`） | 後追いの対象 `[pk]`・SOURCE_DELETING。(a) 上と同じ決着し直した姿（原因 `size_mismatch`） (b) PENDING・`SOURCE_IDENTITY_MISMATCH`・ID nil、最後の遷移の detail `size_mismatch`、`not_deletable` のログが無い、数えない |
 | `emptyHistoryHasNoRejection` | F-78 TEST-28 events が 0 件なら reaper の拒否は 0 回（理由語も無い） | `reaperRejectionStreak([])` | (0, nil) |
+| `emptyHistoryIsNotARetry` | F-78 TEST-28 events が 0 件なら決着した Part の後追いの試行ではない | `ResultCollector.retriesASettledPart([])` | 偽 |
+| `unknownCauseIsShownAsUnknown` | F-78 TEST-28 原因の語が空・無い・どの表にも無いときは「原因不明」（パラメータ化: 空文字・nil・未知の語） | `StatusReport.UndeletablePart(partkey:, cause: "" / nil / "no_such_word", presence: .listed).detail` | `原因不明、デバイスに在る`、`StatusReporter.causeText` が nil |
 
 ## 7. 破壊による証明
 
@@ -953,7 +966,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 50 | （F-69）`observedFailuresToSettle` を 1 にする（連続を求めない） | `firstEvaluationAfterLongAbsenceDoesNotSettle`(開けない)、`streakRestartsOnReconnect`、`atTheDeadlineSettlesWithoutDeleting` |
 | 51 | （F-69）`failureIsObserved` の (c)（Vault）を消す | `unobservedDoesNotSettle`(Vault が使えない) |
 | 52 | （F-69）`undeletableStillListed` が `.unobserved` も数える（抜いている間・source_path が無いものも要対応に出す） | `onlyStillListedPartsAreAttention`、`settledWithoutSourcePathIsNotAttention` |
-| 53 | （F-69・F-74。F-78 で防御に戻った）`failureIsObserved` の (d)（一覧に在る）を常に真にする | 落ちるテストは無い（F-78 で一覧に無い ID の無い SOURCE_DELETE_PENDING も手順 4a が先に `already_absent` で完了させるので、d は RAW_SAVED にも PENDING にも防御。`absentPendingIsNotSettled` は 4a で COMPLETED になるので通る） |
+| 53 | （F-69・F-74。F-78 で防御に戻った）`failureIsObserved` の (d)（一覧に在る）を常に真にする | `failureIsNotObservedWhenTheSourceIsNotListed`（関数の単体テスト。評価の経路では F-78 で一覧に無い ID の無い SOURCE_DELETE_PENDING も手順 4a が先に `already_absent` で完了させるので、d は RAW_SAVED にも PENDING にも防御） |
 | 54 | （F-74）`settleableStatuses` を `[.rawSaved]` に戻す | `pendingPartSettlesWithoutDeleting`、`settledPendingIsCountedAndRetargeted`、`interruptedSettleIsRecoveredAndSettledAgain` |
 | 55 | （F-74）PENDING の 2 つ目の遷移の detail `not_deletable` を外す | `pendingPartSettlesWithoutDeleting`、`settledPendingIsCountedAndRetargeted`（最後の遷移の detail で数える） |
 | 56 | （F-74）`settleAsNotDeletable` の `.sourceDeletePending` の枝を消す | `pendingPartSettlesWithoutDeleting`、`settledPendingIsCountedAndRetargeted`、`pendingSettleConflictLogsStatusChanged` |
@@ -969,10 +982,10 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 66 | （F-74）`collectableStatuses` から COMPLETED を外す | `deletedResultOfCompletedPartIsCollected`、`failedResultOfCompletedPartOnlyClearsTheID` |
 | 67 | （F-74）DELETED の後始末を「`source_deleted_at` と ID → 遷移」の順に戻す | `failedTransitionKeepsTheIDAndResult` |
 | 68 | （F-74）`DeleteQueue.result(requestID:)` の lstat による存在の確認を消す | `emptyQueueHasNoRequestOrResult` |
-| 69 | （F-78）`completeAsAbsent` の `.sourceDeletePending` の枝を消す（`default` に落ちて何もしない） | `absentPendingCompletesWithoutRequest`、`emptyListingCompletesPending`、`strayRequestAndResultAreWithdrawn`、`snapshotBeforePendingDoesNotComplete`(1000)、`absentPendingIsNotSettled`、`absentCompletionConflictLogsStatusChanged`（`default` に落ちて status_changed も出さない） |
+| 69 | （F-78）`completeAsAbsent` の `.sourceDeletePending` の枝を消す（`default` に落ちて何もしない） | `absentPendingCompletesWithoutRequest`、`emptyListingCompletesPending`、`strayRequestAndResultAreWithdrawn`、`snapshotBeforePendingDoesNotComplete`(1000)、`absentPendingCompletesAsAlreadyAbsent`、`absentCompletionConflictLogsStatusChanged`（`default` に落ちて status_changed も出さない） |
 | 70 | （F-78）PENDING の完了で要求・結果を取り下げない | `strayRequestAndResultAreWithdrawn` |
 | 71 | （F-78）PENDING の完了の 1 つ目の遷移の detail を `resolve_absent` でなくす（detail 無し） | `absentPendingCompletesWithoutRequest`、`emptyListingCompletesPending` |
-| 72 | （F-78）PENDING の完了で `source_deleted_at` を入れる | `absentPendingCompletesWithoutRequest`、`emptyListingCompletesPending`、`absentPendingIsNotSettled` |
+| 72 | （F-78）PENDING の完了で `source_deleted_at` を入れる | `absentPendingCompletesWithoutRequest`、`emptyListingCompletesPending`、`absentPendingCompletesAsAlreadyAbsent` |
 | 73 | （F-78）`sourceIsObservedAbsent` の「PENDING にした時刻より後」の条件を消す（42 と同じ壊し方） | `snapshotBeforePendingDoesNotComplete`(−60000・0・999)（42 の `snapshotBeforeIngestionDoesNotComplete`・`unobservedAbsenceWaits` も落ちる） |
 | 74 | （F-78）`completeAsAbsent` の `catch is TransitionConflict` を消す（衝突を投げる） | `absentCompletionConflictLogsStatusChanged` |
 | 75 | （F-78）手順 5b を消す（拒否が続いても要求を書き続ける。不具合の再現） | `threeRejectionsSettleWithoutDeleting`、`interveningOutcomeRestartsTheCount`、`settledRejectionIsCountedAndRetargeted` |
@@ -983,6 +996,14 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 80 | （F-78）手順 5b を `canDeleteSource` の前に移す | `undeletablePartIsLeftToTheDeadline` |
 | 81 | （F-78）`StatusReporter.causeText` の reaper の理由語の枝を消す（「原因不明」になる） | `settledRejectionIsCountedAndRetargeted` |
 | 82 | （F-78）`reaperRejectionStreak` の理由語の初期値を空文字にする | `emptyHistoryHasNoRejection` |
+| 83 | （F-78）回収の決着し直しをやめる（決着した Part の後追いの拒否も pend する） | `settledRejectionIsCountedAndRetargeted`、`onlySettledPartsAreResettled`(5a で決着した) |
+| 84 | （F-78）`retriesASettledPart` の「その前が detail `not_deletable` の →COMPLETED」の条件を消す | `onlySettledPartsAreResettled`(決着していない) |
+| 85 | （F-78）`resettle` で ID を外さない | `settledRejectionIsCountedAndRetargeted`、`onlySettledPartsAreResettled`(5a で決着した) |
+| 86 | （F-78）`resettle` の遷移の detail `not_deletable` を外す | `settledRejectionIsCountedAndRetargeted`、`onlySettledPartsAreResettled`(5a で決着した) |
+| 87 | （F-78）`retriesASettledPart` で events が 2 件未満なら真を返す | `emptyHistoryIsNotARetry` |
+| 88 | （F-78）`StatusReporter.causeText` がどの表にも無い語をそのまま返す | `unknownCauseIsShownAsUnknown`(空文字・未知の語) |
+| 89 | （F-78）`reaperRejectionsToSettle` を 4 にする | `threeRejectionsSettleWithoutDeleting`、`undeletablePartIsLeftToTheDeadline`（直した後に 4 回目の要求を書く） |
+| 90 | （F-78）要対応 `undeletableSources` の説明を F-69 の文言に戻す | T-32 の `AttentionTextsTests.titlesAndDetailsMatchTheTable` |
 
 ## 8. 受け入れ条件
 

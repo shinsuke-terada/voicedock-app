@@ -71,6 +71,7 @@ RAW_SAVED で結果を待っていた Part の DELETED も RAW_SAVED→SOURCE_DE
 一覧に在るのに消せないまま期限を過ぎた RAW_SAVED の Part も、既存の RAW_SAVED→COMPLETED を detail `not_deletable` で使う（§8.9.5 の 5a。F-69。辺は増やさない）。
 同じく ID の無い SOURCE_DELETE_PENDING の Part は、既存の SOURCE_DELETE_PENDING→SOURCE_DELETING→COMPLETED の 2 遷移を両方 detail `not_deletable` で使う（§8.9.5 の 5a。F-74。辺は増やさない）。
 reaper の拒否が続いて打ち切る Part も、同じ 2 遷移を両方 detail `not_deletable` で使う（§8.9.5 の 5b。F-78。辺は増やさない）。
+決着した Part の後追いを reaper がまた拒否したら、既存の SOURCE_DELETING→COMPLETED を detail `not_deletable` で使って決着し直す（§8.9.6。F-78。辺は増やさない）。
 元ファイルが無いと観測できた ID の無い SOURCE_DELETE_PENDING の Part は、「手動で消した分を完了にする」と同じ 2 遷移を detail `resolve_absent` → `already_absent` で使う（§8.9.5 の 4a。F-78。辺は増やさない））
 
 （Session の OPEN→READY の detail は `idle` / `summarize_now`（パネルの今すぐ要約。§5.4。F-66。辺は増やさない）。`stale_day` は F-66 で使わなくなった（過去の記録に残る））
