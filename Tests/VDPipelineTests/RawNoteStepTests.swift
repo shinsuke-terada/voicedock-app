@@ -122,15 +122,8 @@ struct RawNoteStepTests {
         #expect(text.contains("parts: 1\n"))
     }
 
-    @Test("載せる Part が無ければ何もしない")
-    func noMembersStaysTranscribed() async throws {
-        let (w, pk) = try await Self.world()
-        try FileManager.default.removeItem(at: w.layout.transcript(slug: KeySlug.of(pk)))
-        let before = try w.eventCount(parts: [pk], sessions: [Self.key])
-        #expect(try await Self.ensure(w, pk) == false)
-        #expect(try w.part(pk).status == .transcribed)
-        #expect(try w.eventCount(parts: [pk], sessions: [Self.key]) == before)
-    }
+    // 「載せる Part が無ければ何もしない」（noMembersStaysTranscribed）は F-75 で取り下げた。トリガが載らなければ FAILED にする
+    // （RawNoteTextProtectionTests の unreadableTriggerAloneFails）
 
     // MARK: - ガードと Vault の喪失
 

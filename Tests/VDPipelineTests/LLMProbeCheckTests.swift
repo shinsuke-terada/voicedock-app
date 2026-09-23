@@ -21,7 +21,7 @@ struct LLMProbeCheckTests {
         guard let config = await w.configStore.current() else { throw PipelineFixtureError.noConfig }
         return TickContext(
             deps: deps, config: config, zone: Worker.zone(for: config), snapshot: nil, pauses: PauseBook(log: w.log),
-            activity: ActivityBoard(assertion: w.assertion), stop: StopFlag())
+            activity: ActivityBoard(assertion: w.assertion), stop: StopFlag(), undeletableStreaks: UndeletableStreaks())
     }
 
     @Test("DR-09 応答が返れば ok、経過秒を小数 1 桁で出す")

@@ -31,7 +31,8 @@ struct InProcessRetryTests {
         return TickContext(
             deps: w.deps(sleeper: sleeper), config: config, zone: PipelineFixtures.zone, snapshot: nil,
             pauses: PauseBook(log: w.log),
-            activity: ActivityBoard(assertion: RecordingSleepAssertion()), stop: stop)
+            activity: ActivityBoard(assertion: RecordingSleepAssertion()), stop: stop,
+            undeletableStreaks: UndeletableStreaks())
     }
 
     /// 偽の Part の工程: NORMALIZING でなければ NORMALIZING にしてから NORMALIZING→FAILED(code)。

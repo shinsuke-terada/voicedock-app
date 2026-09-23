@@ -51,9 +51,9 @@ struct EnablerBench {
             layout: layout, catalog: TestCatalogs.minimal, log: scene.log,
             observeReaperConf: { ReaperConf.observe(at: layout.reaperConf) }, defaultTimeZone: { "Asia/Tokyo" })
         _ = await store.load()
-        // 6. 台本が尽きたら generation を 1 つ進めた同じ snapshot を返す
+        // 6. 台本が尽きたら generation を 1 つ進めた同じ snapshot を返す（無効化の再マウントが通った観測 = 読み取り専用。F-72）
         let ingest = ScriptedIngest(snapshot: scene.snapshot())
-        await ingest.setScanner { [scene] generation in scene.snapshot(generation: generation) }
+        await ingest.setScanner { [scene] generation in scene.snapshot(generation: generation, readOnly: true) }
         // 7.
         let verifier = scene.verifier
         // 8.

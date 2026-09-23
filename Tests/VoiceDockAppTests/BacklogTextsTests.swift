@@ -56,8 +56,7 @@ struct BacklogTextsTests {
             (BacklogKind.resolveAbsent, 1, 1, "1 件を完了にしました"),
         ])
     func resultLines(_ kind: BacklogKind, _ done: Int, _ planned: Int, _ expected: String) {
-        let eligible = (0..<planned).map { "p" + String($0) }
-        let execution = BacklogExecution(plan: BacklogPlan(eligible: eligible, skipped: []), done: done)
+        let execution = BacklogExecution(previewed: planned, added: 0, done: done)
         #expect(BacklogTexts.resultLine(kind, execution) == expected)
     }
 

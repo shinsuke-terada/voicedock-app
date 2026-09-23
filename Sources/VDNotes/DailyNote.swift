@@ -35,12 +35,17 @@ public struct ExcludedPart: Sendable {
     public let errorCode: ErrorCode?
     /// DB の error_code が ErrorCode に無い文字列のとき（errorCode は nil）
     public let unknownCode: String?
+    /// 書き直すと本文が消えるので Raw ノートを書かずに FAILED にした Part（F-75。自動では直らないので警告行を分ける）
+    public let rawNoteBlocked: Bool
 
-    public init(partkey: String, status: PartStatus, errorCode: ErrorCode?, unknownCode: String?) {
+    public init(
+        partkey: String, status: PartStatus, errorCode: ErrorCode?, unknownCode: String?, rawNoteBlocked: Bool = false
+    ) {
         self.partkey = partkey
         self.status = status
         self.errorCode = errorCode
         self.unknownCode = unknownCode
+        self.rawNoteBlocked = rawNoteBlocked
     }
 
     /// 理由の鍵: errorCode?.rawValue ?? unknownCode ?? ""（空文字も ""）

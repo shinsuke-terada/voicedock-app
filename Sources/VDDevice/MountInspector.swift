@@ -11,7 +11,7 @@ public struct MountInfo: Equatable, Sendable {
     public let fsTypeName: String
     /// f_flags & MNT_RDONLY != 0
     public let readOnly: Bool
-    /// f_bavail × f_bsize。掛け算があふれたら nil
+    /// f_bavail × f_bsize。f_bavail が Int64 に収まらない・掛け算があふれたら nil（F-71）
     public let freeBytes: Int64?
 
     public init(mountOnName: String, mountFromName: String, fsTypeName: String, readOnly: Bool, freeBytes: Int64?) {
@@ -36,8 +36,13 @@ public struct MountInfo: Equatable, Sendable {
             return String(cString: base)
         }
         readOnly = (s.f_flags & UInt32(MNT_RDONLY)) != 0
-        let (v, o) = Int64(s.f_bavail).multipliedReportingOverflow(by: Int64(s.f_bsize))
-        freeBytes = o ? nil : v
+        // F-71: f_bavail（UInt64）が Int64 に収まらなければ観測できない扱い（トラップしない。CR-16）
+        if let available = Int64(exactly: s.f_bavail) {
+            let (v, o) = available.multipliedReportingOverflow(by: Int64(s.f_bsize))
+            freeBytes = o ? nil : v
+        } else {
+            freeBytes = nil
+        }
     }
 }
 

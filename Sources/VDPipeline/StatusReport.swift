@@ -47,7 +47,7 @@ public struct StatusReport: Equatable, Sendable {
     /// 消せないまま完了にした録音 1 件（F-69）
     public struct UndeletablePart: Equatable, Sendable {
         public let partkey: String
-        /// 原因の語（DeletionReason.cause*。Part の error_message。無ければ nil）
+        /// 原因の語（DeletionReason.cause*、F-78 の打ち切りは reaper の理由語。Part の error_message。無ければ nil）
         public let cause: String?
         public let presence: SourcePresence
 
@@ -59,7 +59,7 @@ public struct StatusReport: Equatable, Sendable {
 
         /// 「<原因>、<デバイスでの在否>」
         public var detail: String {
-            let causeText = cause.flatMap { StatusReporter.causeTexts[$0] } ?? "原因不明"
+            let causeText = cause.flatMap(StatusReporter.causeText) ?? "原因不明"
             return causeText + "、" + (StatusReporter.presenceTexts[presence] ?? "")
         }
     }
@@ -185,6 +185,14 @@ public enum StatusReporter {
     public static let presenceTexts: [SourcePresence: String] = [
         .listed: "デバイスに在る", .notListed: "デバイスの一覧に無い", .unobserved: "デバイスを観測できない",
     ]
+
+    /// 原因の語 → 表示（F-69）。causeTexts に無く付録 B.2 の reaper の理由語なら（F-78 の打ち切り）
+    /// 「削除モジュールの検証で拒否され続けた（<理由語>）」。どれでもなければ nil（呼び手が「原因不明」にする）
+    static func causeText(_ cause: String) -> String? {
+        if let text = causeTexts[cause] { return text }
+        guard IdentityReason.all.contains(cause) else { return nil }
+        return "削除モジュールの検証で拒否され続けた（" + cause + "）"
+    }
 
     public static func build(
         layout: HomeLayout, config: AppConfig?, snapshot: DeviceSnapshot?, now: Instant, zone: ZonedTime
