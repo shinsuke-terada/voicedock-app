@@ -22,11 +22,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             switch await Bootstrap.build() {
             case .failure(let f):
                 // 失敗したときは StatusItemController を作らない（アイコンの出ないゾンビにしない）
+                // 別のインスタンスが動いている（F-76）なら何も出さずに終わる（パネルは先に起動したほうにある）
+                guard let message = f.message else {
+                    NSApp.terminate(nil)
+                    return
+                }
                 // アクセサリのアプリは前面に出ていないので、先に前面に出してから警告を出す
                 NSApp.activate()
                 let alert = NSAlert()
                 alert.messageText = Strings.bootFailureTitle
-                alert.informativeText = f.message
+                alert.informativeText = message
                 alert.addButton(withTitle: Strings.ok)
                 alert.runModal()
                 NSApp.terminate(nil)
@@ -55,22 +60,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        // 応答（reply）を待っている間の 2 度目は取り消す（1 度目の後始末が終われば終了する）
+        // 応答（reply）を待っている間の 2 度目は取り消す（1 度目の後始末は最大 10 秒で終わり、そこで終了する）
         if terminating { return .terminateCancel }
         terminating = true
         guard let ctx = context else { return .terminateNow }
+        let steps = Self.shutdownSteps(ctx)
         Task { @MainActor in
-            // 新しい工程を始めない（service_stopping はここで 1 回出る）
-            await ctx.worker.requestStop()
-            await ctx.ingest.stop()
-            await ctx.llama.stop()
-            // 実行中の子プロセスをプロセスグループごと（PLAN §8.2）
-            await ctx.runner.terminateAll(grace: Self.terminateKillGrace)
-            // 最大 10 秒。待ち切れなくても終了する（中途の状態は次回起動の復旧が戻す。PLAN §5.3）
-            if let t = ctx.workerTask { _ = await withTimeout(Self.terminateTimeout) { await t.value } }
+            // 後始末全体を最大 10 秒で打ち切る。超えたら残りを待たずに終了する
+            // （中途の状態は次回起動の復旧が戻す。PLAN §5.3・§8.15・F-76）
+            _ = await Self.shutDown(within: Self.terminateTimeout, steps)
             NSApp.reply(toApplicationShouldTerminate: true)
         }
         return .terminateLater
+    }
+
+    /// 終了の後始末の順（PLAN §8.15・F-76）。子プロセスを閉じて止める段を、終わるまでに時間の掛かりうる段
+    /// （llama-server の停止・Worker の終わりの待ち）より前に置く（打ち切られても子を残さない）。
+    private static func shutdownSteps(_ ctx: AppContext) -> [@Sendable () async -> Void] {
+        let worker = ctx.worker
+        let runner = ctx.runner
+        let ingest = ctx.ingest
+        let llama = ctx.llama
+        let workerTask = ctx.workerTask
+        let killGrace = terminateKillGrace
+        return [
+            // 1. 新しい工程を始めない（service_stopping はここで 1 回出る）
+            { await worker.requestStop() },
+            // 2. ProcessRunner を閉じて（以後の起動を拒む）、実行中の子をプロセスグループごと止める
+            //    （SIGTERM → 全部終われば戻る。最大 killGrace で SIGKILL。PLAN §8.2）
+            { await runner.terminateAll(grace: killGrace) },
+            // 3. 取り込みを止める（走査の中の diskutil は 2 で止めた）
+            { await ingest.stop() },
+            // 4. llama-server の後始末（起動の途中なら中止させる。鍵ファイルを消す。PLAN §8.5）
+            { await llama.stop() },
+            // 5. Worker のループの終わりを待つ（停止要求は Part・Session の区切りで見る）
+            { _ = await workerTask?.value },
+        ]
+    }
+
+    /// 終了の後始末（PLAN §8.15・F-76）。steps を順に await し、全体を timeout で打ち切る（超えたら残りを待たずに戻る）。
+    /// 打ち切ったら実行中の段を取り消し、後の段は始めない。最後まで終われば真。
+    nonisolated static func shutDown(within timeout: Duration, _ steps: [@Sendable () async -> Void]) async -> Bool {
+        await withTimeout(timeout) {
+            for step in steps {
+                if Task.isCancelled { return }
+                await step()
+            }
+        }
     }
 
     /// パネルの「終了」ボタンから呼ぶ

@@ -1,5 +1,7 @@
 # T-21 VDLLM: llama-server の管理・ループバック HTTP
 
+> （F-76・issue #116。2026-09-23）`stop()` は起動の途中（/health が 200 になる前）なら中止の印を立てて起動中のプロセスを直ちに止め、起動を次の試行・次の待ちに進ませずに `server_start_failed: cancelled` で終わらせる（読み込みの完了を待たない。アプリの終了が 15 分止まらないように）。停止の途中に来た `ensureRunning` は停止の終わりを待ってから起動する。テストは `Tests/VDLLMTests/LlamaServerSupervisorStopTests.swift`。下の本文の「起動の途中なら、その終わりを待ってから止める」は記録として残す。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-21 |

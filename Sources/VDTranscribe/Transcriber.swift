@@ -101,6 +101,14 @@ public struct Transcriber: Sendable {
 
         // 3. ここから先はどの経路でも whisper.json を消す。
         defer { try? SafeUnlink.remove(rawJSON, under: .staging, layout: layout) }
+        // 起動の前に前回の whisper.json を消す（落ちた前回の残り。JSON を書かずに 0 で終わった whisper の結果を
+        // 前回の JSON で成功にしない。RK-34・F-76）。消せなければ起動しない
+        do {
+            try SafeUnlink.remove(rawJSON, under: .staging, layout: layout, missingOK: true)
+        } catch {
+            let shown = layout.relativePath(of: rawJSON) ?? WhisperArgs.p(rawJSON)
+            return .failure(StageFailure(.whisperFailed, "前回の生 JSON を消せません: \(shown)"))
+        }
 
         // 4〜7. 起動と計測。
         let argv = WhisperArgs.build(

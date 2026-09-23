@@ -1,5 +1,7 @@
 # T-30 UI: メニューバーとパネルの骨組み・AppModel
 
+> （F-76・issue #116。2026-09-23）終了の後始末は「停止要求 → `runner.terminateAll`（閉じて子を止める）→ `ingest.stop` → `llama.stop` → Worker の終わりの待ち」の順にし、**全体**を `terminateTimeout`（10 秒）で打ち切る（`AppDelegate.shutDown(within:_:)`。これまでは Worker の待ちだけに掛かっていた）。起動は `<HOME>/state/app.lock` を `Bootstrap.acquireInstanceLock` で取ってから設定・DB に進み、取れなければ `BootFailure.alreadyRunning`（警告を出さずに終了。`message` は nil）。テストは `AppDelegateShutdownTests`・`BootstrapInstanceLockTests`。下の本文の終了の手順は記録として残す。
+
 > （F-65 でパネルをカード型に作り直した。2026-09-23、利用者の決定）主画面は**スクロールしない**。長い中身（元音声の削除・詳細と診断・要対応の多数・一般）は popover の中の別の画面（`PanelScreen`・`AppModel.show(_:)`。§4.11b）に切り替え、見出しに「‹ 戻る」を置く（`SubScreen`）。
 > 高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の 640pt と `PanelStyle.maxHeight` をやめた。§4.6）。§4.13 のコードは F-65 の形に直した。主画面に ScrollView が無いことは `PanelLayoutPolicyTests` が固定する。
 

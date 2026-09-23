@@ -1,5 +1,7 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-76・issue #116。2026-09-23）DR-09（`LLMProbeCheck`）は `ensureRunning` を呼んだら、応答の後（成功でも失敗でも）`llama.stop()` を呼ぶ（止めないと `pendingJobs` で起動したサーバが次の tick の Part 工程（whisper）と重なる。PLAN §2.1・LLM-15）。下の §4 の「llama-server を止めない」・§5 の `probeDoesNotStopTheServer`・§6 の 19 は記録として残す（テストは `probeStopsTheServerAfterTheReply` ほか 3 本に置き換えた）。
+
 > （F-69・issue #98、2026-09-23。マージ後の追記）要対応の末尾に `undeletableSources(Int)`（「消せなかった録音 <n> 本」、操作 `[.openDetails]` =「詳細・診断を開く」）、`AttentionInput.undeletableSources`、
 > `SourcePresence`・`AttentionEvaluator.sourcePresence(_:snapshot:)`・`undeletableStillListed(_:snapshot:)`、`ReadOnlyStore.completedParts(lastDetail:)`、`StatusReport.UndeletablePart`・`undeletable` / `undeletableTotal` と状態の詳細の「消せなかった録音」の行を足した（PLAN §8.11・§8.12。決着そのものは T-38 §4.5 の手順 5a）。
 > 下の表はその分を直した。テストは T-38 §6.13 の `UndeletableSettlementTests`。

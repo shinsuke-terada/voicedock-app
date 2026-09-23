@@ -77,14 +77,42 @@ struct LLMProbeCheckTests {
         #expect(r.details == ["HTTP 500"])
     }
 
-    @Test("DR-09 成功しても llama-server を止めない（Worker が止める）")
-    func probeDoesNotStopTheServer() async throws {
+    @Test("F-76 DR-09 応答の後に llama-server を止める（次の tick の whisper と重ねない。LLM-15）")
+    func probeStopsTheServerAfterTheReply() async throws {
         let w = try await PipelineWorld.make(chat: FakeChatTransport(responses: [.content(#"{"ok": true}"#)]))
         try await w.installLLM()
         let r = await LLMProbeCheck(ctx: try await w.context()).run()
         #expect(r.status == .ok)
-        #expect(await w.llm.stopCount == 0)
+        #expect(await w.llm.stopCount == 1)
         #expect(await w.llm.ensureCalls.map(\.modelID) == ["test-llm"])
+    }
+
+    @Test("F-76 DR-09 応答が失敗でも llama-server を止める")
+    func probeStopsTheServerAfterAFailedReply() async throws {
+        let w = try await PipelineWorld.make(
+            chat: FakeChatTransport(responses: [.failure(StageFailure(.llmUnavailable, "HTTP 500"))]))
+        try await w.installLLM()
+        let r = await LLMProbeCheck(ctx: try await w.context()).run()
+        #expect(r.details == ["HTTP 500"])
+        #expect(await w.llm.stopCount == 1)
+    }
+
+    @Test("F-76 DR-09 起動に失敗しても停止を呼ぶ（起動の途中の後始末を残さない）")
+    func probeStopsTheServerAfterAFailedStart() async throws {
+        let w = try await PipelineWorld.make(llm: FakeLLMServer(failure: StageFailure(.llmUnavailable, "起動できない")))
+        try await w.installLLM()
+        let r = await LLMProbeCheck(ctx: try await w.context()).run()
+        #expect(r.details == ["起動できない"])
+        #expect(await w.llm.stopCount == 1)
+    }
+
+    @Test("F-76 DR-09 ガードで止まったときは起動も停止もしない")
+    func probeGuardFailureNeitherStartsNorStops() async throws {
+        let w = try await PipelineWorld.make { $0.llm.modelID = nil }
+        let r = await LLMProbeCheck(ctx: try await w.context()).run()
+        #expect(r.status == .fail)
+        #expect(await w.llm.ensureCalls.isEmpty)
+        #expect(await w.llm.stopCount == 0)
     }
 
     @Test("DR-09 疎通確認のプロンプトを送る")
