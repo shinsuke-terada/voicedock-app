@@ -89,9 +89,11 @@ public enum PartTranscriptCodec {
             segments: segments)
     }
 
-    /// 数（`PyJSON.isBool` が偽の `NSNumber`）なら Double。
+    /// 数（`PyJSON.isBool` が偽の `NSNumber`）で、秒として読める（F-71: 有限で絶対値が 10 億秒以下）なら Double。
+    /// NaN・±Infinity・巨大な秒は「読めない」（`PyJSON` は NaN / Infinity を受けるので、ここで弾く）。
     private static func number(_ value: Any?) -> Double? {
         guard let value, let number = value as? NSNumber, !PyJSON.isBool(number) else { return nil }
-        return number.doubleValue
+        let seconds = number.doubleValue
+        return SecondsToMillis.isReadable(seconds) ? seconds : nil
     }
 }

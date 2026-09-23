@@ -14,9 +14,11 @@ public struct StabilityChecker: Sendable {
     }
 
     /// candidates のうち安定と判定したものを、最後に観測した FileStat と一緒に返す
+    /// F-71: 先頭で String の等価（正準等価）で重複を除き、先に並んだ候補を残す（返す鍵はその relpath のスカラー列のまま）
     public func stableCandidates(
-        _ candidates: [String], stat: @escaping @Sendable (String) -> FileStat?
+        _ given: [String], stat: @escaping @Sendable (String) -> FileStat?
     ) async -> [String: FileStat] {
+        let candidates = Self.unique(given)
         if candidates.isEmpty { return [:] }  // 待たない
         let checks = config.stabilityChecks
         var samples = await sample(candidates, stat: stat)
@@ -52,11 +54,23 @@ public struct StabilityChecker: Sendable {
         return Self.observed(candidates, samples) { (ok[$0] ?? 0) >= checks }
     }
 
+    /// F-71: String の等価（正準等価）で重複を除き、先に並んだものを残す（順は保つ）。
+    /// NFC と NFD の組や FAT の同名の重複項目を重ねたまま数えると、1 回の待ちで同じ鍵の一致を 2 回数え、
+    /// 書き込みが再開したファイルも安定と判定する（§8.1）。辞書の鍵を作る前に 1 つにする
+    static func unique(_ candidates: [String]) -> [String] {
+        var seen: Set<String> = []
+        return candidates.filter { seen.insert($0).inserted }
+    }
+
     /// 全候補の FileStat を BlockingIO.run で一括取得する（取れないものは nil）
+    /// F-71: 候補は `unique` 済み。重複が残っても落とさず、先に並んだ候補の観測を残す（防御）
     private func sample(
         _ candidates: [String], stat: @escaping @Sendable (String) -> FileStat?
     ) async -> [String: FileStat?] {
-        await (try? BlockingIO.run { Dictionary(uniqueKeysWithValues: candidates.map { ($0, stat($0)) }) }) ?? [:]
+        let samples = try? await BlockingIO.run {
+            Dictionary(candidates.map { ($0, stat($0)) }, uniquingKeysWith: { first, _ in first })
+        }
+        return samples ?? [:]
     }
 
     /// accepted を満たし、最新の観測が nil でないものを最後に観測した値と一緒に返す
