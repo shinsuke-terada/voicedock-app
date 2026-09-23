@@ -155,10 +155,17 @@ extension PartSteps {
         return true
     }
 
-    /// F-75: 書き直すと本文が消える Part があるときの error_message の頭
+    /// F-75: 書き直すと本文が消える Part があるときの error_message の頭（isRawNoteBlocked が同じ定数で見分ける）
     static let lostTextMessage = "書き直すと Raw ノートから本文が消える Part があります"
     /// F-75: 書き込み先の既存の Raw ノートが読めなくなったときの error_message の頭
     static let unreadableNoteMessage = "既存の Raw ノートを読めないので書き直しません: "
+
+    /// F-75: 書き直すと本文が消えるので Raw ノートを書かずに FAILED にした Part か（要対応の rawNoteBlocked と Daily の警告行）。
+    /// FAILED・`OBSIDIAN_RAW_WRITE_FAILED`・error_message が lostTextMessage で始まる（既存の列だけで判定する。自動では直らない）
+    static func isRawNoteBlocked(_ row: RecordingRow) -> Bool {
+        row.status == .failed && row.errorCode == .obsidianRawWriteFailed
+            && (row.errorMessage ?? "").unicodeScalars.starts(with: lostTextMessage.unicodeScalars)
+    }
 
     /// F-75: Part が Raw に載らない理由（error_message）。transcript が読めないか、started_at が読めないか（rawParts の 2 つの条件）
     func unlistedReason(_ row: RecordingRow) -> String {

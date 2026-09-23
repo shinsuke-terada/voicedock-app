@@ -30,6 +30,7 @@ enum AttentionTexts {
         case .lockMismatch: "削除の設定が食い違っています"
         case .reaperUpdateRequired: "削除モジュールの更新が必要です"
         case .undeletableSources(let n): "消せなかった録音 " + String(n) + " 本"
+        case .rawNoteBlocked(let n): "書き直せない Raw ノート " + String(n) + " 件"
         }
     }
 
@@ -59,6 +60,11 @@ enum AttentionTexts {
         case .undeletableSources:
             "削除の条件を満たさないまま時間がたったので、消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。"
                 + "直したら「過去分を削除対象にする」で再評価できます。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください"
+        case .rawNoteBlocked:
+            "文字起こしを読めなくなった録音があり、Raw ノートを書き直すとその本文が消えるので、書き直さずに止めています"
+                + "（その後の録音はまだ Raw ノートに載っていません）。文字起こしのファイルをバックアップから戻すか、"
+                + "Obsidian でその Raw ノートの名前を変えてから（新しい Raw ノートが書かれ、古い本文は名前を変えたノートにそのまま残ります）、"
+                + "「詳細・診断」の「再試行」を押してください"
         }
     }
 

@@ -1,5 +1,8 @@
 # T-27 VDNotes: Daily ノート・警告行・Timeline・Vault 索引・リンク計画
 
+> （F-75・issue #115、2026-09-23。マージ後の追記）`ExcludedPart.rawNoteBlocked`（init の既定 false）を足し、`DailyWarnings.lines` は `rawNoteBlocked` の FAILED を「自動で再試行されます」の行に数えず、
+> その次に `rawNoteBlockedLineTemplate` の行を出す（最大 3 行。PLAN §8.6 の警告行）。呼び手（`SessionSteps.dailyInput`）が `PartSteps.isRawNoteBlocked` で立てる。テストは `DailyWarningsRawNoteBlockedTests.swift`。
+
 | 項目 | 内容 |
 |---|---|
 | ID | T-27 |
@@ -60,7 +63,8 @@ public struct ExcludedPart: Sendable {
     public let status: PartStatus          // FAILED か SKIPPED
     public let errorCode: ErrorCode?       // 既知のコード
     public let unknownCode: String?        // DB の error_code が ErrorCode に無い文字列のとき（errorCode は nil）
-    public init(partkey: String, status: PartStatus, errorCode: ErrorCode?, unknownCode: String?)
+    public let rawNoteBlocked: Bool        // F-75。書き直すと本文が消えるので Raw ノートを書かずに FAILED にした Part
+    public init(partkey: String, status: PartStatus, errorCode: ErrorCode?, unknownCode: String?, rawNoteBlocked: Bool = false)
     /// 理由の鍵: errorCode?.rawValue ?? unknownCode ?? ""（空文字も ""）
     var reasonKey: String { get }
 }
@@ -188,7 +192,7 @@ public enum DailyWarnings {
 
 `lines` の手順:
 1. `out = []`
-2. `failed` が空でなければ: `String(format: failedLineTemplate, failed.count)`。`failedLineTemplate = "> ⚠ この日の録音のうち %ld 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"`（`⚠` は U+26A0、その後に半角空白）
+2. `failed` のうち `rawNoteBlocked` でないものが空でなければ（F-75）: `String(format: failedLineTemplate, <その本数>)`。`rawNoteBlocked` のものが空でなければ、その次に `String(format: rawNoteBlockedLineTemplate, <その本数>)`（PLAN §8.6）。`failedLineTemplate = "> ⚠ この日の録音のうち %ld 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。"`（`⚠` は U+26A0、その後に半角空白）
 3. `skipped` が空でなければ:
    - `actionable = skipped.contains { $0.errorCode == nil || !SkipReasons.benign.contains($0.errorCode!) }`（未知のコード・理由なしは操作が要る側）
    - `mark = actionable ? "⚠ " : ""`、`action = actionable ? retryAction : ""`

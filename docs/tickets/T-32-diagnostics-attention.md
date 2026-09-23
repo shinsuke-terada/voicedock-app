@@ -1,5 +1,9 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-75・issue #115、2026-09-23。マージ後の追記）要対応の末尾に `rawNoteBlocked(Int)`（「書き直せない Raw ノート <n> 件」、操作 `[.openDetails]`）と `AttentionInput.rawNoteBlocked`、
+> `AttentionEvaluator.rawNoteBlockedSessions(_:)`（FAILED・`OBSIDIAN_RAW_WRITE_FAILED`・error_message が PLAN §8.6 の文言で始まる Part の Session の数）を足した。
+> AppServices は `ReadOnlyStore.failedParts(limit: Int.max)` の全件から数える。「FAILED は要対応にしない」の例外（PLAN §8.11）。テストは `RawNoteBlockedAttentionTests.swift`。
+
 > （F-69・issue #98、2026-09-23。マージ後の追記）要対応の末尾に `undeletableSources(Int)`（「消せなかった録音 <n> 本」、操作 `[.openDetails]` =「詳細・診断を開く」）、`AttentionInput.undeletableSources`、
 > `SourcePresence`・`AttentionEvaluator.sourcePresence(_:snapshot:)`・`undeletableStillListed(_:snapshot:)`、`ReadOnlyStore.completedParts(lastDetail:)`、`StatusReport.UndeletablePart`・`undeletable` / `undeletableTotal` と状態の詳細の「消せなかった録音」の行を足した（PLAN §8.11・§8.12。決着そのものは T-38 §4.5 の手順 5a）。
 > 下の表はその分を直した。テストは T-38 §6.13 の `UndeletableSettlementTests`。
@@ -545,6 +549,7 @@ public enum AttentionItem: Equatable, Sendable {
     case lockMismatch
     case reaperUpdateRequired
     case undeletableSources(Int)            // F-69。消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（1 以上）
+    case rawNoteBlocked(Int)                // F-75。書き直すと本文が消えるので Raw ノートを書かずに止めた Session の数（1 以上）
 
     public enum ToolKind: String, Equatable, Sendable { case whisperCLI, llamaServer }
     /// 表示の順（宣言順に振った 0 始まりの番号）
@@ -562,6 +567,7 @@ public struct AttentionInput: Equatable, Sendable {
     public var reaper: ReaperStatus = .notInstalled
     public var snapshotMaxAgeSeconds = 900
     public var undeletableSources = 0       // F-69。undeletableStillListed の件数（AppServices が DB と最新の snapshot から数える）
+    public var rawNoteBlocked = 0           // F-75。rawNoteBlockedSessions の件数（AppServices が DB の FAILED の全件から数える）
     public var now: Instant
     public init(now: Instant)
 }
@@ -575,6 +581,8 @@ public enum AttentionEvaluator {
     public static func sourcePresence(_ part: RecordingRow, snapshot: DeviceSnapshot?) -> SourcePresence
     /// F-69。消せないまま完了にした録音のうち sourcePresence が .listed のものだけ（抜いている間・一覧に無い・source_path が無いものは要対応に出さない）
     public static func undeletableStillListed(_ parts: [RecordingRow], snapshot: DeviceSnapshot?) -> [RecordingRow]
+    /// F-75。書き直すと本文が消えるので Raw ノートを書かずに FAILED にした Part（PartSteps.isRawNoteBlocked）が居る Session の数
+    public static func rawNoteBlockedSessions(_ parts: [RecordingRow]) -> Int
 }
 ```
 

@@ -54,6 +54,8 @@ public enum AttentionItem: Equatable, Sendable {
     case reaperUpdateRequired
     /// 消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（F-69。1 以上）
     case undeletableSources(Int)
+    /// 書き直すと本文が消えるので Raw ノートを書かずに止めた Session の数（F-75。1 以上）
+    case rawNoteBlocked(Int)
 
     public enum ToolKind: String, Equatable, Sendable { case whisperCLI, llamaServer }
 
@@ -75,6 +77,7 @@ public enum AttentionItem: Equatable, Sendable {
         case .lockMismatch: 12
         case .reaperUpdateRequired: 13
         case .undeletableSources: 14
+        case .rawNoteBlocked: 15
         }
     }
 
@@ -91,7 +94,7 @@ public enum AttentionItem: Equatable, Sendable {
         case .deviceNeedsReplug, .deviceNameInvalid: []
         case .ingestSilent, .diskSpaceLow, .lockMismatch: []
         case .reaperUpdateRequired: [.openDeletionFlow]
-        case .undeletableSources: [.openDetails]
+        case .undeletableSources, .rawNoteBlocked: [.openDetails]
         }
     }
 }
@@ -108,6 +111,8 @@ public struct AttentionInput: Equatable, Sendable {
     public var snapshotMaxAgeSeconds = 900
     /// 消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（AttentionEvaluator.undeletableStillListed の件数。F-69）
     public var undeletableSources = 0
+    /// 書き直すと本文が消えるので Raw ノートを書かずに止めた Session の数（AttentionEvaluator.rawNoteBlockedSessions。F-75）
+    public var rawNoteBlocked = 0
     public var now: Instant
 
     public init(now: Instant) {
@@ -142,7 +147,19 @@ public enum AttentionEvaluator {
         if input.violations.contains(where: { lockRules.contains($0.rule) }) { items.append(.lockMismatch) }
         if case .versionMismatch = input.reaper { items.append(.reaperUpdateRequired) }
         if input.undeletableSources > 0 { items.append(.undeletableSources(input.undeletableSources)) }
+        if input.rawNoteBlocked > 0 { items.append(.rawNoteBlocked(input.rawNoteBlocked)) }
         return items
+    }
+
+    /// F-75: 渡された Part（AppServices は FAILED の全件を渡す）のうち、書き直すと本文が消えるので Raw ノートを書かずに
+    /// FAILED にした Part（PartSteps.isRawNoteBlocked）が居る Session の数（session_key をスカラー列で数える）。
+    /// transcript を戻すか Raw ノートの名前を変えて再試行し、RAW_SAVED になれば数えない。ほかの FAILED（一時的な失敗）は数えない
+    public static func rawNoteBlockedSessions(_ parts: [RecordingRow]) -> Int {
+        var sessions = Set<[Unicode.Scalar]>()
+        for part in parts where PartSteps.isRawNoteBlocked(part) {
+            if let key = part.sessionKey { sessions.insert(Array(key.unicodeScalars)) }
+        }
+        return sessions.count
     }
 
     /// 元ファイルがいまデバイスに在るか（F-69。要対応と状態の詳細が共有する）。
