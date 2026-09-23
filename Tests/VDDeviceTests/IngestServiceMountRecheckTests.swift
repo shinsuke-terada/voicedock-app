@@ -48,6 +48,14 @@ struct IngestServiceMountRecheckTests {
         func isMountPoint(path: String) -> Bool { current.isMountPoint(path: path) }
     }
 
+    /// 差し替えた lstat が「在る」と答える /dev の node
+    final class DevNodes: Sendable {
+        private let present = Mutex<Set<String>>(["/dev/disk4"])
+        func contains(_ node: String) -> Bool { present.withLock { $0.contains(node) } }
+        /// 抜いた（node が /dev から消えた）
+        func remove(_ node: String) { _ = present.withLock { $0.remove(node) } }
+    }
+
     /// flip の後に見える状態
     enum After {
         /// statfs が取れず、マウント点でもない（アンマウントされた・抜かれた）
@@ -84,10 +92,12 @@ struct IngestServiceMountRecheckTests {
         let inspector: SwitchingInspector
         let remounter: FakeRemounter
         let service: IngestService
+        /// 差し替えた lstat が「在る」と答える /dev の node（既定は判定のときの node の /dev/disk4）
+        let devNodes: DevNodes
 
         init(
             deviceID: String = IngestServiceMountRecheckTests.deviceID, outcomes: [RemountOutcome],
-            after: After = .gone, trigger: Trigger, recordings: Bool = true
+            after: After = .gone, trigger: Trigger, recordings: Bool = true, include: [String] = []
         ) throws {
             tmp = try TempDirectory()
             fake = try FakeVolume(in: tmp, deviceID: deviceID)
@@ -102,8 +112,8 @@ struct IngestServiceMountRecheckTests {
             sink = CapturingLogSink()
             let log = AppLog(sink: sink, level: .debug, unsafeContent: false, zone: zone, clock: clock)
             var config = AppConfig.defaults(timeZone: "Asia/Tokyo")
-            // 名前を変えるテストがあるので include は空にする（既定の ["DJIMIC3"] は DeviceDetectorNetworkTests）
-            config.device.includeVolumes = []
+            // 名前を変えるテストがあるので include は既定で空にする（既定の ["DJIMIC3"] は DeviceDetectorNetworkTests と下の案内のテスト）
+            config.device.includeVolumes = include
             let provided = config
             // ファイルシステムが保った綴りの名前（NFC か NFD）。判定はこの綴りでパスを作り、規則 8 はスカラー列で比べる
             let volumesRoot = fake.volumesRoot.path(percentEncoded: false)
@@ -135,16 +145,17 @@ struct IngestServiceMountRecheckTests {
             }
             let inspector = SwitchingInspector(before: before, after: afterInspector)
             self.inspector = inspector
-            let reader: DeviceReader
-            if case .duringListing = trigger {
-                let marker = "/" + IngestServiceMountRecheckTests.notes
-                reader = DeviceReader(lstat: { p, st in
-                    if p.hasSuffix(marker) { inspector.flip() }
-                    return Darwin.lstat(p, &st) == 0 ? 0 : errno
-                })
-            } else {
-                reader = DeviceReader()
-            }
+            let devNodes = DevNodes()
+            self.devNodes = devNodes
+            let flipsDuringListing: Bool
+            if case .duringListing = trigger { flipsDuringListing = true } else { flipsDuringListing = false }
+            let marker = "/" + IngestServiceMountRecheckTests.notes
+            // /dev の lstat は本物を見ない（開発機のディスク番号に左右されない）。devNodes に在る node だけ「在る」
+            let reader = DeviceReader(lstat: { p, st in
+                if p.hasPrefix("/dev/") { return devNodes.contains(p) ? 0 : ENOENT }
+                if flipsDuringListing && p.hasSuffix(marker) { inspector.flip() }
+                return Darwin.lstat(p, &st) == 0 ? 0 : errno
+            })
             let onRemount: (@Sendable () async -> Void)?
             if case .onRemount = trigger {
                 onRemount = { inspector.flipOnce() }
@@ -309,5 +320,73 @@ struct IngestServiceMountRecheckTests {
         #expect(snapshot.unavailable == [:])
         #expect(await h.service.scanNow() == 2)
         #expect(try await h.snapshot().unavailable == [:])
+    }
+
+    @Test("F-81 抜いて node（/dev/diskN）が消えたら mount_failed を外す（抜いた後も残り続けない）")
+    func unpluggedNodeClearsMountFailure() async throws {
+        let h = try Harness(outcomes: [.failed(reason: "mount_failed")], after: .gone, trigger: .onRemount)
+        #expect(await h.service.scanNow() == 1)
+        #expect(try await h.snapshot().unavailable == ["DJIMIC3": "mount_failed"])
+        h.devNodes.remove("/dev/disk4")
+        try h.removeEntry()
+        #expect(await h.service.scanNow() == 2)
+        #expect(try await h.snapshot().unavailable == [:])
+        #expect(try await h.snapshot().devices == [:])
+    }
+
+    @Test("F-81 not_a_mount_point 以外の理由で名前が判定に戻れば（no_recordings）mount_failed を外す")
+    func otherSkipReasonClearsMountFailure() async throws {
+        let h = try Harness(outcomes: [.failed(reason: "mount_failed")], after: .gone, trigger: .onRemount)
+        #expect(await h.service.scanNow() == 1)
+        #expect(try await h.snapshot().unavailable == ["DJIMIC3": "mount_failed"])
+        // 挿し直した（マウント点に戻った）が、中身は録音の無いボリューム（一時ディレクトリの中だけ）
+        h.inspector.flip(false)
+        for child in try FileManager.default.contentsOfDirectory(at: h.fake.root, includingPropertiesForKeys: nil) {
+            try FileManager.default.removeItem(at: child)
+        }
+        #expect(await h.service.scanNow() == 2)
+        let snapshot = try await h.snapshot()
+        #expect(snapshot.unavailable == [:])
+        #expect(snapshot.devices == [:])
+        #expect(h.sink.lines.contains { $0.hasSuffix("DEBUG volume_skipped name=DJIMIC3 reason=no_recordings") })
+    }
+
+    @Test("F-81 sameMount は前後とも取れなければ同じ、片方だけ取れなければ違う、両方あれば 2 つの名前をスカラー列で比べる")
+    func sameMountTable() {
+        let a = MountInfo(
+            mountOnName: "/Volumes/X", mountFromName: "/dev/disk4", fsTypeName: "msdos", readOnly: false,
+            freeBytes: 1)
+        let otherFree = MountInfo(
+            mountOnName: "/Volumes/X", mountFromName: "/dev/disk4", fsTypeName: "exfat", readOnly: true, freeBytes: 2)
+        let otherNode = MountInfo(
+            mountOnName: "/Volumes/X", mountFromName: "/dev/disk5", fsTypeName: "msdos", readOnly: false,
+            freeBytes: 1)
+        #expect(IngestService.sameMount(nil, nil) == true)
+        #expect(IngestService.sameMount(nil, a) == false)
+        #expect(IngestService.sameMount(a, nil) == false)
+        #expect(IngestService.sameMount(a, a) == true)
+        #expect(IngestService.sameMount(a, otherFree) == true)
+        #expect(IngestService.sameMount(a, otherNode) == false)
+    }
+
+    @Test("F-81 既定の include で録音のフォルダがある別の名前のメモリは、取り込まず再マウントもせず、unavailable に not_included（案内だけ）")
+    func backupStickIsOnlyHinted() async throws {
+        let h = try Harness(
+            deviceID: "BACKUP", outcomes: [.alreadyReadOnly], trigger: .never, include: ["DJIMIC3"])
+        let before = try IngestCopyTests.deviceSnapshot(h.fake)
+        #expect(await h.service.scanNow() == 1)
+        let snapshot = try await h.snapshot()
+        #expect(snapshot.devices == [:])
+        #expect(snapshot.unavailable == ["BACKUP": "not_included"])
+        #expect(h.inboxFileCount() == 0)
+        #expect(await h.remounter.calls.isEmpty)
+        #expect(try h.store.recordings(status: .discovered).isEmpty)
+        // メモリの中身は 1 バイトも変わらない（削除の要求は devices に載ったデバイスにしか書かれない）
+        #expect(try IngestCopyTests.deviceSnapshot(h.fake) == before)
+        // 変わったときだけ WARNING（OPS-12）
+        #expect(await h.service.scanNow() == 2)
+        let warnings = h.sink.lines.filter { $0.hasSuffix("WARNING volume_skipped name=BACKUP reason=not_included") }
+        #expect(warnings.count == 1)
+        #expect(try await h.snapshot().unavailable == ["BACKUP": "not_included"])
     }
 }

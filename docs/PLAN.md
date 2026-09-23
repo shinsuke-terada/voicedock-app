@@ -876,11 +876,12 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 - `llm.analysis.sections` の 7 つのキー（voicedock の節名。LLM の JSON のキーと同じなので snake_case のまま）は固定。これ以外のキーは CV-01。**`maxItems` を持つのは `key_points` / `tasks` / `decisions` / `ideas` / `tags` の 5 つだけ**（voicedock と同じ。`summary` は文字数の上限 4000 がスキーマ側にあり、`timeline` は LLM のスキーマに入らないので、両者に `maxItems` を置くと「受理されるのに効かない設定」になる。CR-14）。`summary` / `timeline` に `maxItems` を書いたら CV-01
 - `vault.path` と `llm.modelID` の **null は違反ではなく「未設定」**。処理を止め（§5.4 のガード）、パネルの「はじめに」と「要対応」に出す
 - `transcription.threads = 0` は `min(ProcessInfo.processInfo.activeProcessorCount, 8)`（voicedock は `os.cpu_count()` = 論理 CPU 数）
-- **`device.includeVolumes` の既定は `["DJIMIC3"]`**（F-81。2026-09-23 の利用者の決定。voicedock の既定は空で、付録 D の X-39）。
+- **`device.includeVolumes` の既定は `["DJIMIC3"]`**（F-81。2026-09-23 の利用者の決定。voicedock の既定は空で、付録 D の X-42）。
   空（全ボリュームが規則 2 へ進む）だと、ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすので、録音の写しを入れたバックアップ用のメモリ（FAT）の中身が
   DUPLICATE_CONTENT → 根拠 B で消されうる。既定値は `config.json` が**無いときだけ**書くので（§6.1）、既存の `config.json` の値（F-81 より前に書かれた `[]` を含む）は書き換えない。
-  名前を `DJIMIC3` 以外にしたデバイス・2 台目の送信機（`DJIMIC3 1` など）・出荷時名 `NO NAME` のデバイスは、この配列に足さない限り規則 1 の `not_included`（DEBUG）で黙って対象外になる
-  （「はじめに」の⑤ `NO NAME` の改名の案内も出ない。§8.12）
+  **既存の `config.json`（`[]`）ではこの守りが効かないので、利用者が手で `"includeVolumes": ["DJIMIC3"]` にする**（「設定を読み直す」か次回起動で効く）。
+  名前を `DJIMIC3` 以外にしたデバイス・2 台目の送信機（`DJIMIC3 1` など）・出荷時名 `NO NAME` のデバイスは、この配列に足さない限り規則 1 の `not_included` で取り込まない。
+  ルートに録音のフォルダがあるものは、取り込まずに「はじめに」の⑤で改名（か、この配列に名前を足すこと）を案内する（§8.1 規則 1・§8.12。F-81 のレビューでの利用者の決定）
 - `logging.level` の綴りは voicedock と同じ大文字。ログ行の表記は §8.15
 - GUI・由来の対応:
 
@@ -1114,7 +1115,14 @@ CREATE TABLE imported_keys (
 
 **デバイス判定**（この順に適用し、最初に当たった理由で対象外にする。voicedock §5.4 ＋ 本計画の追加）
 1. `includeVolumes` が空でなければ、名前がどの glob にも一致しないものを除外（`not_included`）。**空なら規則 1 を適用しない**（全エントリが規則 2 へ進む）。名前だけで判定し stat しない（DEV-05）。
-   既定は `["DJIMIC3"]`（F-81。§6.2）。`fnmatch` は C 文字列（UTF-8 のバイト列）で比べるので、正準等価でも綴りの違う名前は一致しない
+   既定は `["DJIMIC3"]`（F-81。§6.2）。`fnmatch` は C 文字列（UTF-8 のバイト列）で比べるので、正準等価でも綴りの違う名前は一致しない。
+   **名前のほかはデバイスに見えるものは案内する**（F-81 のレビュー。2026-09-23 の利用者の決定「include は絞ったまま、名前が合わないが DJI 形式のフォルダを持つボリュームは取り込まずに案内」）:
+   `not_included` の名前だけ、続けて規則 2（exclude とネットワークの FS）・3・4・5・6 を同じ順に当て（規則 8・9 は見ない）、全部通れば `DetectionResult.notIncludedDevices` に入れる。
+   走査はそれを snapshot の `unavailable` に理由語 `not_included` で載せ（取り込まない・再マウントしない・`devices` に載せないので削除の要求も F-64 / F-78 の完了も起きない）、
+   「はじめに」の⑤が改名（か `device.includeVolumes` に名前を足すこと）を案内する（§8.12）。`volume_skipped … reason=not_included` はこの場合だけ前回の走査から変わったときに WARNING。
+   stat が増えるのは `not_included` の名前だけ（include が空なら起きない。F-81 より前の既定の `[]` では全エントリに規則 2〜6 を当てていた）。
+   対象は出荷時名 `NO NAME` の新品・名前を変えた機器・録音の写しを入れたメモリ、それに**古いマウント点が残って実機が `DJIMIC3 1` にマウントされた 1 台**
+   （以前（include が空）は規則 8 の `mount_name_mismatch` で要対応「挿し直してください」に出ていた。今は規則 1 の `not_included` で、⑤の案内で知らせる）
 2. `excludeVolumes` のどれかの glob に一致するものを除外（`excluded`。`fnmatch(pattern, name, 0)`。正規表現ではない。`.*` は「`.` で始まる」。DEV-07）。
    **ネットワークの FS のマウント点も `excluded`**（F-81。新しい理由語は足さない）: 判定の最初に待たずに取れるマウントの一覧（`getmntinfo(MNT_NOWAIT)`。`MountInspector.allMounts()`）から
    `MNT_LOCAL` の立っていない項目（`MountInfo.isLocal` が偽。SMB・NFS・AFP・WebDAV など）の `f_mntonname` を集め、エントリのパス（realpath しない。除外の側なので Swift の `==` の正準等価で広めに当てる）が
@@ -1131,7 +1139,8 @@ CREATE TABLE imported_keys (
    同名のボリュームがあったり再マウントでパスに ` 1` が付くと、partkey が変わって全件を再コピーし DUPLICATE_CONTENT が並ぶため。パネルの「要対応」に「デバイスを挿し直してください」と出す
 9. `DeviceID.isValid(name)`（§4.2。`:` を含む名前など）（`invalid_device_id`。本計画の追加。パネルに改名の案内を出す）
 
-- 対象外の理由は `volume_skipped name=… reason=…`（DEBUG）。規則 5・8・9 で外れたものは利用者の操作が要るので、snapshot の `unavailable` に載せる（規則 5 は errno も `notListableErrno` に載せる。DR-11 の「EPERM のときだけ TCC の案内」に使う）
+- 対象外の理由は `volume_skipped name=… reason=…`（DEBUG）。規則 5・8・9 で外れたものは利用者の操作が要るので、snapshot の `unavailable` に載せる（規則 5 は errno も `notListableErrno` に載せる。DR-11 の「EPERM のときだけ TCC の案内」に使う）。
+  規則 1 で外れたが名前のほかはデバイスに見えるもの（`notIncludedDevices`）も `not_included` で載せる（F-81。案内だけ。上の規則 1）
 - 合格したものが「デバイス」。**device_id = エントリ名**
 
 **読み取り専用の確保（ロック 2-B の実施側）** — `mountMode == ro` のとき、各デバイスで（`Remounter` プロトコル経由。単体テストでは差し替える）:
@@ -1151,9 +1160,13 @@ info.f_mntfromname == node かつ info.f_mntonname == realpath(path)   // F-73�
 - **`mount_failed` の後にマウント点でなくなったデバイス**（unmount は成功し mount が失敗して、アンマウントされたまま残った）は、snapshot の `unavailable` に理由語 `mount_failed` で載せる（F-81。既存の理由語。
   新しいログのイベントは足さない。`remount_failed … reason=mount_failed` の WARNING は従来どおり）。アンマウントされたデバイスは `/Volumes` に現れず、次の走査の判定では見えないので、
   IngestService は名前をメモリに覚え（`unmountedByRemount`）、名前が判定に戻る（`devices` か、`not_a_mount_point` 以外の理由の `skipped`。挿し直し・手でマウント）まで毎回の snapshot の `unavailable` に載せ続ける
-  （`not_a_mount_point` は、アンマウントの後にマウント点のディレクトリが残っただけかもしれないので戻ったとみなさない。名前はスカラー列で照らす）。再起動で消え、抜いた後も挿し直すまで残る。
+  （`not_a_mount_point` は、アンマウントの後にマウント点のディレクトリが残っただけかもしれないので戻ったとみなさない。名前はスカラー列で照らす）。
+  判定のときの node（`/dev/diskN`）も覚え、毎回の走査で `/dev` のその名前を `lstat` して `ENOENT` なら（抜かれた）外す（`/dev` を読むだけで、デバイスを開かない。PR-11）。
+  node が取れていない・`ENOENT` 以外の失敗なら残す。再起動で消える。**既知の残り**: node の番号が別のディスクに使い回されると、抜いた後も残る。
   `mount_failed` でもマウント点のまま（mount は成功したがマウント一覧に見つからなかった等）なら従来どおり取り込んで載せ、`unmount_failed` / `no_device_node` で外れていた（抜かれた）ものは載せない（アンマウントしたのはアプリではない）。
-  `unavailable` に載るので、そのデバイスの削除の要求・F-64 / F-78 の完了・根拠 B は待つ（`devices` にも無いので従来と同じ）。要対応（§8.11）は `unavailable` の理由語のうち `not_listable` / `mount_name_mismatch` / `invalid_device_id` だけを出すので、`mount_failed` は今は出ない（F-81 の時点の既知の残り）
+  `unavailable` に載るので、そのデバイスの削除の要求・F-64 / F-78 の完了・根拠 B は待つ（`devices` にも無いので従来と同じ）。DR-11 は 0 台でも「列挙できました」にせず、挿し直しを案内する notice にする（§8.11）。
+  要対応（§8.11）への写し（`mount_failed` → 「取り外して、もう一度つなぎ直してください」）は F-80 の側で入れる（`RemountOutcome.mountFailedReason` を公開した）
+- **既知の残り**（F-81）: diskutil を 60 秒で打ち切った（`timedOut`）後も DiskArbitration が unmount / mount を続けて終えることがあり、打ち切りの時点の判定（`unmount_failed` / `mount_failed`）とその後の状態が合わないことがある（次の走査の判定で取り直す）
 - **node は判定（走査の始め）のときの観測で、2 台目以降の再マウントは前のデバイスのコピー（1 台で約 11 分かかることがある）の後に回ってくる**。その間に挿し直されて disk 番号が変わる・外れて `path` に親の FS が見えている、のどちらでも別のディスクを unmount / mount しないよう、
   再マウントの時点の statfs の `f_mntfromname` と `f_mntonname` を照らし、合わなければ diskutil を呼ばずに `no_device_node`（F-73。新しい理由語は足さない。次の走査の判定で取り直した node で再マウントする）
 - **snapshot に書く `readOnly` は必ず statfs の観測値**。試行の成否から推論しない（DEL-31）。`mountMode == rw` でも観測する。観測できなければ nil
@@ -1180,7 +1193,8 @@ info.f_mntfromname == node かつ info.f_mntonname == realpath(path)   // F-73�
   違えば（取れない・親の FS が見えている・別の node）`complete == false` と同じく `unavailable`（`not_listable`、`errno` なし）に載せる（既存の理由語。その回の取り込みは続ける）。
   unmount と重なると、マウント点だった空のディレクトリや親の FS を「0 件・完全」の一覧と読みえ、F-64 / F-78 が「無い」と判断して完了させる（消さない側だが原本の管理が外れる）ため。
   コピーの後ではなく列挙の直後に取るのは、列挙からの間を短くして、抜いて挿し直した（同じ node・同じマウント点に戻った）間の一覧を見逃さないため。
-  列挙の前に `statfs` が取れなかった（規則 4 だけで通した）ときは、列挙の後も取れないときだけ同じとみなす（観測値 nil の従来の扱い。本番の `MountInspector` は規則 4 も `statfs` で見るので起きない）
+  列挙の前に `statfs` が取れなかった（規則 4 だけで通した）ときは、列挙の後も取れないときだけ同じとみなす（観測値 nil の従来の扱い。本番の `MountInspector` は規則 4 も `statfs` で見るので起きない）。
+  **既知の残り**（ABA）: 列挙の前と後の `statfs` の間に unmount と同じ node・同じマウント点への mount が両方起きると見分けられない（名前と node が同じ別の送信機は RK-07。ボリューム固有の値は持たない）
 - 再マウントの途中でデバイスが外れた（マウント点でなくなった）場合は、そのデバイスを観測しない（親の FS を観測しない）
 
 **安定性判定**（voicedock §10.3 の原文どおり）
@@ -1202,8 +1216,11 @@ info.f_mntfromname == node かつ info.f_mntonname == realpath(path)   // F-73�
    - 行が無い: `insertRecording`（DISCOVERED）。`source_size` / `source_mtime` は**原本の stat 値**、`sha256_helper`、`inbox_path`、`source_path = relpath`、
      `source_folder` = relpath の親（直下なら空文字）、`transmitter_id` / `mic_index` / `started_at`（ファイル名の時刻にタイムゾーンを付与）、`duration_seconds`（下記）、`ended_at`。`part_discovered recording_key=…`
    - `needs_recopy = 1` の行: `inbox_path`・`sha256_helper`・`source_size`・`source_mtime` を更新し `needs_recopy = 0`（状態は変えない。§5.4 の契機 4 が再評価する）。
-     **長さも取り直したファイルで測り直す**（F-81）: `AudioProbe` で測れて、登録済みの `duration_seconds` と違えば（NULL を含む）`duration_seconds` と `ended_at`（登録済みの `started_at` + 長さ。
-     `started_at` を読めなければファイル名の時刻から。§7.2 の規則）を同じ更新で書き直し、Part が Session に属していれば集計（§5.6 の SQL。`Store.refreshSessionAggregates`）を数え直す。
+     **長さも取り直したファイルで測り直す**（F-81）: `AudioProbe` で測れて、登録済みの `duration_seconds` と違えば（NULL を含む）`duration_seconds` と `ended_at` を同じ更新で書き直し、
+     Part が Session に属していれば集計（§5.6 の SQL。`Store.refreshSessionAggregates`）を数え直す。`ended_at` は登録済みの `started_at` の瞬間 + 長さを、**`started_at` と同じオフセットで**書く
+     （voicedock の `started_at + timedelta(seconds=duration)` と同じ意味。後で `timeZone` を変えても開始と同じ書式。RK-32。§7.2 の規則。`started_at` を読めなければ最初のコピーと同じくファイル名の時刻に設定のタイムゾーンを付ける）。
+     VDStore に行の更新と集計を 1 つのトランザクションで行う公開 API が無いので 2 回の書き込みで、**集計の失敗は取り込みの失敗にしない**（行は更新済み。`copy_failed` を出さず、付録 A.4 の DB の例外と同じ
+     `config_warning rule=store message=<型名>`（WARNING）だけ。集計は次に同じ Session へ Part が分組されるときに数え直される）。
      測れない・同じなら従来の値を残し、Session も書き直さない（`updated_at` を動かさず、無通信の閉じる時刻をずらさない）。
      機器がヘッダを直した原本を取り直しても、登録したときの短い長さのままだと §8.3 の手順 6 の長さの照合（「長さが入力と <gap> 秒ずれています」）が通らず自動で直らないため。デバイスの原本は読むだけ
    - どちらも `copy_completed recording_key=… bytes=… recopy=<true|false>`
@@ -1221,7 +1238,7 @@ public struct DeviceSnapshot: Sendable {
     public let completedAt: Instant          // 表示と「新鮮さ」の判定用
     public let connectEpoch: UInt64          // 「前回公開した snapshot のデバイスが 0 台（か前回が無い）→ 今回 1 台以上」のたびに +1
     public let devices: [String: DeviceObservation]      // key = device_id
-    public let unavailable: [String: String]             // 利用者の操作が要る対象外（名前 → 理由語: not_listable / mount_name_mismatch / invalid_device_id / mount_failed（F-81））
+    public let unavailable: [String: String]             // 利用者の操作が要る対象外（名前 → 理由語: not_listable / mount_name_mismatch / invalid_device_id / mount_failed / not_included（F-81））
     public func isFresh(now: Instant, maxAgeSeconds: Int) -> Bool   // now − completedAt <= maxAge
 }
 public struct DeviceObservation: Sendable {
@@ -2280,7 +2297,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | DR-07 | 8 | llama-server が在り、使うフラグがすべて `--help` に在る | fail |  |
 | DR-08 | 9 | LLM モデルが選ばれて在り SHA-256 が一致（custom は ID の SHA と一致するかだけ）、メモリが足りる（custom はメモリの目安が無いので `.ok` とし、詳細に「動作保証外のモデルです」と出す） | fail |  |
 | DR-10 | 10 | Vault: `VaultCheck` が `.available`（`.notReadable(EPERM)` は許可の案内）かつ `access(W_OK)`。**ファイルもフォルダも作らない**（NOTE-16）。「書けない」と「Vault でない」を別の文言で出す | fail |  |
-| DR-11 | 11 | 接続中のデバイスを列挙できる（snapshot の `unavailable` に `not_listable` が無い）。不可なら「システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム」を案内。**デバイス未接続なら skip** | fail |  |
+| DR-11 | 11 | 接続中のデバイスを列挙できる（snapshot の `unavailable` に `not_listable` が無い）。不可なら「システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム」を案内。**デバイス未接続なら skip**。`not_listable` が無く、再マウントでアンマウントされたまま（`mount_failed`）のデバイスがあれば、0 台でも ok にせず notice「<名前> は読み取り専用への切り替えの途中でアンマウントされたままです。取り外して、もう一度つなぎ直してください」。`not_included`（名前が設定に無い録音のボリューム）は数えない（案内は「はじめに」の⑤。F-81） | fail / notice |  |
 | DR-12 | 12 | ログイン項目の状態（`SMAppService.mainApp.status`）。`.enabled` 以外は notice | notice |  |
 | DR-15 | 13 | inbox の取り残し（`inboxLeftoverStates` の Part の inbox ファイルが残っている）。件数と合計サイズ。**自動では消さない** | notice |  |
 | DR-17 | 14 | アプリ自身の署名が有効で ad-hoc でない（Team ID を持つ）。ad-hoc なら「ビルドのたびにリムーバブルボリュームの許可が失効します」（voicedock DH-16 相当） | notice |  |
@@ -2288,6 +2305,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | DR-09 | 別 | LLM に実リクエスト（別のボタン。Worker の直列ループに 1 件の仕事として入れ、`LlamaServerSupervisor` の単一インスタンスを使う。数十秒かかる。起動したら応答の後（成功でも失敗でも）止める。F-76）。結果「<model>（<秒 小数 1 桁>s）」 | fail |  |
 
 - 件数（15 + DR-09 = 16。取り下げた DR-13 は数えない。F-61）は SPEC の表から数え、README と文書テストで突き合わせる（§10.3）
+- **既知の残り**（F-81）: DR-11 の fail は、errno の無い `not_listable`（走査の途中の失敗（F-67）・列挙の後の確かめ直し（F-81）で載るもの）にも TCC の案内を付ける（§8.1 規則 5 の「`EPERM` のときだけ」になっていない）
 
 **要対応（沈黙の検出を含む。`AttentionItem`）**（無人稼働で最も起きやすい故障は「何も起きない」。SM-24 / RK-23）— パネル上部と、アイコンの「要対応」表示に出す。
 **利用者の操作が要るものだけを「要対応」にする**（警告が鳴り続けると本物が埋もれる。OPS-12）:
@@ -2349,8 +2367,14 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
    - その下に小さな「今すぐ要約」ボタン（SF Symbol `sparkles`）。押すと `WorkerJob.summarizeNow(reply:)` を入れ（§5.4）、返事を数秒の短い通知にする（閉じた数 n > 0 なら「要約を始めました（n 件）」、0 なら「新しく要約する録音はありません」、失敗は `SummarizeNowFailure.message` のまま）。返事を待つ間は押せない。DR-09 と同じく世代を持ち、閉じた後の返事は捨てる（F-66）
 2. **要対応**（ある時だけ。状態の直下のカード）: §8.11 の項目ごとに説明と操作ボタン（「再試行」= requeue(.manual)、「システム設定を開く」、「Vault を選び直す」など）。主画面には先頭の 2 件と「ほか n 件 ›」（押すと全件の画面）
 3. **はじめに**（未完了の項目がある間だけ、状態・要対応の下に出す）: 項目（①〜⑤）と完了の条件は下の「はじめに」の項目の表（SPEC S22）のとおり。
-   ⑤ はデバイス名が `NO NAME` のときの改名の案内（**アプリは改名しない**。デバイスに書かない。Finder か ディスクユーティリティで行う手順を表示。DEV-10）。
-   F-81 の既定の `includeVolumes`（`["DJIMIC3"]`）では `NO NAME` は判定の規則 1 で `not_included` になり `devices` にも `unavailable` にも載らないので、配列に足していないと⑤は出ない（§6.2）
+   ⑤ は改名の案内（**アプリは改名しない**。デバイスに書かない。Finder か ディスクユーティリティで行う手順を表示。DEV-10）。
+   出す相手は、snapshot の `unavailable` の `not_included`（名前が `device.includeVolumes` に合わないが録音のフォルダがあるボリューム。§8.1 規則 1。F-81）と、
+   `devices` / `unavailable` の `NO NAME`（include が空の旧い設定で検出された出荷時名）。出荷時名の新品・名前を変えた機器・古いマウント点が残って `DJIMIC3 1` にマウントされた実機・
+   写しを入れたメモリのどれでも出る（取り込みも削除もしない）。文言（`Strings.renameInstructions`。F-81 で既定の include と食い違わないように直した。`<名前>` は「、」でつなぐ）:
+   「<名前> という名前のデバイスがつながっています。VoiceDock が取り込むのは、名前が設定の device.includeVolumes（既定は DJIMIC3 だけ。空なら全部）に合うデバイスです。VoiceDock はデバイスに一切書き込みません。DJI Mic 3 なら、次のどちらかを利用者が行ってください。」＋改行＋
+   「1. Finder のサイドバーでデバイスを選び、名前をゆっくり 2 回クリックして「DJIMIC3」に変えます。変えたらデバイスを取り外して、もう一度つなぎ直してください」＋改行＋
+   「2. 名前を変えずに使うなら、config.json の device.includeVolumes にこの名前を足して、「設定を読み直す」を押してください」＋改行＋
+   「名前が「DJIMIC3 1」のように番号付きなら、名前は変えずに取り外して、もう一度つなぎ直してください。録音の写しを入れたメモリなど DJI Mic 3 でなければ、何もしなくてかまいません（取り込みも削除もしません）」
    - ④の「今はしない」は `<HOME>/ui-state.json`（`HomeLayout.uiState`。§2.3）（`{"schema": 1, "loginItemDecided": true}`。`AtomicFile`）に記録する（UserDefaults を使わない。PR-03）。
      同じファイルに 1 の最終接続 `lastConnectedAt`（整数。一度も観測していなければキーを書かない）を持つ（F-70。schema は 1 のまま）。
      読むときは、無い・壊れた・`schema` が 1 でないファイルは既定、未知のキーは無視、`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にする（「今はしない」を失わない）
@@ -2383,7 +2407,7 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
 | ② | Whisper モデルを入手する | `whisperModel` | Whisper モデルが在り、VAD が有効なら VAD モデルも在る |
 | ③ | LLM を選んで入手する | `llmModel` | LLM が選ばれ、そのモデルが在る |
 | ④ | ログイン時に起動する | `loginItem` | ログイン項目が有効、または「今はしない」を選んだ（`loginItemDecided`） |
-| ⑤ | デバイスの名前を変える | `deviceName` | 完了にしない（改名の要るデバイス（`NO NAME`）が在る間だけ出す。DEV-10） |
+| ⑤ | デバイスの名前を変える | `deviceName` | 完了にしない（改名の要るデバイス（`unavailable` の `not_included` と `NO NAME`。F-81）が在る間だけ出す。DEV-10） |
 
 `<HOME>/ui-state.json` の鍵（SPEC S23。この 3 つだけを書き、値の列が「任意」の鍵は値があるときだけ書く。読むときは `schema` が 1 でなければ既定値、未知の鍵は無視、任意の鍵が無い・型が違うときはそれだけを既定にする）:
 
@@ -3114,7 +3138,7 @@ model_downloaded model_download_failed diagnostics_completed
 - `source_delete_pending`: `reason=<RV の理由語>|still_in_inventory|no_result|queue_write_failed`
 - `disk_space_low`: `reason=<空き容量の文言>|staging_unlink_failed`
 - `pipeline_paused` / `pipeline_resumed`: `reason=disk_space_low|whisper_missing|model_missing|vad_model_missing|vault_not_configured|vault_unavailable|llm_not_selected|llm_model_missing|llm_insufficient_memory|llama_server_missing|license`
-- `volume_skipped`: `reason=not_included|excluded|symlink|not_a_mount_point|not_listable|no_recordings|mount_name_mismatch|invalid_device_id`（DEBUG。not_listable / mount_name_mismatch / invalid_device_id は前回の走査から変わったときだけ WARNING）
+- `volume_skipped`: `reason=not_included|excluded|symlink|not_a_mount_point|not_listable|no_recordings|mount_name_mismatch|invalid_device_id`（DEBUG。not_listable / mount_name_mismatch / invalid_device_id と、名前のほかはデバイスに見える not_included（F-81。§8.1 規則 1）は前回の走査から変わったときだけ WARNING）
 - `copy_failed`: `reason=copy_size_mismatch|read_error|write_error|changed`
 - `remount_failed`: `reason=no_device_node|unmount_failed|mount_failed|still_writable`
 - `raw_note_failed` / `obsidian_failed`: `reason=vault|write|verify`
@@ -3416,7 +3440,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | X-36 | 解析を再利用するとき `analysis_path` を書かない | 再利用でも書く | 書いた後・DB 更新の前に落ちた Session が ANALYZED で永久に止まる（潜在バグの修正） |
 | X-37 | 日付が過去の OPEN を `stale_day` で閉じる（0:00 の自動要約） | 閉じる契機は無通信の `idle` とパネルの今すぐ要約（`summarize_now`）だけ | 利用者の決定（2026-09-23。F-66） |
 | X-38 | Raw の書き直しで transcript が読めない Part を黙って外す（原本を消した Part の本文もノートから消える）。トリガが載っていなくても RAW_SAVED にし、載せる Part が無ければ遷移せずに偽を返し続ける（pipeline.py:467-547, 592-623） | トリガが載らなければ `RAW_WRITING→FAILED`。書き直しで RAW_SAVED 以降の Part の鍵が既存のノートから抜けるなら書かずにトリガを FAILED（どちらも `OBSIDIAN_RAW_WRITE_FAILED`。§8.6） | Raw ノートは原本を消した後に本文が残る唯一の写しで、削除の根拠でもある（F-75） |
-| X-39 | `INCLUDE_VOLUMES` の既定は空（「改名した瞬間に無言で検出されなくなるのを避けるため」。helper/helper.example.conf:4-8） | `device.includeVolumes` の既定は `["DJIMIC3"]`（既存の `config.json` の値は変えない。§6.2） | 利用者の決定（2026-09-23。F-81）。ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすと、録音の写しを入れたバックアップ用のメモリが DUPLICATE_CONTENT → 根拠 B で消されうる。代わりに、名前を変えたデバイスと出荷時名 `NO NAME` のデバイスは配列に足すまで黙って対象外になる |
+| X-42 | `INCLUDE_VOLUMES` の既定は空（「改名した瞬間に無言で検出されなくなるのを避けるため」。helper/helper.example.conf:4-8） | `device.includeVolumes` の既定は `["DJIMIC3"]`（既存の `config.json` の値は変えない。§6.2）。名前が合わないが録音のフォルダがあるボリュームは取り込まずに「はじめに」の⑤で改名を案内する（§8.1 規則 1） | 利用者の決定（2026-09-23。F-81）。ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすと、録音の写しを入れたバックアップ用のメモリが DUPLICATE_CONTENT → 根拠 B で消されうる。voicedock が避けた「無言で検出されなくなる」は案内で補う |
 
 **意図して変えないもの**（voicedock の実装どおりにする。SPEC の記述と違っても）: frontmatter の文字列を常に引用、Timeline の区切り（Map-Reduce はチャンク単位）、
 Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を確かめない、`recorded` は除外 Part を含む、重複除去は Reduce 経路だけ、
@@ -3528,4 +3552,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-76 | 誤 | §2.1・§2.3・§8.2・§8.4・§8.5・§8.11・§8.15・付録 A.3・付録 A.4 | （2026-09-23。issue #116。全体コードレビューのテーマ 5「終了と子プロセス」）(1) `LlamaServerSupervisor.stop()` は起動の途中（最大 3 回 × 300 秒）の終わりを待ち、起動には取り消しが伝わらなかったので、18 GB の読み込み中に「終了」を押すと読み込みが終わるまで終わらず、300 秒を超えると終了要求の後に 2・3 回目を起動した → 起動中のプロセスを actor に持ち、`stop()` は中止の印を立ててそれを直ちに止め、起動は await の後ごとに印を見て次の試行・次の待ちに進まずに `server_start_failed: cancelled`（既存の理由語）で終える。停止の途中に来た `ensureRunning` は停止の終わりを待ってから起動する（停止中は起動しない。停止が終われば起動してよい）。(2) `ProcessRunner.terminateAll` は実行中の子の写しを 1 回取るだけで、その後の `run` / `spawn` を拒まず、Worker は停止要求を Part・Session の区切りでしか見ないので、変換中に終了すると後から whisper-cli が起動されアプリだけが終わった → `terminateAll` はまず閉じる（以後の `run` は `.spawnFailed(errno: ECANCELED)`、`spawn` は `SpawnError.spawnFailed(errno: ECANCELED)`。開き直さない。公開 API は増やさない）。SIGTERM の後は全部が終われば grace を待たずに戻る。アプリの終了は「停止要求 → terminateAll → 取り込みの停止 → llama の停止 → Worker の終わりの待ち」を順に行い、**全体**を §8.15 の最大 10 秒で打ち切る（これまでは Worker の待ちだけに掛かっていた。`AppDelegate.shutDown(within:_:)`）。(3) DR-09 は llama-server を止めず、`pendingJobs` の段（tick の最後）で起動したサーバが次の tick の `processReadySessions` の終わりまで残り、その前の Part 工程（whisper）と重なった（§2.1・LLM-15 に反する。T-32 はこの残り方を許していた） → `LLMProbeCheck.run` は `ensureRunning` を呼んだら、応答の後（成功でも失敗でも）`llama.stop()` を呼ぶ。(4) 単一起動の仕組みが無く、`open -n` や dist/ と /Applications の両方の起動で、2 つ目の起動の復旧が 1 つ目の処理中の行を戻しうる → 起動の最初（ディレクトリを作った後、設定・DB・復旧・Worker より前）に `<HOME>/state/app.lock`（`HomeLayout.appLock`。reaper.lock とは別）を `FileLock.tryAcquire` で取り、生きている間持つ。取れなければ `service_stopping reason=already_running` を 1 行出して、何も表示せずに終了する（`BootFailure.alreadyRunning`。警告の本文は nil）。(5) `Transcriber` は起動の前に前回の `whisper.json` を消さなかったので、落ちた前回の残りがあると、JSON を書かずに 0 で終わった whisper の結果を前回の JSON で成功にした（RK-34 の根拠が崩れる）→ 起動の前に `SafeUnlink.remove(…, under: .staging, missingOK: true)` で消し、消せなければ起動せずに `WHISPER_FAILED`「前回の生 JSON を消せません: <HOME からの相対パス>」。新しい設定キー・遷移の辺・ログのイベントは増やさない（A.4 の `service_stopping` に理由語 `already_running` を足した）。消す側に倒れる変更は無い（閉じた後は reaper も起動しない）。レビューで足した: 閉じた後の reaper の `--version` の拒否（ECANCELED。`ProcessRunner.closedErrno`）は版の不一致にせず「観測できなかった」とし、キャッシュせず `reaper_failed` も出さず、readiness を新しい値 `.unconfirmed`（要求も削除せずの完了もしない）にした（版の不一致として決着させると、停止要求の後も進む Session の削除段が RAW_SAVED→COMPLETED を永続化した）。2 度目の終了要求は取り消さずに `.terminateLater`、AppKit が後始末を飛ばして終わるときに備えて `applicationWillTerminate` で残った子を止める。再マウントの途中の終了は既知の制限として §8.15 に書いた |
 | F-77 | 誤 | §8.3・付録 A.3・付録 C | （2026-09-23。issue #117。全体コードレビューの C2。利用者の決定で実機の確認（P0-05）より先に入れた）16 kHz 変換は `AVAudioFile.length`（WAV の data チャンクの宣言したサイズ）で読むのを止め、入力の長さ（§8.1 の `AudioProbe`）も同じ値から測り、出力の検証は両者の差しか見なかったので、ヘッダの data のサイズが実データより小さい録音（電池切れなどでヘッダが古いまま残ったもの）は後半を欠いた出力のまま NORMALIZED になり、既定の `inboxRetain = normalized` で inbox の原本が消え、削除の条件を満たせばデバイスの原本も消えうる（Core Audio で実測: 2 秒の data を 1 秒と宣言すると `length` は 1 秒分、0 と宣言すると 0。RIFF の `0xFFFFFFFF` とファイルより長い宣言はファイルの終わりまで読む）→ 手順 6 の出力の検証の後に `InputExtentCheck`（VDAudio の internal。公開 API は増やさない）を足した。RIFF / RF64 のチャンクを辿って data の開始位置と宣言したサイズ（RF64 は `ds64`）を読み、実データの量（宣言したサイズの後ろがチャンクの並びとしてファイルの終わりで閉じる正常なファイルは宣言どおり、それ以外は data の開始位置からファイルの終わりまで）を 1 フレームのバイト数で割った値が、ヘッダの長さ（`min(length, 宣言したサイズ ÷ 1 フレームのバイト数)`）より 1 フレーム以上多ければ（data のサイズ 0 を含む）「入力のヘッダの長さと実データの量が合いません（ヘッダ <h> フレーム、実データ <a> フレーム）」、WAVE の構造を読めなければ「入力の WAV の構造を読めません（<理由>）」で、どちらも既存の `NORMALIZE_VERIFY_FAILED`（出力を消し、inbox の原本は消さない。Part は FAILED なので削除の対象にならない）。手順 2 の再利用もこの照合を通ったときだけ（通らなければ変換し直して手順 6 で落ちる）。変換の前でなく手順 6 に置いたのは、コピーの壊れ（手順 5 の `SOURCE_HASH_MISMATCH`。再コピーの契機）を先に判定するためと、後始末を既存の検証の失敗と同じにするため。1 フレームに満たない余り・宣言がファイルより長い（末尾が欠けた）ものは落とさない（後者はファイルの終わりまで変換されるので失うものは無い）。`AudioProbe` は変えない（ヘッダが短い録音の短い duration は手順 6 で落ちるので後段に流れない）。エラーコード・設定キー・辺・ログのイベントは増やさない。DJI Mic 3 がそういうファイルを残すか・data の後ろにチャンクや詰め物を置くかは未確認（P0-05 のついでに確かめる。P0 §7） |
 | F-78 | 誤 | §8.9.2・§8.9.5・§8.9.6・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.4 | （2026-09-23。issue #124。F-74（#114）のレビューで残った 2 点。利用者の決定「今回の流れで直す」。CR-15。どちらも消さない側に倒れていたが、Part や Session が完了しないまま残った）(1) 手で原本を消した後などで、ID の無い SOURCE_DELETE_PENDING の元ファイルがデバイスの一覧に無くなると、利用者が「手動で消した分を完了にする」を押すまで Part も Session も完了せず、要対応にも出なかった → `requestDeletions` の手順 4a（F-64）を ID の無い SOURCE_DELETE_PENDING にも広げ、同じ観測の条件（新鮮な snapshot・デバイスが接続中で列挙でき `unavailable` に無い・snapshot が PENDING にした時刻（updated_at）より確かに後に完了・relpath が一覧に無い）を満たしたら、**辺を足さず**「手動で消した分を完了にする」と同じ 2 遷移 `SOURCE_DELETE_PENDING→SOURCE_DELETING`（detail `resolve_absent`）→`SOURCE_DELETING→COMPLETED`（detail `already_absent`）、この Part の要求・結果の取り下げ、ID を外す、`source_delete_skipped recording_key=… reason=already_absent` で自動で完了させる。`source_deleted_at` は入れない（DELETED を観測していない）。未接続・列挙できない・snapshot が古い・`source_path` が無いときは完了させない。これで F-74 の `failureIsObserved` の (d) は RAW_SAVED にも PENDING にも防御になった。「手動で消した分を完了にする」は ID を持つ PENDING・COMPLETED の Session の PENDING のために残す。(2) アプリの `canDeleteSource` は真なのに reaper の独立した検証（RV-03〜13）だけが偽になる Part は、評価のたびに要求 → 拒否（回収の pend で ID の無い SOURCE_DELETE_PENDING）→ 再要求を繰り返し、Session は完了しなかった（`canDeleteSource` が真なので F-69 の 5a の対象にならず、要求を書いた評価では `delete_attempts` も増えない）→ 手順 5b: `canDeleteSource` が真の ID の無い SOURCE_DELETE_PENDING について、DB の events を新しい順に見て回収の pend（`SOURCE_DELETING→SOURCE_DELETE_PENDING`、`error_code` が `SOURCE_IDENTITY_MISMATCH`）を数え（間の要求の遷移 `RAW_SAVED` / `SOURCE_DELETE_PENDING` →`SOURCE_DELETING` で detail の無いものは読み飛ばし、それ以外の遷移で止める。`reaperRejectionStreak`）、定数 `reaperRejectionsToSettle = 3` 回続いていたら要求を書かずに、5a の PENDING と同じ 2 遷移（両方 detail `not_deletable`、2 つ目で `error_message` に原因の語）と `source_delete_skipped … reason=not_deletable detail=<原因>` で消さずに決着する。原因の語は最後の拒否の reaper の理由語（付録 B.2。5a の `source_info` / `pre_identity` / `transcript` / `raw_note` はアプリの検査のどれが落ちたか、5b の理由語はアプリの検査が全部通った後に reaper の検証のどれが落ちたかで、綴りは重ならない）。数え方は DB の履歴なので再起動で 0 に戻らず、拒否でない結果（DELETED・`still_in_inventory`・`no_result`）・起動時の復旧・決着・手動で消した分・後追いの要求の遷移で数え直す。要求を書かなかった評価は数えも切りもせず、要求を残す reaper の理由（`device_absent`・`mount_readonly`）は結果が来ないので数えない。挿し直しでは数え直さない（挿し直しで変わる食い違いはアプリの事前確認が同じ `TargetIdentity` で先に偽になる）。メモリの記録（`UndeletableStreaks` のような）で数える案は、再起動で 0 に戻り Worker の配線も要るので採らない。最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細・後追いの数え方は F-69 のまま（状態の詳細は reaper の理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す）。(3) 決着した Part（5a / 5b）を後追いで要求して reaper がまた拒否すると、pend で COMPLETED の Session に ID の無い PENDING が残り、自動では評価されず「消せなかった録音」からも状態の詳細の一覧からも外れて、解決したように見えて見えなくなった → 回収で、events の最後が後追いの ③（`COMPLETED→SOURCE_DELETING`、detail 無し）でその前が detail `not_deletable` の →COMPLETED のときだけ、pend せずに既存の `SOURCE_DELETING→COMPLETED`（detail `not_deletable`、`error_message` に理由語）で決着し直して ID を外す（§8.9.6）。後追いから外す案は後追い（T-41）の判定を変え、原因を直した 5a の Part の再評価も妨げるので採らない。(4) 要対応 `undeletableSources` の説明は 5b に合わなかった（直すものが無いのに後追いを勧めていた）→ 「消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください」に直した（§8.11）。既知の残り: reaper が要求を残す理由（`device_absent`・`mount_readonly`）では結果が来ず、期限切れで連続が切れて再要求が期限ごとに続く（アプリの事前確認が先に偽になるのでまず起きない）。決着していない Part の後追いの拒否・期限切れ・復旧の後の拒否は、従来どおり COMPLETED の Session に PENDING を残す（§8.9.9）。設定キー・遷移の辺・ログのイベントは増やさない（A.2 の注記と、A.4 の `source_delete_skipped` の `detail=` に `<RV の理由語>` を足した） |
-| F-81 | 誤 | §4.2・§6.2・§8.1・§8.3・§8.9.4・§8.12・§9.2・§14・付録 D | （2026-09-23。issue #119。全体コードレビューの残りのうち、デバイス・文字列・ファイルシステム。どれも消す側には倒れない）(1) F-73 の後にも書記素（Character）単位の比較が残っていた → Unicode スカラー（UTF-8 のバイト）で見る: `PartKey.deviceID(of:)` / `relpath(of:)` の最初の `/`（relpath が結合文字で始まると、`make` で作った partkey を別の位置で分けた。本番のコードからは呼ばれていない）、`DeviceID.isValid` の「`.` で始まる」、reaper の `QueueFiles.names()` の「`.` で始まる」と `Unlinker.removeRequest(named:)` の「`/` を含む」（`a/\u{301}b.json` を `unlinkat` に渡すとサブディレクトリの中を消す。名前は readdir の結果で `/` を含まず、RV-02a の ASCII の正規表現も先に通るので実際には起きない）、`DiskutilRemounter` の mount の後のマウント一覧の node の照合（`==` の正準等価を `PyText.scalarsEqual` に）、`SafeUnlink` の「`..` を含まない」（`a/../\u{301}b` の `..` を見逃した。後ろの realpath の封じ込めでルートの外は消せなかった）。ASCII の入力の結果は 1 文字も変わらず、変わるのは結合文字の入力で以前は通ったものが通らない側だけ。(2) 走査は列挙の後にマウントを確かめ直さなかったので、unmount と重なると、マウント点だった空のディレクトリや親の FS を「0 件・完全」の一覧と読んで公開し、F-64 / F-78 が「無い」と判断して完了させえた（消さない側だが原本の管理が外れる。レビューの C5）→ 列挙の直後（コピーの前）に statfs をもう一度取り、`f_mntonname` と `f_mntfromname` が列挙の前とスカラー列で一致するときだけ `devices` に載せ、違えば `unavailable` に `not_listable`（`complete == false` と同じ扱い。その回の取り込みは続ける）。(3) 再マウントで unmount は成功し mount が失敗すると、デバイスはアンマウントされたまま `/Volumes` から消え、「未接続」に見えた（C6）→ マウント点でなくなったデバイスを `unavailable` に既存の理由語 `mount_failed` で載せ、IngestService がメモリ（`unmountedByRemount`）に覚えて、名前が判定に戻る（`devices` か、`not_a_mount_point` 以外の理由の `skipped`）まで毎回の snapshot に載せ続ける（再起動で消え、抜いた後も挿し直すまで残る）。`mount_failed` でもマウント点のままなら従来どおり取り込み、`unmount_failed` / `no_device_node` で外れていたものは載せない。要対応（§8.11）は `unavailable` の 3 つの理由語しか出さないので、`mount_failed` は今は要対応に出ない（既知の残り）。(4) 応答しないネットワーク共有で、判定の `lstat`・`statfs`・`realpath`・ボリューム名の取得が止まり、走査が reaper.lock を持ったまま止まりえた（C8）→ 判定の最初に `getmntinfo(MNT_NOWAIT)`（`MountInspector.allMounts()`）で `MNT_LOCAL` の立っていないマウント点を集め、規則 2 の続きとして `excluded` で外し（新しい理由語は足さない）、止まりうる呼び出しに進まない。`MountInfo` に `isLocal`（`f_flags & MNT_LOCAL`）を足した（公開の init には既定値 true の引数）。一覧が取れなければ従来どおり判定する。(5) `device.includeVolumes` の既定を `[]` から `["DJIMIC3"]` にした（2026-09-23 の利用者の決定。付録 D の X-39。ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすと、録音の写しを入れた FAT のバックアップ用のメモリが DUPLICATE_CONTENT → 根拠 B で削除されうる）。設定キーは足さず、既定値は config.json が無いときだけ書くので、既存の config.json の値（`[]` を含む）は変わらない。include の照合は `fnmatch` の UTF-8 のバイト列。名前を変えたデバイス・2 台目（`DJIMIC3 1`）・出荷時名 `NO NAME` は、配列に足すまで `not_included`（DEBUG）で黙って対象外になり、「はじめに」の⑤（§8.12）も出ない。(6) 送信機 2 台がどちらも `DJIMIC3` になると削除の同定にボリューム固有の値が無い件（A8）は、利用者の決定で対応せず RK-07 に記録した。(7) 取り込みの再コピー（`needs_recopy` の Part を取り直したとき）は `duration_seconds` と `ended_at` を測り直さなかったので、F-77 の「入力のヘッダの長さと実データの量が合わない」で `needs_recopy` を立てて（F-82）機器がヘッダを直した原本を取り直しても、登録したときの短い長さと出力の長さが食い違い、§8.3 の「長さが入力と N 秒ずれています」の `NORMALIZE_VERIFY_FAILED` のまま自動で直らなかった → 再コピーで取り直したファイルを `AudioProbe` で測り、登録済みの値と違えば（NULL を含む）`duration_seconds` と `ended_at`（登録済みの `started_at` + 長さ。読めなければファイル名の時刻から）を同じ更新で書き直し、Part が Session に属していれば `Store.refreshSessionAggregates` で集計を数え直す。測れない（nil）・同じなら従来の値を残し Session も書き直さない。最初のコピーの振る舞いは変えず、デバイスの原本は読むだけ。新しい設定キー・遷移の辺・ログのイベント・理由語は足さない（`unavailable` の値に既存の理由語 `mount_failed` が加わった） |
+| F-81 | 誤 | §4.2・§6.2・§8.1・§8.3・§8.9.4・§8.11・§8.12・§9.2・§14・付録 A.4・付録 D | （2026-09-23。issue #119。全体コードレビューの残りのうち、デバイス・文字列・ファイルシステム。どれも消す側には倒れない）(1) F-73 の後にも書記素（Character）単位の比較が残っていた → Unicode スカラー（UTF-8 のバイト）で見る: `PartKey.deviceID(of:)` / `relpath(of:)` の最初の `/`（relpath が結合文字で始まると、`make` で作った partkey を別の位置で分けた。本番のコードからは呼ばれていない）、`DeviceID.isValid` の「`.` で始まる」、reaper の `QueueFiles.names()` の「`.` で始まる」と `Unlinker.removeRequest(named:)` の「`/` を含む」（`a/\u{301}b.json` を `unlinkat` に渡すとサブディレクトリの中を消す。名前は readdir の結果で `/` を含まず、RV-02a の ASCII の正規表現も先に通るので実際には起きない）、`DiskutilRemounter` の mount の後のマウント一覧の node の照合（`==` の正準等価を `PyText.scalarsEqual` に）、`SafeUnlink` の「`..` を含まない」（`a/../\u{301}b` の `..` を見逃した。後ろの realpath の封じ込めでルートの外は消せなかった）。ASCII の入力の結果は 1 文字も変わらず、変わるのは結合文字の入力で以前は通ったものが通らない側だけ。書記素のまま残した許す側の判定（`DeleteQueue.swift:25`・`DeviceReader.swift:243`・`DeviceDetector.swift:75,147`・`SafeUnlink.swift:44`）は書記素のほうが厳しいので変えない。(2) 走査は列挙の後にマウントを確かめ直さなかったので、unmount と重なると、マウント点だった空のディレクトリや親の FS を「0 件・完全」の一覧と読んで公開し、F-64 / F-78 が「無い」と判断して完了させえた（消さない側だが原本の管理が外れる。レビューの C5）→ 列挙の直後（コピーの前）に statfs をもう一度取り、`f_mntonname` と `f_mntfromname` が列挙の前とスカラー列で一致するときだけ `devices` に載せ、違えば `unavailable` に `not_listable`（`complete == false` と同じ扱い。その回の取り込みは続ける）。前後の間の unmount と同じ node・マウント点への mount の両方（ABA）は見分けられない（既知の残り）。(3) 再マウントで unmount は成功し mount が失敗すると、デバイスはアンマウントされたまま `/Volumes` から消え、「未接続」に見えた（C6）→ マウント点でなくなったデバイスを `unavailable` に既存の理由語 `mount_failed` で載せ、IngestService がメモリ（`unmountedByRemount`）に覚えて、名前が判定に戻る（`devices` か、`not_a_mount_point` 以外の理由の `skipped`）まで毎回の snapshot に載せ続ける（再起動で消える）。判定のときの node（`/dev/diskN`）も覚え、その `lstat` が `ENOENT` なら（抜かれた）外す（`/dev` を読むだけ。PR-11。node の番号が別のディスクに使い回されると残るのは既知の残り）。`mount_failed` でもマウント点のままなら従来どおり取り込み、`unmount_failed` / `no_device_node` で外れていたものは載せない。DR-11 は `mount_failed` を 0 台でも ok にせず挿し直しを案内する notice にした（§8.11）。要対応への写し（→「取り外して、もう一度つなぎ直してください」）は F-80 の側で入れる（`RemountOutcome.mountFailedReason` を公開した）。diskutil を 60 秒で打ち切った後に DiskArbitration が終える件は既知の残り。(4) 応答しないネットワーク共有で、判定の `lstat`・`statfs`・`realpath`・ボリューム名の取得が止まり、走査が reaper.lock を持ったまま止まりえた（C8）→ 判定の最初に `getmntinfo(MNT_NOWAIT)`（`MountInspector.allMounts()`）で `MNT_LOCAL` の立っていないマウント点を集め、規則 2 の続きとして `excluded` で外し（新しい理由語は足さない）、止まりうる呼び出しに進まない。`MountInfo` に `isLocal`（`f_flags & MNT_LOCAL`）を足した（公開の init には既定値 true の引数）。一覧が取れなければ従来どおり判定する。(5) `device.includeVolumes` の既定を `[]` から `["DJIMIC3"]` にした（2026-09-23 の利用者の決定。付録 D の X-42。ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすと、録音の写しを入れた FAT のバックアップ用のメモリが DUPLICATE_CONTENT → 根拠 B で削除されうる）。設定キーは足さず、既定値は config.json が無いときだけ書くので、既存の config.json の値（`[]` を含む）は変わらない。include の照合は `fnmatch` の UTF-8 のバイト列。名前を変えたデバイス・2 台目（`DJIMIC3 1`）・出荷時名 `NO NAME` は、配列に足すまで規則 1 の `not_included` で取り込まない。レビューを受けた利用者の決定（include は絞ったまま、名前が合わないが DJI 形式のフォルダを持つボリュームは取り込まずに案内）で、`not_included` の名前だけに規則 2〜6 を当てて（規則 8・9 は見ない。ネットワークの FS には進まない）デバイスに見えれば `DetectionResult.notIncludedDevices` に入れ、snapshot の `unavailable` に `not_included` で載せ（前回から変わったときだけ WARNING）、「はじめに」の⑤が改名（か `device.includeVolumes` に名前を足すこと）を案内する（文言も既定の include と食い違わないように直した。§8.12）。取り込まず・再マウントせず・`devices` に載らないので、写しを入れたメモリも消されない。古いマウント点が残って実機が `DJIMIC3 1` にマウントされた 1 台も（以前の `mount_name_mismatch` の要対応ではなく）この案内で知らせる。DR-11 は `not_included` を数えない。既存の `config.json`（`[]`）ではこの守りが効かないので、利用者が手で `["DJIMIC3"]` にする。(6) 送信機 2 台がどちらも `DJIMIC3` になると削除の同定にボリューム固有の値が無い件（A8）は、利用者の決定で対応せず RK-07 に記録した。(7) 取り込みの再コピー（`needs_recopy` の Part を取り直したとき）は `duration_seconds` と `ended_at` を測り直さなかったので、F-77 の「入力のヘッダの長さと実データの量が合わない」で `needs_recopy` を立てて（F-82）機器がヘッダを直した原本を取り直しても、登録したときの短い長さと出力の長さが食い違い、§8.3 の「長さが入力と N 秒ずれています」の `NORMALIZE_VERIFY_FAILED` のまま自動で直らなかった → 再コピーで取り直したファイルを `AudioProbe` で測り、登録済みの値と違えば（NULL を含む）`duration_seconds` と `ended_at`（登録済みの `started_at` + 長さ。読めなければファイル名の時刻から）を同じ更新で書き直し、Part が Session に属していれば `Store.refreshSessionAggregates` で集計を数え直す。測れない（nil）・同じなら従来の値を残し Session も書き直さない。`ended_at` は `started_at` と同じオフセットで書く（voicedock の `started_at + timedelta` と同じ）。VDStore に 1 つのトランザクションで書く公開 API が無いので、集計の失敗は取り込みの失敗にせず `config_warning rule=store`（付録 A.4 の DB の例外の約束）だけにする。最初のコピーの振る舞いは変えず、デバイスの原本は読むだけ。新しい設定キー・遷移の辺・ログのイベント・理由語は足さない（`unavailable` の値に既存の理由語 `mount_failed` が加わった） |

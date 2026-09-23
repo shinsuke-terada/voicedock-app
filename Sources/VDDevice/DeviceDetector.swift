@@ -41,6 +41,20 @@ public struct DetectionResult: Equatable, Sendable {
     public let skipped: [SkippedVolume]
     /// volumesRoot 自体を列挙できなかった（「0 台」と「観測できない」を分けるため）
     public let listingError: ErrnoError?
+    /// 規則 1（not_included）で外した名前のうち、名前のほかはデバイスに見えるもの（規則 2 の除外に当たらず、ローカルの FS の
+    /// symlink でないマウント点で、列挙でき、直下に録音のフォルダかファイルがある）。名前の UTF-8 バイト順（F-81）。
+    /// 取り込まず削除の対象にもしない。走査が snapshot の unavailable に not_included で載せ、「はじめに」の⑤が改名を案内する
+    public let notIncludedDevices: [String]
+
+    init(
+        devices: [DetectedDevice], skipped: [SkippedVolume], listingError: ErrnoError?,
+        notIncludedDevices: [String] = []
+    ) {
+        self.devices = devices
+        self.skipped = skipped
+        self.listingError = listingError
+        self.notIncludedDevices = notIncludedDevices
+    }
 }
 
 public struct DeviceDetector: Sendable {
@@ -71,6 +85,7 @@ public struct DeviceDetector: Sendable {
         }
         var devices: [DetectedDevice] = []
         var skipped: [SkippedVolume] = []
+        var notIncludedDevices: [String] = []
         for name in names {
             if name.hasPrefix(".") { continue }
             let path = URL(fileURLWithPath: volumesRoot, isDirectory: true)
@@ -78,13 +93,29 @@ public struct DeviceDetector: Sendable {
             switch evaluate(name: name, path: path, remote: remote) {
             case .some(let skip):
                 skipped.append(skip)
+                if skip.reason == .notIncluded && looksLikeDevice(name: name, path: path, remote: remote) {
+                    notIncludedDevices.append(name)
+                }
             case .none:
                 devices.append(
                     DetectedDevice(
                         deviceID: name, mountPath: path, node: inspector.mountInfo(path: path)?.mountFromName))
             }
         }
-        return DetectionResult(devices: devices, skipped: skipped, listingError: nil)
+        return DetectionResult(
+            devices: devices, skipped: skipped, listingError: nil, notIncludedDevices: notIncludedDevices)
+    }
+
+    /// 規則 1 で外した名前が、名前のほかはデバイスに見えるか（F-81）。規則 2（exclude・ネットワークの FS）・3・4・5・6 を
+    /// 同じ順に当てる（規則 8・9 は見ない。古いマウント点が残って `DJIMIC3 1` にマウントされた実機も案内するため）。
+    /// stat が増えるのは not_included の名前だけ（include が空なら呼ばれない）。取り込みにも削除にも使わない
+    private func looksLikeDevice(name: String, path: String, remote: Set<String>) -> Bool {
+        if config.excludeVolumes.contains(where: { fnmatch($0, name, 0) == 0 }) { return false }
+        if remote.contains(path) { return false }
+        if reader.isSymlink(path) { return false }
+        if !inspector.isMountPoint(path: path) { return false }
+        guard case .success(let children) = reader.listEntries(of: path) else { return false }
+        return children.contains(where: { hasRecording(child: $0, volumePath: path) })
     }
 
     /// 規則 8 を単独で評価する（再マウント後に T-15 が呼ぶ）。純粋関数: name と観測したボリューム名が一致するか（nil は不一致）

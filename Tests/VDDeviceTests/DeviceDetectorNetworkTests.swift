@@ -182,9 +182,74 @@ struct DeviceDetectorNetworkTests {
         let result = f.detect(with: recorder)
         #expect(result.devices.map(\.deviceID) == ["DJIMIC3"])
         #expect(result.skipped == [SkippedVolume(name: "BACKUP", reason: .notIncluded, listingError: nil)])
-        // 規則 1 は名前だけで判定する（DEV-05。stat しない）
-        #expect(!f.touched(recorder.log.all, "BACKUP"))
-        #expect(!f.touched(f.lstatLog.all, "BACKUP"))
+        // 取り込まないが、録音のフォルダがあるので改名の案内の対象（F-81 のレビュー。利用者の決定 2026-09-23）
+        #expect(result.notIncludedDevices == ["BACKUP"])
+    }
+
+    @Test("F-81 既定の include では出荷時名 NO NAME も not_included で、録音のフォルダがあれば改名の案内の対象")
+    func factoryNamedDeviceIsNotIncludedButHinted() throws {
+        var f = try Fixture()
+        try f.addVolume("NO NAME")
+        let result = f.detect(with: RecordingInspector(f.inspector))
+        #expect(result.devices == [])
+        #expect(result.skipped == [SkippedVolume(name: "NO NAME", reason: .notIncluded, listingError: nil)])
+        #expect(result.notIncludedDevices == ["NO NAME"])
+    }
+
+    @Test("F-81 古いマウント点が残って DJIMIC3 1 にマウントされた実機も not_included で改名（挿し直し）の案内の対象")
+    func numberedMountPointIsHinted() throws {
+        var f = try Fixture()
+        try f.addVolume("DJIMIC3 1")
+        // ボリューム名は DJIMIC3（規則 8 は案内の判定では見ない）
+        f.inspector.volumeNames[f.path("DJIMIC3 1")] = "DJIMIC3"
+        let result = f.detect(with: RecordingInspector(f.inspector))
+        #expect(result.devices == [])
+        #expect(result.skipped.map(\.reason) == [.notIncluded])
+        #expect(result.notIncludedDevices == ["DJIMIC3 1"])
+    }
+
+    @Test("F-81 案内の対象にしないもの: 録音のフォルダが無い・exclude に当たる・マウント点でない・symlink")
+    func nonDeviceLikeVolumesAreNotHinted() throws {
+        var f = try Fixture()
+        // 録音のフォルダが無いローカルのボリューム
+        let plain = try FakeVolume(in: f.tmp, deviceID: "DATA")
+        try plain.addFile("Documents/memo.txt", data: Data("x".utf8), mtime: FakeVolume.oldMtime)
+        f.register("DATA")
+        // exclude（既定の Macintosh HD）
+        try f.addVolume("Macintosh HD")
+        // マウント点でない（登録しない）
+        let notMounted = try FakeVolume(in: f.tmp, deviceID: "LOOSE")
+        try notMounted.addFile(Self.origRelpath, data: Data("x".utf8), mtime: FakeVolume.oldMtime)
+        // symlink のエントリ
+        try FileManager.default.createSymbolicLink(atPath: f.path("LINK"), withDestinationPath: "LOOSE")
+        f.register("LINK")
+        let result = f.detect(with: RecordingInspector(f.inspector))
+        #expect(result.devices == [])
+        #expect(result.skipped.map(\.name) == ["DATA", "LINK", "LOOSE", "Macintosh HD"])
+        #expect(result.skipped.allSatisfy { $0.reason == .notIncluded })
+        #expect(result.notIncludedDevices == [])
+    }
+
+    @Test("F-81 not_included のネットワークの FS は、案内の判定でも止まりうる呼び出しに進まない")
+    func networkVolumeIsNotProbedForHint() throws {
+        var f = try Fixture()
+        try f.addVolume("Share", isLocal: false)
+        let recorder = RecordingInspector(f.inspector)
+        let result = f.detect(with: recorder)
+        #expect(result.skipped == [SkippedVolume(name: "Share", reason: .notIncluded, listingError: nil)])
+        #expect(result.notIncludedDevices == [])
+        #expect(!f.touched(recorder.log.all, "Share"))
+        #expect(!f.touched(f.lstatLog.all, "Share"))
+    }
+
+    @Test("F-81 include が空なら not_included は出ず、案内の対象も無い（TEST-28）")
+    func emptyIncludeHasNoHints() throws {
+        var f = try Fixture()
+        f.config.includeVolumes = []
+        try f.addVolume("BACKUP")
+        let result = f.detect(with: RecordingInspector(f.inspector))
+        #expect(result.devices.map(\.deviceID) == ["BACKUP"])
+        #expect(result.notIncludedDevices == [])
     }
 
     @Test("F-81 include の照合は UTF-8 のバイト列（正準等価でも綴りの違う名前は一致しない）")

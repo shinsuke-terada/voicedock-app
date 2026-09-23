@@ -14,8 +14,9 @@ public enum RemountOutcome: Equatable, Sendable {
     case failed(reason: String)
 
     /// unmount は成功し、mount readOnly が失敗した（か、成功と言いながらマウント一覧に node が無い）ときの理由語。
-    /// デバイスはアンマウントされたまま残りうるので、走査は snapshot の unavailable に載せる（F-81）
-    static let mountFailedReason = "mount_failed"
+    /// デバイスはアンマウントされたまま残りうるので、走査は snapshot の unavailable に載せる（F-81）。
+    /// 診断（DR-11）と要対応が unavailable の値をこれと比べるので公開する
+    public static let mountFailedReason = "mount_failed"
 }
 
 public protocol Remounter: Sendable {

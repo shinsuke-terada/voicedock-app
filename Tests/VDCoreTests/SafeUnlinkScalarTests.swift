@@ -68,4 +68,15 @@ struct SafeUnlinkScalarTests {
         try SafeUnlink.remove(file, under: .staging, layout: layout)
         #expect(!exists(file))
     }
+
+    @Test("F-81 空の要素（//）は .. ではない（ルートの配下なら消す。TEST-28）")
+    func emptyComponentIsNotDotDot() throws {
+        let file = try makeFile(layout.staging.appendingPathComponent("sub/x"))
+        let path = layout.staging.path(percentEncoded: false) + "sub//x"
+        let target = URL(fileURLWithPath: path)
+        // 準備の確かめ: URL にしても空の要素が残る（残らなければテストが空振りする）
+        try #require(target.path(percentEncoded: false).contains("//"))
+        try SafeUnlink.remove(target, under: .staging, layout: layout)
+        #expect(!exists(file))
+    }
 }

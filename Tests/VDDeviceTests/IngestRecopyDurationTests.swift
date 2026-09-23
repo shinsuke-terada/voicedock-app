@@ -1,6 +1,7 @@
 // 再コピー（needs_recopy の Part を取り直したとき）で長さを測り直す（PLAN §8.1・§8.3・F-81・issue #119）。
 // 取り込みの舞台は IngestCopyTests と同じ（FakeVolume の一時ディレクトリ。デバイスの原本は読むだけ）。
 import Foundation
+import SQLite3
 import TestSupport
 import Testing
 import VDContract
@@ -120,7 +121,7 @@ struct IngestRecopyDurationTests {
         #expect(row.endedAt == Self.ended120950)
     }
 
-    @Test("F-81 再コピーの ended_at は登録済みの started_at から数える（タイムゾーンを変えた後でも開始の 1.5 秒後）")
+    @Test("F-81 再コピーの ended_at は登録済みの started_at の瞬間とオフセットで書く（タイムゾーンを変えた後でも開始の 1.5 秒後）")
     func recopyEndedAtCountsFromStoredStart() async throws {
         let h = try IngestCopyTests.Harness()
         try DefaultDeviceTree.populate(h.fake)
@@ -141,8 +142,9 @@ struct IngestRecopyDurationTests {
         let row = try #require(try h.store.recording(Self.pk120950))
         #expect(row.startedAt == Self.started120950)
         #expect(row.durationSeconds == 1.5)
-        // 2026-09-12T12:09:50+09:00 の 1.5 秒後を UTC で（ファイル名の時刻を UTC とみなすと 12:09:51+00:00 になり、開始の 9 時間後になる）
-        #expect(row.endedAt == "2026-09-12T03:09:51+00:00")
+        // 2026-09-12T12:09:50+09:00 の 1.5 秒後を started_at と同じ +09:00 で（voicedock の started_at + timedelta と同じ）。
+        // 設定のタイムゾーン（UTC）で書くと 03:09:51+00:00、ファイル名の時刻を UTC とみなすと 12:09:51+00:00（開始の 9 時間後）になる
+        #expect(row.endedAt == "2026-09-12T12:09:51+09:00")
     }
 
     @Test("F-81 再コピーで測った長さが登録と同じなら、Session の集計を書き直さない")
@@ -160,5 +162,63 @@ struct IngestRecopyDurationTests {
         let row = try #require(try h.store.recording(Self.pk120950))
         #expect(row.durationSeconds == 1.5)
         #expect(row.endedAt == Self.ended120950)
+    }
+
+    struct SetupError: Error {
+        let message: String
+    }
+
+    /// DB の sessions の更新だけを失敗させる（Session の集計の書き込みの失敗を作る。一時ディレクトリの DB だけ）
+    static func failSessionUpdates(_ h: IngestCopyTests.Harness) throws {
+        var db: OpaquePointer?
+        guard sqlite3_open(h.layout.database.path(percentEncoded: false), &db) == SQLITE_OK else {
+            sqlite3_close(db)
+            throw SetupError(message: "DB を開けない")
+        }
+        defer { sqlite3_close(db) }
+        let sql =
+            "CREATE TRIGGER f81_fail_session_update BEFORE UPDATE ON sessions "
+            + "BEGIN SELECT RAISE(ABORT, 'f81'); END"
+        guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else { throw SetupError(message: "trigger を作れない") }
+    }
+
+    @Test("F-81 Session の集計を数え直せなくても取り込みの失敗にせず、行は新しい長さで、DB の例外を config_warning rule=store で残す")
+    func sessionAggregateFailureIsNotCopyFailure() async throws {
+        let h = try IngestCopyTests.Harness()
+        try DefaultDeviceTree.populate(h.fake)
+        _ = await h.run()
+        try Self.putIntoSession(h)
+        try Self.registerShortAndMarkRecopy(h)
+        try h.store.refreshSessionAggregates(Self.sessionKey)
+        try Self.failSessionUpdates(h)
+        let second = await h.run()
+        #expect(second.copied == 1)
+        let row = try #require(try h.store.recording(Self.pk120950))
+        #expect(row.durationSeconds == 1.5)
+        #expect(row.endedAt == Self.ended120950)
+        #expect(row.needsRecopy == false)
+        // 集計は古いまま（次に同じ Session へ Part が分組されるときに数え直される）
+        #expect(try h.store.session(Self.sessionKey)?.recordedSeconds == 0.5)
+        #expect(h.lines(containing: " copy_failed ").isEmpty)
+        #expect(h.sink.lines.contains { $0.hasSuffix("WARNING config_warning rule=store message=DatabaseError") })
+        #expect(
+            h.sink.lines.contains {
+                $0.hasSuffix("INFO  copy_completed recording_key=\(Self.pk120950) bytes=248776 recopy=true")
+            })
+    }
+
+    @Test("F-81 ISO のオフセットを秒で読む（±HH:MM・±HH:MM:SS。形が違えば nil）")
+    func isoOffsetSecondsReadsFixedForms() {
+        #expect(IngestService.isoOffsetSeconds("2026-09-12T12:09:50+09:00") == 32_400)
+        #expect(IngestService.isoOffsetSeconds("2026-09-12T12:09:50-05:30") == -19_800)
+        #expect(IngestService.isoOffsetSeconds("2026-09-12T12:09:50+00:00") == 0)
+        #expect(IngestService.isoOffsetSeconds("2026-09-12T12:09:50+05:30:15") == 19_815)
+        #expect(IngestService.isoOffsetSeconds("2026-09-12T12:09:50Z") == nil)
+        #expect(IngestService.isoOffsetSeconds("2026-09-12T12:09:50+0a:00") == nil)
+    }
+
+    @Test("F-81 ISO のオフセットは空文字なら nil（TEST-28）")
+    func isoOffsetSecondsOfEmptyIsNil() {
+        #expect(IngestService.isoOffsetSeconds("") == nil)
     }
 }

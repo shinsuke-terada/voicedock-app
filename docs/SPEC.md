@@ -164,7 +164,7 @@ model_downloaded model_download_failed diagnostics_completed
 - `source_delete_pending`: `reason=<RV の理由語>|still_in_inventory|no_result|queue_write_failed`
 - `disk_space_low`: `reason=<空き容量の文言>|staging_unlink_failed`
 - `pipeline_paused` / `pipeline_resumed`: `reason=disk_space_low|whisper_missing|model_missing|vad_model_missing|vault_not_configured|vault_unavailable|llm_not_selected|llm_model_missing|llm_insufficient_memory|llama_server_missing|license`
-- `volume_skipped`: `reason=not_included|excluded|symlink|not_a_mount_point|not_listable|no_recordings|mount_name_mismatch|invalid_device_id`（DEBUG。not_listable / mount_name_mismatch / invalid_device_id は前回の走査から変わったときだけ WARNING）
+- `volume_skipped`: `reason=not_included|excluded|symlink|not_a_mount_point|not_listable|no_recordings|mount_name_mismatch|invalid_device_id`（DEBUG。not_listable / mount_name_mismatch / invalid_device_id と、名前のほかはデバイスに見える not_included（F-81。§8.1 規則 1）は前回の走査から変わったときだけ WARNING）
 - `copy_failed`: `reason=copy_size_mismatch|read_error|write_error|changed`
 - `remount_failed`: `reason=no_device_node|unmount_failed|mount_failed|still_writable`
 - `raw_note_failed` / `obsidian_failed`: `reason=vault|write|verify`
@@ -254,7 +254,7 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | DR-07 | 8 | llama-server が在り、使うフラグがすべて `--help` に在る | fail |  |
 | DR-08 | 9 | LLM モデルが選ばれて在り SHA-256 が一致（custom は ID の SHA と一致するかだけ）、メモリが足りる（custom はメモリの目安が無いので `.ok` とし、詳細に「動作保証外のモデルです」と出す） | fail |  |
 | DR-10 | 10 | Vault: `VaultCheck` が `.available`（`.notReadable(EPERM)` は許可の案内）かつ `access(W_OK)`。**ファイルもフォルダも作らない**（NOTE-16）。「書けない」と「Vault でない」を別の文言で出す | fail |  |
-| DR-11 | 11 | 接続中のデバイスを列挙できる（snapshot の `unavailable` に `not_listable` が無い）。不可なら「システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム」を案内。**デバイス未接続なら skip** | fail |  |
+| DR-11 | 11 | 接続中のデバイスを列挙できる（snapshot の `unavailable` に `not_listable` が無い）。不可なら「システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム」を案内。**デバイス未接続なら skip**。`not_listable` が無く、再マウントでアンマウントされたまま（`mount_failed`）のデバイスがあれば、0 台でも ok にせず notice「<名前> は読み取り専用への切り替えの途中でアンマウントされたままです。取り外して、もう一度つなぎ直してください」。`not_included`（名前が設定に無い録音のボリューム）は数えない（案内は「はじめに」の⑤。F-81） | fail / notice |  |
 | DR-12 | 12 | ログイン項目の状態（`SMAppService.mainApp.status`）。`.enabled` 以外は notice | notice |  |
 | DR-15 | 13 | inbox の取り残し（`inboxLeftoverStates` の Part の inbox ファイルが残っている）。件数と合計サイズ。**自動では消さない** | notice |  |
 | DR-17 | 14 | アプリ自身の署名が有効で ad-hoc でない（Team ID を持つ）。ad-hoc なら「ビルドのたびにリムーバブルボリュームの許可が失効します」（voicedock DH-16 相当） | notice |  |
@@ -445,7 +445,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | ② | Whisper モデルを入手する | `whisperModel` | Whisper モデルが在り、VAD が有効なら VAD モデルも在る |
 | ③ | LLM を選んで入手する | `llmModel` | LLM が選ばれ、そのモデルが在る |
 | ④ | ログイン時に起動する | `loginItem` | ログイン項目が有効、または「今はしない」を選んだ（`loginItemDecided`） |
-| ⑤ | デバイスの名前を変える | `deviceName` | 完了にしない（改名の要るデバイス（`NO NAME`）が在る間だけ出す。DEV-10） |
+| ⑤ | デバイスの名前を変える | `deviceName` | 完了にしない（改名の要るデバイス（`unavailable` の `not_included` と `NO NAME`。F-81）が在る間だけ出す。DEV-10） |
 
 ## S23. ui-state.json（PLAN §8.12）
 
