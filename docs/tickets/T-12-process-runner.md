@@ -1,5 +1,7 @@
 # T-12 VDProcess: ProcessRunner（run / spawn / terminateAll）
 
+> （F-82・issue #119。2026-09-23）`ProcessResult` に `stoppedByTerminateAll: Bool`（初期化子の既定は false）を足した。実行中に `terminateAll` が SIGTERM を送った子の `run` の結果だけが真（`termination` は実際の終わり方のまま。case は増やさない）。閉じた後の拒否は従来どおり `.spawnFailed(errno: ProcessRunner.closedErrno)` で見分ける（印は偽）。テストは `Tests/VDProcessTests/ProcessRunnerStoppedTests.swift`。
+
 > （F-76・issue #116。2026-09-23）`terminateAll(grace:)` は**まず閉じる**ようにした（以後の `run` は起動せずに `.spawnFailed(errno: ECANCELED)`、`spawn` は `SpawnError.spawnFailed(errno: ECANCELED)`。開き直さない）。SIGTERM の後は全部が終われば grace を待たずに戻る（50 ms ごとに見直す。呼び手の取り消しでも待つのをやめて SIGKILL へ進む）。テストは `Tests/VDProcessTests/ProcessRunnerShutdownTests.swift`。下の本文の terminateAll の手順は記録として残す。
 
 - Phase: 2（記録の土台）

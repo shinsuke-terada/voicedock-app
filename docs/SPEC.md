@@ -117,17 +117,17 @@ RetryPolicy: `none`（再評価の契機まで待たない。FAILED なら reque
 | 12 | `DISK_SPACE_LOW` | nextPoll | ガード | 行には書かない（変換中の再確認で失敗したときだけ FAILED） |
 | 13 | `AUDIO_PROBE_FAILED` | attempts | 続行（ログのみ） | |
 | 14 | `IMPORT_FAILED` | attempts | FAILED | 変換の失敗・時間超過・slug の衝突 |
-| 15 | `NORMALIZE_VERIFY_FAILED` | attempts | FAILED | 出力の検証の失敗に加え、入力のヘッダの長さと実データの量が合わない・入力の WAV の構造を読めないとき（§8.3 手順 6。F-77）。inbox の原本は消さない |
+| 15 | `NORMALIZE_VERIFY_FAILED` | attempts | FAILED | 出力の検証の失敗に加え、入力のヘッダの長さと実データの量が合わない・入力の WAV の構造を読めないとき（§8.3 手順 6。F-77）。inbox の原本は消さない。ヘッダの長さと実データの量が合わないときは `needs_recopy = 1`（契機 4 では戻さない。F-82） |
 | 16 | `NORMALIZED_MISSING` | nextConnect | FAILED | `needs_recopy = 1` |
-| 17 | `WHISPER_EXEC_MISSING` | none | FAILED | 起動に失敗したときだけ。**実行ファイルが無いことは工程に入る前のガード**（§5.4） |
+| 17 | `WHISPER_EXEC_MISSING` | none | FAILED | 実行ファイル（か起動の指定）の問題で起動できないときだけ（ENOENT・EACCES・EPERM・ENOEXEC など。§8.4 手順 6。F-82）。**実行ファイルが無いことは工程に入る前のガード**（§5.4） |
 | 18 | `WHISPER_MODEL_MISSING` | none | — | **ガードの理由（要対応の表示）にだけ使い、行には書かない**（voicedock では設定検証のコード） |
-| 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない、起動の前に前回の生 JSON を消せない（F-76） |
+| 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない、起動の前に前回の生 JSON を消せない（F-76）、一時的な起動の失敗（EAGAIN・EMFILE・ENOMEM など。F-82）、手前処理が直した生 JSON で読める文字が minChars に届かない（無音にしない。§8.4。F-82）。アプリの終了で止めたものは書かない（F-82） |
 | 20 | `WHISPER_TIMEOUT` | attempts | FAILED | |
 | 21 | `NO_SPEECH_DETECTED` | none | SKIPPED | |
 | 22 | `OBSIDIAN_RAW_WRITE_FAILED` | attempts | Part FAILED | 99 を超えた同名ファイルも。トリガが Raw に載らない・書き直しで RAW_SAVED 以降の Part の本文が消えるときも書かずにこれ（F-75。§8.6） |
 | 23 | `OBSIDIAN_RAW_VERIFY_FAILED` | attempts | Part FAILED | |
 | 24 | `SESSION_MERGE_FAILED` | attempts | Session FAILED | チャンクが 0 個。有効な Part の transcript が読めず統合結果が空（F-74。§5.6） |
-| 25 | `LLM_UNAVAILABLE` | attempts | Session FAILED | 起動失敗（`server_start_failed`）・接続失敗・HTTP 400 以上。**モデル未選択・無い・メモリ不足はガード** |
+| 25 | `LLM_UNAVAILABLE` | attempts | Session FAILED | 起動失敗（`server_start_failed`）・接続失敗・HTTP 2xx 以外（3xx を含む。F-79）。**モデル未選択・無い・メモリ不足はガード** |
 | 26 | `LLM_FAILED` | attempts | Session FAILED | 解析結果の書き込み失敗 |
 | 27 | `LLM_INVALID_JSON` | none | Session FAILED | |
 | 28 | `OBSIDIAN_NOT_FOUND` | attempts | FAILED | ガードを通った後に Vault が消えたとき（§8.7） |

@@ -86,18 +86,24 @@ public struct LoopbackChatTransport: ChatTransport {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            // リダイレクトに従わない（F-79。3xx の応答そのものを受け取り、下で失敗にする）
+            (data, response) = try await session.data(for: request, delegate: RedirectRefusal())
         } catch let error as URLError {
             return .failure(StageFailure(.llmUnavailable, "URLError \(error.code.rawValue)"))
         } catch {
             return .failure(StageFailure(.llmUnavailable, String(describing: type(of: error))))
         }
         let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if status >= 400 || status == 0 {
+        if !Self.succeeded(status) {
             let body = TextLimit.prefix(String(decoding: data, as: UTF8.self), scalars: 200)
             return .failure(StageFailure(.llmUnavailable, "HTTP \(status): \(body)"))
         }
         return .content(Self.content(of: data))
+    }
+
+    /// 2xx だけを成功とする（F-79。3xx はリダイレクトに従わずに受け取った応答、0 は HTTP でない応答）。
+    static func succeeded(_ status: Int) -> Bool {
+        (200...299).contains(status)
     }
 
     /// factory の設定に requestTimeoutSeconds を request / resource の両方の timeout として入れたもの。
@@ -195,7 +201,21 @@ public enum LoopbackHealth {
         configuration.timeoutIntervalForResource = timeoutSeconds
         let session = URLSession(configuration: configuration)
         defer { session.finishTasksAndInvalidate() }
-        guard let (_, response) = try? await session.data(for: request) else { return nil }
+        // リダイレクトに従わない（F-79。3xx はそのステータスを返し、200 ではないので起動済みにしない）
+        guard let (_, response) = try? await session.data(for: request, delegate: RedirectRefusal()) else {
+            return nil
+        }
         return (response as? HTTPURLResponse)?.statusCode
+    }
+}
+
+/// HTTP のリダイレクトに従わない（F-79。PLAN §8.5）。既定の URLSession は 3xx の Location へ本文と Authorization を
+/// 付けたまま送り直す（外部の https でも）ので、要求ごとにこの delegate を渡し、3xx の応答そのものを受け取る。
+final class RedirectRefusal: NSObject, URLSessionTaskDelegate, Sendable {
+    func urlSession(
+        _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+        newRequest request: URLRequest
+    ) async -> URLRequest? {
+        nil
     }
 }

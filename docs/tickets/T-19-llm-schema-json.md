@@ -419,7 +419,7 @@ voicedock 実測のエラー行（`AnalysisValidatorTests` の表。すべて既
 ```swift
 public enum ChatResult: Equatable, Sendable {
     case content(String)                  // choices[0].message.content。外形が壊れていれば ""（修復へ回す）
-    case failure(StageFailure)            // LLM_UNAVAILABLE（接続失敗・HTTP 400 以上）
+    case failure(StageFailure)            // LLM_UNAVAILABLE（接続失敗・HTTP 2xx 以外。3xx を含む。F-79 で「HTTP 400 以上」から直した。T-21）
 }
 public protocol ChatTransport: Sendable {
     func complete(system: String, user: String) async -> ChatResult

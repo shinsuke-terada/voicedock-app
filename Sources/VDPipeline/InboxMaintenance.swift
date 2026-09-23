@@ -57,39 +57,45 @@ struct InboxMaintenance {
     }
 
     /// inbox の直下のディレクトリ（device_id）ごとに中を回る。symlink は辿らない。
+    /// F-82: relpath は列挙子の相対位置（`producesRelativePathURLs` の `relativePath`）から作る。列挙子は symlink を解決した
+    /// 絶対パスの URL を返す（`/var` → `/private/var`。<HOME> の途中に symlink があっても同じ）ので、要素数の差で作ると
+    /// partkey がずれ、DB に行のある `_orig.wav` を孤児として消しうる。相対位置が読めないものは数えない（消さない）。
     func walk() -> Walk {
         var result = Walk()
         let manager = FileManager.default
         guard let names = try? manager.contentsOfDirectory(atPath: layout.inbox.path(percentEncoded: false)) else {
             return result
         }
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
         for d in names {
             let deviceDir = layout.inbox.appendingPathComponent(d, isDirectory: true)
             var info = stat()
             guard lstat(deviceDir.path(percentEncoded: false), &info) == 0, (info.st_mode & S_IFMT) == S_IFDIR
             else { continue }
-            let baseCount = deviceDir.standardizedFileURL.pathComponents.count
             guard
                 let items = manager.enumerator(
-                    at: deviceDir, includingPropertiesForKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey],
-                    options: [])
+                    at: deviceDir, includingPropertiesForKeys: keys, options: [.producesRelativePathURLs])
             else { continue }
             for case let url as URL in items {
-                let values = try? url.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey])
+                let values = try? url.resourceValues(forKeys: Set(keys))
                 if values?.isSymbolicLink == true || values?.isRegularFile != true { continue }
                 let name = url.lastPathComponent
                 let scalars = Array(name.unicodeScalars)
                 if scalars.first == "." && scalars.suffix(8).elementsEqual(".partial".unicodeScalars) {
-                    result.partials.append(url)
+                    result.partials.append(url.absoluteURL)
                     continue
                 }
-                guard RecordingName.parseFile(name)?.isOrig == true else { continue }
-                let parts = Array(url.standardizedFileURL.pathComponents.dropFirst(baseCount))
-                let relpath = RelPath.join(parts)
+                guard RecordingName.parseFile(name)?.isOrig == true, let relpath = Self.relpath(url) else { continue }
                 guard let pk = try? PartKey.make(deviceID: d, relpath: relpath) else { continue }
-                result.origs[pk] = (url, Int64(values?.fileSize ?? 0))
+                result.origs[pk] = (url.absoluteURL, Int64(values?.fileSize ?? 0))
             }
         }
         return result
+    }
+
+    /// 列挙子が返した相対 URL の、device_id のディレクトリからの relpath。相対でない（基底が無い）URL は nil
+    /// （照合できないものは孤児にしない。F-82）。relpath の健全性は `PartKey.make`（`RelPath.isSafe`）が見る
+    static func relpath(_ url: URL) -> String? {
+        url.baseURL == nil ? nil : url.relativePath
     }
 }
