@@ -50,11 +50,27 @@ public struct ReaperRunner: Sendable {
     /// `voicedock-reaper --version` の stdout（ProcessResult.stdoutText のまま）。終了コード 0 でなければ nil。
     /// **署名の検証が済んだ後にだけ呼ぶ**（呼び手の責任。未検証のコードを実行しない。§8.9.3 の 5）
     public func runVersion() async -> String? {
+        switch await versionRun() {
+        case .stdout(let text): return text
+        case .notLaunched: return nil
+        }
+    }
+
+    /// `--version` の結果。ProcessRunner が閉じた後（アプリの終了の途中）で起動できなかったときは `.notLaunched`
+    /// （版を観測できなかった。版の不一致として決着させない。F-76）。それ以外は runVersion と同じ stdout（0 でなければ nil）
+    enum VersionRun: Equatable, Sendable {
+        case stdout(String?)
+        case notLaunched
+    }
+
+    /// `--version` を起動する（署名の検証が済んだ後にだけ呼ぶ）。
+    func versionRun() async -> VersionRun {
         let spec = ProcessSpec(
             executable: layout.reaperExecutable, arguments: ["--version"], environment: ProcessEnvironment.standard)
         let result = await runner.run(spec, timeout: Self.versionTimeout)
-        guard result.termination == .exited(0) else { return nil }
-        return result.stdoutText
+        if result.termination == .spawnFailed(errno: ProcessRunner.closedErrno) { return .notLaunched }
+        guard result.termination == .exited(0) else { return .stdout(nil) }
+        return .stdout(result.stdoutText)
     }
 
     /// `await runVersion() == AppVersion.string + "\n"`

@@ -72,12 +72,15 @@ private func loading(_ fake: FakeLlamaServer, invocation: Int, _ signal: HealthS
     }
 }
 
-/// 応答の遅い読み込み中の /health（起動を待ってから知らせ、2 秒置いて 503。LoopbackHealth の 5 秒より短い）。
+/// 応答の遅い /health の遅れ（LoopbackHealth の 5 秒より短く、テストの期限（stopDeadline）より十分長く）
+private let slowHealthSeconds: TimeInterval = 4
+
+/// 応答の遅い読み込み中の /health（起動を待ってから知らせ、slowHealthSeconds 置いて 503）。
 private func slowLoading(_ fake: FakeLlamaServer, invocation: Int, _ signal: HealthSignal) -> StopTestHandler {
     { _ in
         guard started(fake, invocation: invocation) else { return .failure(.timedOut) }
         signal.notify()
-        Thread.sleep(forTimeInterval: 2)
+        Thread.sleep(forTimeInterval: slowHealthSeconds)
         return .http(status: 503, body: Data())
     }
 }
@@ -162,6 +165,19 @@ struct LlamaServerSupervisorStopTests {
 
     private static let cancelled = StageFailure(.llmUnavailable, "server_start_failed: cancelled")
 
+    /// stop の後、起動中のプロセスが消えるまでの期限（/health の遅れ slowHealthSeconds より短い）
+    private static let stopDeadline: Duration = .seconds(3)
+
+    /// pid が消えるまで 20 ms ごとに最大 stopDeadline 待つ。消えれば true
+    private static func waitUntilGone(_ pid: pid_t) async throws -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: stopDeadline)
+        while !isGone(pid), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        return isGone(pid)
+    }
+
     @Test("F-76 起動の途中の stop は起動中のプロセスを直ちに止め、次の試行に進まない")
     func stopDuringStartupAbortsImmediately() async throws {
         try await Self.withRig(ports: 3) { rig in
@@ -200,14 +216,9 @@ struct LlamaServerSupervisorStopTests {
             let spawned = await rig.runner.spawned
             try #require(spawned.count == 1)
             let pid = spawned[0].pid
-            // /health の応答（2 秒後）より前に、起動中のプロセスが消える
+            // /health の応答（4 秒後）より前に、起動中のプロセスが消える
             let stopping = Task { await rig.supervisor.stop() }
-            let clock = ContinuousClock()
-            let deadline = clock.now.advanced(by: .seconds(1))
-            while !Self.isGone(pid), clock.now < deadline {
-                try await Task.sleep(for: .milliseconds(20))
-            }
-            #expect(Self.isGone(pid))
+            #expect(try await Self.waitUntilGone(pid))
             await stopping.value
             #expect(await starting.value == .failure(Self.cancelled))
             #expect(rig.fake.invocationCount() == 1)
@@ -242,18 +253,28 @@ struct LlamaServerSupervisorStopTests {
     func ensureRunningDuringStopWaitsForTheStop() async throws {
         try await Self.withRig(ports: 2) { rig in
             let signal = HealthSignal()
-            LoopbackStub.register(port: rig.ports[0], loading(rig.fake, invocation: 1, signal))
+            LoopbackStub.register(port: rig.ports[0], slowLoading(rig.fake, invocation: 1, signal))
             LoopbackStub.register(port: rig.ports[1], healthy(rig.fake, invocation: 2))
             let first = Task {
                 await rig.supervisor.ensureRunning(model: rig.model, modelID: "m-id", config: rig.config)
             }
             var requests = signal.stream.makeAsyncIterator()
             _ = await requests.next()
-            // 起動の途中に、同じ条件の 2 つ目の呼び手と停止が続けて来る
+            let launching = await rig.runner.spawned
+            try #require(launching.count == 1)
+            // 停止を始める。起動中のプロセスが消えたら、停止は確かに途中（1 回目の起動は /health の遅い応答を待っている）
+            let stopDone = Mutex(false)
+            let stopping = Task {
+                await rig.supervisor.stop()
+                stopDone.withLock { $0 = true }
+            }
+            try #require(try await Self.waitUntilGone(launching[0].pid))
+            try #require(!stopDone.withLock { $0 })
+            // 停止の途中に、同じ条件の 2 つ目の呼び手が来る
             let second = Task {
                 await rig.supervisor.ensureRunning(model: rig.model, modelID: "m-id", config: rig.config)
             }
-            await rig.supervisor.stop()
+            await stopping.value
             #expect(await first.value == .failure(Self.cancelled))
             let handle = try await second.value.get()
             #expect(handle.endpoint.port == rig.ports[1])

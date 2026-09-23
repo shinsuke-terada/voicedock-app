@@ -41,8 +41,9 @@ final class AppContext {
     let physicalMemoryBytes: UInt64
     /// Worker.run() を回しているタスク（終了で待つ）
     var workerTask: Task<Void, Never>?
-    /// 単一起動のロック（`<HOME>/state/app.lock`。F-76）。アプリが生きている間ずっと持つ（手放すと 2 つ目の起動を拒めない）
-    var instanceLock: FileLock?
+    /// 単一起動のロック（`<HOME>/state/app.lock`。F-76）。アプリが生きている間ずっと持つ（手放すと 2 つ目の起動を拒めない）。
+    /// 本番は Bootstrap が渡す。テストの組み立ては持たない（nil）
+    let instanceLock: FileLock?
 
     init(
         layout: HomeLayout, paths: AppPaths, clock: any AppClock, log: AppLog, catalog: ModelCatalog,
@@ -50,7 +51,7 @@ final class AppContext {
         diagnostics: DiagnosticsDependencies, llama: LlamaServerSupervisor, ingest: IngestService,
         worker: Worker, enabler: DeletionEnabler, models: ModelManager, downloader: ModelDownloader,
         loginItem: any LoginItemControlling,
-        uiState: UIStateStore, physicalMemoryBytes: UInt64
+        uiState: UIStateStore, physicalMemoryBytes: UInt64, instanceLock: FileLock? = nil
     ) {
         self.layout = layout
         self.paths = paths
@@ -71,6 +72,7 @@ final class AppContext {
         self.loginItem = loginItem
         self.uiState = uiState
         self.physicalMemoryBytes = physicalMemoryBytes
+        self.instanceLock = instanceLock
     }
 }
 
@@ -221,8 +223,7 @@ enum Bootstrap {
             runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
             enabler: enabler, models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
-            physicalMemoryBytes: physicalMemoryBytes)
-        ctx.instanceLock = instanceLock
+            physicalMemoryBytes: physicalMemoryBytes, instanceLock: instanceLock)
         ctx.workerTask = await startServices(
             workerStart: { await worker.start() }, workerRun: { await worker.run() },
             ingestStart: { await ingest.start() })

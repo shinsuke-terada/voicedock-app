@@ -20,10 +20,10 @@ struct ProcessRunnerShutdownTests {
         FileManager.default.fileExists(atPath: url.path(percentEncoded: false))
     }
 
-    /// stderrTail() が needle を含むまで 50 ms ごとに最大 2 秒待ち、最後に読んだ文字列を返す
+    /// stderrTail() が needle を含むまで 50 ms ごとに最大 10 秒待ち、最後に読んだ文字列を返す（CI のランナーが混んでいても待つ）
     private func waitForStderr(_ process: RunningProcess, containing needle: String) async throws -> String {
         let clock = ContinuousClock()
-        let deadline = clock.now.advanced(by: .seconds(2))
+        let deadline = clock.now.advanced(by: .seconds(10))
         var text = ""
         while clock.now < deadline {
             text = String(decoding: await process.stderrTail(), as: UTF8.self)
@@ -71,12 +71,31 @@ struct ProcessRunnerShutdownTests {
         #expect(!exists(marker))
     }
 
+    /// path が在るようになるまで 20 ms ごとに最大 10 秒待つ。在れば true
+    private func waitUntilExists(_ url: URL) async throws -> Bool {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(10))
+        while !exists(url), clock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        return exists(url)
+    }
+
     @Test("F-76 子が全部終われば grace を待たずに戻る")
     func returnsOnceAllChildrenExit() async throws {
+        let dir = try TempDirectory()
+        let ready = dir.url.appending(path: "ready")
+        // 起動したら印を作ってから sleep に置き換わる（run が子を登録し終えたことを印で知る）
+        let script = try ScriptWriter.write(": > \"$1\"\nexec /bin/sleep 30\n", name: "ready.sh", in: dir.url)
         let runner = ProcessRunner()
         let spawned = try await runner.spawn(spec("/bin/sleep", ["30"]))
-        let running = Task { await runner.run(spec("/bin/sleep", ["30"]), timeout: .seconds(60)) }
-        try await Task.sleep(for: .milliseconds(200))
+        let running = Task {
+            await runner.run(
+                spec(
+                    script.path(percentEncoded: false), [ready.path(percentEncoded: false)],
+                    environment: ProcessEnvironment.standard), timeout: .seconds(60))
+        }
+        try #require(try await waitUntilExists(ready))
         let clock = ContinuousClock()
         let elapsed = await clock.measure {
             await runner.terminateAll(grace: .seconds(20))
@@ -84,6 +103,26 @@ struct ProcessRunnerShutdownTests {
         #expect(elapsed < .seconds(5))
         #expect(await spawned.isRunning == false)
         #expect(await running.value.termination == .signaled(SIGTERM))
+    }
+
+    @Test("F-76 取り消された terminateAll は grace を待たずに直ちに SIGKILL へ進む")
+    func cancelledTerminateAllKillsImmediately() async throws {
+        let dir = try TempDirectory()
+        let script = try ScriptWriter.write(
+            "trap '' TERM; echo ready >&2; sleep 30\n", name: "ignoreterm.sh", in: dir.url)
+        let runner = ProcessRunner()
+        let process = try await runner.spawn(
+            spec(script.path(percentEncoded: false), environment: ProcessEnvironment.standard))
+        let ready = try await waitForStderr(process, containing: "ready\n")
+        try #require(ready.contains("ready\n"))
+        let clock = ContinuousClock()
+        let elapsed = await clock.measure {
+            let terminating = Task { await runner.terminateAll(grace: .seconds(30)) }
+            terminating.cancel()
+            await terminating.value
+        }
+        #expect(elapsed < .seconds(5))
+        #expect(await process.waitForExit() == .signaled(SIGKILL))
     }
 
     @Test("F-76 SIGTERM を無視する子は grace を待ってから SIGKILL")

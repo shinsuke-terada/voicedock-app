@@ -183,8 +183,9 @@ public actor LlamaServerSupervisor {
                     return .success(handle)
                 }
                 if abortStart { return await abandon(process) }
-                if await !process.isRunning {
-                    if abortStart { return await abandon(process) }
+                let running = await process.isRunning
+                if abortStart { return await abandon(process) }
+                if !running {
                     launching = nil
                     // 既に終わっているので終了の状態を得るだけ
                     let termination = await process.terminate(grace: .zero)

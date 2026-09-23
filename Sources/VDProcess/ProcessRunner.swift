@@ -12,8 +12,8 @@ public protocol ProcessRunning: Sendable {
 public actor ProcessRunner: ProcessRunning {
     public static let killGrace: Duration = .seconds(5)  // SIGTERM から SIGKILL まで（PLAN §8.2）
     static let readerDrainGrace: Duration = .seconds(2)  // 子の終了後に出力の EOF を待つ上限
-    /// terminateAll の後の run / spawn が返す errno（起動しなかった。F-76）
-    static let closedErrno: Int32 = ECANCELED
+    /// terminateAll の後の run / spawn が返す errno（起動しなかった。F-76）。呼び手が「観測できなかった」と見分けるのに使う
+    public static let closedErrno: Int32 = ECANCELED
     /// terminateAll が子の終わりを見直す間隔（全部が終われば grace を待たずに戻る。F-76）
     static let terminatePollInterval: Duration = .milliseconds(50)
 

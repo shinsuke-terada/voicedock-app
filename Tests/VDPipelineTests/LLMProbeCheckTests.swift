@@ -77,7 +77,7 @@ struct LLMProbeCheckTests {
         #expect(r.details == ["HTTP 500"])
     }
 
-    @Test("F-76 DR-09 応答の後に llama-server を止める（次の tick の whisper と重ねない。LLM-15）")
+    @Test("DR-09 応答の後に llama-server を止める（F-76。次の tick の whisper と重ねない。LLM-15）")
     func probeStopsTheServerAfterTheReply() async throws {
         let w = try await PipelineWorld.make(chat: FakeChatTransport(responses: [.content(#"{"ok": true}"#)]))
         try await w.installLLM()
@@ -87,7 +87,7 @@ struct LLMProbeCheckTests {
         #expect(await w.llm.ensureCalls.map(\.modelID) == ["test-llm"])
     }
 
-    @Test("F-76 DR-09 応答が失敗でも llama-server を止める")
+    @Test("DR-09 応答が失敗でも llama-server を止める（F-76）")
     func probeStopsTheServerAfterAFailedReply() async throws {
         let w = try await PipelineWorld.make(
             chat: FakeChatTransport(responses: [.failure(StageFailure(.llmUnavailable, "HTTP 500"))]))
@@ -97,7 +97,7 @@ struct LLMProbeCheckTests {
         #expect(await w.llm.stopCount == 1)
     }
 
-    @Test("F-76 DR-09 起動に失敗しても停止を呼ぶ（起動の途中の後始末を残さない）")
+    @Test("DR-09 起動に失敗しても停止を呼ぶ（F-76。起動の途中の後始末を残さない）")
     func probeStopsTheServerAfterAFailedStart() async throws {
         let w = try await PipelineWorld.make(llm: FakeLLMServer(failure: StageFailure(.llmUnavailable, "起動できない")))
         try await w.installLLM()
@@ -106,8 +106,8 @@ struct LLMProbeCheckTests {
         #expect(await w.llm.stopCount == 1)
     }
 
-    @Test("F-76 DR-09 ガードで止まったときは起動も停止もしない")
-    func probeGuardFailureNeitherStartsNorStops() async throws {
+    @Test("DR-09 LLM が選ばれていなければ起動も停止もしない（F-76）")
+    func probeWithoutModelNeitherStartsNorStops() async throws {
         let w = try await PipelineWorld.make { $0.llm.modelID = nil }
         let r = await LLMProbeCheck(ctx: try await w.context()).run()
         #expect(r.status == .fail)
