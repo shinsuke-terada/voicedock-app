@@ -160,15 +160,20 @@ struct PendingSettlementTests {
         try Self.expectWaited(scene, attempts: Self.backoffCount)
     }
 
-    @Test("F-74 一覧に無い SOURCE_DELETE_PENDING は not_deletable で決着させない（「手動で消した分を完了にする」の担当）")
-    func absentPendingIsNotSettled() async throws {
+    @Test("F-74 一覧に無い SOURCE_DELETE_PENDING は not_deletable で決着させない（F-78 で手順 4a が already_absent で完了させる）")
+    func absentPendingCompletesAsAlreadyAbsent() async throws {
         let scene = try Self.pendingScene()
         try Self.breakDeletability(scene, "Raw ノートの手の編集")
         try Self.elapse(scene, attempts: Self.backoffCount, seconds: Self.backoffTotal)
         await Self.evaluate(
             scene, snapshot: scene.snapshot(relpaths: [Self.otherRelpath]), streaks: UndeletableStreaks())
-        try Self.expectWaited(scene, attempts: Self.backoffCount)
+        #expect(!Self.settledLog(scene))
         #expect(try Self.settledParts(scene) == [])
+        let part = try Self.part(scene)
+        #expect(part.status == .completed)
+        #expect(part.sourceDeletedAt == nil)
+        #expect(try Self.events(scene).last?.detail == "already_absent")
+        #expect(scene.requests() == [])
     }
 
     @Test("F-74 SOURCE_DELETE_PENDING から決着した Part も要対応・状態の詳細に数え、「過去分を削除対象にする」で再評価され、原因が直れば対象になる")
