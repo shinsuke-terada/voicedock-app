@@ -54,8 +54,8 @@ struct AcceptanceFixtureLoaderTests {
         let reversed = AcceptanceFixture.longDay(nine.reversed())
         #expect(a.segments == b.segments)
         #expect(a.segments == reversed.segments)
-        #expect(a.scalarCount >= 350_000)
-        #expect(a.scalarCount < 350_000 + 200)
+        #expect(a.scalarCount >= 220_000)
+        #expect(a.scalarCount < 220_000 + 200)
         // 先頭は 9 本を id の昇順に連結したもの
         var expectedHead: [String] = []
         for id in Self.ids {
@@ -77,7 +77,7 @@ struct AcceptanceFixtureLoaderTests {
 
     @Test("長文の maxTasksWithDue は 9 本の合計 × 繰り返し回数（9 × 2 = 18）")
     func longDayCountsDues() throws {
-        // 9 本の maxTasksWithDue の合計は 1+0+1+2+3+0+0+0+2 = 9。9 本で約 201,000 スカラーなので 2 周目の途中で 350,000 に達する
+        // 9 本の maxTasksWithDue の合計は 1+0+1+2+3+0+0+0+2 = 9。9 本で約 201,000 スカラーなので 2 周目の途中で 220,000 に達する
         let long = AcceptanceFixture.longDay(try Self.nine())
         #expect(long.maxTasksWithDue == 18)
     }
