@@ -4,7 +4,7 @@
 > `DeletionEnabler.enable(confirmation:)` と完全一致の判定はそのまま残し、UI は長押しの完了で定数 `DeletionStrings.confirmationWord` を渡す（`AppModel.enableDeletion()`・`enableSkippedDeletion()` は引数を持たない。§4.5）。
 > `.notConfirmed` の文言は「赤いボタンを 3 秒長押ししてください」。「元音声の削除」は主画面の行から開く別の画面になった（T-30 §4.13）。以下の本文は F-65 に合わせて直した。
 
-> （F-72・issue #112、2026-09-23。マージ後の追記）無効化の段 5 は、`scanNow()` の後の snapshot（`latestSnapshot()`。返った generation 以上）で接続中（`devices`）の全デバイスが `DeviceWritability` で `.readOnly` と観測できなければ `remount` の失敗にする（見送り・`.writable`・`.unknown` は失敗、0 台は成功。§4 の段 5 の「nil → 失敗」はこれに読み替える。PLAN §8.9.8）。
+> （F-72・issue #112、2026-09-23。マージ後の追記）無効化の段 5 は、`scanNow()` の後の snapshot（`latestSnapshot()`。返った generation 以上）で接続中（`devices`）の全デバイスが `DeviceWritability` で `.readOnly` と観測できなければ `remount` の失敗にする（見送り・`.writable`・`.unknown` は失敗、0 台は成功。§4 の段 5 の本文はこれに合わせて直した。PLAN §8.9.8）。
 > `EnablerBench` の既定の走査は読み取り専用の snapshot を返す（再マウントが通った観測）。有効化の事前確認の「最新の診断結果」は、パネルを閉じたら捨てる（`AppModel.panelDidClose`・`diagnosticsGeneration`。PLAN §8.9.8 の 1）。テストは `DisableRemountCheckTests`・`AppModelConsentTests`。
 
 | 項目 | 値 |
@@ -303,7 +303,11 @@ private func installReaper() -> Result<Void, EnableError>
    - **`observation` は「今の観測」ではなく「これから揃える先（false）」を渡す**（F-37。段 1 が失敗して reaper.conf が `true` のままでも、CV-30 に阻まれて止められない状態を作らない）。
      段 1 が失敗したままなら片方だけ無効になるが、次の `ConfigStore.load()` が CV-30 を見て `reconcileLock1()` で reaper.conf 側を揃える
 4. **要求の取り下げ**: `let (_, f) = DeleteQueue.withdrawAllRequests(layout: layout)`。`f > 0` → `failed.append(DeletionStage.withdrawRequests)`
-5. **再マウント**: `await ingest.scanNow()` が nil → `failed.append(DeletionStage.remount)`（走査が見送られた＝読み取り専用に戻せていない）
+5. **再マウント**（F-72 で判定を観測にした）: `if await !remountedReadOnly() { failed.append(DeletionStage.remount) }`。
+   `private func remountedReadOnly() async -> Bool` は
+   `guard let generation = await ingest.scanNow(), let snapshot = await ingest.latestSnapshot(), snapshot.generation >= generation else { return false }`、
+   `return snapshot.devices.keys.allSatisfy { DeviceWritability.observe(deviceID: $0, snapshot: snapshot) == .readOnly }`
+   （走査が見送られた・走査の後の snapshot が無いか古い・読み書きできる・観測できない（`.unknown`。読み取り専用に丸めない）＝読み取り専用に戻せていない。0 台は真。`unavailable` の名前は観測が無いので見ない。§8.9.2 と同じ statfs の `MNT_RDONLY` の観測）
    - 呼ぶのは **`scanNow()` に統一する**（仕様 §8.9.8 の逐語も `ingest.scanNow()`）。かつて在った `IngestService.remountAllReadOnly()` は `_ = await scanNow()` の包みで戻り値（generation）を捨て、再マウントできたかを判定できないため、T-15 と地図から**消した**（呼び口を 2 つ持たない。§11 の提案 8）
 6. ログ: `failed.isEmpty` なら `log.info(.deletionDisabled, [])`、
    そうでなければ `log.warning(.deletionDisabled, [(.reason, .string(failed.joined(separator: ",")))])`

@@ -50,6 +50,8 @@ final class AppModel {
     var diagnostics: DiagnosticsPanelState = .idle
     /// 診断の世代（押すたび・閉じるたびに 1 増やす）。開始時と世代が違う結果は捨てる（F-72。DR-09 と同じ形）
     @ObservationIgnored var diagnosticsGeneration = 0
+    /// 最後に起動した診断（閉じた後も走り続けうる）。次の診断はこれが終わってから起動する（二重に走らせない。F-72）
+    @ObservationIgnored var diagnosticsTask: Task<[DiagnosticResult], Never>?
     /// DR-09 の実行と結果（結果は 1 件）
     var probe: DiagnosticsPanelState = .idle
     /// DR-09 の世代（押すたび・閉じるたびに 1 増やす）。開始時と世代が違う返事は捨てる

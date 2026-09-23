@@ -296,6 +296,9 @@ func executeBacklog(_ kind: BacklogKind)
 func dismissBacklog()
 ```
 - 仕事は `Task { await services.enqueue(.backlog(.preview(reply: { [weak self] result in Task { @MainActor in self?.receive(kind, result) } }))) }`（resolveAbsent は `.resolveAbsent(…)`。AppModel は Worker を直接持たず、T-32 の `AppServices.enqueue(_:)` を通す）。reply は Worker の文脈で呼ばれるので MainActor へ移してから状態を変える
+  - （F-72 で直した形）押すたびに `let generation = nextBacklogGeneration()`（`backlogGeneration += 1` して返す）で控え、reply は
+    `Task { @MainActor in guard let self, self.backlogGeneration == generation else { return }; self.receive(kind, result) }`（世代が違えば捨てる）。
+    `executeBacklog` は `guard case .preview(let current, let plan) = backlogState, current == kind` の `plan` を `BacklogAction.execute(preview: plan, reply: …)` に載せる（reply は preview と同じ形）
 - `previewBacklog` は `backlogExecuting = false`、`executeBacklog` は `backlogExecuting = true` にしてから `.working(kind)` に入れる。`dismissBacklog` は `false` に戻す
 - `receive`: `.success(plan)` → `.preview(kind, plan)`、`.success(execution)` → `.done(kind, execution)`、`.failure(f)` → `.failed(kind, f.message)`
 - 返事が来る前に `dismissBacklog()` されたら、届いた返事は捨てる（`backlogState` が `.working(kind)` のときだけ受け取る）

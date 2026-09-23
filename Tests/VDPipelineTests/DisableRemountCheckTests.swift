@@ -8,6 +8,22 @@ import VDDevice
 
 @testable import VDPipeline
 
+/// scanNow と latestSnapshot が決まった値を返す IngestPort（走査の後の snapshot が無い・古い形を作る）
+actor FixedScanIngest: IngestPort {
+    let generation: UInt64?
+    let snapshot: DeviceSnapshot?
+
+    init(generation: UInt64?, snapshot: DeviceSnapshot?) {
+        self.generation = generation
+        self.snapshot = snapshot
+    }
+
+    func latestSnapshot() -> DeviceSnapshot? { snapshot }
+    func state() -> IngestState { .idle }
+    func updates() -> AsyncStream<Void> { AsyncStream { _ in } }
+    func scanNow() async -> UInt64? { generation }
+}
+
 @Suite("DeletionEnabler（F-72 再マウントの観測）")
 struct DisableRemountCheckTests {
     static let remountFailedLine = " WARNING deletion_disabled reason=remount"
@@ -57,6 +73,30 @@ struct DisableRemountCheckTests {
                 unavailable: [:], notListableErrno: [:])
         }
         #expect(await bench.enabler.disable() == ["remount"])
+    }
+
+    /// 走査の返事と snapshot を固定した無効化（舞台の三重ロックは外れている）
+    static func disable(scanGeneration: UInt64, snapshotGeneration: UInt64?) async throws -> [String] {
+        let bench = try await EnablerBench(enabled: true)
+        let snapshot = snapshotGeneration.map { bench.scene.snapshot(generation: $0, readOnly: true) }
+        let ingest = FixedScanIngest(generation: scanGeneration, snapshot: snapshot)
+        let enabler = DeletionEnabler(
+            layout: bench.layout, paths: bench.paths, config: bench.store, verifier: bench.verifier, ingest: ingest,
+            log: bench.scene.log)
+        return await enabler.disable()
+    }
+
+    @Test(
+        "F-72 走査の後の snapshot が無い・その走査より古いなら段 remount の失敗（パラメータ化。同じ世代なら成功）",
+        arguments: [
+            (UInt64(5), UInt64?.none, ["remount"]), (UInt64(5), UInt64?.some(4), ["remount"]),
+            (UInt64(5), UInt64?.some(5), [String]()),
+        ])
+    func missingOrOlderSnapshotIsARemountFailure(
+        _ scanGeneration: UInt64, _ snapshotGeneration: UInt64?, _ expected: [String]
+    ) async throws {
+        #expect(
+            try await Self.disable(scanGeneration: scanGeneration, snapshotGeneration: snapshotGeneration) == expected)
     }
 
     @Test("F-72 デバイスが 0 台なら戻すものが無いので成功（TEST-28）")

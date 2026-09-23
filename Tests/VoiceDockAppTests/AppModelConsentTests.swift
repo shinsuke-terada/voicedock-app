@@ -17,6 +17,7 @@ struct AppModelConsentTests {
     static let shown = BacklogPlan(eligible: ["a", "c"], skipped: [BacklogSkip(partkey: "b", reason: "not_deletable")])
     static let later = BacklogPlan(eligible: ["a", "c", "d"], skipped: [])
     static let r1 = DiagnosticResult(id: "DR-01", status: .ok, label: "設定", details: ["違反はありません"])
+    static let r2 = DiagnosticResult(id: "DR-12", status: .notice, label: "ログイン項目", details: ["登録されていません"])
 
     static func makeModel(_ fake: FakeServices) -> AppModel {
         AppModel(
@@ -138,6 +139,40 @@ struct AppModelConsentTests {
         #expect(model.backlogState == .idle)
     }
 
+    /// n 件目の仕事の execute の返事の口
+    static func executeReply(_ fake: FakeServices, _ index: Int) throws
+        -> @Sendable (Result<BacklogExecution, BacklogFailure>) -> Void
+    {
+        guard case .backlog(.execute(_, let reply)) = try Self.job(fake, index) else {
+            throw ConsentTestError("過去分の execute の仕事ではない")
+        }
+        return reply
+    }
+
+    @Test("F-72 開き直して実行し直している間に、閉じる前の実行の返事が届いても捨てる（新しい実行の返事だけを受け取る）")
+    func staleExecuteReplyDuringANewExecutionIsDropped() async throws {
+        let fake = Self.fake()
+        let model = Self.makeModel(fake)
+        try await Self.previewed(fake, model)
+        model.executeBacklog(.backlog)
+        #expect(await Self.waitUntil { fake.jobs.count == 2 })
+        model.panelDidClose()
+        model.panelDidOpen()
+        model.previewBacklog(.backlog)
+        #expect(await Self.waitUntil { fake.jobs.count == 3 })
+        try Self.previewReply(fake, 2)(.success(Self.shown))
+        #expect(await Self.waitUntil { model.backlogState == .preview(.backlog, Self.shown) })
+        model.executeBacklog(.backlog)
+        #expect(await Self.waitUntil { fake.jobs.count == 4 })
+        #expect(model.backlogState == .working(.backlog))
+        try Self.executeReply(fake, 1)(.success(BacklogExecution(previewed: 2, added: 1, done: 2)))
+        await Self.settle()
+        #expect(model.backlogState == .working(.backlog))
+        let fresh = BacklogExecution(previewed: 2, added: 0, done: 1)
+        try Self.executeReply(fake, 3)(.success(fresh))
+        #expect(await Self.waitUntil { model.backlogState == .done(.backlog, fresh) })
+    }
+
     // MARK: - G2 診断
 
     @Test("F-72 パネルを閉じると診断の結果を捨てる（削除の画面に古い結果を「最新」として出さない）")
@@ -166,6 +201,27 @@ struct AppModelConsentTests {
         fake.setDiagnostics([Self.r1])
         await model.runDiagnostics()
         #expect(model.diagnostics == .done([Self.r1]))
+    }
+
+    @Test("F-72 閉じる前に始めた診断が終わるまで、開き直して押した次の診断を起動しない（2 本同時に走らせない）")
+    func diagnosticsDoNotOverlapAcrossReopen() async {
+        let fake = Self.fake()
+        fake.setDiagnostics([Self.r1], hold: true)
+        let model = Self.makeModel(fake)
+        let first = Task { await model.runDiagnostics() }
+        #expect(await Self.waitUntil { fake.diagnosticsCount == 1 })
+        model.panelDidClose()
+        model.panelDidOpen()
+        let second = Task { await model.runDiagnostics() }
+        #expect(await Self.waitUntil { model.diagnostics == .running })
+        await Self.settle()
+        #expect(fake.diagnosticsCount == 1)
+        fake.setDiagnostics([Self.r2])
+        fake.releaseDiagnostics()
+        await first.value
+        await second.value
+        #expect(fake.diagnosticsCount == 2)
+        #expect(model.diagnostics == .done([Self.r2]))
     }
 
     @Test("F-72 結果が 0 件の診断も閉じたら捨てる（TEST-28）")
