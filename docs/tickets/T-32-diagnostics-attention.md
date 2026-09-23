@@ -4,6 +4,9 @@
 > `SourcePresence`・`AttentionEvaluator.sourcePresence(_:snapshot:)`・`undeletableStillListed(_:snapshot:)`、`ReadOnlyStore.completedParts(lastDetail:)`、`StatusReport.UndeletablePart`・`undeletable` / `undeletableTotal` と状態の詳細の「消せなかった録音」の行を足した（PLAN §8.11・§8.12。決着そのものは T-38 §4.5 の手順 5a）。
 > 下の表はその分を直した。テストは T-38 §6.13 の `UndeletableSettlementTests`。
 
+> （F-72・issue #112、2026-09-23。マージ後の追記）診断の結果（`AppModel.diagnostics`）は `panelDidClose` で `.idle` に戻し、閉じた後に届いた結果も捨てる（`diagnosticsGeneration`。DR-09 の `probeGeneration` と同じ形）。「元音声の削除」の事前確認に前に開いたときの結果を「最新」として出さないため（PLAN §8.9.8 の 1）。
+> 閉じる前に始めた診断が走っている間に開き直して押されたら、その診断が終わるのを待ってから次を起動する（`diagnosticsTask` を持って直列にする。診断を同時に 2 本走らせない。前の結果は世代で捨てる）。下の §4 の `runDiagnostics()`・`panelDidClose()` の箇条はその分を直した。テストは `AppModelConsentTests`。
+
 | 項目 | 内容 |
 |---|---|
 | ID | T-32 |
@@ -799,6 +802,8 @@ s.attention = AttentionEvaluator.items(attention)
     enum DiagnosticsPanelState: Equatable { case idle, running, done([DiagnosticResult]) }
     // 書くのは AppModel+Diagnostics（別ファイルの拡張）なので private(set) にできない（T-31 の欄と同じ）
     var diagnostics: DiagnosticsPanelState = .idle
+    @ObservationIgnored var diagnosticsGeneration = 0                           // F-72。押すたび・閉じるたびに 1 増やす
+    @ObservationIgnored var diagnosticsTask: Task<[DiagnosticResult], Never>?   // F-72。最後に起動した診断（閉じた後も走り続けうる）
     var probe: DiagnosticsPanelState = .idle   // DR-09（結果は 1 件）
     var detailsExpanded = false
     var modelsHighlighted = false
@@ -811,11 +816,15 @@ s.attention = AttentionEvaluator.items(attention)
     func perform(_ action: AttentionAction)
 ```
 - `runDiagnostics()`: `.running` にして `diagnostics = .done(await services.runDiagnostics())`。**実行中は二重に押せない**
+  - （F-72 で直した手順）`guard diagnostics != .running else { return }` → `diagnostics = .running` → `diagnosticsGeneration += 1` して控える →
+    `let previous = diagnosticsTask`、`let task = Task { _ = await previous?.value; return await services.runDiagnostics() }`、`diagnosticsTask = task` →
+    `let results = await task.value` → 世代が控えと違えば捨てる（閉じた後に届いた結果）→ `diagnostics = .done(results)`。
+    前の診断（閉じる前に始めたもの）が終わるまで次を起動しない（閉じて開き直した後の押下で 2 本同時に走らせない）
 - `runLLMProbe()`: `probe = .running` → `await services.enqueue(.llmProbe(reply: { r in Task { @MainActor in self.receiveProbe(r) } }))`。
   `receiveProbe`: `guard probe == .running else { return }`（閉じた後の返事は捨てる）→ `probe = .done([r])`
 - `toggleDetails()`: `detailsExpanded.toggle()`。真にしたときだけ `statusReport` を読み直す（**閉じている間は inbox も staging も走査しない**）。偽にしたら `setStatusReport(nil)`
 - `refresh()`: `services.read` は `statusReport` を作らないので、`detailsExpanded` の間は前の `snapshot.statusReport` を持ち越す（偽なら nil）
-- `panelDidClose()`: `probe = .idle` にする（閉じた後に届いた DR-09 の返事を `receiveProbe` が捨てる）
+- `panelDidClose()`: `probe = .idle` にする（閉じた後に届いた DR-09 の返事を `receiveProbe` が捨てる）。F-72: `diagnostics = .idle`、`diagnosticsGeneration += 1`（閉じた後に届いた診断の結果を `runDiagnostics` が捨てる。T-30 §4.11 の `panelDidClose()`）
 - `perform(_:)`: `.revealConfig` → `revealConfigInFinder()`、`.reloadConfig` → `Task { await reloadConfig() }`、`.chooseVault` → `Task { await chooseVault() }`（T-31）、
   `.openSystemSettings` → `openSystemSettingsPrivacyFilesAndFolders()`（`NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_FilesAndFolders")!)`。**`URL(string:)` は PT-02 の対象外**（`URLSession` ではない）だが、`!` を使わないよう `URLComponents` で作る）、
   `.openModels` → `modelsHighlighted = true`（節を目立たせるだけ。F-65 で `show(.main)` も）、`.openDeletionFlow` → `deletionHighlighted = true`（F-65 で `show(.deletion)` も）、

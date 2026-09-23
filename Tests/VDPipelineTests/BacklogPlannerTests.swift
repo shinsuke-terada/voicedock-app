@@ -196,10 +196,11 @@ struct BacklogPlannerTests {
     func executeRequestsAndTransitions() async throws {
         let f = try Self.backlogStage()
         let replies = BacklogReplies<BacklogExecution>()
-        await f.planner.handle(.execute(reply: replies.reply), kind: .backlog)
+        await f.planner.handle(
+            .execute(preview: BacklogPlan(eligible: [f.pk], skipped: []), reply: replies.reply), kind: .backlog)
         #expect(
             replies.results == [
-                .success(BacklogExecution(plan: BacklogPlan(eligible: [f.pk], skipped: []), done: 1))
+                .success(BacklogExecution(previewed: 1, added: 0, done: 1))
             ])
         let part = try Self.part(f.scene, f.pk)
         let id = try #require(part.deleteRequestID)
@@ -224,10 +225,11 @@ struct BacklogPlannerTests {
         let scene = try Self.pendingScene()
         let f = Fixture(scene: scene, ingest: ScriptedIngest(snapshot: scene.snapshot()))
         let replies = BacklogReplies<BacklogExecution>()
-        await f.planner.handle(.execute(reply: replies.reply), kind: .backlog)
+        await f.planner.handle(
+            .execute(preview: BacklogPlan(eligible: [f.pk], skipped: []), reply: replies.reply), kind: .backlog)
         #expect(
             replies.results == [
-                .success(BacklogExecution(plan: BacklogPlan(eligible: [f.pk], skipped: []), done: 1))
+                .success(BacklogExecution(previewed: 1, added: 0, done: 1))
             ])
         let last = try #require(try Self.events(f.scene, f.pk).last)
         #expect(last.fromStatus == "SOURCE_DELETE_PENDING")
@@ -272,7 +274,8 @@ struct BacklogPlannerTests {
         let f = try Self.backlogStage()
         let deps = f.scene.deletionDependencies(ingest: f.ingest)
         let replies = BacklogReplies<BacklogExecution>()
-        await BacklogPlanner(deps: deps).handle(.execute(reply: replies.reply), kind: .backlog)
+        await BacklogPlanner(deps: deps).handle(
+            .execute(preview: BacklogPlan(eligible: [f.pk], skipped: []), reply: replies.reply), kind: .backlog)
         let id = try #require(try Self.part(f.scene, f.pk).deleteRequestID)
         try f.scene.writeResult(partkey: f.pk, requestID: id, status: .deleted, detail: DeletionScene.relpath)
         await f.ingest.setSnapshot(f.scene.snapshot(generation: 2, relpaths: []))
@@ -344,10 +347,11 @@ struct BacklogPlannerTests {
         #expect(f.scene.requests().count == 1)
         #expect(f.scene.results().count == 1)
         let replies = BacklogReplies<BacklogExecution>()
-        await f.planner.handle(.execute(reply: replies.reply), kind: .resolveAbsent)
+        await f.planner.handle(
+            .execute(preview: BacklogPlan(eligible: [f.pk], skipped: []), reply: replies.reply), kind: .resolveAbsent)
         #expect(
             replies.results == [
-                .success(BacklogExecution(plan: BacklogPlan(eligible: [f.pk], skipped: []), done: 1))
+                .success(BacklogExecution(previewed: 1, added: 0, done: 1))
             ])
         let part = try Self.part(f.scene, f.pk)
         #expect(part.status == .completed)

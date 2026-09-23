@@ -89,7 +89,7 @@ extension Worker {
     static func replyFailure(_ action: BacklogAction, _ message: String) {
         switch action {
         case .preview(let reply): reply(.failure(BacklogFailure(message: message)))
-        case .execute(let reply): reply(.failure(BacklogFailure(message: message)))
+        case .execute(_, let reply): reply(.failure(BacklogFailure(message: message)))
         }
     }
 }
