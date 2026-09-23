@@ -370,6 +370,30 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 
 `llm.contextSize`・`llm.temperature`・`llm.topP`・`llm.maxOutputTokens`・`llm.requestTimeoutSeconds` の 5 行を消す（CE テストは §5.1・§5.2）。
 
+### 5.5 `LoopbackRedirectTests.swift`（`@Suite("LoopbackRedirect", .serialized, .timeLimit(.minutes(1)))`。F-79 で追加）
+
+準備: 差し替えの応答は `LoopbackStub` と `BlockingSessionFactory`。リダイレクトに従わないことは、このファイルの private な `LoopbackHTTPServer`（127.0.0.1 の本物の HTTP/1.1 サーバ。1 接続に 1 応答して閉じ、受けた要求の行・ヘッダ・本文を記録する。止める印は poll で 50 ms ごとに見る）で確かめる。
+転送先（B）も 127.0.0.1 のサーバにし、元（A）は 3xx と `Location: http://127.0.0.1:<B>/<path>` を返す。ファクトリは `EphemeralSessionFactory().configuration()` の先頭に、ループバック以外への要求だけを引き受けて失敗させる private な `OffLoopbackBlocker`（URLProtocol）を置いたもの（TEST-12）。
+
+| 関数名 / 表示名 | 準備 | 期待 |
+|---|---|---|
+| `redirectStatusIsUnavailable(status:)` / 「F-79 3xx は LLM_UNAVAILABLE「HTTP <code>: <本文>」（差し替えの応答。パラメータ化: 301・302・303・307・308）」 | stub が status と本文 `moved` を返す | `.failure(StageFailure(.llmUnavailable, "HTTP <status>: moved"))` |
+| `onlyTwoHundredsSucceed` / 「F-79 2xx だけが成功（境界: 0・199・200・299・300・399・400）」 | `LoopbackChatTransport.succeeded` | 200・299 だけ真 |
+| `realServerSuccessIsParsed` / 「F-79 本物の HTTP でも 2xx は従来どおり content を取り出す（対照）」 | A が 200 と `{"choices":[{"message":{"content":"{}"}}]}` | `.content("{}")`、A が受けた要求 1 件で要求行が `POST /v1/chat/completions HTTP/1.1` |
+| `redirectIsNotFollowed(status:)` / 「F-79 リダイレクトに従わず、本文と API キーを転送先に送らない（本物の HTTP。パラメータ化: 302・307・308）」 | A が status・本文 `moved`、B は 200 | `.failure(… "HTTP <status>: moved")`、A が 1 件（`Authorization: Bearer kk…` を含む）、B は 0 件 |
+| `emptyRedirectBodyIsUnavailable` / 「F-79 本文の無い 3xx も失敗（「HTTP 307: 」）」（TEST-28） | A が 307・本文なし | `.failure(… "HTTP 307: ")`、B は 0 件 |
+| `healthRedirectIsNotFollowed` / 「F-79 /health の 3xx に従わず、そのステータスを返す（転送先の 200 を起動済みと見ない）」 | A が 307 で B の `/health` へ | `LoopbackHealth.check` が 307、A の要求行が `GET /health HTTP/1.1`、B は 0 件 |
+
+### 5.6 `LlamaServerHealthResponderTests.swift`（`@Suite("LlamaServerHealthResponder", .serialized, .timeLimit(.minutes(1)))`。F-79 で追加）
+
+準備は §5.3 と同じ（`FakeLlamaServer`・`BlockingSessionFactory`・`RecordingSleeper`・`FixedClock`）。runner は本物の `ProcessRunner` に委ねて spawn した子を順に `Mutex` で覚える private な `SpawnLedger`（`/health` の偽物が同期的に引く）。
+`/health` の偽物は 2 種類: `answerAfterExit(index)` は index 番目に起動した子の `waitForExit()` を待ってから 200（子の後にそのポートを取った別のプロセスの 200 の姿。最大 4 秒）、`answerAfterStart(invocation)` は偽物のその回の鍵ファイル（印）を待ってから 200。
+
+| 関数名 / 表示名 | 準備 | 期待 |
+|---|---|---|
+| `deadChildIsNotStarted` / 「F-79 /health が 200 でも子が死んでいれば起動済みにせず、次のポートで起動し直す」 | exitBeforeAttempt(2, code: 1)、p1 は `answerAfterExit(0)`、p2 は `answerAfterStart(2)` | `.success`、handle のポートが p2、起動 2 回、p1 の要求 1 件、`sleeper.recorded == []`、`llm_server_started` は 1 行で `port=<p2> elapsed_s=0.0` |
+| `deadChildrenFailWithExistingReason` / 「F-79 /health が 200 でも子が 3 回とも死んでいれば server_start_failed: exited(<n>)（鍵ファイルを消す）」 | exitImmediately(code: 3)、各ポートが `answerAfterExit(i)` | `.failure(… "server_start_failed: exited(3): fake llama-server attempt 3")`、起動 3 回、`llm_server_started` が無い、鍵ファイルが無い |
+
 ## 6. 破壊による証明
 
 | 壊し方（1 か所だけ） | 落ちるべきテスト |

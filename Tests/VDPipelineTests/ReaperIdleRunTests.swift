@@ -41,6 +41,22 @@ actor ActingReaperRunner: ProcessRunning {
     }
 }
 
+/// ScriptedIngest に委ね、state() だけを差し替える IngestPort（ScriptedIngest の state() は常に .idle）。
+actor StatefulIngest: IngestPort {
+    let inner: ScriptedIngest
+    private let current: IngestState
+
+    init(inner: ScriptedIngest, state: IngestState) {
+        self.inner = inner
+        self.current = state
+    }
+
+    func latestSnapshot() async -> DeviceSnapshot? { await inner.latestSnapshot() }
+    func state() -> IngestState { current }
+    func updates() async -> AsyncStream<Void> { await inner.updates() }
+    func scanNow() async -> UInt64? { await inner.scanNow() }
+}
+
 @Suite("ReaperIdleRun")
 struct ReaperIdleRunTests {
     static let pk = DeletionScene.partkey
@@ -201,6 +217,26 @@ struct ReaperIdleRunTests {
         #expect(ResultCollector.anyWritable(["MIC\u{00E9}"], in: snapshot) == false)
         #expect(ResultCollector.anyWritable([nfd], in: snapshot) == true)
         #expect(ResultCollector.anyWritable([], in: snapshot) == false)
+    }
+
+    @Test(
+        "F-79 走査中（reaper.lock を走査が持つ）は起動しない（パラメータ化: scanning・idle・disabled）",
+        arguments: [IngestState.scanning, .idle, .disabled])
+    func noLaunchWhileScanning(_ state: IngestState) async throws {
+        let f = try await Self.fixture()
+        let ingest = StatefulIngest(inner: f.ingest, state: state)
+        let deps = f.scene.deletionDependencies(ingest: ingest, locks: f.deps.locks)
+        let next = await ResultCollector(deps: deps).runReaperIfNeeded(reaperScanGeneration: 3)
+        if state == .scanning {
+            #expect(next == 3)
+            // --version も起動しない（readiness より先に止まる）
+            #expect(await f.runner.recorded == [])
+            #expect(!Self.logged(f.scene, "reaper_failed reason=busy"))
+        } else {
+            #expect(await Self.homeLaunches(f.runner) == 1)
+        }
+        #expect(await f.ingest.scanNowCalls == 0)
+        #expect(f.scene.requests().count == 1)
     }
 
     // MARK: - (b) 何も処理されなかった回は走査しない

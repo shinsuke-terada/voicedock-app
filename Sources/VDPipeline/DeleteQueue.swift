@@ -56,11 +56,6 @@ enum DeleteQueue {
         }
     }
 
-    /// names(in: queueDelete) が空でない
-    static func hasPendingRequests(layout: HomeLayout) -> Bool {
-        !names(in: layout.queueDelete).isEmpty
-    }
-
     /// 読める要求（ContractJSON で読めたもの）の device_id を names(in: queueDelete) の順に（重複を除かない）。
     /// 読めない要求は数えない。無ければ []（F-79。PLAN §8.9.6。reaper を起動するかの判定に使う）
     static func requestedDeviceIDs(layout: HomeLayout) -> [String] {

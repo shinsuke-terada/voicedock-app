@@ -2,6 +2,7 @@
 
 > （F-79・issue #118、2026-09-23。マージ後の追記）`runReaperIfNeeded` は、読める要求の device_id のどれかが snapshot で `.writable` のときだけ起動する（`DeleteQueue.requestedDeviceIDs`・`ResultCollector.anyWritable`。スカラー単位で照合。読めない要求は数えない。これまでは「要求が在る」と「どれかのデバイスが書き込み可能」）。
 > 起動の前後で queue/delete と queue/result の名前の並び（`DeleteQueue.listing`・`QueueListing`）が同じ（何も処理されなかった。busy を含む）なら `scanNow()` を呼ばず、reaperScanGeneration を「現在の generation + 1」にする（走査の公開が Worker をすぐに起こし、reaper が消費しない要求で空回りしたため）。
+> 走査中（`ingest.state() == .scanning`。reaper.lock を走査が持つ）は起動しない（レビューで足した。走査の通知ごとに busy を繰り返したため）。本番から使われなくなった `DeleteQueue.hasPendingRequests` は消した。
 > 何か処理されたら従来どおり。§6.6 の「要求と書き込み可能なデバイスがあれば起動し、走査の後に回収する」「走査が見送られたら…」は reaper が処理した姿（要求を消して結果を書く）で行い、「0 以外は reaper_failed…」の走査の回数は 0 にした。§6.9 の「1 tick で…reaper を起動する」の走査の回数も 0。テストは `ReaperIdleRunTests.swift`（PLAN §8.9.6）。
 
 > （F-67・issue #97、2026-09-23）走査の `lstat` が `ENOENT` 以外で失敗したら一覧は不完全（`complete = false`）になり、そのデバイスは snapshot の `devices` に載らない。以後、深さの上限の内側では一覧は完全な列挙で、F-64 の `sourceIsObservedAbsent` の「一覧は完全な列挙を保証しない」という記述は上限の外（と `maxScanDepth` を下げた場合）に限られる（PLAN §8.1・§8.9.5）。
@@ -176,13 +177,22 @@ struct QueuedResult: Sendable {
     let result: DeleteResult?
 }
 
+/// （F-79）queue/delete と queue/result の名前の並び（どちらも names(in:) の順）
+struct QueueListing: Equatable, Sendable {
+    let requests: [String]
+    let results: [String]
+}
+
 enum DeleteQueue {
     /// `.` で始まらない `*.json` の名前を UTF-8 のバイト順に。ディレクトリが読めなければ []
     static func names(in directory: URL) -> [String]
     static func requestURL(_ requestID: String, layout: HomeLayout) -> URL     // queue/delete/<id>.json
     static func resultURL(_ requestID: String, layout: HomeLayout) -> URL      // queue/result/<id>.json
     static func write(_ request: DeleteRequest, layout: HomeLayout) throws(DeleteQueueError)
-    static func hasPendingRequests(layout: HomeLayout) -> Bool                 // names(in: queueDelete) が空でない
+    /// （F-79）読める要求の device_id を names(in: queueDelete) の順に（重複を除かない。読めない要求は数えない）。無ければ []
+    static func requestedDeviceIDs(layout: HomeLayout) -> [String]
+    /// （F-79）QueueListing(requests: names(in: queueDelete), results: names(in: queueResult))。reaper の実行の前後で比べる
+    static func listing(layout: HomeLayout) -> QueueListing
     static func results(layout: HomeLayout) -> [QueuedResult]                   // names(in: queueResult) の順
     /// partkey がこの Part の要求を全部取り下げる。読めない要求は残す。消した数
     static func withdrawRequests(partkey: String, layout: HomeLayout) -> Int
@@ -454,6 +464,7 @@ return true
 requested = DeleteQueue.requestedDeviceIDs(layout)                       // 読める要求の device_id（F-79。読めない要求は数えない）
 guard !requested.isEmpty, let snapshot = await deps.ingest.latestSnapshot(),
       Self.anyWritable(requested, in: snapshot) else return reaperScanGeneration   // 要求の宛先のデバイスが .writable（F-79）
+guard await deps.ingest.state() != .scanning else return reaperScanGeneration   // 走査中は reaper.lock を走査が持つ（busy になる。F-79 のレビュー）
 guard await deps.locks.readiness(config: deps.config, useCache: false) == .configured else return reaperScanGeneration   // 起動の直前はキャッシュを使わない
 before = DeleteQueue.listing(layout)                                     // queue/delete と queue/result の名前の並び（F-79）
 switch await deps.reaper.run():
@@ -470,7 +481,7 @@ anyWritable(deviceIDs, in: snapshot) =                                   // inte
   snapshot.devices.keys.contains { key in deviceIDs.contains { DeletionPolicy.sameKey($0, key) } && DeviceWritability.observe(deviceID: key, snapshot: snapshot) == .writable }
 ```
 
-`DeleteQueue`（F-79 で足す。internal）: `requestedDeviceIDs(layout:) -> [String]`（`names(in: queueDelete)` の順に、`readSmallFile` と `ContractJSON.decodeRequest` で読めた要求の `deviceID`。重複を除かない。無ければ `[]`）、
+`DeleteQueue`（F-79 で足す。internal。`hasPendingRequests` は本番から使われなくなったので消した）: `requestedDeviceIDs(layout:) -> [String]`（`names(in: queueDelete)` の順に、`readSmallFile` と `ContractJSON.decodeRequest` で読めた要求の `deviceID`。重複を除かない。無ければ `[]`）、
 `listing(layout:) -> QueueListing`（`QueueListing(requests: names(in: queueDelete), results: names(in: queueResult))`。`struct QueueListing: Equatable, Sendable { let requests: [String]; let results: [String] }`）
 
 **`logRun(result)`**（`reaper_run exit=<n>` は起動したら常に出す。PLAN 付録 A.4）:
@@ -581,7 +592,7 @@ extension SessionSteps {
 ```
 
 tick の中の順（T-18 の枠のまま）: … processPendingParts（Raw の直後の要求）→ processReadySessions（SAVED の直後の削除段）→ **collectDeleteResults → expireDeleteRequests** →
-snapshot が新鮮なら **evaluateDeletions** → settleSkippedDeletions（T-39）→ **runReaperIfNeeded**（→ scanNow → collectDeleteResults）→ …。`pendedPartkeys` は tick ごとに新しい。
+snapshot が新鮮なら **evaluateDeletions** → settleSkippedDeletions（T-39）→ **runReaperIfNeeded**（起動した回は必ず collectDeleteResults。scanNow は何か処理されたときだけ。F-79）→ …。`pendedPartkeys` は tick ごとに新しい。
 
 ### 4.11 TestSupport
 
@@ -689,7 +700,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
 | `namesIgnoreHiddenAndOtherFiles` | . 始まりと .json 以外を無視し、バイト順に並べる | queue/delete に `.x.json`・`a.txt`・`b.json`・`A.json` | `["A.json", "b.json"]` |
-| `emptyDirectoryHasNoNames` | 空（TEST-28） | 何も無い | `[]`、`hasPendingRequests == false` |
+| `emptyDirectoryHasNoNames` | 空（TEST-28） | 何も無い | `[]`、`requestedDeviceIDs == []`（F-79 で `hasPendingRequests` を消したので置き換えた） |
 | `writeUsesContractJSON` | 要求は ContractJSON の符号化で書く（tmp を残さない） | `write(DeleteRequest(…))` | ファイルの中身 == `ContractJSON.encode` の値、`.20…json.tmp` が無い |
 | `withdrawOnlyThatPartkey` | 取り下げは同じ partkey の要求だけ | pk の要求 2 件・別の partkey 1 件・`"{"` の壊れた要求 1 件 | 戻り値 2、残りの 2 件が在る |
 | `withdrawResultsToo` | 結果も partkey で取り下げる | pk の結果 1 件・別 1 件 | 1、別が残る |
@@ -961,6 +972,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `unconsumedRequestDoesNotScan` | F-79 消費されない要求だけなら reaper の後に走査しない（パラメータ化: 終了コード 0・4 busy） | reaper の結果 `.exited(0)` / `.exited(4)`（偽物は何も処理しない） | 戻り値 2（snapshot の generation 1 + 1）、`--home` の起動 1 回、`reaper_run exit=<n>`、`scanNowCalls == 0`、要求 1 件、結果 0 件 |
 | `unchangedRunWaitsForTheNextScan` | F-79 何も処理されなかった回は DELETED を次に完了する走査まで残す（reaper の後の観測を待つ） | snapshot の generation 5（元ファイルが一覧に在る）、前の回の DELETED の結果を置く、`runReaperIfNeeded(5)` | 戻り値 6、`scanNowCalls == 0`、結果 1 件、SOURCE_DELETING・ID はそのまま（`still_in_inventory` で pend しない） |
 | `processedRunScansAndCollects` | F-79 処理されたら従来どおり走査して回収する（パラメータ化: 要求を消して結果を書いた・要求を消しただけ・結果を書いただけ） | `act` で要求を消す・DELETED の結果を書く（パラメータのとおり）、`ingest.script([.publish(generation 2、ファイル無し)])` | 戻り値 2、`actFailures == []`、`scanNowCalls == 1`。結果を書いた 2 つは COMPLETED・ID nil・結果 0 件、消しただけは SOURCE_DELETING のまま |
+| `noLaunchWhileScanning` | F-79 走査中（reaper.lock を走査が持つ）は起動しない（パラメータ化: scanning・idle・disabled） | `StatefulIngest`（このファイルの internal actor。ScriptedIngest に委ね `state()` だけを差し替える）で `state()` を返す、`runReaperIfNeeded(3)` | scanning: 戻り値 3、`runner.recorded == []`、`reaper_failed reason=busy` が無い。idle・disabled: `--home` の起動 1 回。どれも `scanNowCalls == 0`・要求 1 件 |
 | `processedRunWithSkippedScanWaits` | F-79 処理された回の走査が見送られたら「今の generation + 1」を待つ | `act` で要求を消して DELETED を書く、snapshot の generation 5（ファイル無し）、`ingest.script([.skip])` | 戻り値 6、`scanNowCalls == 1`、結果 1 件、SOURCE_DELETING のまま |
 
 ## 7. 破壊による証明
@@ -1057,11 +1069,12 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 88 | （F-78）`StatusReporter.causeText` がどの表にも無い語をそのまま返す | `unknownCauseIsShownAsUnknown`(空文字・未知の語) |
 | 89 | （F-78）`reaperRejectionsToSettle` を 4 にする | `threeRejectionsSettleWithoutDeleting`、`undeletablePartIsLeftToTheDeadline`（直した後に 4 回目の要求を書く） |
 | 90 | （F-78）要対応 `undeletableSources` の説明を F-69 の文言に戻す | T-32 の `AttentionTextsTests.titlesAndDetailsMatchTheTable` |
-| 91 | （F-79）起動の条件を「要求が在る（`hasPendingRequests`）」と「どれかのデバイスが `.writable`」に戻す（不具合の再現） | `requestedDeviceMustBeWritable`（3 つとも）、`onlyUnreadableRequestsNoLaunch` |
+| 91 | （F-79）起動の条件を「要求が在る（名前だけで見る）」と「どれかのデバイスが `.writable`」に戻す（不具合の再現） | `requestedDeviceMustBeWritable`（3 つとも）、`onlyUnreadableRequestsNoLaunch` |
 | 92 | （F-79）`anyWritable` の照合を `==`（正準等価）にする | `deviceIDsAreComparedByScalars` |
 | 93 | （F-79）名前の並びが同じでも `scanNow()` を呼ぶ（不具合の再現） | `unconsumedRequestDoesNotScan`（両方）、`unchangedRunWaitsForTheNextScan`、`nonZeroExitIsLogged`（3 つとも）、`tickRequestsDeletionAfterTheRawNote` |
 | 94 | （F-79）何も処理されなかった回に reaperScanGeneration を変えない（引数のまま返す） | `unchangedRunWaitsForTheNextScan`（前の snapshot で `still_in_inventory` に pend する）、`unconsumedRequestDoesNotScan`（両方） |
 | 95 | （F-79）何か処理された回も `scanNow()` を呼ばない（常に「何も処理されなかった」の枝へ） | `processedRunScansAndCollects`（3 つとも）、`processedRunWithSkippedScanWaits`、`launchesAndCollectsAfterTheScan`、`skippedScanWaitsForTheNextScan` |
+| 96 | （F-79 のレビュー）起動の条件の `ingest.state() != .scanning` を消す | `noLaunchWhileScanning`(scanning) |
 
 ## 8. 受け入れ条件
 

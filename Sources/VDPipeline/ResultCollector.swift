@@ -155,12 +155,15 @@ struct ResultCollector {
 
     /// snapshot が新鮮な tick だけ呼ぶ（呼び手が確かめる）。戻り値は新しい reaperScanGeneration（起動しなければ引数のまま）
     func runReaperIfNeeded(reaperScanGeneration: UInt64) async -> UInt64 {
-        // 確かめる順は 要求 → writable → readiness（安いものから。無駄に --version の子プロセスを起動しない）。
+        // 確かめる順は 要求 → writable → 走査中でない → readiness（安いものから。無駄に --version の子プロセスを起動しない）。
         // 見るのは要求の宛先のデバイス（F-79。別のデバイスが書き込み可能なだけでは、reaper はその要求を残して終わる）
         let requested = DeleteQueue.requestedDeviceIDs(layout: deps.layout)
         guard !requested.isEmpty, let snapshot = await deps.ingest.latestSnapshot(),
             Self.anyWritable(requested, in: snapshot)
         else { return reaperScanGeneration }
+        // 走査中は reaper.lock を走査が持つので、起動しても busy で終わる。走査の通知（コピー 1 本ごと・状態の変化）の
+        // たびに起動し直さない（F-79）。走査が終われば公開の通知で Worker が起き、次の tick で起動する
+        guard await deps.ingest.state() != .scanning else { return reaperScanGeneration }
         // 起動の直前はキャッシュを使わない（キャッシュの鍵に ctime が無い。§8.9.2・§8.9.6）
         guard await deps.locks.readiness(config: deps.config, useCache: false) == .configured else {
             return reaperScanGeneration
