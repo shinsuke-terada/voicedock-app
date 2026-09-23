@@ -125,6 +125,10 @@ struct LiveServices: AppServices {
                 attention.undeletableSources =
                     AttentionEvaluator.undeletableStillListed(settled, snapshot: s.device).count
             }
+            // 書き直すと本文が消えるので Raw ノートを書かずに止めた Session（F-75）。FAILED は全件（上限を付けない）
+            if let failed = try? ro.failedParts(limit: Int.max) {
+                attention.rawNoteBlocked = AttentionEvaluator.rawNoteBlockedSessions(failed.rows)
+            }
         }
         s.attention = AttentionEvaluator.items(attention)
         return s

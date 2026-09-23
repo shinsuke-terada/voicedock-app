@@ -1512,6 +1512,24 @@ for part in 載せる Part:
 本文 = escapeBody(整形(lines))
 ```
 - 見出しの時刻は**実際の segment の時刻**（NOTE-04）。本文の無い Part でも `##` 見出しは出る。Part が 1 本 RAW_SAVED に届くたびに、その日の分を全体書き直す
+- **トリガが載らない Raw を保存済みにしない**（F-75・X-38）: 書き直しを起こした Part（トリガ）が載せる Part に居なければ（transcript が読めない・`started_at` が読めない）、Raw を書かずに
+  `RAW_WRITING→FAILED`（`OBSIDIAN_RAW_WRITE_FAILED`、「文字起こしを読めません: <HOME からの相対パス>」か「開始時刻を読めません: <started_at>」、`raw_note_failed … reason=write`）。
+  判定は Vault のガードと `TRANSCRIBED→RAW_WRITING` の**後**（Vault が使えない間はガードで待つ）。載せる Part が 0 本のときも同じ（voicedock は遷移せずに偽を返し続け、ログも要対応も無いまま TRANSCRIBED で止まった）。
+  再試行（requeue。§5.4）は events の直近の FAILED の遷移元 = `RAW_WRITING` へ戻し、transcript が読めるようになっていれば書く。読めないままなら同じ失敗をもう一度記録する
+  （`OBSIDIAN_RAW_WRITE_FAILED` は `attempts` なので、FAILED になるたびに工程内リトライ（§5.4。既定 3 回・待ち 3 秒と 10 秒）をしてから FAILED に留まる。これが最初の失敗と requeue の契機ごとに起きる。tick ごとではない）。
+  文字起こしからやり直す辺（`RAW_WRITING→TRANSCRIBING`）は足さない（16 kHz は `deleteNormalizedAfterTranscribe` で消えていることがあり、辺も増やさない）
+- **書き直しで本文を消さない**（F-75・X-38）: 書き込み先（§8.8 で決めたパス）に既存のノートが在り、その `voicedock_recording_keys` に **RAW_SAVED 以降**（`rawSavedOrBeyond`。原本を消したかもしれない）の
+  Part の鍵が在るのに、これから描く内容から抜ける（その Part の transcript が壊れた・消えた・移行で失われた）なら、**書かずに**トリガを `RAW_WRITING→FAILED`（`OBSIDIAN_RAW_WRITE_FAILED`、
+  「書き直すと Raw ノートから本文が消える Part があります（<n> 本）: <最初の partkey>。<その Part が載らない理由（上の 2 つの文言）>」、`raw_note_failed … reason=write`）。
+  Raw ノートは原本を消した後に本文が残る**唯一の写し**で、書き直すと本文がどこにも無くなり、しかも RN-6（書いた鍵の包含）は合格して新しい SHA が DB に入る。判定は `OutputPathResolver.keysLostByOverwrite(_:protectedKeys:newKeys:)`（鍵はスカラー列で照合）
+  - 既存のノートが無ければ（手で消した・§8.8 の 1 で DB のパスを使わなかった）いまどおり書く（そのファイルから消える本文は無い）
+  - 既存のノートが読めなければ（`voicedock_recording_keys` が無い・配列でないものを含む）§8.8 の規則でそもそも上書きしない（` (2)` へ書き、読めないノートはそのまま残る）。
+    上書きの判定の後に読めなくなっていたら書かない（「既存の Raw ノートを読めないので書き直しません: <Vault からの相対パス>」）
+  - 鍵の集合を `Set<String>` で作らない（Swift の文字列は正準等価でまとまり、スカラー列だけが違う partkey 2 本のうち片方の喪失を見逃す）。`keysLostByOverwrite` は配列で受け、中でスカラー列の集合を作る
+  - RAW_SAVED より前の Part（原本は消えていない）の鍵は抜けてもよい（FAILED の Part 1 本で Raw 全体を止めない。SM-15）
+  - 失敗したトリガは FAILED のまま requeue のたびに同じ理由で失敗し、Raw ノートと DB の `raw_output_path` / `raw_output_sha256` は変わらない。直すには抜けた Part の transcript を戻す（バックアップなど）。
+    アプリにはノートの本文から transcript を作り直す手段は無い。自動では直らないので、この失敗だけは要対応 `rawNoteBlocked`（§8.11）で知らせ、Daily の警告行も「自動で再試行されます」ではない行にする（下の「警告行」）。
+    もう 1 つの直し方は Obsidian でその Raw ノートの名前を変えること（DB のパスのファイルが無くなるので、次の書き直しは新しいノートを書き、古い本文は名前を変えたノートにそのまま残る）
 
 **Daily ノート**（daily.py:189-252, 300-369）
 - 入力: `included` = Session の Part のうち FAILED / SKIPPED 以外（`started_at, partkey` 順）、`failed` / `skipped` = 除外 Part を状態で分けたもの、`recorded_seconds`（Session の列。**除外 Part も含む**）、
@@ -1544,6 +1562,8 @@ linksLines: 値 = [dailyNote（あれば）] + adjacent + tags のうち "[[" �
 
 **警告行**（voicedock `daily.py:300-340`、NOTE-05）:
 - FAILED（1 件以上）: `> ⚠ この日の録音のうち {n} 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。`
+  （F-75: 書き直すと本文が消えるので Raw ノートを書かずに止めた FAILED（`ExcludedPart.rawNoteBlocked`。判定は §8.11 の `rawNoteBlocked` と同じ）は {n} に数えず、この行の次に別の行を出す:
+  `> ⚠ この日の録音のうち {n} 本は Raw ノートに書けませんでした（書き直すと、文字起こしを読めなくなった録音の本文が Raw ノートから消えるため）。自動では直りません。VoiceDock の要対応を確かめてください。`。自動では直らないので「再試行されます」と書かない。どちらも 0 本なら行を出さない。その Part は従来どおり `voicedock_failed_parts` に載る）
 - SKIPPED（1 件以上）: `> {mark}この日の録音のうち {n} 本を除外しました（{理由}）。自動では再試行されません。{action}`
   - `actionable` = SKIPPED のどれかの error_code が `benignSkipReasons`（無音・重複）に無い（nil も actionable）。真なら `mark = "⚠ "`（U+26A0 と半角空白）、`action = "デバイスから採り直してください。"`、偽なら両方空
   - 理由: SKIPPED の error_code（nil は空文字）の**重複を除いた集合**を ErrorCode の宣言順で並べる（未知・空は末尾。同じ順位はコード文字列の昇順。voicedock は set の順で非決定だった）→
@@ -1614,6 +1634,7 @@ linksLines: 値 = [dailyNote（あれば）] + adjacent + tags のうち "[[" �
   期待する鍵 = `RawNoteMembership.isMember(status:transcriptReadable:)` で絞った Session の Part（書き手と同じ関数: Session の Part のうち `rawNoteMembers` に在り transcript が**読める**もの）**。`raw_output_path` か `raw_output_sha256` が NULL なら偽。
   （voicedock は検証側だけ「`transcript_path` が在る」を使い、書き手と集合が食い違っていた。transcript が壊れた Part が 1 本あると RN-6 が永久に偽になる。§9.1 原則 2 に従い 1 つの関数に寄せる。壊れた Part 自身は `partTranscriptIsValid` が偽なので消えない）
 - 失敗の写し方: Raw の検証失敗 → `OBSIDIAN_RAW_VERIFY_FAILED`「落ちた規則: RN-1, RN-5」、書き込みの例外（99 超えを含む）→ `OBSIDIAN_RAW_WRITE_FAILED`「<型名>: <説明>」。
+  トリガが載らない・書き直しで RAW_SAVED 以降の Part の本文が消える（F-75。§8.6）も書く前に `OBSIDIAN_RAW_WRITE_FAILED`（reason=write。文言は §8.6）。
   Daily は `OBSIDIAN_VERIFY_FAILED` / `OBSIDIAN_WRITE_FAILED`。ログは `raw_note_failed recording_key=… error_code=… reason=<vault|write|verify>` /
   `obsidian_failed session_key=… error_code=… reason=… detail=…`
 - Raw の失敗で FAILED にするのは書き直しを起こした Part 1 件だけ（SM-15）
@@ -1626,16 +1647,24 @@ voicedock は「同じ名前のファイルがあり `voicedock_session_key` が
 アプリが上書きすると、**アプリの DB に無い Part の文字起こしが Raw ノートから消える。**一方、DB だけで所有を決めると、rename の後・DB 更新の前に落ちたとき自分のノートを他人のものと判定し、
 ` (2)` が増え続ける。そこで次の規則にする（`OutputPathResolver.resolve(folder:baseName:existing:sessionKey:ownedPartkeys:kind:)`）:
 
-1. DB の当該 Session の `raw_output_path` / `output_path` が在れば、そのパスについて「ファイルが無い」か「上書きしてよい」なら**そこへ書く**
+1. DB の当該 Session の `raw_output_path` / `output_path` が在り、**その親フォルダが（symlink を辿って）ディレクトリなら**、そのパスについて「ファイルが無い」か「上書きしてよい」なら**そこへ書く**。
+   親フォルダが無ければ 2 へ進む（F-75。folderTemplate を変えて古いフォルダを消すと、DB のパスへ書くたびに ENOENT で失敗し続けた）。書けたら成功の手順（§8.7）で DB のパスが新しいパスに替わる
 2. そうでなければ、基本名 → ` (2)` → … → ` (99)` の順に、「ファイルが無い」か「上書きしてよい」最初の候補へ書く。99 を超えたら書かない
    （Raw は `OBSIDIAN_RAW_WRITE_FAILED`、Daily は `OBSIDIAN_WRITE_FAILED`、「同名ファイルが多すぎます」）
 
-- **上書きしてよい** = UTF-8 で読め、frontmatter が YAML として読め、`voicedock_session_key` がこの Session の鍵と一致し、かつ `voicedock_recording_keys`
+- **上書きしてよい** = UTF-8 で読め、frontmatter が YAML として読め、`type` が書こうとしている種類（Raw は `voice-raw`、Daily は `voice-daily`。スカラー列で一致。F-75）で、
+  `voicedock_session_key` がこの Session の鍵と一致し、かつ `voicedock_recording_keys`
   （Daily は `voicedock_failed_parts` と `voicedock_skipped_parts` も）の全要素がアプリの DB でこの Session に属する Part の partkey であること
+  （`type` を見ないと、Raw と Daily のフォルダと基本名が大文字小文字だけ違うとき（`Voice/{yyyymmdd}` と `voice/{yyyymmdd}`。APFS では同じファイル）、session_key と鍵が一致するので Daily が Raw を置き換えた）
+- 鍵の列が配列でなければ上書きしない（F-75）: `voicedock_recording_keys` が無い・配列でない（Obsidian でプロパティの型をテキストに変えた・消した）、または Daily の
+  `voicedock_failed_parts` / `voicedock_skipped_parts` が在るのに配列でないノート。どの Part の本文が載っているか分からないので、空の鍵（`[]`）として上書きしない。
+  Daily の failed / skipped が無いだけなら空とみなす（除外 Part は本文に載らない）
+- Raw は、決めたパスに既存のノートが在るとき、書く前に §8.6 の「書き直しで本文を消さない」を確かめる（F-75。`OutputPathResolver.keysLostByOverwrite(_:protectedKeys:newKeys:)`。
+  鍵は配列で渡す。ファイルが無ければ空、在るのに読めない・`voicedock_recording_keys` が無いか配列でなければ nil）
 - 「ファイルが無い」は symlink を辿って判定する（壊れた symlink は「無い」。rename が symlink 自体を置き換える。voicedock どおり）
 - 利用者がアプリの書いたノートを編集していても、上の条件を満たせば上書きする（利用者の編集は失われる。voicedock と同じ。RK-18）
 - `OutputPathResolver.resolve(folder:baseName:existing:sessionKey:ownedPartkeys:kind:)`（`existing` = DB の出力パス、`ownedPartkeys` = アプリの DB でこの Session に属する Part の partkey）
-- voicedock が書いたノート（鍵がアプリの DB に無い）・利用者が作ったノート・読めないノートは上書きしない
+- voicedock が書いたノート（鍵がアプリの DB に無い）・利用者が作ったノート・読めないノート・種類（`type`）の違うノートは上書きしない
 
 ### 8.9 元音声の削除
 
@@ -2206,13 +2235,20 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | `lockMismatch` | CV-30 / CV-33 | — |
 | `reaperUpdateRequired` | reaper の版が違う | 有効化フローを開く |
 | `undeletableSources(n)` | 期限で消さずに完了した録音（F-69。SOURCE_DELETE_PENDING から決着したものも。F-74。reaper の拒否が続いて打ち切ったものも。F-78）のうち、最新の snapshot でデバイスが接続中で一覧にまだ在るものが 1 本以上。数え方は下記 | 詳細・診断を開く |
+| `rawNoteBlocked(n)` | 書き直すと本文が消えるので Raw ノートを書かずに FAILED にした Part（F-75。§8.6）が居る Session が 1 件以上。数え方は下記 | 詳細・診断を開く |
 
 - **`undeletableSources` の数え方**（F-69）: DB の Part のうち、COMPLETED で `source_deleted_at` が NULL、最後の遷移の detail が `not_deletable` のもの（`ReadOnlyStore.completedParts(lastDetail:)`）で、
   `AttentionEvaluator.sourcePresence` が `.listed`（最新の snapshot でデバイスが `unavailable` に無く `devices` に載り、`source_path` が空でなく一覧に在る）ものの本数（`AttentionEvaluator.undeletableStillListed`）。
   抜いている間・列挙できない・snapshot が無い・一覧に無い（手で消した）・`source_path` が無いものは要対応に出さない（状態の詳細には全部出る）。
   「過去分を削除対象にする」で消えたもの（`source_deleted_at` が入る）・再び要求したもの（COMPLETED でなくなる）は数えない。
   題「消せなかった録音 <n> 本」、説明「消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください」、ボタン「詳細・診断を開く」（`AttentionAction.openDetails`）
-- **要対応にしないもの**: FAILED の Part / Session（次の接続で必ず再評価される。状態の詳細に件数と「次の接続で再試行」を出す「注意」）、ログイン項目（「はじめに」で選んだ後は出さない）
+- **`rawNoteBlocked` の数え方**（F-75）: DB の FAILED の Part の全件（`ReadOnlyStore.failedParts(limit: Int.max)`）のうち、error_code が `OBSIDIAN_RAW_WRITE_FAILED` で error_message が
+  「書き直すと Raw ノートから本文が消える Part があります」で始まる（§8.6 の文言。スカラー列の前方一致）もの（`PartSteps.isRawNoteBlocked`）の、session_key の数（スカラー列で重複を除く。
+  `AttentionEvaluator.rawNoteBlockedSessions`）。1 Session = 1 Raw ノートなので「件」で数える。新しい列・detail の語は足さない（既存の列だけで判定する）。
+  transcript を戻すか Raw ノートの名前を変えて再試行（requeue）し RAW_SAVED になったもの・再試行で RAW_WRITING に戻っている間・ほかの FAILED（一時的な失敗、トリガが載らない失敗）は数えない。
+  題「書き直せない Raw ノート <n> 件」、説明「文字起こしを読めなくなった録音があり、Raw ノートを書き直すとその本文が消えるので、書き直さずに止めています（その後の録音はまだ Raw ノートに載っていません）。文字起こしのファイルをバックアップから戻すか、Obsidian でその Raw ノートの名前を変えてから（新しい Raw ノートが書かれ、古い本文は名前を変えたノートにそのまま残ります）、「詳細・診断」の「再試行」を押してください」、ボタン「詳細・診断を開く」（`AttentionAction.openDetails`。「再試行」は詳細・診断の画面に在る）
+- **要対応にしないもの**: FAILED の Part / Session（次の接続で必ず再評価される。状態の詳細に件数と「次の接続で再試行」を出す「注意」）、ログイン項目（「はじめに」で選んだ後は出さない）。
+  例外は F-75 の `rawNoteBlocked`（再評価しても利用者が直すまで同じ失敗を繰り返す）
 
 ### 8.12 UI（D-7: メニューバーのアイコン → 設定パネル。これ以外の画面を作らない。パネルの中の画面の切り替えは可。F-65）
 
@@ -2957,7 +2993,7 @@ RetryPolicy: `none`（再評価の契機まで待たない。FAILED なら reque
 | 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない |
 | 20 | `WHISPER_TIMEOUT` | attempts | FAILED | |
 | 21 | `NO_SPEECH_DETECTED` | none | SKIPPED | |
-| 22 | `OBSIDIAN_RAW_WRITE_FAILED` | attempts | Part FAILED | 99 を超えた同名ファイルも |
+| 22 | `OBSIDIAN_RAW_WRITE_FAILED` | attempts | Part FAILED | 99 を超えた同名ファイルも。トリガが Raw に載らない・書き直しで RAW_SAVED 以降の Part の本文が消えるときも書かずにこれ（F-75。§8.6） |
 | 23 | `OBSIDIAN_RAW_VERIFY_FAILED` | attempts | Part FAILED | |
 | 24 | `SESSION_MERGE_FAILED` | attempts | Session FAILED | チャンクが 0 個。有効な Part の transcript が読めず統合結果が空（F-74。§5.6） |
 | 25 | `LLM_UNAVAILABLE` | attempts | Session FAILED | 起動失敗（`server_start_failed`）・接続失敗・HTTP 400 以上。**モデル未選択・無い・メモリ不足はガード** |
@@ -3270,7 +3306,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | X-08 | request_id の文字種を見ない | RV-02 | 穴の修正 |
 | X-09 | realpath で封じ込め | openat 連鎖 | TOCTOU を消す |
 | X-10 | ロック 2-A = reaper が配置されない | reaper は同梱、`bin/` へ複製したときだけ実行可能＋自己位置確認 | 利用者の決定（D-5） |
-| X-11 | 既存ノートは session_key が一致すれば上書き | session_key が一致し、鍵がすべてアプリの DB のこの Session の Part であるときだけ上書き、それ以外は (2)（§8.8） | 乗り換え時の文字起こし消失を防ぐ |
+| X-11 | 既存ノートは session_key が一致すれば上書き | `type` が同じ種類で（F-75）、session_key が一致し、鍵がすべてアプリの DB のこの Session の Part であるときだけ上書き、それ以外は (2)（§8.8） | 乗り換え時の文字起こし消失を防ぐ。Daily が Raw を置き換えない |
 | X-12 | 修復プロンプトにスキーマが無い | 末尾に `{schema_block}` | 修復の成功率 |
 | X-13 | ANALYZED / WRITING のセッションに Part が増えても古い解析のまま書く | 指紋を比べて `ANALYZED→ANALYZING` / `WRITING→ANALYZING` | 潜在バグの修正 |
 | X-14 | 復旧時に Vault の tmp を消さない | 名前が完全一致するものを消す | 潜在バグの修正 |
@@ -3297,6 +3333,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | X-35 | ログの値の引用は Python の `$`（末尾の改行を許す） | 全体一致で判定し、末尾に改行があれば引用する | 1 行 1 イベントを守る |
 | X-36 | 解析を再利用するとき `analysis_path` を書かない | 再利用でも書く | 書いた後・DB 更新の前に落ちた Session が ANALYZED で永久に止まる（潜在バグの修正） |
 | X-37 | 日付が過去の OPEN を `stale_day` で閉じる（0:00 の自動要約） | 閉じる契機は無通信の `idle` とパネルの今すぐ要約（`summarize_now`）だけ | 利用者の決定（2026-09-23。F-66） |
+| X-38 | Raw の書き直しで transcript が読めない Part を黙って外す（原本を消した Part の本文もノートから消える）。トリガが載っていなくても RAW_SAVED にし、載せる Part が無ければ遷移せずに偽を返し続ける（pipeline.py:467-547, 592-623） | トリガが載らなければ `RAW_WRITING→FAILED`。書き直しで RAW_SAVED 以降の Part の鍵が既存のノートから抜けるなら書かずにトリガを FAILED（どちらも `OBSIDIAN_RAW_WRITE_FAILED`。§8.6） | Raw ノートは原本を消した後に本文が残る唯一の写しで、削除の根拠でもある（F-75） |
 
 **意図して変えないもの**（voicedock の実装どおりにする。SPEC の記述と違っても）: frontmatter の文字列を常に引用、Timeline の区切り（Map-Reduce はチャンク単位）、
 Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を確かめない、`recorded` は除外 Part を含む、重複除去は Reduce 経路だけ、
@@ -3403,4 +3440,5 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-71 | 誤 | §5.7・§6.4・§8.1・§8.4・§8.6・§8.9.1 | （2026-09-23。issue #120。全体コードレビューのテーマ 1「トラップの一掃」）CR-16 に反して、条件がそろうとアプリが落ち、設定やファイルが残る限り再起動しても落ち続ける箇所があった（消す側に倒れるものは無い）→ (1) 設定の検証そのもの: CV-10 の `chunkOverlapChars * 2` と CV-51 の和を上限の検査より前に無条件で計算していた（`"maxCharsPerRequest": 9223372036854775807` で `config.load()` が落ちる）→ 桁あふれを報告する形で計算し、あふれたらその CV の違反にする。(2) 上限の無い設定キーを使う側の × 1000・加算・`Task.sleep` があふれる → 秒のキー（`session.blockGapSeconds`・`idleCloseSeconds`、`device.snapshotMaxAgeSeconds`・`stabilityIntervalSeconds`・`scanIntervalSeconds`、`cleanup.deleteEvaluationBackoffSeconds` の各要素・`deleteResultTimeoutSeconds`、`retry.backoffSeconds` の各要素、`transcription.maxTimeoutSeconds`（`minTimeoutSeconds` は `<= maxTimeoutSeconds` の鎖で収まる）、`llm.maxSecondsPerRequest`、`audio.minTimeoutSeconds`、`obsidian.raw.timestampIntervalSeconds`）は 31,536,000（365 日）以下、`audio.hashChunkBytes` は 67,108,864（64 MiB）以下、`llm.maxCharsPerRequest`・`chunkOverlapChars`・`maxOutputTokens`・`contextSize` は 1,000,000,000 以下を既存の CV（08・46・49・50・52・53・55・56・57・58・59）に足した。文言は `<上限> 以下であること（<値>）`。1 キーに 1 件（下限の違反と CV-46・CV-55 の大小関係の違反が先で、そのときは同じキーの上限を出さない）。既定値はすべて内側。使う側の算術は変えない。(3) CV-11・CV-19 が書記素単位で分割・探索していた（`"../́x"` が CV-11 を通り、`"## A\r\nB"` が CV-19 を通る）→ Unicode スカラー単位（§5.7。Python と同じ）。これにより `"#́ Summary"` は、旧実装では違反（先頭の書記素が `#` でない）だったが、今は通る（Python の `startswith("#")` と同じにする意図的な変更）。(4) frontmatter の読み取りの `Yams.load` は 60 進の int（`1:0:0:0:0:0:0:0:0:0:0`）の構築で桁あふれして落ち、削除条件の再検証で tick ごとに落ちる → `Yams.compose` の Node から `Yams.load` と同じ型の値を作る（int は自前で読み、作れなければ元の文字列。入れ子は中を読まない）。str 以外の鍵は読まない: 最上位の鍵にマージの鍵（`<<`）か str の scalar でない鍵（`yes`・数・null・複合鍵）があれば全体を nil にする（鍵を黙って落とすと `mayOverwrite` の「載っている鍵 ⊆ 所有する鍵」が緩むため。旧実装は鍵をすべて文字列化し、マージを展開し、複合鍵では強制アンラップで落ちていた。新しい実装は複合鍵でも落ちない）。`recordingKeys(ofFile:)` は読む前に lstat で通常ファイルかつ 64 MiB 以下を確かめる（FIFO で止まっていた）。(5) transcript の NaN・Infinity・巨大な秒で `fromWhisperSeconds` と `Instant` の加算が落ちる → 秒として読むのは有限で絶対値 1,000,000,000 秒以下だけ（`SecondsToMillis.isReadable`。正規化 transcript の読み戻しは「読めない」、whisper の生 JSON はその区間を飛ばす）。`fromWhisperSeconds` は範囲外でも落ちない（NaN は 0、±10 億秒に寄せる）。`Instant` の加算・差・`init(date:)` は、数学的な結果が Int64 に収まればその値、収まらなければ端に寄せる（`adding(seconds:)` は × 1000 も含めて 128 ビットで厳密に計算する）。(6) `statfs` の `f_bavail` が 2^63 以上で `Int64(_:)` が落ちる → `Int64(exactly:)` で nil（観測できない）。(7) 安定性判定の `Dictionary(uniqueKeysWithValues:)` が正準等価な relpath（NFC と NFD）・FAT の重複項目で落ちる → 候補を先頭で String の等価で重複排除し、先に並んだものを残す（返す鍵はその relpath のスカラー列。重ねたまま数えると 1 回の待ちで 2 回数え、書き込みが再開したファイルを安定と判定する）。新しい設定キー・遷移の辺・ログのイベントは増やさない |
 | F-72 | 誤 | §8.9.5・§8.9.8・§8.9.9・付録 A.4 | （2026-09-23。issue #112。全体コードレビューのテーマ 2（アプリ側）: 削除の同意）利用者が確かめた範囲・意図を超えて削除要求が書かれる経路があった（どれも各件は `canDeleteSource` と三重ロックを通るので、消してはいけない録音を消す経路ではない）→ (1) 後追いの実行は計画を立て直して全部を実行していたので、プレビューの後に条件を満たした Part（別のトランスミッターの過去分など）も書かれ、結果の「飛ばしました」は立て直した計画との差なので増えた分は知らされず、`panelDidClose` が `backlogState` を戻さないので古いプレビューと実行ボタンが残り続けた → 実行の仕事にプレビューの計画を載せ（`BacklogAction.execute(preview:reply:)`）、**プレビューの対象 ∩ 立て直した計画の対象**だけを実行する（照合はスカラー列。増えた対象は書かない・完了にしない。見せた対象は同意の内なので全体は見送らない）。結果は `BacklogExecution { previewed; added; done }` で、飛ばした数はプレビューの件数との差、増えた数は「実行していません（もう一度押してプレビューから確かめてください）」と添える。閉じたらプレビュー・結果を捨て、閉じる前に頼んだ返事は世代で捨てる。(2) 有効化の事前確認の「最新の診断結果」に、起動後に 1 回実行した結果が時刻なしで出続け、再実行のボタンも消えた → 診断の結果はパネルを閉じたら捨て、閉じた後に届いた結果も世代で捨てる（時刻を添えて古さを判定する案は、閾値の定数が要るので採らない）。閉じる前に始めた診断が終わるまで次の診断は起動しない（2 本同時に走らせない）。(3) 削除段・根拠 B・後追いは readiness を先頭で 1 回だけ評価するので、無効化の段 4（要求の取り下げ）の後に書かれた要求が残り、1 時間以内に再び有効化すると再評価なしで実行されえた → 要求を書く唯一の場所 `RequestWriter` が ② の前後で reaper.conf を読み直し、② の前に `DELETE_SOURCE_AUDIO=true` で読めなければ書かない（② の失敗と同じく ID を外して飛ばす。`source_delete_skipped recording_key=… reason=lock_mismatch`）。② の後に読めなければ書いた要求を自分で取り下げて ID を外す（段 1 の後なら自分で、段 1 の前なら段 4 が取り下げるので、どちらでも要求は残らない。取り下げに失敗したら ID を外さず ③ に進まない。期限切れが片付ける）。(4) 無効化の再マウントは `scanNow()` が見送られたかだけで判定し、読み書きできるままでも成功と出た → 走査の後の snapshot で接続中の全デバイスが `.readOnly` と観測できなければ段 `remount` の失敗（`.unknown` も失敗、0 台は成功）。(5) 「手動で消した分」の後始末は既に「遷移 → 取り下げ → ID を外す」の順（§8.9.9 のとおり）で、遷移に失敗したら要求と ID を残すことをテストで固定した（ID の無い PENDING の 2 遷移の間の失敗は次の起動の復旧が戻す）。辺・設定キー・ログのイベントは増やさない（`lock_mismatch` を `recording_key` で出す場面を足しただけ） |
 | F-74 | 誤 | §5.6・§8.9.2・§8.9.5・§8.9.6・§8.9.7・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.3・付録 A.4 | （2026-09-23。issue #114。全体コードレビューのテーマ 3「永久に終わらない状態」。F-69 の続き。CR-15）(1) F-69 の決着は RAW_SAVED にしか効かず、reaper の拒否（`size_mismatch` など）・期限切れ・`still_in_inventory` で `delete_request_id` の無い SOURCE_DELETE_PENDING になり、`canDeleteSource` が偽のまま元ファイルが一覧に在る Part があると、削除段が `delete_attempts += 1` を繰り返すだけで Session が完了せず、要対応の「過去分を削除対象にする」の案内も（後追いは COMPLETED の Session しか見ないので）効かなかった → `requestDeletions` の 5a を ID の無い SOURCE_DELETE_PENDING にも広げ、F-69 と同じ条件（期限・観測できた失敗・同じ接続で 2 回連続）で、**辺を足さず**既存の `SOURCE_DELETE_PENDING→SOURCE_DELETING→COMPLETED`（「手動で消した分を完了にする」と同じ 2 遷移。両方の detail `not_deletable`、2 つ目で Part の `error_message` に原因の語）で消さずに決着する。`source_deleted_at` は入れない。最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細の数え方は F-69 のまま、Session は完了し、後追いで再評価できる。PENDING のまま印を付けて Session だけ完了させる案は、数え方に入らず PENDING の件数が残るので採らない。一覧に無い PENDING は従来どおり「手動で消した分を完了にする」の担当（`failureIsObserved` の d で待つ）。(2) `undeletableCause` は調べ直して全部の検査が通っても `pre_identity` を返して決着させていた → nil を返し、決着を見送って連続を切る（原因を偽って決着させない）。(3) `TickContext.undeletableStreaks` と `DeletionDependencies.init(streaks:)` の既定値 `UndeletableStreaks()` を外した（渡し忘れると黙って連続が数えられず F-69 が効かない。Worker が持つ 1 つを渡すことをコンパイラに守らせる）。(4) 期限切れは同じ request_id の結果ファイルが在るだけで飛ばしていたので、reaper が読めない要求に `partkey: ""` で書いた結果（回収も取り下げも partkey で照合する）が在ると SOURCE_DELETING から抜けなかった → 飛ばすのは結果が読めて request_id と partkey がその Part と一致するときだけ。pend の後、その request_id で partkey の合わない結果は回収できないので捨てる（読めない結果は残す）。(5) 期限切れは取り下げの成否を見ずに pend して ID を外していた → その Part の要求が queue/delete に残れば（取り下げの失敗・読めない `<request_id>.json`）pend せず ID を持ったまま次の tick でやり直す（残った要求を reaper が再評価なしで実行し、結果が ID 不一致で捨てられて `source_deleted_at` が入らないのを防ぐ）。(6) 後追いの ①② の後・③ の前に止まると ID と要求を持つ COMPLETED が残り、回収の対象に COMPLETED が無いので DELETED が捨てられていた → 回収の対象に ID を持つ COMPLETED を足し、消えたと観測できたら遷移させずに `source_deleted_at` を書いて ID を外す（拒否・`still_in_inventory` は ID を外すだけで COMPLETED のまま）。(7) DELETED の後始末が「`source_deleted_at` と ID を書く → 遷移」の順で、遷移が失敗すると ID の無い SOURCE_DELETING が再起動まで残った → 遷移が先、`source_deleted_at` と ID を外すのは最後（失敗したら ID と結果が残り次の tick でやり直す）。(8) 統合で有効な Part の transcript が読めず segment が 0 件だと「本当に空」と区別されずに `session_empty` で COMPLETED（Daily が作られない）、MERGED 以降では毎 tick 黙って止まった → READY / MERGING では `MERGING→FAILED`、MERGED 以降では `→ANALYZING`（MERGED から通常の辺、ANALYZED / WRITING から ★ `stale_analysis`）→ `ANALYZING→FAILED` で、どちらも `SESSION_MERGE_FAILED`「文字起こしを読めない Part があります: <partkey>, …」と `session_merge_failed`（一部だけ読めないときは従来どおり飛ばして統合）。設定キー・遷移の辺・ログのイベントは増やさない（A.2 の注記、A.3 の `SESSION_MERGE_FAILED` と A.4 の `session_merge_failed` の説明を足した） |
+| F-75 | 誤 | §8.6・§8.7・§8.8・§8.11・付録 A.3・付録 D | （2026-09-23。issue #115。全体コードレビューのテーマ 4「Raw ノートの本文を守る」）Raw ノートは原本を消した後に本文が残る唯一の写しなのに、本文が黙って消える・状態が嘘になる経路があった → (1) Raw は Part が保存されるたびに全体を書き直し、transcript が読めない Part を黙って外していたので、COMPLETED（原本は削除済み）の Part の transcript が壊れる・消える・移行で失われた後に同じ Session の別の Part で書き直すと、その本文が Vault から消え、RN-6（書いた鍵の包含）は合格して新しい SHA が DB に入った → 書き込み先の既存のノートの `voicedock_recording_keys` に RAW_SAVED 以降の Part の鍵が在るのに新しい内容から抜けるなら、**書かずに**トリガを `RAW_WRITING→FAILED`（`OBSIDIAN_RAW_WRITE_FAILED`、「書き直すと Raw ノートから本文が消える Part があります（<n> 本）: <partkey>。<理由>」）。既存のノートが無ければいまどおり書き、読めないノートは従来どおり上書きしない（` (2)` へ）。判定は `OutputPathResolver.keysLostByOverwrite(_:protectedKeys:newKeys:)`（鍵は配列で渡し中でスカラー列の集合を作る。在るのに読めない・鍵の列が配列でなければ nil で書かない）。(2) トリガが載らなくても（transcript が読めない）ほかの Part が載れば RAW_SAVED にし（状態が嘘）、トリガだけなら毎 tick 黙って偽を返して TRANSCRIBED のまま止まった（ログも要対応も無い。voicedock からの持ち越し。X-38）→ Vault のガードと `TRANSCRIBED→RAW_WRITING` の後で `RAW_WRITING→FAILED`（`OBSIDIAN_RAW_WRITE_FAILED`、「文字起こしを読めません: <HOME からの相対パス>」か「開始時刻を読めません: <started_at>」）。requeue は `RAW_WRITING` へ戻し、transcript が戻っていれば書く（文字起こしからやり直す辺は足さない）。(3) 上書きの判定が frontmatter の `type` を見なかったので、Raw と Daily のフォルダが大文字小文字だけ違うと（APFS では同じファイル）Daily が Raw を置き換えた → 「上書きしてよい」に `type` の一致（`voice-raw` / `voice-daily`）と、鍵の列が配列であること（`voicedock_recording_keys` が無い・配列でない、Daily の failed / skipped が在るのに配列でないノートは上書きしない）を足した（X-11）。(4) DB の出力パスは「ファイルが無い」だけで使っていたので、親フォルダが無い（folderTemplate を変えて古いフォルダを消した）とその Session の書き込みが ENOENT で失敗し続けた → 親フォルダが無ければ基本名の探索へ進み、書けたら DB のパスが替わる。(1) の失敗は自動では直らない（transcript を戻すか、Obsidian で Raw ノートの名前を変えて再試行する）ので、FAILED を要対応にしない規則の例外として要対応 `rawNoteBlocked(n)`（「書き直せない Raw ノート <n> 件」、ボタン「詳細・診断を開く」。数えるのは FAILED・`OBSIDIAN_RAW_WRITE_FAILED`・error_message が §8.6 の文言で始まる Part の Session の数）を足し、Daily の警告行は「自動で再試行されます」の行に数えずに別の行（「… 本は Raw ノートに書けませんでした（…）。自動では直りません。VoiceDock の要対応を確かめてください。」）にした（§8.6・§8.11）。遷移の辺・ログのイベントと reason の語・エラーコード・設定キーは増やさない（`OBSIDIAN_RAW_WRITE_FAILED` と `raw_note_failed … reason=write` を使う） |
 | F-78 | 誤 | §8.9.2・§8.9.5・§8.9.6・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.4 | （2026-09-23。issue #124。F-74（#114）のレビューで残った 2 点。利用者の決定「今回の流れで直す」。CR-15。どちらも消さない側に倒れていたが、Part や Session が完了しないまま残った）(1) 手で原本を消した後などで、ID の無い SOURCE_DELETE_PENDING の元ファイルがデバイスの一覧に無くなると、利用者が「手動で消した分を完了にする」を押すまで Part も Session も完了せず、要対応にも出なかった → `requestDeletions` の手順 4a（F-64）を ID の無い SOURCE_DELETE_PENDING にも広げ、同じ観測の条件（新鮮な snapshot・デバイスが接続中で列挙でき `unavailable` に無い・snapshot が PENDING にした時刻（updated_at）より確かに後に完了・relpath が一覧に無い）を満たしたら、**辺を足さず**「手動で消した分を完了にする」と同じ 2 遷移 `SOURCE_DELETE_PENDING→SOURCE_DELETING`（detail `resolve_absent`）→`SOURCE_DELETING→COMPLETED`（detail `already_absent`）、この Part の要求・結果の取り下げ、ID を外す、`source_delete_skipped recording_key=… reason=already_absent` で自動で完了させる。`source_deleted_at` は入れない（DELETED を観測していない）。未接続・列挙できない・snapshot が古い・`source_path` が無いときは完了させない。これで F-74 の `failureIsObserved` の (d) は RAW_SAVED にも PENDING にも防御になった。「手動で消した分を完了にする」は ID を持つ PENDING・COMPLETED の Session の PENDING のために残す。(2) アプリの `canDeleteSource` は真なのに reaper の独立した検証（RV-03〜13）だけが偽になる Part は、評価のたびに要求 → 拒否（回収の pend で ID の無い SOURCE_DELETE_PENDING）→ 再要求を繰り返し、Session は完了しなかった（`canDeleteSource` が真なので F-69 の 5a の対象にならず、要求を書いた評価では `delete_attempts` も増えない）→ 手順 5b: `canDeleteSource` が真の ID の無い SOURCE_DELETE_PENDING について、DB の events を新しい順に見て回収の pend（`SOURCE_DELETING→SOURCE_DELETE_PENDING`、`error_code` が `SOURCE_IDENTITY_MISMATCH`）を数え（間の要求の遷移 `RAW_SAVED` / `SOURCE_DELETE_PENDING` →`SOURCE_DELETING` で detail の無いものは読み飛ばし、それ以外の遷移で止める。`reaperRejectionStreak`）、定数 `reaperRejectionsToSettle = 3` 回続いていたら要求を書かずに、5a の PENDING と同じ 2 遷移（両方 detail `not_deletable`、2 つ目で `error_message` に原因の語）と `source_delete_skipped … reason=not_deletable detail=<原因>` で消さずに決着する。原因の語は最後の拒否の reaper の理由語（付録 B.2。5a の `source_info` / `pre_identity` / `transcript` / `raw_note` はアプリの検査のどれが落ちたか、5b の理由語はアプリの検査が全部通った後に reaper の検証のどれが落ちたかで、綴りは重ならない）。数え方は DB の履歴なので再起動で 0 に戻らず、拒否でない結果（DELETED・`still_in_inventory`・`no_result`）・起動時の復旧・決着・手動で消した分・後追いの要求の遷移で数え直す。要求を書かなかった評価は数えも切りもせず、要求を残す reaper の理由（`device_absent`・`mount_readonly`）は結果が来ないので数えない。挿し直しでは数え直さない（挿し直しで変わる食い違いはアプリの事前確認が同じ `TargetIdentity` で先に偽になる）。メモリの記録（`UndeletableStreaks` のような）で数える案は、再起動で 0 に戻り Worker の配線も要るので採らない。最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細・後追いの数え方は F-69 のまま（状態の詳細は reaper の理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す）。(3) 決着した Part（5a / 5b）を後追いで要求して reaper がまた拒否すると、pend で COMPLETED の Session に ID の無い PENDING が残り、自動では評価されず「消せなかった録音」からも状態の詳細の一覧からも外れて、解決したように見えて見えなくなった → 回収で、events の最後が後追いの ③（`COMPLETED→SOURCE_DELETING`、detail 無し）でその前が detail `not_deletable` の →COMPLETED のときだけ、pend せずに既存の `SOURCE_DELETING→COMPLETED`（detail `not_deletable`、`error_message` に理由語）で決着し直して ID を外す（§8.9.6）。後追いから外す案は後追い（T-41）の判定を変え、原因を直した 5a の Part の再評価も妨げるので採らない。(4) 要対応 `undeletableSources` の説明は 5b に合わなかった（直すものが無いのに後追いを勧めていた）→ 「消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください」に直した（§8.11）。既知の残り: reaper が要求を残す理由（`device_absent`・`mount_readonly`）では結果が来ず、期限切れで連続が切れて再要求が期限ごとに続く（アプリの事前確認が先に偽になるのでまず起きない）。決着していない Part の後追いの拒否・期限切れ・復旧の後の拒否は、従来どおり COMPLETED の Session に PENDING を残す（§8.9.9）。設定キー・遷移の辺・ログのイベントは増やさない（A.2 の注記と、A.4 の `source_delete_skipped` の `detail=` に `<RV の理由語>` を足した） |
