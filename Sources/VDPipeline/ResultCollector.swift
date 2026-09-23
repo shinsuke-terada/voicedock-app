@@ -10,8 +10,9 @@ import VDStore
 struct ResultCollector {
     let deps: DeletionDependencies
 
-    /// 回収を待つ Part の状態（PLAN §8.9.6）= awaitingDeletion ∪ {SKIPPED}
-    static let collectableStatuses: Set<PartStatus> = PartStates.awaitingDeletion.union([.skipped])
+    /// 回収を待つ Part の状態（PLAN §8.9.6）= awaitingDeletion ∪ {SKIPPED, COMPLETED}。
+    /// COMPLETED は「過去分」の ①② の後・③ の前に止まり、ID と要求を持ったまま残った Part（F-74）
+    static let collectableStatuses: Set<PartStatus> = PartStates.awaitingDeletion.union([.skipped, .completed])
 
     /// 毎 tick（新鮮でなくても）と reaper の後。
     func collectDeleteResults(reaperScanGeneration: UInt64) async {
@@ -51,9 +52,10 @@ struct ResultCollector {
                             DeleteQueue.discard(q.url, layout: layout)
                         }
                     } else {
+                        // 遷移が先、ID を外すのは最後（F-74）。遷移が失敗したら ID と結果が残り、次の tick に同じ結果でやり直す
+                        try advanceToCompleted(part)
                         try deps.store.updateRecording(
                             pk, [.sourceDeletedAt(deps.zone.iso(deps.clock.now())), .deleteRequestID(nil)])
-                        try advanceToCompleted(part)
                         deps.log.info(
                             .sourceDeleted, [(.recordingKey, .string(pk)), (.requestID, .string(result.requestID))])
                         DeleteQueue.discard(q.url, layout: layout)
@@ -65,7 +67,8 @@ struct ResultCollector {
         }
     }
 
-    /// SKIPPED 以外を COMPLETED まで進める（付録 A.2）。衝突は status_changed（source_deleted_at は既に書いた。結果は捨てる）
+    /// SKIPPED・COMPLETED 以外を COMPLETED まで進める（付録 A.2。COMPLETED は遷移させない。F-74）。
+    /// 衝突は status_changed を出して戻る（呼び手は source_deleted_at を書き、結果を捨てる）。ほかの例外は投げる（ID と結果が残る）
     private func advanceToCompleted(_ part: RecordingRow) throws {
         let pk = part.partkey
         do {
@@ -96,7 +99,7 @@ struct ResultCollector {
             }
             try deps.store.updateRecording(pk, [.deleteRequestID(nil)])
         } else {
-            // SKIPPED・RAW_SAVED・SOURCE_DELETE_PENDING は状態を動かさない（SM-20）
+            // SKIPPED・RAW_SAVED・SOURCE_DELETE_PENDING・COMPLETED は状態を動かさない（SM-20・F-74）
             guard try deps.store.updateRecordingIfStatus(pk, status: part.status, [.deleteRequestID(nil)]) else {
                 deps.logStatusChanged(recordingKey: pk)
                 return false

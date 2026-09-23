@@ -60,8 +60,9 @@ struct DeletionRequester {
                     DeletionPolicy.canDeleteSource(
                         DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx)
                 else {
-                    // 5a. 一覧に在るのに消せないまま期限を過ぎた RAW_SAVED は、消さずに完了へ（F-69）
-                    if part.status == .rawSaved {
+                    // 5a. 一覧に在るのに消せないまま期限を過ぎた RAW_SAVED と、ID の無い SOURCE_DELETE_PENDING は、
+                    //     消さずに完了へ（F-69・F-74。PENDING で ID を持つものは手順 3 が先に飛ばす）
+                    if Self.settleableStatuses.contains(part.status) {
                         considerSettling(part, session: session, parts: parts, snapshot: snapshot, ctx: ctx)
                     }
                     continue
@@ -99,8 +100,11 @@ struct DeletionRequester {
     /// 決着に要る「観測できた状態で消せなかった評価」の連続回数（F-69。一時的な失敗 1 回で決着させない）
     static let observedFailuresToSettle = 2
 
-    /// 手順 5a（F-69）: 観測できた失敗なら連続回数を数え、期限を過ぎていて 2 回以上続いていれば消さずに完了させる。
-    /// 観測できない評価は連続を切る（数え直し）
+    /// 手順 5a で決着を考える状態（F-69 の RAW_SAVED と、F-74 の ID の無い SOURCE_DELETE_PENDING）
+    static let settleableStatuses: Set<PartStatus> = [.rawSaved, .sourceDeletePending]
+
+    /// 手順 5a（F-69・F-74）: 観測できた失敗なら連続回数を数え、期限を過ぎていて 2 回以上続いていれば消さずに完了させる。
+    /// 観測できない評価は連続を切る（数え直し）。決着の直前に原因を調べ直して何も見つからなければ、決着を見送り連続を切る（F-74）
     func considerSettling(
         _ part: RecordingRow, session: SessionRow, parts: [RecordingRow], snapshot: DeviceSnapshot, ctx: DeletionContext
     ) {
@@ -114,19 +118,38 @@ struct DeletionRequester {
                 part, session: session, backoff: ctx.config.cleanup.deleteEvaluationBackoffSeconds,
                 now: deps.clock.now(), zone: deps.zone)
         else { return }
-        settleAsNotDeletable(part, cause: Self.undeletableCause(part, session: session, parts: parts, ctx: ctx))
+        // 調べ直して全部の検査が通った（直前の評価の一時的な失敗か、原因の語の外の条件）。原因を偽って決着させない
+        guard let cause = Self.undeletableCause(part, session: session, parts: parts, ctx: ctx) else {
+            deps.streaks.reset(part.partkey)
+            return
+        }
+        settleAsNotDeletable(part, cause: cause)
         deps.streaks.reset(part.partkey)
     }
 
-    /// RAW_SAVED→COMPLETED（detail not_deletable。原因の語は Part の error_message に）と
-    /// source_delete_skipped recording_key=… reason=not_deletable detail=<原因>（F-69）。source_deleted_at は入れない
+    /// 消さずに完了させ（原因の語は Part の error_message に）、source_delete_skipped recording_key=… reason=not_deletable
+    /// detail=<原因> を出す（F-69・F-74）。source_deleted_at は入れない。
+    /// RAW_SAVED は RAW_SAVED→COMPLETED、SOURCE_DELETE_PENDING は辺を足さずに →SOURCE_DELETING→COMPLETED の 2 遷移
+    /// （「手動で消した分を完了にする」と同じ。detail はどちらも not_deletable）。それ以外の状態では何もしない
     func settleAsNotDeletable(_ part: RecordingRow, cause: String) {
+        let pk = part.partkey
         do {
-            try deps.store.recordPartTransition(
-                partkey: part.partkey, from: .rawSaved, to: .completed, errorMessage: cause,
-                detail: DeletionReason.notDeletable)
+            switch part.status {
+            case .rawSaved:
+                try deps.store.recordPartTransition(
+                    partkey: pk, from: .rawSaved, to: .completed, errorMessage: cause,
+                    detail: DeletionReason.notDeletable)
+            case .sourceDeletePending:
+                try deps.store.recordPartTransition(
+                    partkey: pk, from: .sourceDeletePending, to: .sourceDeleting, detail: DeletionReason.notDeletable)
+                try deps.store.recordPartTransition(
+                    partkey: pk, from: .sourceDeleting, to: .completed, errorMessage: cause,
+                    detail: DeletionReason.notDeletable)
+            default:
+                return
+            }
         } catch is TransitionConflict {
-            deps.logStatusChanged(recordingKey: part.partkey)
+            deps.logStatusChanged(recordingKey: pk)
             return
         } catch {
             deps.warn(error)
@@ -135,13 +158,14 @@ struct DeletionRequester {
         deps.log.info(
             .sourceDeleteSkipped,
             [
-                (.recordingKey, .string(part.partkey)), (.reason, .string(DeletionReason.notDeletable)),
+                (.recordingKey, .string(pk)), (.reason, .string(DeletionReason.notDeletable)),
                 (.detail, .string(cause)),
             ])
     }
 
     /// 期限（F-69 の条件 1）: backoff を使い切った（Session の delete_attempts ≥ 段の数）うえで、
-    /// Part を RAW_SAVED にしてから（updated_at）backoff の合計が過ぎた。backoff が空（CV-52 違反）・updated_at が読めなければ偽
+    /// Part を RAW_SAVED / SOURCE_DELETE_PENDING にしてから（updated_at）backoff の合計が過ぎた。
+    /// backoff が空（CV-52 違反）・updated_at が読めなければ偽
     static func deadlineHasPassed(
         _ part: RecordingRow, session: SessionRow, backoff: [Int], now: Instant, zone: ZonedTime
     ) -> Bool {
@@ -150,12 +174,14 @@ struct DeletionRequester {
         return now - updated >= Int64(backoff.reduce(0, +)) * 1000
     }
 
-    /// 観測できた状態での失敗（F-69 の条件 a・2〜4。canDeleteSource が偽の RAW_SAVED について呼ぶ）。すべて満たすときだけ真:
+    /// 観測できた状態での失敗（F-69 の条件 a・2〜4。canDeleteSource が偽の RAW_SAVED と ID の無い SOURCE_DELETE_PENDING
+    /// について呼ぶ）。すべて満たすときだけ真:
     /// a. Session の Part がすべて終端（後続の Part が処理中なら Raw ノートの照合は待てば変わる）
     /// 2. デバイスが snapshot に載り（接続中で列挙できた）、unavailable に無く、書き込み可能（.writable）
     /// 3. Vault が使える（使えないのは待てば戻り、要対応の vaultUnavailable が別に出る）
     /// 4. 元ファイルが一覧に在る。source_path が無い・空は一覧と照らせず待っても変わらないので真。
-    ///    無いものは手順 4a（F-64）が先に完了させる（期限の後の新鮮な snapshot は必ず取り込みより後）ので、4 は防御
+    ///    無い RAW_SAVED は手順 4a（F-64）が先に完了させる（期限の後の新鮮な snapshot は必ず取り込みより後）。
+    ///    無い SOURCE_DELETE_PENDING は 4a の対象外なので、ここで偽になり「手動で消した分を完了にする」に任せる（F-74）
     /// 新鮮さは呼び手が確かめる（DEL-20）
     static func failureIsObserved(
         _ part: RecordingRow, parts: [RecordingRow], snapshot: DeviceSnapshot, ctx: DeletionContext
@@ -177,10 +203,10 @@ struct DeletionRequester {
 
     /// 決着した原因の語（F-69。状態の詳細に出す）。安い順・結果が原因を含む順に見る:
     /// 元の情報（source_path・source_size・source_mtime）→ 事前確認 → transcript（欠けると Raw ノートの照合も落ちる）→ Raw ノート。
-    /// どれでもなければ事前確認（同定の共通項）
+    /// どれでもなければ nil（F-74。調べ直して全部通ったので決着させない）
     static func undeletableCause(
         _ part: RecordingRow, session: SessionRow, parts: [RecordingRow], ctx: DeletionContext
-    ) -> String {
+    ) -> String? {
         guard let relpath = part.sourcePath, !relpath.isEmpty, part.sourceSize != nil, part.sourceMtime != nil else {
             return DeletionReason.causeSourceInfo
         }
@@ -195,7 +221,7 @@ struct DeletionRequester {
         {
             return DeletionReason.causeRawNote
         }
-        return DeletionReason.causePreIdentity
+        return nil
     }
 
     /// 元ファイルが無いと観測できた（F-64）: デバイスが snapshot に載り（接続中で列挙できた）、unavailable に無く、

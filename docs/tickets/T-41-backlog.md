@@ -1,5 +1,7 @@
 # T-41 後追い: 過去分を削除対象にする・手動で消した分を完了にする（プレビューと実行の 2 段）
 
+> （F-74・issue #114、2026-09-23。マージ後の追記）ID の無い SOURCE_DELETE_PENDING のまま期限を過ぎた Part も T-38 §4.5 の手順 5a で消さずに COMPLETED（detail `not_deletable`）になり、Session が完了するので「過去分を削除対象にする」の対象に入る。実行の ③ が失敗して ID と要求を持ったまま COMPLETED に残った Part は、T-38 の回収が COMPLETED のまま拾う（DELETED なら `source_deleted_at` を書いて ID を外す。PLAN §8.9.6・§8.9.9）。本チケットのコードは変えない。
+
 > （F-69・issue #98、2026-09-23。マージ後の追記）期限で消さずに完了した Part（RAW_SAVED→COMPLETED の detail `not_deletable`。T-38 §4.5 の手順 5a）も COMPLETED で `source_deleted_at` が nil なので「過去分を削除対象にする」の対象に入り、再び評価される（原因が直っていれば対象、直っていなければ対象外 `not_deletable`）。コードの変更は無い（PLAN §8.9.9。テストは T-38 §6.13 の `settledPartIsRetargetedByBacklog`）。
 
 > （F-72・issue #112、2026-09-23。マージ後の追記）**実行はプレビューで見せた対象に限る**（§11 の 7 の決着。PLAN §8.9.9）。`BacklogAction.execute(preview:reply:)` がプレビューの計画を運び、`handle` は立て直した計画との積（`BacklogPlanner.consented(preview:rebuilt:)`。照合はスカラー列、順は立て直した計画の順）だけを実行し、増えた対象は書かない・完了にしない。

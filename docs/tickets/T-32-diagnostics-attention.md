@@ -1,5 +1,7 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-74・issue #114、2026-09-23。マージ後の追記）SOURCE_DELETE_PENDING から決着した Part も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と状態の詳細の「消せなかった録音」に同じ数え方で入る（型・文言は変えない。テストは T-38 の `PendingSettlementTests`）。
+
 > （F-69・issue #98、2026-09-23。マージ後の追記）要対応の末尾に `undeletableSources(Int)`（「消せなかった録音 <n> 本」、操作 `[.openDetails]` =「詳細・診断を開く」）、`AttentionInput.undeletableSources`、
 > `SourcePresence`・`AttentionEvaluator.sourcePresence(_:snapshot:)`・`undeletableStillListed(_:snapshot:)`、`ReadOnlyStore.completedParts(lastDetail:)`、`StatusReport.UndeletablePart`・`undeletable` / `undeletableTotal` と状態の詳細の「消せなかった録音」の行を足した（PLAN §8.11・§8.12。決着そのものは T-38 §4.5 の手順 5a）。
 > 下の表はその分を直した。テストは T-38 §6.13 の `UndeletableSettlementTests`。

@@ -116,8 +116,11 @@ struct SessionSteps {
         guard ensureMerged(row, t) else {
             return ((try? store.session(key)) ?? nil)?.status == .completed ? .empty : .stopped
         }
-        // MERGED 以降なのに有効な segment が無い（transcript が後から読めなくなった）。進めない
-        guard let t else { return .stopped }
+        // MERGED 以降なのに有効な segment が無い（transcript が後から読めなくなった）。進めず、黙って止まらずに失敗にする（F-74）
+        guard let t else {
+            _ = failUnreadableAfterMerge(key)
+            return .stopped
+        }
         guard await ensureAnalysis(key, t) else { return .stopped }
         // T-29 まで常に偽
         guard await ensureDailyNote(key, t) else { return .analyzed }

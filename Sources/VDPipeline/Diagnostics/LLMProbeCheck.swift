@@ -25,7 +25,7 @@ struct LLMProbeCheck: Sendable {
                 sink: DiscardingLogSink(), level: .debug, unsafeContent: false, zone: ctx.zone, clock: ctx.deps.clock))
         let guardContext = TickContext(
             deps: ctx.deps, config: c, zone: ctx.zone, snapshot: ctx.snapshot, pauses: scratch,
-            activity: ctx.activity, stop: ctx.stop)
+            activity: ctx.activity, stop: ctx.stop, undeletableStreaks: ctx.undeletableStreaks)
         guard let target = LLMGuard(ctx: guardContext).evaluate() else {
             let reason = scratch.paused.first ?? .llmModelMissing
             return Self.fail(StatusTexts.pauseWord(reason))
