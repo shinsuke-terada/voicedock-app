@@ -287,7 +287,7 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | ND-24 | relpath に `../` | `relpath_unsafe` | R2・R3 |
 | ND-25 | symlink 経由でボリューム外 | `path_contains_symlink` | R2・R3 |
 | ND-26 | `bin/voicedock-reaper` が無い（ロック 2-A） | 要求を書かず、何も消えない（voicedock では「要求はキューに残りタイムアウト」だった。意味を変えた） | A |
-| ND-27 | 同じ request_id を 2 回 | 2 回目は `replayed` | R1 |
+| ND-27 | 同じ request_id を 2 回 | 2 回目は `replayed`（1 回目が拒否のとき。1 回目が成功（processed.log に `<request_id> DELETED`）なら、2 回目は消し直さずに結果 DELETED を書き直す。F-80） | R1 |
 | ND-28 | `.Trashes/...` などの `.` 始まり | `relpath_unsafe` | R2・R3 |
 | ND-29 | 親フォルダ名が規則外（ボリューム直下のファイルを含む） | `folder_rule` | R2・R3 |
 | ~~ND-30~~ | ~~欠番: voicedock の「コンテナから state/ を改ざん」は Docker 固有のため廃止~~ | — | — |
@@ -320,7 +320,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | RV-01 | reaper.conf が正しく読め `DELETE_SOURCE_AUDIO=true`（起動時と、各要求の unlink（RV-13）の直前に読む。F-73） | `lock1`（false）/ `conf_invalid`（不正。終了コード 2） | 触らない（RV-13 の直前なら残して走査を終える） | 1 |
 | RV-02 | ファイル名が `<request_id>.json` の形（02a）、JSON の request_id がファイル名と一致（02b） | `malformed_request_id` | `rejected/` へ | （無し。d419397 で後から追加） |
 | RV-03 | JSON の形（キー集合・型・targets がちょうど 1） | `malformed_request` | 拒否 | （無し） |
-| RV-04 | リプレイでない | `replayed` | 拒否 | 11 |
+| RV-04 | リプレイでない | `replayed` | 拒否（processed.log に DELETED と記録した要求は、消し直さずに結果 DELETED を書き直す。F-80） | 11 |
 | RV-05 | partkey と一致 | `partkey_mismatch` | 拒否 | 12 |
 | RV-06 | `DeviceID.isValid`・symlink でない・マウント点・FS 種別 `msdos` | `device_absent` / `not_a_mount_point` / `unexpected_fs` | absent は残す、他は拒否 | 3（ディレクトリの有無だけだった） |
 | RV-07 | 読み取り専用でない（観測） | `mount_readonly` | 残す | 2（観測値側が BSD sed で素通り） |

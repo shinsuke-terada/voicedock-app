@@ -65,7 +65,8 @@ struct ReaperDefenseDiskImageTests {
         #expect(outcome == .deleted(relpath: ReaperBench.relpath))
         #expect(!stage.bench.sourceExists())
         #expect(stage.bench.requests() == [])
-        #expect(stage.bench.processedLines() == [Self.id])
+        // 成功の行は `<request_id> DELETED`（F-80）
+        #expect(stage.bench.processedLines() == [Self.id + " DELETED"])
         #expect(try stage.bench.result(Self.id).status == .deleted)
     }
 }

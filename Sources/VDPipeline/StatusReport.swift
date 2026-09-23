@@ -28,16 +28,19 @@ public struct StatusReport: Equatable, Sendable {
         /// DB の error_code の**生の文字列**（`RecordingRow.errorCodeRaw`。未知のコードもそのまま出す。M-1）
         public let errorCode: String?
         public let retryCount: Int
+        /// どの録音の失敗かを示す注記（StatusReporter.failureNote。F-80）。無ければ nil（行を出さない）
+        public let note: String?
 
-        public init(partkey: String, startedAt: String, errorCode: String?, retryCount: Int) {
+        init(partkey: String, startedAt: String, errorCode: String?, retryCount: Int, note: String? = nil) {
             self.partkey = partkey
             self.startedAt = startedAt
             self.errorCode = errorCode
             self.retryCount = retryCount
+            self.note = note
         }
 
         /// 「<yyyy-MM-dd HH:mm>  <error_code か unknown>  retry <n>/<max>」（間は半角空白 2 つ。voicedock status.py:104-116）
-        public func detail(maxAttempts: Int) -> String {
+        func detail(maxAttempts: Int) -> String {
             let stamp = String(startedAt.prefix(16)).replacingOccurrences(of: "T", with: " ")
             return stamp + "  " + (errorCode ?? "unknown") + "  retry " + String(retryCount) + "/"
                 + String(maxAttempts)
@@ -51,14 +54,14 @@ public struct StatusReport: Equatable, Sendable {
         public let cause: String?
         public let presence: SourcePresence
 
-        public init(partkey: String, cause: String?, presence: SourcePresence) {
+        init(partkey: String, cause: String?, presence: SourcePresence) {
             self.partkey = partkey
             self.cause = cause
             self.presence = presence
         }
 
         /// 「<原因>、<デバイスでの在否>」
-        public var detail: String {
+        var detail: String {
             let causeText = cause.flatMap(StatusReporter.causeText) ?? "原因不明"
             return causeText + "、" + (StatusReporter.presenceTexts[presence] ?? "")
         }
@@ -133,6 +136,7 @@ public struct StatusReport: Equatable, Sendable {
             for p in failedParts {
                 out.append("  " + p.partkey)
                 out.append("    " + p.detail(maxAttempts: maxAttempts))
+                if let note = p.note { out.append("    " + note) }
             }
             if failedTotal > failedParts.count {
                 out.append("  … ほか " + String(failedTotal - failedParts.count) + " 件")
@@ -168,21 +172,21 @@ public enum StatusReporter {
     static let failedLimit = 20
 
     /// Part の表示順（**宣言順だが SKIPPED を FAILED の前に置く**。PLAN §8.12）
-    public static let partOrder: [PartStatus] =
+    static let partOrder: [PartStatus] =
         PartStatus.allCases.filter { $0 != .skipped && $0 != .failed } + [.skipped, .failed]
-    public static let sessionOrder: [SessionStatus] = SessionStatus.allCases
+    static let sessionOrder: [SessionStatus] = SessionStatus.allCases
     /// エンティティごとの注記（**Part 用を Session へ流用しない**。voicedock status.py:78-90）
-    public static let partNotes: [PartStatus: String] = [.failed: "次回接続時に再試行"]
-    public static let sessionNotes: [SessionStatus: String] = [:]
+    static let partNotes: [PartStatus: String] = [.failed: "次回接続時に再試行"]
+    static let sessionNotes: [SessionStatus: String] = [:]
     /// 消せなかった録音の原因の語 → 表示（F-69）
-    public static let causeTexts: [String: String] = [
+    static let causeTexts: [String: String] = [
         DeletionReason.causeSourceInfo: "元の情報（場所・サイズ・時刻）が無い",
         DeletionReason.causePreIdentity: "事前確認で原本が合わない（サイズ・時刻・場所）",
         DeletionReason.causeTranscript: "文字起こしが無いか読めない",
         DeletionReason.causeRawNote: "Raw ノートの照合が合わない",
     ]
     /// 元ファイルの在否 → 表示（F-69）
-    public static let presenceTexts: [SourcePresence: String] = [
+    static let presenceTexts: [SourcePresence: String] = [
         .listed: "デバイスに在る", .notListed: "デバイスの一覧に無い", .unobserved: "デバイスを観測できない",
     ]
 
@@ -192,6 +196,21 @@ public enum StatusReporter {
         if let text = causeTexts[cause] { return text }
         guard IdentityReason.all.contains(cause) else { return nil }
         return "削除モジュールの検証で拒否され続けた（" + cause + "）"
+    }
+
+    /// 失敗した Part の注記（F-80。状態の詳細で「どの録音か」を示す）。アプリが組み立てた定型の error_message だけをそのまま出す:
+    /// F-75 の書き直すと本文が消える（PartSteps.lostTextMessage で始まる。読めない Part の partkey と、読めない理由と
+    /// transcript の HOME からの相対パスが入る）と、既存の Raw ノートを読めない（PartSteps.unreadableNoteMessage で始まる。Vault からの相対パス）。
+    /// どちらも error_code は OBSIDIAN_RAW_WRITE_FAILED。ほかの error_message はツールの stderr の末尾なども入りうるので出さない
+    /// （ログも error_code だけを出す。CR-13）。前方一致はスカラー列
+    static func failureNote(_ row: RecordingRow) -> String? {
+        guard row.errorCode == .obsidianRawWriteFailed, let message = row.errorMessage else { return nil }
+        let scalars = message.unicodeScalars
+        guard
+            scalars.starts(with: PartSteps.lostTextMessage.unicodeScalars)
+                || scalars.starts(with: PartSteps.unreadableNoteMessage.unicodeScalars)
+        else { return nil }
+        return message
     }
 
     public static func build(
@@ -220,18 +239,20 @@ public enum StatusReporter {
                 failedParts = f.rows.map {
                     StatusReport.FailedPart(
                         partkey: $0.partkey, startedAt: $0.startedAt, errorCode: $0.errorCodeRaw,
-                        retryCount: $0.retryCount)
+                        retryCount: $0.retryCount, note: failureNote($0))
                 }
                 failedTotal = f.total
             }
             awaiting = (try? ro.awaitingDeleteResultCount()) ?? 0
             leftoverPaths = (try? ro.inboxPaths(statuses: PartStates.inboxLeftover)) ?? []
-            // 決着した Part を全部（F-69。要対応は、このうち一覧にまだ在るものだけ）
+            // 決着した Part を全部（F-69。要対応は、このうち一覧にまだ在るものだけ）。在否は要対応と同じ新鮮さで見る（F-80）
             let settled = (try? ro.completedParts(lastDetail: DeletionReason.notDeletable)) ?? []
+            let fresh = AttentionEvaluator.freshSnapshot(
+                snapshot, now: now,
+                maxAgeSeconds: config?.device.snapshotMaxAgeSeconds ?? AttentionInput(now: now).snapshotMaxAgeSeconds)
             undeletable = settled.map {
                 StatusReport.UndeletablePart(
-                    partkey: $0.partkey, cause: $0.errorMessage,
-                    presence: AttentionEvaluator.sourcePresence($0, snapshot: snapshot))
+                    partkey: $0.partkey, cause: $0.errorMessage, presence: SourcePresence.of($0, in: fresh))
             }
         }
         // 3.

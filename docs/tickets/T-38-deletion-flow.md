@@ -5,6 +5,17 @@
 > 走査中（`ingest.state() == .scanning`。reaper.lock を走査が持つ）は起動しない（レビューで足した。走査の通知ごとに busy を繰り返したため）。本番から使われなくなった `DeleteQueue.hasPendingRequests` は消した。
 > 何か処理されたら従来どおり。§6.6 の「要求と書き込み可能なデバイスがあれば起動し、走査の後に回収する」「走査が見送られたら…」は reaper が処理した姿（要求を消して結果を書く）で行い、「0 以外は reaper_failed…」の走査の回数は 0 にした。§6.9 の「1 tick で…reaper を起動する」の走査の回数も 0。テストは `ReaperIdleRunTests.swift`（PLAN §8.9.6）。
 
+> （F-80・issue #119、2026-09-23。マージ後の追記）§4.5 の手順 5a の数え方を直した（PLAN §8.9.5）: (1) 2 回目以降は前に数えた観測から backoff の最初の値（`DeletionRequester.minimumStreakIntervalSeconds`）以上たった観測だけを数える。
+> `UndeletableStreaks.record(_:session:connection:now:minIntervalSeconds:)`、接続の区切りは `Connection(epoch:deviceNode:)`（そのデバイスの deviceNode が変わっても数え直す）。(2) a は FAILED の兄弟が自動で戻りうる間（`needs_recopy`・工程内リトライが残る）は偽（`partIsAtRest`）。
+> (3) 途中で戻る評価（snapshot・readiness・Session）はその Session の連続を切り、評価の終わりに観測できた失敗として数えた Part 以外の項目を捨てる（`UndeletableStreaks.retain(session:keeping:)`）。
+> (4) 「一覧に在るか」は `SourcePresence.of` の 1 か所（d と `sourceIsObservedAbsent`）、`undeletableCause` の Raw ノートの節は `textIsPreserved` を呼ぶ、a と c は `SettlingFacts` で 1 回だけ調べる。
+> (5) `deleteSourcesIfSafe` と `dueSessionKeys` は、COMPLETED で ID の無い RAW_SAVED の Part を持つ Session も評価する（`isEvaluated`・`isLateRawSaved`。Session は遷移させない。`allowReopen` が偽のとき）。
+> §6 の `notEvaluatedStatesAreIgnored` の COMPLETED は Part も COMPLETED にした形で試す。既存の `UndeletableSettlementTests`・`PendingSettlementTests` の続けた評価は、評価のたびに時計を 60 秒進める（`spacing`）。
+> テストは `DeletionRemainderTests`（本チケットの持ち物の外の新しいファイル）。
+> （F-80 のレビューの後）COMPLETED の Session を評価するときは、`requestDeletions` は ID の無い RAW_SAVED の Part だけを対象にする（同じ Session の ID の無い SOURCE_DELETE_PENDING は後追いの担当のまま。T-41）。
+> a の再コピー待ちは、同じ snapshot で兄弟の原本が一覧に在る間だけ待つ。工程内リトライが残るかは `InProcessRetry.delay` と同じ式（FAILED の戻り先 `failedFromPart` が `retryableFromFailed` に在ることを含む。`SettlingFacts.observe(parts:ctx:snapshot:failedFrom:)`）。
+> 決着の直前に Vault をもう一度確かめ、使えなければ決着を見送る（`SettlingFacts.vaultIsAvailable`）。
+
 > （F-67・issue #97、2026-09-23）走査の `lstat` が `ENOENT` 以外で失敗したら一覧は不完全（`complete = false`）になり、そのデバイスは snapshot の `devices` に載らない。以後、深さの上限の内側では一覧は完全な列挙で、F-64 の `sourceIsObservedAbsent` の「一覧は完全な列挙を保証しない」という記述は上限の外（と `maxScanDepth` を下げた場合）に限られる（PLAN §8.1・§8.9.5）。
 
 > （F-78・issue #124、2026-09-23。マージ後の追記）手順 4a（F-64）を ID の無い SOURCE_DELETE_PENDING にも広げた: 一覧に無いと観測できたら「手動で消した分を完了にする」と同じ 2 遷移（detail `resolve_absent` → `already_absent`）・要求と結果の取り下げ・ID を外して自動で完了する（`completeAsAbsent`。`source_deleted_at` は入れない）。
@@ -755,7 +766,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `cleanupFreesStagingButKeepsFailed` | 完了のとき staging を消し、FAILED の 16 kHz は残す（SM-23） | readOnly true。既定の Part と、10:00 の FAILED(WHISPER_FAILED) の兄弟の両方に `staging/<slug>/audio16k.wav`・`audio16k.wav.tmp`・`whisper.json` を置く | 既定の Part の `staging/<slug>` が無い、兄弟の `audio16k.wav` が在る、Session COMPLETED |
 | `stagingUnlinkFailureStaysInCleanup` | staging を消せなければ CLEANUP のまま、次でやり直す | readOnly true、既定の Part の `audio16k.wav` の位置にディレクトリを作る | Session CLEANUP、`disk_space_low session_key=DJIMIC3:20260912 reason=staging_unlink_failed`（WARNING）。ディレクトリを消してもう一度 → COMPLETED |
 | `cleanupSessionOnlyFinishes` | CLEANUP の Session は後始末だけ（ロックを見ない） | `moveSession(to: .cleanup)` | COMPLETED、要求無し、`runner.recorded == []` |
-| `notEvaluatedStatesAreIgnored` | deleteEvaluated に無い Session は何もしない（パラメータ化: READY・COMPLETED） | `DeletionScene(sessionStatus:)` | 状態も要求も変わらない |
+| `notEvaluatedStatesAreIgnored` | deleteEvaluated に無い Session は何もしない（パラメータ化: READY・COMPLETED） | `DeletionScene(sessionStatus:)`（COMPLETED は Part も COMPLETED。後から RAW_SAVED になった Part は F-80 で評価する） | 状態も要求も変わらない |
 | `pendingSessionRequestsAgain` | SOURCE_DELETE_PENDING の Session から再要求して SOURCE_DELETING へ | `movePart(pk, to: .sourceDeletePending)`、`moveSession(to: .sourceDeletePending)` | 要求 1 件、Session SOURCE_DELETING |
 | `pendedPartIsNotRequestedInTheSameTick` | DEL-11 回収で PENDING に落とした Part を同じ周回で再要求しない（#156） | 要求を 1 件書いた状態 → 要求ファイルを消し（reaper の姿）、MISMATCH（`size_mismatch`）の結果 → 同じ deps で collect(0) → 同じ deps で deleteSourcesIfSafe | Part SOURCE_DELETE_PENDING、`requests() == []`。対照: 新しい PendedPartkeys の deps では要求 1 件 |
 | `dueFollowsBackoff` | CE cleanup.deleteEvaluationBackoffSeconds 削除評価の backoff（voicedock の 4 事例と境界。パラメータ化） | `isDue(updatedAt: zone.iso(now − 秒), attempts:, now:, backoff: [60, 300, 900, 3600]（既定）, zone:)` の (1, 30)・(1, 120)・(4, 1800)・(4, 7200)・(0, 60)・(0, 59)・(1, 60)。加えて `backoff: [5]` で (1, 30) | 偽・真・偽・真・真・偽・真。`[5]` の (1, 30) は真（既定では偽） |

@@ -36,12 +36,16 @@ struct UndeletableSettlementTests {
                 ingest: ScriptedIngest(snapshot: snapshot ?? scene.snapshot()), opener: opener, streaks: streaks))
     }
 
-    /// 同じ連続回数の記録で times 回評価する
+    /// 連続の 2 回目として数える観測の間隔の下限（既定の backoff の最初の値。F-80）
+    static let spacing = 60
+
+    /// 同じ連続回数の記録で times 回評価する。評価のたびに時計を spacing 秒進める（F-80。続けた評価が連続として数えられる間隔）
     static func evaluate(
         _ scene: DeletionScene, snapshot: DeviceSnapshot? = nil, streaks: UndeletableStreaks, times: Int = 2
     ) async {
         for _ in 0..<times {
             await Self.stage(scene, snapshot: snapshot, streaks: streaks).deleteSourcesIfSafe(sessionKey: Self.key)
+            scene.clock.advance(seconds: Self.spacing)
         }
     }
 
@@ -121,7 +125,8 @@ struct UndeletableSettlementTests {
     func beforeTheDeadlineWaits(_ attempts: Int, _ seconds: Int) async throws {
         let scene = try DeletionScene()
         try Self.breakDeletability(scene, "Raw ノートの手の編集")
-        try Self.elapse(scene, attempts: attempts, seconds: seconds)
+        // 2 回目の評価（spacing 秒後）が seconds の時点
+        try Self.elapse(scene, attempts: attempts, seconds: seconds - Self.spacing)
         await Self.evaluate(scene, streaks: UndeletableStreaks())
         try Self.expectWaited(scene, attempts: attempts)
     }
@@ -225,11 +230,14 @@ struct UndeletableSettlementTests {
         try Self.breakDeletability(scene, "原本のサイズの食い違い")
         try Self.elapse(scene, attempts: Self.backoffCount, seconds: Self.backoffTotal)
         let streaks = UndeletableStreaks()
+        // 評価の間は連続として数えられる間隔をあける（F-80。数え直しが時間でなく接続の区切りによることを見る）
         await Self.stage(scene, snapshot: Self.reconnected(scene, epoch: 1), streaks: streaks).deleteSourcesIfSafe(
             sessionKey: Self.key)
+        scene.clock.advance(seconds: Self.spacing)
         await Self.stage(scene, snapshot: Self.reconnected(scene, epoch: 2), streaks: streaks).deleteSourcesIfSafe(
             sessionKey: Self.key)
         try Self.expectWaited(scene, attempts: Self.backoffCount)
+        scene.clock.advance(seconds: Self.spacing)
         await Self.stage(scene, snapshot: Self.reconnected(scene, epoch: 2), streaks: streaks).deleteSourcesIfSafe(
             sessionKey: Self.key)
         #expect(try Self.part(scene).status == .completed)
