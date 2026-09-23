@@ -17,15 +17,14 @@ struct DeletionDependencies: Sendable {
     let clock: any AppClock
     let log: AppLog
     let pended: PendedPartkeys
-    /// 観測できた状態で消せなかった評価の連続回数（F-69。Worker が tick をまたいで持つ）
+    /// 観測できた状態で消せなかった評価の連続回数（F-69。Worker が tick をまたいで持つ。既定値を持たない。F-74）
     let streaks: UndeletableStreaks
     let warn: @Sendable (any Error) -> Void
 
     init(
         layout: HomeLayout, store: Store, config: AppConfig, zone: ZonedTime, ingest: any IngestPort,
         locks: LockEvaluator, volumeOpener: any VolumeOpener, clock: any AppClock, log: AppLog,
-        pended: PendedPartkeys, streaks: UndeletableStreaks = UndeletableStreaks(),
-        warn: @escaping @Sendable (any Error) -> Void
+        pended: PendedPartkeys, streaks: UndeletableStreaks, warn: @escaping @Sendable (any Error) -> Void
     ) {
         self.layout = layout
         self.store = store

@@ -90,6 +90,34 @@ enum DeleteQueue {
         return removed
     }
 
+    /// 取り下げの後にこの Part の要求が queue/delete に残っているか（F-74。PLAN §8.9.7）:
+    /// `<requestID>.json` が在る（読めなくても。requestID が RequestID の形のときだけ名前で見る）か、読めて partkey が一致する要求が在る
+    static func hasRequest(partkey: String, requestID: String, layout: HomeLayout) -> Bool {
+        var st = stat()
+        if RequestID.isValid(requestID),
+            lstat(requestURL(requestID, layout: layout).path(percentEncoded: false), &st) == 0
+        {
+            return true
+        }
+        return names(in: layout.queueDelete).contains { name in
+            let url = layout.queueDelete.appendingPathComponent(name, isDirectory: false)
+            guard let data = readSmallFile(url), case .success(let r) = ContractJSON.decodeRequest(data) else {
+                return false
+            }
+            return DeletionPolicy.sameKey(r.partkey, partkey)
+        }
+    }
+
+    /// `queue/result/<requestID>.json`（lstat で在るときだけ。読めなければ result が nil）。
+    /// requestID が RequestID の形でなければ nil（名前を組まない。F-74。PLAN §8.9.7）
+    static func result(requestID: String, layout: HomeLayout) -> QueuedResult? {
+        guard RequestID.isValid(requestID) else { return nil }
+        let url = resultURL(requestID, layout: layout)
+        var st = stat()
+        guard lstat(url.path(percentEncoded: false), &st) == 0 else { return nil }
+        return QueuedResult(url: url, result: readSmallFile(url).flatMap { try? ContractJSON.decodeResult($0).get() })
+    }
+
     /// 結果を捨てる（SafeUnlink.remove(url, under: .queueResult)）
     static func discard(_ url: URL, layout: HomeLayout) {
         try? SafeUnlink.remove(url, under: .queueResult, layout: layout)
