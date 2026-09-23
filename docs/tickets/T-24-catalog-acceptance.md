@@ -19,7 +19,7 @@
 
 ## 2. 参照
 
-- PLAN §8.10（カタログの JSON・値を推測で埋めない・`verified: true` の条件・思考モード付きを載せない・`minMemoryGB`）、§10.6（受け入れ試験の 5 項目）、§10.1（`.enabled(if:)` と環境変数・`TestEnvironment` だけが環境変数を読む）、§8.5（Map-Reduce と修復）、§12.2 章 8（P0-07 の 350,000 文字の Map-Reduce）
+- PLAN §8.10（カタログの JSON・値を推測で埋めない・`verified: true` の条件・思考モード付きを載せない・`minMemoryGB`）、§10.6（受け入れ試験の 5 項目）、§10.1（`.enabled(if:)` と環境変数・`TestEnvironment` だけが環境変数を読む）、§8.5（Map-Reduce と修復）、§12.2 章 8（P0-07 の 220,000 文字の Map-Reduce）
 - 00-api-map.md §2.2（`ModelCatalog` / `ModelEntry` / `ModelFiles`）、§8（`Analyzer` / `AnalysisCall` / `LlamaServerSupervisor` / `LoopbackChatTransport`）、§10（VDModels）、§14（`LLMAcceptance` ターゲット）、§15
 - 移植メモ V7 §3（HF の実値。2026-09-18 取得）、V6（`docs/POC.md` の書き方）
 - voicedock@d3d595e `scripts/fetch-models.sh`（モデル名の検査・`.part` へ落としてから rename）、`tests/unit/test_fetch_models.py`（検査の網羅のしかた）、`docs/POC.md`（§0 記録の規約・章の立て方）
@@ -37,7 +37,7 @@
 | `Tests/LLMAcceptance/AcceptanceJudge.swift` | 判定の式（純関数） | 入れる |
 | `Tests/LLMAcceptance/AcceptanceReport.swift` | `docs/POC.md` に貼る Markdown を作る | 入れる |
 | `Tests/LLMAcceptance/AnalysisAcceptanceTests.swift` | 9 本の会話（§5.1） | 入れる |
-| `Tests/LLMAcceptance/LongTranscriptAcceptanceTests.swift` | 350,000 文字 1 本（§5.2） | 入れる |
+| `Tests/LLMAcceptance/LongTranscriptAcceptanceTests.swift` | 220,000 文字 1 本（§5.2） | 入れる |
 | `Tests/LLMAcceptance/AcceptanceJudgeTests.swift` | 判定の式の単体（モデル不要） | 入れる |
 | `Tests/LLMAcceptance/AcceptanceFixtureLoaderTests.swift` | 読み込みと長文の生成の単体（モデル不要） | 入れる |
 | `Tests/TestSupport/TestEnvironment+LLMAcceptance.swift` | `TestEnvironment` に fixture のディレクトリと報告の出力先を足す（作り手は T-01。extension で足す） | 入れる |
@@ -195,8 +195,8 @@ voicedock には LLM 応答の fixture が 2 本あるだけで、transcript の
 - 文は句点（`。`）で終える（whisper-cli の日本語の出力に似せる）。フィラー（`えーと` `はい`）を 1 割ほど混ぜる
 - 作り方: 人が書くか、LLM に下書きさせて**人が読み**、上の規則を満たすまで直す。**アプリのコードから生成しない**（実装を呼んで期待値を作らない。TEST-01）
 
-**長文 1 本**（`L01-longday`。約 350,000 文字。**ファイルにしない。生成する**）:
-- `AcceptanceFixture.longDay()`: 9 本を `id` の昇順に連結した `segments` を、要素ごとに足していき、合計が 350,000 スカラーに**達した時点で止める**。最後に足した要素も丸ごと入れる（切り詰めない。文の途中で切らない）。1 要素は 200 スカラー以下なので、合計は 350,000 以上 350,200 未満になる（§5.3 `longDayIsDeterministic`）
+**長文 1 本**（`L01-longday`。約 220,000 文字。**ファイルにしない。生成する**）:
+- `AcceptanceFixture.longDay()`: 9 本を `id` の昇順に連結した `segments` を、要素ごとに足していき、合計が 220,000 スカラーに**達した時点で止める**。最後に足した要素も丸ごと入れる（切り詰めない。文の途中で切らない）。1 要素は 200 スカラー以下なので、合計は 220,000 以上 220,200 未満になる（§5.3 `longDayIsDeterministic`）
 - `startedAt = 2026-08-29T07:00:00+09:00`、`segmentSeconds = 12`、`expected.maxTasksWithDue` = 9 本の合計 × 繰り返し回数（途中まで使った回も 1 回と数える）
 - リポジトリに 1 MB の fixture を置かないためであり、**決定的**（同じ 9 本から同じ長文ができる）
 
@@ -231,9 +231,9 @@ struct AcceptanceFixture: Sendable {
     static func loadAll(directory: URL) -> Result<[AcceptanceFixture], AcceptanceError>
     /// ディレクトリの *.json の数（読めなければ nil）。
     static func jsonCount(directory: URL) -> Int?
-    /// 9 本から約 350,000 スカラーの 1 本を作る（§4.3）。
+    /// 9 本から約 220,000 スカラーの 1 本を作る（§4.3）。
     static func longDay(_ base: [AcceptanceFixture]) -> AcceptanceFixture
-    static let longTargetScalars = 350_000
+    static let longTargetScalars = 220_000
     static let longID = "L01-longday"
     static let longStartedAt = "2026-08-29T07:00:00+09:00"
     static let longSegmentSeconds = 12
@@ -370,7 +370,7 @@ acceptance-selftest: build
 目次の表（P0 の §0 の下）に 1 行足す:
 
 ```markdown
-| 15 | — | LLM 受け入れ試験（10 本・修復率・350,000 文字の時間） | PLAN §8.10・§10.6、T-24 | ⬜ |
+| 15 | — | LLM 受け入れ試験（10 本・修復率・220,000 文字の時間） | PLAN §8.10・§10.6、T-24 | ⬜ |
 ```
 
 章の本体（`AcceptanceReport.render(...)` が同じ形の Markdown を作り、それを貼る）:
@@ -430,7 +430,7 @@ enum AcceptanceReport {
 | J2 修復なしの割合 | ≥ 90% | <x>% | ✅ / ✗ |
 | J2 修復込みの割合 | 100% | <x>% | ✅ / ✗ |
 | J3 `[[` と due | 0 件 | <n> 件 | ✅ / ✗ |
-| J4 350,000 文字 | ≤ 30 分 | <x> 分 | ✅ / ✗ |
+| J4 220,000 文字 | ≤ 30 分 | <x> 分 | ✅ / ✗ |
 
 判定: ✅ PASS → `Resources/ModelCatalog.json` の `<id>` を `verified: true` にした（コミット `<sha>`）
 ````
@@ -456,11 +456,11 @@ enum AcceptanceReport {
 | `dueIsNullWithoutADate` / 「期限の無い task の due は null（§10.6-3）」 | `verdict.badDue.isEmpty` |
 | `reportIsWritten` / 「報告を書き出す」 | `TestEnvironment.llmReportURL(model:)` に §4.8 の Markdown が在る（最後に走らせるため関数名の順に注意し、`.serialized` の最後に置く） |
 
-### 5.2 `LongTranscriptAcceptanceTests.swift`（`@Suite("350,000 文字の Map-Reduce", .serialized)`）
+### 5.2 `LongTranscriptAcceptanceTests.swift`（`@Suite("220,000 文字の Map-Reduce", .serialized)`）
 
 | 関数名 / 表示名 | 期待 |
 |---|---|
-| `longDayFitsIn30Minutes` / 「350,000 文字が 30 分以内（§10.6-4）」 | `verdict.longSeconds <= 1_800`、`AnalyzeOutcome` が `.success`、`chunks.count >= 2`（Map-Reduce に入っている） |
+| `longDayFitsIn30Minutes` / 「220,000 文字が 30 分以内（§10.6-4）」 | `verdict.longSeconds <= 1_800`、`AnalyzeOutcome` が `.success`、`chunks.count >= 2`（Map-Reduce に入っている） |
 
 ### 5.3 `AcceptanceJudgeTests.swift` / `AcceptanceFixtureLoaderTests.swift`（**モデル不要**）
 
@@ -486,7 +486,7 @@ enum AcceptanceReport {
 |---|---|---|
 | `loadsTheNineFixtures` | 既定のディレクトリ | 9 本、`id` が §4.3 の表と同じ・昇順 |
 | `segmentsBecomeAbsoluteTimes` | `s01` | 最初の `AbsoluteSegment.at` が `startedAt`、i 番目が `startedAt + i × segmentSeconds`、`endAt - at == segmentSeconds × 1000` |
-| `longDayIsDeterministic` | `longDay` を 2 回と、入力を逆順にして 1 回 | 3 つとも同じ `segments`、先頭が 9 本を §4.3 の表の `id` の順に連結したもの、`scalarCount >= 350_000` かつ `< 350_000 + 200` |
+| `longDayIsDeterministic` | `longDay` を 2 回と、入力を逆順にして 1 回 | 3 つとも同じ `segments`、先頭が 9 本を §4.3 の表の `id` の順に連結したもの、`scalarCount >= 220_000` かつ `< 220_000 + 200` |
 | `longDayCountsDues` | `longDay` | `maxTasksWithDue == 18`（9 本の合計 1+0+1+2+3+0+0+0+2 = 9 × 繰り返し 2 回。9 本で約 201,000 スカラー） |
 | `longDayKeepsWholeSegments` | `longDay` | どの要素も元の 9 本のどれかの要素と**完全に一致**（途中で切らない） |
 | `badJSONIsAnError` | キーが足りない JSON | `.failure`、メッセージにファイル名が入る |

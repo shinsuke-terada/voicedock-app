@@ -78,7 +78,7 @@
 | 5 | P0-04 | whisper.cpp v1.9.4（Metal）の RTF と JSON の形 | PLAN §8.4、RK-03、T-03、T-17 | ⬜ |
 | 6 | P0-05 | AVAudioConverter と ffmpeg の比較 | PLAN §8.3、RK-05、T-16 | ⬜ |
 | 7 | P0-06 | llama-server（Metal）と json_object・起動時間・メモリ | PLAN §8.5、RK-04、T-03、T-21 | ⬜ |
-| 8 | P0-07 | 1 日分（約 350,000 文字）の Map-Reduce | PLAN §10.6、T-24 | ⬜ |
+| 8 | P0-07 | 1 日分（10 時間・約 220,000 文字）の Map-Reduce | PLAN §10.6、T-24 | ⬜ |
 | 9 | P0-08 | SMAppService のログイン項目 | PLAN §8.12、RK-02、T-31 | ⬜ |
 | 10 | P0-09 | 1 日分の処理見込み（文字数で外挿） | PLAN §12.2、E2E-06 | ⬜ |
 | 11 | P0-10 | GitHub ランナーでのディスクイメージ | PLAN §10.8、RK-06、RK-33、T-02 | `— 対象外`（T-02 で理由を記入） |
@@ -253,7 +253,7 @@ voicedock の LLM のコードをそのまま使って測る（本アプリの�
 
 1. `git -C /Users/terada/Projects/voicedock archive d3d595e | tar -x -C ~/VoiceDockPoC/vd` → `cd ~/VoiceDockPoC/vd && uv sync --frozen --python 3.12`
 2. llama-server を **`--api-key-file` を付けずに**起動する（voicedock の HTTP クライアントは認証ヘッダを送らないため。この違いを記録に書く）
-3. 約 350,000 文字の transcript（実録音の P0-04 の出力を連結するか、T-24 で作る合成 fixture の長文）を `SessionTranscript` にし、`voicedock.llm.analyze_session` を `VOICEDOCK_LLM_URL=http://127.0.0.1:18080/v1`・`VOICEDOCK_LLM_MODEL=x` で呼ぶ台本 `~/VoiceDockPoC/p007.py` を書いて実行
+3. 約 220,000 文字（10 時間分）の transcript（実録音の P0-04 の出力を連結するか、T-24 で作る合成 fixture の長文）を `SessionTranscript` にし、`voicedock.llm.analyze_session` を `VOICEDOCK_LLM_URL=http://127.0.0.1:18080/v1`・`VOICEDOCK_LLM_MODEL=x` で呼ぶ台本 `~/VoiceDockPoC/p007.py` を書いて実行
 4. 記録: 総時間、チャンク数、各 Map・Reduce の時間、修復の回数、最終結果が検証を通ったか
 5. 合格: 30 分以内
 
@@ -266,8 +266,8 @@ voicedock の LLM のコードをそのまま使って測る（本アプリの�
 
 ### 11. P0-09 1 日分の処理見込み（章 10）
 
-- 入力: P0-04 の「文字 / 経過秒」、voicedock POC の実測「密な発話は 3.9〜4.6 文字/秒（音声 1 秒あたり）」、16 時間
-- 見込みの文字数 = 16 × 3600 × 4.6 = 264,960 文字（上限側で見積もる）
+- 入力: P0-04 の「文字 / 経過秒」、voicedock POC の実測「密な発話は 3.9〜4.6 文字/秒（音声 1 秒あたり）」、10 時間
+- 見込みの文字数 = 10 × 3600 × 4.6 = 165,600 文字（上限側で見積もる）
 - 見込みの文字起こし時間 = 見込みの文字数 ÷ （P0-04 の文字 / 経過秒）
 - 見込みの解析時間 = P0-07 の総時間 × （見込みの文字数 ÷ P0-07 の文字数）
 - 合格: 文字起こし + 解析 + コピー（1 日分 約 11 分）が 24 時間未満。計算式と数値を貼る

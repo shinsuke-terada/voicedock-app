@@ -1,14 +1,14 @@
-// LLM 受け入れ試験: 350,000 文字の Map-Reduce（PLAN §10.6 の 4。T-24 §5.2）。VOICEDOCK_LLM_MODEL が無ければ走らない。
+// LLM 受け入れ試験: 220,000 文字の Map-Reduce（PLAN §10.6 の 4。T-24 §5.2）。VOICEDOCK_LLM_MODEL が無ければ走らない。
 import Foundation
 import TestSupport
 import Testing
 import VDCore
 import VDLLM
 
-@Suite("350,000 文字の Map-Reduce", .serialized)
+@Suite("220,000 文字の Map-Reduce", .serialized)
 struct LongTranscriptAcceptanceTests {
     @Test(
-        "350,000 文字が 30 分以内（§10.6-4）", .enabled(if: TestEnvironment.llmModel != nil), .tags(.realTools, .slow))
+        "220,000 文字が 30 分以内（§10.6-4）", .enabled(if: TestEnvironment.llmModel != nil), .tags(.realTools, .slow))
     func longDayFitsIn30Minutes() async throws {
         // llama-server の起動は 10 本の試験と共有する（1 回だけ）
         let shared = await AnalysisAcceptanceTests.runs.value

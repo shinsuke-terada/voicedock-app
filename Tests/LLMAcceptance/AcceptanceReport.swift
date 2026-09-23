@@ -83,7 +83,7 @@ enum AcceptanceReport {
         let j3Count = verdict.wikiLinkHits.count + verdict.badDue.count
         lines.append("| J3 `[[` と due | 0 件 | \(j3Count) 件 | \(mark(verdict.j3)) |")
         let minutes = String(format: "%.1f", verdict.longSeconds / 60)
-        lines.append("| J4 350,000 文字 | ≤ 30 分 | \(minutes) 分 | \(mark(verdict.j4)) |")
+        lines.append("| J4 220,000 文字 | ≤ 30 分 | \(minutes) 分 | \(mark(verdict.j4)) |")
         lines.append("")
         if verdict.passed {
             lines.append(

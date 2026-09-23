@@ -35,14 +35,14 @@ T-01 に要るのは章 14 の BUNDLE_ID・TEAM_ID・Xcode の版だけなので
 | 5 | P0-04 | whisper.cpp v1.9.4（Metal）の RTF と JSON の形 | PLAN §8.4、RK-03、T-03、T-17 | ⬜ 未実施 |
 | 6 | P0-05 | AVAudioConverter と ffmpeg の比較 | PLAN §8.3、RK-05、T-16 | ⬜ 未実施 |
 | 7 | P0-06 | llama-server（Metal）と json_object・起動時間・メモリ | PLAN §8.5、RK-04、T-03、T-21 | ⬜ 未実施 |
-| 8 | P0-07 | 1 日分（約 350,000 文字）の Map-Reduce | PLAN §10.6、T-24 | ⬜ 未実施 |
+| 8 | P0-07 | 1 日分（10 時間・約 220,000 文字）の Map-Reduce | PLAN §10.6、T-24 | ⬜ 未実施 |
 | 9 | P0-08 | SMAppService のログイン項目 | PLAN §8.12、RK-02、T-31 | ⬜ 未実施 |
 | 10 | P0-09 | 1 日分の処理見込み（文字数で外挿） | PLAN §12.2、E2E-06 | ⬜ 未実施 |
 | 11 | P0-10 | GitHub ランナーでのディスクイメージ | PLAN §10.8、RK-06、RK-33、T-02 | — 対象外（CI は開発機のセルフホストランナー。下記） |
 | 12 | P0-11 | DADiskMountApprovalCallback（任意） | PLAN §8.1（v1 では採用しない） | ⬜ 未実施 |
 | 13 | P0-12 | Vault が書類フォルダ・iCloud Drive にあるときの TCC | PLAN §8.7、§8.11 DR-10、T-28、T-32 | ✅ PASS（NSOpenPanel で選んだ Vault は再起動後もパネル無しで書ける。拒否の経路は再現できず） |
 | 14 | — | Phase 0 で決めたこと | PLAN §3.1、§3.3、§8.1、`identity.env` | ⬜ 一部決定（識別子と Xcode は確定。下記） |
-| 15 | — | LLM 受け入れ試験（10 本・修復率・350,000 文字の時間） | PLAN §8.10・§10.6、T-24 | ⬜ |
+| 15 | — | LLM 受け入れ試験（10 本・修復率・220,000 文字の時間） | PLAN §8.10・§10.6、T-24 | ⬜ |
 
 ## 1. ホスト環境
 

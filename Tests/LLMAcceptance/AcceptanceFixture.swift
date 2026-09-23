@@ -25,7 +25,7 @@ struct AcceptanceFixture: Sendable {
     let maxTasksWithDue: Int
 
     /// 長文の目標のスカラー数（§4.3）。
-    static let longTargetScalars = 350_000
+    static let longTargetScalars = 220_000
     /// 長文の ID（ファイルにしない。生成する）。
     static let longID = "L01-longday"
     /// 長文の開始時刻と 1 要素の秒数（§4.3）。
@@ -104,7 +104,7 @@ struct AcceptanceFixture: Sendable {
         return .success(fixtures.sorted { $0.id < $1.id })
     }
 
-    /// 9 本から約 350,000 スカラーの 1 本を作る（§4.3）。
+    /// 9 本から約 220,000 スカラーの 1 本を作る（§4.3）。
     /// 9 本を id の昇順に連結した segments を、合計が longTargetScalars に達するまで要素ごと足す（切り詰めない）。
     /// maxTasksWithDue = 9 本の合計 × 繰り返し回数（途中まで使った回も 1 回と数える）。
     static func longDay(_ base: [AcceptanceFixture]) -> AcceptanceFixture {
