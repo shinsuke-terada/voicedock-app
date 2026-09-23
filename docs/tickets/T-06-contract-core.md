@@ -8,7 +8,7 @@
 > テストは `RelPathScalarTests`・`FileLockNoFollowTests`（reaper.conf の FIFO は `ReaperDefenseTests`）。
 
 > （F-83・issue #119、2026-09-23。マージ後の追記）`AtomicFile.write` に `fullSync: Bool = false` を足し、真なら tmp と親ディレクトリを `AtomicFile.fullFsync(_:)`（`fcntl(F_FULLFSYNC)`。どの errno で失敗しても `fsync` に戻す。失敗は errno）で書き出す。
-> 既定は今までどおり（reaper の書き込みは変わらない）。使うのは `NoteWriter`（T-28）と VDModels（T-23）。transcript の書き手は統合で真にする。テストは `AtomicFileFullSyncTests.swift`（PLAN §4.7・§8.7）。
+> 既定は今までどおり（reaper の書き込みは変わらない）。使うのは `NoteWriter`（T-28）と VDModels（T-23）。transcript の書き手（`Transcriber`。T-17）も統合で真にした（PolicyTests の `DurableWriteCallTests`）。テストは `AtomicFileFullSyncTests.swift`（PLAN §4.7・§8.7）。
 
 > （F-76・issue #116。2026-09-23。マージ後の追記）`HomeLayout` に `appLock`（`state/app.lock`。アプリの単一起動のロック。reaper.lock とは別）を足した（§4.16 の表と `HomeLayoutTests` の「全プロパティ」の表）。
 

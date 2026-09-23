@@ -163,13 +163,15 @@ public struct Transcriber: Sendable {
         }
 
         // 10〜11. ASR-09: 無音判定より前に保存する（根拠 B の証拠）。
+        // F-83: 根拠 B の証拠で、根拠 A の本文の 2 つ目の写し（Raw ノートを書き直すときの元）なので、
+        // Vault のノートと同じく F_FULLFSYNC で書き出す（PLAN §8.7。PolicyTests の DurableWriteCallTests が字句で固定）
         let t = PartTranscript(
             partkey: req.partkey, language: parsed.language, durationSeconds: req.durationSeconds,
             startedAt: req.startedAt, text: parsed.text, segments: parsed.segments)
         do {
             try FileManager.default.createDirectory(
                 at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try AtomicFile.write(PartTranscriptCodec.encode(t), to: target)
+            try AtomicFile.write(PartTranscriptCodec.encode(t), to: target, fullSync: true)
         } catch {
             return .failure(StageFailure(.whisperFailed, "正規化 transcript を書けません: \(Self.describe(error))"))
         }

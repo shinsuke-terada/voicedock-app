@@ -8,8 +8,8 @@ public enum AtomicFile {
     /// 途中のどこで失敗しても、tmp を作った後なら tmp を消して元の誤りを投げる。最終ファイルは差し替えない（CR-21）。
     /// url が symlink なら rename が symlink そのものを置き換える（リンク先には書かない）。
     /// F-83: fullSync が真なら、tmp と親ディレクトリを `fsync` の代わりに `fullFsync`（F_FULLFSYNC。ドライブのキャッシュまで流す）で書き出す。
-    /// 既定は偽（今までどおり fsync）。原本の削除の根拠になるファイルの書き手が真にする（Vault のノートは NoteWriter。
-    /// transcript は統合で Transcriber を真にする）。
+    /// 既定は偽（今までどおり fsync）。原本の削除の根拠になるファイルの書き手が真にする（Vault のノートは NoteWriter、
+    /// transcript は Transcriber）。
     public static func write(
         _ data: Data, to url: URL, permissions: mode_t = 0o644, verifyReadBack: Bool = false, fullSync: Bool = false
     ) throws(AtomicFileError) {

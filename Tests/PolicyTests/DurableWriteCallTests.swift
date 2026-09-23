@@ -1,5 +1,6 @@
 // 書き出し（F_FULLFSYNC）の呼び出しの静的な約束（F-83。PLAN §8.7・§8.10。issue #119 の F9・F10）:
-// NoteWriter.write は AtomicFile.write に `fullSync: true` を渡す。ModelDownloader.download は照合した .part を
+// NoteWriter.write と Transcriber.transcribe（transcript。統合で配線した）は AtomicFile.write に `fullSync: true` を渡す。
+// ModelDownloader.download は照合した .part を
 // ModelFileSync.syncFile してから rename し、後に syncParent する。ModelImporter は copyHashing で AtomicFile.fullFsync し、
 // importGGUF で rename の後に syncParent する。F_FULLFSYNC を fsync に戻す・消す壊し方はふるまいのテストで観測できないため、トークンで固定する。
 import Foundation
@@ -30,6 +31,9 @@ struct DurableWriteCallTests {
         Rule(
             path: "VDModels/ModelImporter.swift", function: "importGGUF",
             calls: [("Darwin", "rename"), ("ModelFileSync", "syncParent")], fullSyncTrue: false),
+        Rule(
+            path: "VDTranscribe/Transcriber.swift", function: "transcribe", calls: [("AtomicFile", "write")],
+            fullSyncTrue: true),
     ]
 
     /// 本体の中で `receiver . name (` が最初に現れる位置
@@ -41,13 +45,16 @@ struct DurableWriteCallTests {
         }
     }
 
-    /// index の `(` から釣り合う `)` までの引数のトークン
+    /// index の `(` から釣り合う `)` までの引数のトークン（両端の括弧は含まない。引数の中の呼び出し `f(x)` の括弧は含む）
     static func arguments(at index: Int, in body: ArraySlice<CodeToken>) -> [String] {
         var depth = 0
         var args: [String] = []
-        for j in (index + 1)..<body.endIndex {
+        for j in index..<body.endIndex {
             let t = body[j].text
-            if t == "(" { depth += 1 }
+            if t == "(" {
+                depth += 1
+                if depth == 1 { continue }
+            }
             if t == ")" {
                 depth -= 1
                 if depth == 0 { break }
@@ -81,7 +88,7 @@ struct DurableWriteCallTests {
         return out
     }
 
-    @Test("F-83 ノートは fullSync: true、モデルは照合した .part を書き出してから rename し、親も書き出す")
+    @Test("F-83 ノートと transcript は fullSync: true、モデルは照合した .part を書き出してから rename し、親も書き出す")
     func durableWritesAreCalled() throws {
         let files = try SourceTree.load()
         for rule in Self.rules {
@@ -96,6 +103,16 @@ struct DurableWriteCallTests {
         }
         """
 
+    static let transcriber = """
+        func transcribe(_ req: TranscribeRequest) async -> TranscribeOutcome {
+            do {
+                try AtomicFile.write(PartTranscriptCodec.encode(t), to: target, fullSync: true)
+            } catch {
+                return .failure(error)
+            }
+        }
+        """
+
     static let downloader = """
         func download() {
             guard ModelFileSync.syncFile(part) == nil else { return }
@@ -105,7 +122,7 @@ struct DurableWriteCallTests {
         """
 
     @Test(
-        "F-83 自己テスト: fullSync の欠落・偽、呼び出しの欠落・順の入れ替え、関数が無い（空の入力。TEST-28）を検出する",
+        "F-83 自己テスト: fullSync の欠落・偽、呼び出しの欠落・順の入れ替え、関数が無い（空の入力。TEST-28）を検出する（transcript を含む）",
         arguments: [
             (0, noteWriter, [String]()),
             (0, noteWriter.replacingOccurrences(of: ", fullSync: true", with: ""), ["fullSync: true を渡していない"]),
@@ -132,6 +149,17 @@ struct DurableWriteCallTests {
                 ["順が ModelFileSync.syncFile → Darwin.rename → ModelFileSync.syncParent でない"]
             ),
             (0, "", ["func write( がありません"]),
+            (4, transcriber, [String]()),
+            (4, transcriber.replacingOccurrences(of: ", fullSync: true", with: ""), ["fullSync: true を渡していない"]),
+            (
+                4, transcriber.replacingOccurrences(of: "fullSync: true", with: "fullSync: false"),
+                ["fullSync: true を渡していない"]
+            ),
+            (
+                4, transcriber.replacingOccurrences(of: "AtomicFile.write(", with: "FileManager.write("),
+                ["AtomicFile.write( がありません"]
+            ),
+            (4, "", ["func transcribe( がありません"]),
         ])
     func selfTest(_ rule: Int, _ source: String, _ expected: [String]) {
         let r = Self.rules[rule]
