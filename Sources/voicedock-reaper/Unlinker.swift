@@ -20,9 +20,13 @@ enum Unlinker {
     }
 
     /// `queue/delete` 直下の `.json` だけを消す。成功で true（失敗は呼び手が無視する）。
-    /// `AT_REMOVEDIR` を渡さない（ディレクトリは消さない。PR-16）
+    /// `AT_REMOVEDIR` を渡さない（ディレクトリは消さない。PR-16）。
+    /// "/" は Unicode スカラー（UTF-8 の 0x2F）で探す。Character（書記素）で探すと "/" の直後の結合文字（U+0301 など）で
+    /// 見落とし、`unlinkat` がサブディレクトリの中の名前を消す（F-81。RelPath と同じ。F-73）
     static func removeRequest(named name: String, inQueueDelete fd: Int32) -> Bool {
-        guard name.hasSuffix(".json"), !name.contains("/"), name != ".", name != ".." else { return false }
+        guard name.hasSuffix(".json"), !name.unicodeScalars.contains("/"), name != ".", name != ".." else {
+            return false
+        }
         return unlinkat(fd, name, 0) == 0
     }
 }

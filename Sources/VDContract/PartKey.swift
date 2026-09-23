@@ -13,17 +13,21 @@ public enum PartKey {
         return "\(deviceID)/\(relpath)"
     }
 
-    /// 最初の "/" より前。"/" が無い・前が空なら nil
+    /// 最初の "/" より前。"/" が無い・前が空なら nil。
+    /// "/" は Unicode スカラー（UTF-8 の 0x2F）で探す。Character（書記素）で探すと、relpath が結合文字（U+0301 など）で
+    /// 始まるときに "/" を見落とし、make で作った partkey を別の位置で分ける（F-81。RelPath と同じ。F-73）
     public static func deviceID(of partkey: String) -> String? {
-        guard let slash = partkey.firstIndex(of: "/") else { return nil }
-        let head = partkey[..<slash]
-        return head.isEmpty ? nil : String(head)
+        let scalars = partkey.unicodeScalars
+        guard let slash = scalars.firstIndex(of: "/") else { return nil }
+        let head = scalars[..<slash]
+        return head.isEmpty ? nil : String(Substring(head))
     }
 
-    /// 最初の "/" より後。"/" が無い・後が空なら nil
+    /// 最初の "/"（Unicode スカラー。deviceID(of:) と同じ）より後。"/" が無い・後が空なら nil
     public static func relpath(of partkey: String) -> String? {
-        guard let slash = partkey.firstIndex(of: "/") else { return nil }
-        let tail = partkey[partkey.index(after: slash)...]
-        return tail.isEmpty ? nil : String(tail)
+        let scalars = partkey.unicodeScalars
+        guard let slash = scalars.firstIndex(of: "/") else { return nil }
+        let tail = scalars[scalars.index(after: slash)...]
+        return tail.isEmpty ? nil : String(Substring(tail))
     }
 }

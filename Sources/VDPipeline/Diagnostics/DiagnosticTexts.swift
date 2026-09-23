@@ -88,6 +88,10 @@ enum DiagnosticTexts {
         return name + " を列挙できません（errno " + String(code) + "）"
     }
     static let tccRemovableVolumes = "システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム"
+    /// DR-11 の notice（F-81。再マウントでアンマウントされたまま）
+    static func leftUnmounted(_ name: String) -> String {
+        name + " は読み取り専用への切り替えの途中でアンマウントされたままです。取り外して、もう一度つなぎ直してください"
+    }
     static let loginItemEnabled = "登録されています"
     static func loginItem(_ s: LoginItemStatus) -> String {
         switch s {

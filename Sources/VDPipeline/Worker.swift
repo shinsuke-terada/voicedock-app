@@ -142,6 +142,10 @@ public actor Worker {
         }
         guard deps.license.allowsProcessing() else {
             pauses.trip(.license)
+            // 段を回さないので、待っている仕事には失敗で返事をしてから戻る（設定エラーの経路と同じ。返事は必ず返す。F-82）
+            let jobs = pendingJobs
+            pendingJobs = []
+            for job in jobs { Self.replyPaused(job, StatusTexts.pauseWord(.license)) }
             pauses.finishTick()
             return
         }

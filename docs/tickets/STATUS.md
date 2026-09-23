@@ -11,7 +11,9 @@
 | 取り下げ | 1 本（T-33。PLAN F-60） |
 | 残り | 2 本（T-43 README、T-44 v1.0 リリース） |
 
-`develop` の先頭は `0026249`（PR #110 のマージ）。マージ済みの PR は 59 本。
+`develop` の先頭は `2547393`（PR #122 のマージ）。マージ済みの PR は 68 本。
+
+2026-09-23 に**全体コードレビュー**を行い、見つかった不具合を F-71〜F-78 の 8 本の PR で直した（§4）。
 
 | チケット | PR | チケット | PR | チケット | PR |
 |---|---|---|---|---|---|
@@ -48,8 +50,18 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 - **Daily ノート**: `obsidian_saved path="Daily/Voice/Wiki/20260922/2026-09-22 Voice.md" bytes=1775`。Raw は `Daily/Voice/Raw/20260922/2026-09-22 raw.md`
 - **要約の契機**: 2026-09-23 00:00 の Daily ノートは、当時の 0:00 の自動要約で走った。その後 F-66 で 0:00 の自動要約を**廃止**し、パネルの「今すぐ要約」に置き換えた（PR #102・#107）。「今すぐ要約」ボタンは、レビュー用のビルド（worktree の dist）で利用者が押し、「新しく要約する録音はありません」が出て 4 秒で消えることを確かめた
 
-> **注意**: 本体のチェックアウトの `dist/VoiceDock.app` は古いことがある（実機の確認は、その時々の worktree で組んだ `.app` で行った）。実機に触る前に、必ず develop で `make app` を回し直してから使う。
-> 次に実機で触る前に `make app` で組み直す。
+> **注意**: 本体のチェックアウトの `dist/VoiceDock.app` は古いことがある（実機の確認は、その時々の worktree で組んだ `.app` で行った）。実機に触る前に、必ず develop で `make vendor && make app` を回し直してから使う。
+> F-71〜F-78 はまだ実機の `.app` で試していない。F-77 より前のビルドで NORMALIZED 以降になった Part は再検査されない。
+
+### F-71〜F-78 の後に【利用者が行う】確認（未実施）
+
+- モデルの読み込み中に終了すると 10 秒以内に終わる（F-76）
+- 終了の後に `pgrep -fl 'whisper-cli|llama-server'` が空（F-76）
+- 2 つ目の起動が何も表示せずに終わる（F-76。単一起動のロック `<HOME>/state/app.lock`）
+- 終了の後始末の最中（取り込みか文字起こしの途中で「終了」を押した直後）にログアウトしても、ログアウトが中断されず子も残らない（F-76）
+- 任意: P0-05 のついでに、32 bit float の設定の録音・電池切れや録音中の電源断で止まった録音がどういう WAV になるか（F-77。`docs/tickets/P0-poc.md` §7 の 5）
+
+`make test-disk`（R3）は F-73 の PR の先端で、実機を抜いてから利用者が回し、全部緑だった（2026-09-23）。
 
 ## 3. 利用者の環境
 
@@ -65,7 +77,7 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 | 削除 | **有効**（利用者が意図して有効化。`<HOME>/bin/reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`config.json` は `cleanup.deleteSourceAudio=true`・`deleteSkippedSource=true`） |
 | 実機 | いまは未接続（`ls /Volumes` は `Macintosh HD` のみ） |
 
-## 4. 2026-09-22〜23 に利用者が決めたこと
+## 4. 2026-09-22〜23 に利用者が決めたこと・直したこと
 
 | F | 決めたこと | PR |
 |---|---|---|
@@ -80,6 +92,14 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 | F-68 | **SPEC 同期の拡張**。S10（名前の正規表現）・S11（whisper-cli の argv）・S12（保存検証 RN/DN）・S13（tick の段）・S20（パネルの節と画面）・S21（アイコン）・S22（はじめに）・S23（ui-state.json） | #108（issue #18） |
 | F-69 | **消せないまま期限を過ぎた RAW_SAVED の決着と要対応**。期限（backoff を使い切る）＋ 観測できた失敗が同じ `connectEpoch` で 2 回続いたら、消さずに COMPLETED（detail `not_deletable`、原因語 `source_info`/`pre_identity`/`transcript`/`raw_note`）。要対応に `undeletableSources(n)` | #110（issue #98） |
 | F-70 | **最終接続の保存**。`<HOME>/ui-state.json` の `lastConnectedAt`（epoch ミリ秒）に残し、再起動後も「最終接続」を表示する（`LastConnected.resolve` / `valueToSave`） | #109（issue #105） |
+| F-71 | **（全体コードレビュー）トラップの一掃**。設定の検証そのものの桁あふれ（起動のたびに落ちていた）・秒 / バイト / 文字数のキーに CV の上限（秒は 365 日、`hashChunkBytes` は 64 MiB、文字数・トークン数は 10^9）・frontmatter は `Yams.compose` で読む（60 進の int で落ちていた。str でない鍵があれば全体を読めない扱い）・transcript の秒は有限で絶対値 10 億秒以下・`f_bavail`・安定性判定の重複 relpath | #125（issue #120） |
+| F-72 | **（全体コードレビュー）削除の同意**。後追いの実行はプレビューで見せた対象 ∩ 立て直した計画だけ・診断の結果はパネルを閉じたら捨てる・`RequestWriter` が要求ファイルの前後で reaper.conf を読み直す・無効化の再マウントは全デバイスの `.readOnly` の観測で判定 | #121（issue #112） |
+| F-73 | **（全体コードレビュー）reaper とデバイスの防御**。`RelPath` をスカラー（UTF-8 の `/`）で分割・openat 連鎖は `O_NOFOLLOW_ANY`・reaper は unlink の直前に reaper.conf を読み直す・`ENOENT` の要求は何も書かずに飛ばす・FIFO / symlink への備え・再マウントは今の statfs の node と照らしてから diskutil | #122（issue #113） |
+| F-74 | **（全体コードレビュー）永久に終わらない状態**。F-69 の決着を ID の無い SOURCE_DELETE_PENDING にも（既存の 2 遷移）・partkey が空の結果で期限切れを止めない・取り下げきれない要求があれば ID を外さない・後追いの ③ の前に止まった COMPLETED の回収・transcript が読めない Session は `SESSION_MERGE_FAILED` | #123（issue #114） |
+| F-75 | **（全体コードレビュー）Raw ノートの本文を守る**。書き直しで RAW_SAVED 以降の Part の本文が消えるなら書かずに FAILED、要対応「書き直せない Raw ノート」（利用者の決定）・トリガが載らなければ RAW_SAVED にしない（X-38）・上書きは `type` も一致・親フォルダが無ければ基本名から探す | #126（issue #115） |
+| F-76 | **（全体コードレビュー）終了と子プロセス**。起動の途中の llama-server を直ちに止める・`terminateAll` で閉じて以後の起動を拒む・終了の後始末全体を 10 秒で打ち切る・DR-09 の llama を応答の後で止める・単一起動（`state/app.lock`）・前回の whisper.json を消す・閉じた後の reaper の版の確認は `DeletionReadiness.unconfirmed` | #128（issue #116） |
+| F-77 | **（全体コードレビュー。利用者の決定で実機の確認より先）WAV ヘッダの長さ**。data の宣言が実データより短い入力は `NORMALIZE_VERIFY_FAILED`（inbox を消さない）。実機の `_orig.wav`（24 bit mono・data は 32776 から・後ろに何も無い）は合格 | #127（issue #117） |
+| F-78 | **（F-74 の続き。利用者の決定）** 一覧に無い ID の無い SOURCE_DELETE_PENDING を F-64 と同じ条件で自動で完了・reaper の拒否が 3 回続いた Part は消さずに決着（DB の events で数える）・決着した Part を後追いでまた拒否されたら決着し直す・要対応の説明文を 5a / 5b の両方に合わせた | #129（issue #124） |
 
 ## 5. 残っている作業
 
@@ -93,6 +113,8 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 | #95 | T-42 実機 E2E（削除 ON）とゲート | 手順書とテストはマージ済み（#96）。**実施は【利用者が行う】**。`docs/E2E.md` §4 のゲート G-1〜G-5 はいま全部「未実施」で **ゲート: 閉** |
 | #103 | Bluetooth 接続での読み込みと削除の調査・実験 | **v1.0 の後**。調査はエージェント、実験は【利用者が行う】 |
 | #104 | 文字起こしの話者分離 | **v1.0 の後**。方式の調査から |
+| #118 | 全体コードレビューの Major の残り（Worker の空回り B3・LLM の HTTP のリダイレクト E3） | 2026-09-23 から対応中 |
+| #119 | 全体コードレビューの Minor と未確認の指摘の一覧（コメントに PR #121〜#129 で見つかった残りを追記） | 2026-09-23 から対応中。実機・利用者の判断が要るもの（ボリューム UUID・FAT のバックアップ用メモリの扱い など）は利用者に聞く |
 
 PR がマージされても issue が開いたままなのは、**実機・実モデルでの確認がその issue に残っている**ため。
 
@@ -107,7 +129,7 @@ PR がマージされても issue が開いたままなのは、**実機・実�
 
 ## 6. 次のセッションで最初にやること
 
-1. `git fetch origin && git switch develop && git pull`（先頭が `0026249` より進んでいないか確かめる）
+1. `git fetch origin && git switch develop && git pull`（先頭が `2547393` より進んでいないか確かめる）
 2. `ls /Volumes` で**実機が挿さっていないこと**を確かめる。挿さっていたら、ディスクを触る作業の前に利用者に抜いてもらう
 3. `python3 docs/porting-notes/check-tickets.py` が 0 件、`make lint && make test` が緑であることを確かめる
 4. どちらへ進むかを利用者に聞く
@@ -138,14 +160,19 @@ PR がマージされても issue が開いたままなのは、**実機・実�
 - チケットの逐語コードが `swift format` で落ちるときは整形に合わせ、チケットも直す
 - SPEC に節を足す順: PLAN の該当節に表 → `make spec` → `SpecDocument` の extension に読み取り口 → 照合のテストは実装を import できる各モジュールのテストへ（PolicyTests は TestSupport にしか依存しない）。SPEC と PLAN の一致は `SpecExtendedSectionsTests`（F-68）
 - **パネルの主画面に `ScrollView` を置かない**（F-65）。高さは `NSHostingController.sizingOptions = .preferredContentSize`。固定の 640pt に戻すと popover が 1pt に潰れる（PR #100）
-- 削除まわりで Part が詰まる経路は F-64（一覧に無い）と F-69（一覧に在るが消せない）で塞いだ。**新しい設定キー・遷移の辺・ログのイベントを増やさずに**塞ぐのが方針
+- 削除まわりで Part が詰まる経路は F-64（一覧に無い）・F-69（一覧に在るが消せない）・F-74（ID の無い PENDING）・F-78（一覧に無い PENDING・reaper の拒否が続く）で塞いだ。**新しい設定キー・遷移の辺・ログのイベントを増やさずに**塞ぐのが方針
+- 秒・バイト・文字数を掛け算や sleep に使う設定キーには **CV の上限**を付ける（F-71）。使う側で `* 1000` をあふれさせない
+- 文字列の区切り・前方一致・鍵の照合は **Unicode スカラー単位**（`unicodeScalars`・UTF-8 のバイト）で行う。Swift の `split(separator:)`・`hasPrefix`・`==`・`Set<String>` は書記素・正準等価で比べるので、パスや鍵には使わない（F-71・F-73・F-75）
+- ファイルを読む前に `lstat` で通常ファイルと上限サイズを確かめ、`O_NOFOLLOW | O_NONBLOCK` で開いて `fstat` で確かめ直す（FIFO・symlink への備え。F-71・F-73）
+- 並列の修正の PR は付録 F の末尾で必ず衝突する。**F 番号を先に割り当て**、マージの順に**前の PR を merge コミットで取り込んで 1 列につなぐ**と、利用者は順に続けてマージできる（2026-09-23。squash / rebase でマージすると列が崩れるので「Create a merge commit」で）
+- 並列のエージェントはスクラッチパッドを共有する。一時ファイルは `scratchpad/<F 番号>/` のように分ける（コミットメッセージが上書きされる事故があった）
 - `ui-state.json` の `schema` は 1 のまま。**足す鍵は任意**にして、古い読み手が未知の鍵として無視できるようにする（F-70）
 
 ## 9. 文書の地図
 
 | 文書 | 役割 |
 |---|---|
-| `docs/PLAN.md` | 計画書 v1.1（3,100 行）。**最上位**。付録 A = 状態・エラー・ログ、B = ND / RV / E2E、D = voicedock との差分、F = 改訂（F-01〜F-70） |
+| `docs/PLAN.md` | 計画書 v1.1（3,100 行）。**最上位**。付録 A = 状態・エラー・ログ、B = ND / RV / E2E、D = voicedock との差分、F = 改訂（F-01〜F-78） |
 | `docs/tickets/00-api-map.md` | モジュールをまたぐ名前の契約。**チケットより上位** |
 | `docs/tickets/README.md` | 共通規約・チケットの形（10 節）・依存順の目次 |
 | `docs/tickets/T-*.md` | 実装の詳細仕様（45 本） |

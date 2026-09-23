@@ -5,6 +5,9 @@
 > 従来の ID だけの行・読めない processed.log は従来どおり `replayed`。下の本文の「1 行 1 request_id」「照合は行の完全一致」はその分を読み替える（PLAN §8.9.4・付録 B.2）。
 > ディスクイメージの成功のテスト（`ReaperDiskImageTests`・`ReaperDefenseDiskImageTests`）の processed.log の期待も `<request_id> DELETED` に直した。テストは `ProcessedLogTests`。
 
+> （F-81・issue #119。2026-09-23）`QueueFiles.names()` の「`.` で始まる」は先頭の Unicode スカラー（`$0.unicodeScalars.first != "."`）、`Unlinker.removeRequest(named:)` の「`/` を含む」は
+> `name.unicodeScalars.contains("/")` で見る（書記素で見ると結合文字の直前の `.`・`/` を見落とす。ASCII の名前の結果は変わらない）。テストは `QueueNameScalarTests`。
+>
 > （F-73・issue #113。2026-09-23）reaper は各要求の unlink（RV-13）の直前に reaper.conf を読み直し、ロック 1 が閉じていればその要求を残して `reaper_disabled` を出し、走査を終える（`RequestOutcome.stopped`・`RequestProcessor.unlinkIfLock1Open`・`ReaperMain.scan`）。
 > `QueueFiles.readRequest` は `RequestRead`（`.read` / `.gone` / `.unreadable`）を返し、`ENOENT`（`.gone`）は何も書かずに次へ（`RequestOutcome.gone`。数えない）。RV-04 の `replayed` は結果を書けたときだけ要求を消してログを出す。
 > reaper.conf・processed.log・要求の読みは `O_NONBLOCK` ＋ `fstat` で通常ファイル、processed.log の追記と reaper.log の作成・追記は `O_NOFOLLOW | O_NONBLOCK`。以下の本文は記録として残す。テストは `ReaperDefenseTests`。

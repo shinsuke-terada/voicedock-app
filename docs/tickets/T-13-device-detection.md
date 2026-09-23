@@ -1,5 +1,15 @@
 # T-13 VDDevice: デバイス判定・マウント情報・共存ガード
 
+> （F-81 のレビュー・issue #119。2026-09-23。利用者の決定）`detect()` は規則 1 で `notIncluded` にした名前だけに、続けて規則 2（exclude・ネットワークの FS）・3・4・5・6 を当て（規則 8・9 は見ない）、
+> 全部通れば `DetectionResult.notIncludedDevices`（名前の UTF-8 バイト順。internal の init の既定値は `[]`）に入れる（internal の `looksLikeDevice(name:path:remote:)`）。取り込みにも削除にも使わず、
+> 走査が snapshot の `unavailable` に `not_included` で載せて「はじめに」の⑤が改名を案内する（T-15・T-31 の注記）。テストは `DeviceDetectorNetworkTests`（バックアップのメモリ・`NO NAME`・`DJIMIC3 1`・対象にしないもの・ネットワークの FS・include が空）。
+
+> （F-81・issue #119。2026-09-23）`detect()` は最初に `inspector.allMounts()`（`getmntinfo(MNT_NOWAIT)`。待たない）から `MNT_LOCAL` の立っていないマウント点を集め、
+> 規則 2 の続きとしてそのパスを `excluded` で外す（規則 3 以降の lstat・statfs・realpath・ボリューム名は応答しないネットワーク共有で止まるので呼ばない。新しい理由語は足さない）。
+> `MountInfo` に `isLocal: Bool`（`f_flags & MNT_LOCAL`。公開の init は既定値 true の引数）を足した。`DeviceID.isValid` の「`.` で始まる」は先頭のスカラーで見る。
+> 既定の `includeVolumes` は `["DJIMIC3"]`（T-09 の注記）になったので、`DeviceDetectorTests` の舞台は規則 1 を素通りさせるため `includeVolumes = []` にした（下の表の「既定の `[]`」は記録として残す）。
+> テストは `DeviceDetectorNetworkTests`（ネットワークの FS・既定の include・include のバイト列の照合）と `KeyScalarTests`（VDContract）。
+
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`CoexistenceGuard` と `CoexistenceGuardTests` は消した。以下の本文の共存ガードの記述は記録として残す。
 
 | 項目 | 値 |

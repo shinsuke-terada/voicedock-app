@@ -46,17 +46,10 @@ extension Store {
         guard TransitionTable.allows(edge, kind: kind) else {
             throw IllegalTransition(from: from.rawValue, to: to.rawValue, kind: kind)
         }
-        let retry: RetryExpression
-        if resetRetry || SessionStates.retryReset.contains(to) {
-            retry = .reset
-        } else if to == .failed {
-            retry = .increment
-        } else {
-            retry = .keep
-        }
         let storedDetail = kind == .recovery ? Store.recoveryDetail : detail
         try transition(
-            entity: .session, key: sessionKey, from: from.rawValue, to: to.rawValue, retry: retry,
+            entity: .session, key: sessionKey, from: from.rawValue, to: to.rawValue,
+            retry: Store.sessionRetry(to: to, resetRetry: resetRetry),
             errorCode: errorCode?.rawValue, errorMessage: errorMessage, detail: storedDetail)
     }
 
@@ -81,14 +74,38 @@ extension Store {
 
     public func insertSession(_ row: NewSession) throws {
         let now = nowISO()
-        try pool.write { db in
-            try db.execute(
-                sql:
-                    "INSERT INTO sessions (session_key, day_date, device_id, status, updated_at) VALUES (?, ?, ?, ?, ?)",
-                arguments: [row.sessionKey, row.dayDate, row.deviceID, SessionStatus.open.rawValue, now])
-            try Store.insertEvent(
-                db, entity: .session, key: row.sessionKey, from: nil, to: SessionStatus.open.rawValue,
-                errorCode: nil, detail: nil, createdAt: now)
+        try pool.write { db in try Store.insertSessionRow(db, row, now: now) }
+    }
+
+    /// 分組の 1 件（PLAN §5.6。F-82）。Session が無ければ作り（OPEN。events に NULL→OPEN）、Part に session_key を書き、
+    /// Session の集計列を数え直し、Session が OPEN なら `OPEN→OPEN`（detail = partkey。新規作成の直後も書く。SM-02）までを
+    /// **1 トランザクション**で行う（途中で落ちて、分組したのに集計も events も無い行を残さない）。閉じた Session への追加は events を書かない。
+    /// 返り値は分組した時点の Session の状態（新規作成なら OPEN）。再オープンするかは呼び手が決める（SM-11 / SM-12）。
+    /// Part の行が無ければ（空の partkey を含む）何も書かずに nil
+    public func groupPart(_ partkey: String, into session: NewSession) throws -> SessionStatus? {
+        guard TransitionTable.allows(Edge(SessionStatus.open, .open), kind: .normal) else {
+            throw IllegalTransition(from: SessionStatus.open.rawValue, to: SessionStatus.open.rawValue, kind: .normal)
+        }
+        let key = session.sessionKey
+        let now = nowISO()
+        return try pool.write { db in
+            guard try Store.recording(db, partkey: partkey) != nil else { return nil }
+            let status: SessionStatus
+            if let row = try Store.session(db, key: key) {
+                status = row.status
+            } else {
+                try Store.insertSessionRow(db, session, now: now)
+                status = .open
+            }
+            try Store.applyRecordingUpdate(db, partkey: partkey, fields: [.sessionKey(key)], now: now)
+            try Store.refreshSessionAggregates(db, key: key, now: now)
+            if status == .open {
+                try Store.applyTransition(
+                    db, entity: .session, key: key, from: SessionStatus.open.rawValue, to: SessionStatus.open.rawValue,
+                    retry: Store.sessionRetry(to: .open, resetRetry: false), errorCode: nil, errorMessage: nil,
+                    detail: partkey, now: now)
+            }
+            return status
         }
     }
 
@@ -115,15 +132,41 @@ extension Store {
     ) throws {
         let now = nowISO()
         try pool.write { db in
-            try db.execute(
-                sql:
-                    "UPDATE \(entity.table) SET status = ?, retry_count = \(retry.sql), error_code = ?, error_message = ?, updated_at = ? "
-                    + "WHERE \(entity.keyColumn) = ? AND status = ?",
-                arguments: [to, errorCode, errorMessage.map(TextLimit.truncate200), now, key, from])
-            guard db.changesCount == 1 else { throw TransitionConflict(key: key, expected: from) }
-            try Store.insertEvent(
-                db, entity: entity, key: key, from: from, to: to, errorCode: errorCode, detail: detail, createdAt: now)
+            try Store.applyTransition(
+                db, entity: entity, key: key, from: from, to: to, retry: retry, errorCode: errorCode,
+                errorMessage: errorMessage, detail: detail, now: now)
         }
+    }
+
+    /// transition の SQL を与えられた db で実行する（groupPart が同じトランザクションで使う。同じ SQL を 2 か所に書かない。CR-06）
+    static func applyTransition(
+        _ db: Database, entity: EntityType, key: String, from: String, to: String, retry: RetryExpression,
+        errorCode: String?, errorMessage: String?, detail: String?, now: String
+    ) throws {
+        try db.execute(
+            sql:
+                "UPDATE \(entity.table) SET status = ?, retry_count = \(retry.sql), error_code = ?, error_message = ?, updated_at = ? "
+                + "WHERE \(entity.keyColumn) = ? AND status = ?",
+            arguments: [to, errorCode, errorMessage.map(TextLimit.truncate200), now, key, from])
+        guard db.changesCount == 1 else { throw TransitionConflict(key: key, expected: from) }
+        try Store.insertEvent(
+            db, entity: entity, key: key, from: from, to: to, errorCode: errorCode, detail: detail, createdAt: now)
+    }
+
+    /// Session の行の作成（insertSession と groupPart が同じトランザクションで使う）
+    static func insertSessionRow(_ db: Database, _ row: NewSession, now: String) throws {
+        try db.execute(
+            sql: "INSERT INTO sessions (session_key, day_date, device_id, status, updated_at) VALUES (?, ?, ?, ?, ?)",
+            arguments: [row.sessionKey, row.dayDate, row.deviceID, SessionStatus.open.rawValue, now])
+        try Store.insertEvent(
+            db, entity: .session, key: row.sessionKey, from: nil, to: SessionStatus.open.rawValue,
+            errorCode: nil, detail: nil, createdAt: now)
+    }
+
+    /// Session の遷移の retry_count の式（SM-03 / SM-04）
+    static func sessionRetry(to: SessionStatus, resetRetry: Bool) -> RetryExpression {
+        if resetRetry || SessionStates.retryReset.contains(to) { return .reset }
+        return to == .failed ? .increment : .keep
     }
 
     static func insertEvent(
