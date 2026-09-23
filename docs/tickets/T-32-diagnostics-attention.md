@@ -4,6 +4,8 @@
 > `StatusReporter.causeText(_:)`（internal）を足し、`causeTexts` に無く `IdentityReason.all` に在る語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（`UndeletablePart.detail` はこれを使う。型は変えない。テストは T-38 の `ReaperRejectionSettlementTests`）。
 > 要対応 `undeletableSources` の説明を、5a（直せば再評価できる）と 5b（削除モジュールの拒否。再評価しても同じ）の両方に合う文言に直した（下の表・`AttentionTextsTests`。PLAN §8.11）。
 
+> （F-76・issue #116。2026-09-23）DR-09（`LLMProbeCheck`）は `ensureRunning` を呼んだら、応答の後（成功でも失敗でも）`llama.stop()` を呼ぶ（止めないと `pendingJobs` で起動したサーバが次の tick の Part 工程（whisper）と重なる。PLAN §2.1・LLM-15）。下の §4 の「llama-server を止めない」・§5 の `probeDoesNotStopTheServer`・§6 の 19 は記録として残す（テストは `probeStopsTheServerAfterTheReply` ほか 3 本に置き換えた）。`DeletionReadiness` に `unconfirmed`（reaper の版を観測できなかった。T-36 の注記）を足した。
+
 > （F-75・issue #115、2026-09-23。マージ後の追記）要対応の末尾に `rawNoteBlocked(Int)`（「書き直せない Raw ノート <n> 件」、操作 `[.openDetails]`）と `AttentionInput.rawNoteBlocked`、
 > `AttentionEvaluator.rawNoteBlockedSessions(_:)`（FAILED・`OBSIDIAN_RAW_WRITE_FAILED`・error_message が PLAN §8.6 の文言で始まる Part の Session の数）を足した。
 > AppServices は `ReadOnlyStore.failedParts(limit: Int.max)` の全件から数える。「FAILED は要対応にしない」の例外（PLAN §8.11）。テストは `RawNoteBlockedAttentionTests.swift`。

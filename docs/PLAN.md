@@ -161,7 +161,9 @@ VoiceDock.app（常駐・非サンドボックス・Hardened Runtime）
 ```
 
 - **whisper と LLM を同時に走らせない**（Worker が直列。LLM-15）。診断 DR-09 の LLM 実リクエストも Worker の直列ループに 1 件の仕事として入れる（§8.11）
-- **llama-server は解析が要るときに初めて起動し、`processReadySessions` の終わりで必ず止める**（18 GB を常駐させない。次の tick の Part 工程とは重ならない）
+- **llama-server は解析が要るときに初めて起動し、`processReadySessions` の終わりで必ず止める**（18 GB を常駐させない。次の tick の Part 工程とは重ならない）。
+  DR-09 も応答の後で止める（`pendingJobs` の段は tick の最後にあり、止めないと次の tick の Part 工程と重なる。F-76）
+- **アプリは 1 つだけ動く**: 起動の最初に `<HOME>/state/app.lock` へ排他の `flock` を掛け、生きている間持つ（取れなければ別のインスタンスが動いているので何もせずに終了する。2 つ目の復旧が 1 つ目の処理中の行を戻さないように。§8.15。F-76）
 - デバイス上のファイルを削除できるのは reaper だけ（PR-16）。アプリ本体はデバイス上のファイルを unlink するコードを持たない（`SafeUnlink` は `<HOME>` と Vault の tmp だけ。CR-10）
 - reaper は実行中ずっと `<HOME>/state/reaper.lock` に排他の `flock` を掛ける（`LOCK_EX | LOCK_NB`。取れなければ何もせず終了コード 4）。IngestService は走査の前に同じロックを取る（`LOCK_NB` を 1 秒ごとに最大 130 回試す）。アプリが落ちて reaper だけが生き残った場合も「reaper の後の観測」を保証する（§8.9.6）。ロックは `FileLock`（VDContract）だけが扱い、ファイルが無ければ作る（0644）
 - **actor の中で長い同期処理をしない**: コピー・ハッシュ・16 kHz 変換・ディレクトリ走査のような数秒以上かかる同期 I/O は `BlockingIO.run { … }`（VDCore。専用の並行 DispatchQueue で実行し continuation で待つ）で行い、actor は状態だけを持つ。子プロセスの終了は `DispatchSource.makeProcessSource(identifier:eventMask: .exit)` と continuation で待ち（kqueue の登録より前に終わった子を取りこぼさないよう、`waitpid(WNOHANG)` の予備のタイマー（DispatchSourceTimer）も併用する。T-12）、`waitpid` で actor を止めない（whisper の実行中に diskutil が待たされないようにする）
@@ -204,6 +206,7 @@ bash 3.2 互換、C ランチャ（ただし「responsible process を保つに�
 ├── queue/rejected/<name>            # ファイル名・request_id が不正な要求（reaper が移す）
 ├── state/processed.log              # reaper のリプレイ防止（reaper だけが書く。1 行 1 request_id）
 ├── state/reaper.lock                # reaper の実行中ロック（flock。§2.1）
+├── state/app.lock                   # アプリの単一起動のロック（flock。起動の最初に取り、生きている間持つ。reaper.lock とは別。§8.15。F-76）
 ├── run/llama-api-key                # llama-server の起動ごとの API キー（0600。起動のたびに書き直す。§8.5）
 ├── ui-state.json                    # パネルの状態（「はじめに」のログイン項目の選択・最終接続。§8.12。F-70）
 ├── bin/voicedock-reaper, bin/reaper.conf   # **既定では存在しない**（ロック 2-A）
@@ -1231,7 +1234,12 @@ public final class RunningProcess: Sendable {
 
   - 引数は**配列だけ**。シェルを経由しない（PR-05 / PR-06）
   - タイムアウト時: `kill(-pgid, SIGTERM)` → 5 秒待つ → `kill(-pgid, SIGKILL)`。**子だけでなく孫も殺す**（ASR-07。テストでは偽 whisper に孫を作らせ、孫も消えることを確かめる）
-  - アプリ終了時は実行中の全グループに同じ手順を行う（`ProcessRunner.terminateAll(grace:)`）
+  - アプリ終了時は実行中の全グループに同じ手順を行う（`ProcessRunner.terminateAll(grace:)`）。**terminateAll はまず閉じる**（以後の `run` は起動せずに
+    `.spawnFailed(errno: ECANCELED)`、`spawn` は起動せずに `SpawnError.spawnFailed(errno: ECANCELED)` を投げる。開き直さない。閉じることと実行中の子の写しを取ることの間に await を挟まない）。
+    SIGTERM の後は全部が終われば grace を待たずに戻り、grace を過ぎた（か呼び手が取り消した）ら残りに SIGKILL（F-76。終了の後に起動された子が残らないように）。
+    閉じた後の拒否は呼び手には起動の失敗に見える（whisper なら `WHISPER_EXEC_MISSING`「spawn: errno 89」）。アプリは終了するので、次回起動の再評価（§5.4 の契機 1）で戻る。
+    ただし **reaper の `--version` の拒否は「版を観測できなかった」**として扱い、版の不一致にしない（キャッシュせず `reaper_failed` も出さず、readiness は `.unconfirmed`。§8.9.2。
+    版の不一致にすると、停止要求の後も進む今の Session の削除段が RAW_SAVED→COMPLETED を永続化してしまう）。見分けは `ProcessRunner.closedErrno`（ECANCELED）で行う
 - 環境変数は呼び手が明示する（`ProcessSpec.environment` だけを子に渡す。親の環境を引き継がない）。既定の組は `ProcessEnvironment.standard` = `PATH=/usr/bin:/bin:/usr/sbin:/sbin`、`LANG=en_US.UTF-8`、
   diskutil は `ProcessEnvironment.cLocale` = 同じ PATH と `LC_ALL=C`
 - stderr は最後の 4 KiB だけメモリに持ち、失敗時の `error_message` に使う（200 文字に切り詰まる）。whisper の失敗文言は voicedock と同じく stderr の末尾 1000 文字（§8.4）
@@ -1316,7 +1324,8 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
    「16 kHz 音声も inbox の原本もありません（<normalized_path>）。デバイスから採り直す必要があります」、`normalize_failed … reason=input`）。`needs_recopy = 1` は**遷移の前に** `updateRecordingIfStatus` で書く
 3. NORMALIZED なら `NORMALIZED→TRANSCRIBING`
 4. 冪等: 既存の正規化 transcript が読めて（下記の形）text のスカラー数が `minChars` 以上なら whisper を起動しない
-5. whisper を実行（タイムアウト `Int(min(max(duration × timeoutFactor(3.0), minTimeoutSeconds(600)), maxTimeoutSeconds(21600)))`、duration 不明なら maxTimeout。ASR-08）
+5. whisper を実行（タイムアウト `Int(min(max(duration × timeoutFactor(3.0), minTimeoutSeconds(600)), maxTimeoutSeconds(21600)))`、duration 不明なら maxTimeout。ASR-08）。
+   **起動の前に staging の前回の `whisper.json` を消す**（`SafeUnlink`、無ければそのまま。落ちた前回の残りがあると、JSON を書かずに 0 で終わった whisper の結果を前回の JSON で成功にしてしまう。RK-34。F-76）。消せなければ起動しない
 6. 結果の写し方（どの失敗でも staging の `whisper.json` を削除する）:
 
 | 事象 | コード | error_message |
@@ -1326,6 +1335,7 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
 | 終了コード ≠ 0 | WHISPER_FAILED | `終了コード <n>: <stderr の末尾 1000 スカラー>` |
 | シグナルで終了（`signaled`） | WHISPER_FAILED | `シグナル <n>: <stderr の末尾 1000 スカラー>` |
 | 終了コード 0 だが `whisper.json` が無い・JSON として読めない | WHISPER_FAILED | `生 JSON を読めません: <HOME からの相対パス>` |
+| 起動の前に前回の `whisper.json` を消せない（起動しない。F-76） | WHISPER_FAILED | `前回の生 JSON を消せません: <HOME からの相対パス>` |
 | text のスカラー数 < minChars | NO_SPEECH_DETECTED（**SKIPPED**。失敗ではない） | `<n> 文字（min_chars=<m>）` |
 | 正規化 transcript を書けない | WHISPER_FAILED | `正規化 transcript を書けません: <説明>` |
 
@@ -1365,7 +1375,10 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
 - 空きポート: `socket` → `bind(127.0.0.1:0)` → `getsockname` でポートを得て閉じ、そのポートを渡す。起動に失敗したら別のポートで最大 3 回
 - 起動後 `GET /health` を 1 秒ごとに呼び、200 になるまで待つ（読み込み中は 503。API キーは不要。上限 300 秒。18 GB の読み込みを見込む）。
   途中でプロセスが終了した・300 秒を超えた → 止めて `LLM_UNAVAILABLE`（error_message `server_start_failed: <理由: exited(<n>) / signaled(<n>) / timeout / no_port / spawn_failed / api_key_file / cancelled>: <stderr の末尾 150 スカラー>`。stderr が空なら `: ` 以降を付けない）。成功で `llm_server_started port=… elapsed_s=…`。停止したときと起動に失敗したときは `run/llama-api-key` を消す
-- **停止**: `processReadySessions` の終わりで必ず（§2.1）。アプリ終了時も。`RunningProcess.terminate(grace: 10 秒)`（SIGTERM → 10 秒 → SIGKILL、プロセスグループ）→ `llm_server_stopped`
+- **停止**: `processReadySessions` の終わりで必ず（§2.1）。DR-09 の応答の後も（§8.11）。アプリ終了時も。`RunningProcess.terminate(grace: 10 秒)`（SIGTERM → 10 秒 → SIGKILL、プロセスグループ）→ `llm_server_stopped`
+  - **起動の途中の停止**（F-76）: `/health` が 200 になる前に `stop()` が来たら、中止の印を立てて起動中のプロセスを直ちに止め（`terminate(grace: 10 秒)`。読み込みの完了を待たない）、
+    起動は次の試行・次の待ちに進まずに `server_start_failed: cancelled` で終える（鍵ファイルを消す。起動していないので `llm_server_started` / `llm_server_stopped` は出さない）
+  - 停止の途中に来た `ensureRunning` は停止の終わりを待ってから比べ直す（停止中は起動しない）。停止が終われば起動してよい（中止の印は停止の終わりで下ろす）
 - stdout / stderr はファイルに残さない（プロンプト本文が混ざりうる。PR-08）。末尾 4 KiB をメモリに持ち、失敗時だけ `error_message` に使う
 - 解析の前のガード（§5.4）: `llm.modelID` が設定済み、モデルファイルが在る、llama-server が在る、`ProcessInfo.physicalMemory >= minMemoryGB × 1024³`（カタログのモデルだけ。custom は警告だけで起動する）。偽なら遷移せずに待つ
 
@@ -1737,6 +1750,7 @@ func skipReasonIsBacked(...) -> Bool {
    - reaper.conf が `DELETE_SOURCE_AUDIO=false`・無い・読めない・不正 → `.disabled(lock_mismatch)`（食い違いが確定していれば CV-30 で設定エラーにもなる）
    - `device.mountMode == ro` → `.disabled(mount_mode_ro)`（CV-33 で設定エラーにもなる）
    - `bin/voicedock-reaper` が無い → `.disabled(reaper_not_installed)`、署名か版が合わない → `.disabled(reaper_invalid)`
+   - 署名は正しいが、ProcessRunner が閉じた後（アプリの終了の途中）で `--version` を起動できない → `.unconfirmed`（版を観測できなかった。キャッシュせず、`reaper_failed` を出さない。次の評価で確かめ直す。F-76）
    - どれでもなければ `.configured`
    - 署名検証と `--version` の結果は、`bin/voicedock-reaper` の `(inode, size, mtime)` が変わらない限り `LockEvaluator` がキャッシュする（Session ごと・tick ごとに子プロセスを起動しない）。reaper を起動する直前だけはキャッシュを使わない
 2. **デバイスの観測（`DeviceWritability`。挿し直しで変わる）** — snapshot から: そのデバイスが snapshot に**無い** → `.absent`、`readOnly == false` → `.writable`、`true` → `.readOnly`、`nil` → `.unknown`
@@ -1744,6 +1758,7 @@ func skipReasonIsBacked(...) -> Bool {
 - `locks.allReleased(for: deviceID)` = `readiness == .configured && writability(deviceID) == .writable`。**設定値と観測値を混同しない**（`mountMode` は「そうしたい」、`readOnly` は「そうなっている」）
 - 「削除できない」ときの Session の扱い（voicedock pipeline.py:750-812 と同じ判定。§8.9.5 の `deleteSourcesIfSafe`）:
   - `readiness` が `.disabled` → 削除せずに完了する（`source_delete_skipped session_key=… reason=<語>`）。待っても変わらない条件で待たない（DEL-15 / DEL-16）
+  - `readiness` が `.unconfirmed`（F-76）→ 要求を書かず（`.configured` でない）、削除せずの完了もしない（`.disabled` でない）。デバイスの観測に従い、未接続・書ける間は `delete_attempts += 1` して待つ（決着させない。次回起動で確かめ直す）
   - デバイスが**接続中で** `.readOnly` か `.unknown` → 削除せずに完了する（`reason=device_readonly`。voicedock と同じ。有効化の直後で挿し直す前のデバイスもここに入る。消し損ねた分は「過去分を削除対象にする」で拾える）
   - デバイスが **`.absent`（未接続）なら待つ**（`delete_attempts += 1` して backoff。voicedock は未接続を「書き込み可能」扱いにして要求を書かず待っていた）
   - デバイスが**接続中で列挙でき**、RAW_SAVED か `delete_request_id` の無い SOURCE_DELETE_PENDING（F-78。手で原本を消した後など）の Part の元ファイルが一覧に**無い** → その Part は消す必要が無いので、要求を書かずに完了する（§8.9.5 の `requestDeletions`。F-64・F-78）。
@@ -2215,7 +2230,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | DR-15 | 13 | inbox の取り残し（`inboxLeftoverStates` の Part の inbox ファイルが残っている）。件数と合計サイズ。**自動では消さない** | notice |  |
 | DR-17 | 14 | アプリ自身の署名が有効で ad-hoc でない（Team ID を持つ）。ad-hoc なら「ビルドのたびにリムーバブルボリュームの許可が失効します」（voicedock DH-16 相当） | notice |  |
 | DR-14 | 15 | 三重ロックを個別に表示（§8.9.8 の表示。`LockEvaluator` を使い、式を書き直さない）。常に notice | notice | （必ず最後） |
-| DR-09 | 別 | LLM に実リクエスト（別のボタン。Worker の直列ループに 1 件の仕事として入れ、`LlamaServerSupervisor` の単一インスタンスを使う。数十秒かかる）。結果「<model>（<秒 小数 1 桁>s）」 | fail |  |
+| DR-09 | 別 | LLM に実リクエスト（別のボタン。Worker の直列ループに 1 件の仕事として入れ、`LlamaServerSupervisor` の単一インスタンスを使う。数十秒かかる。起動したら応答の後（成功でも失敗でも）止める。F-76）。結果「<model>（<秒 小数 1 桁>s）」 | fail |  |
 
 - 件数（15 + DR-09 = 16。取り下げた DR-13 は数えない。F-61）は SPEC の表から数え、README と文書テストで突き合わせる（§10.3）
 
@@ -2354,10 +2369,19 @@ T-11・T-14 で実装済みの `imported_keys` の表と IngestService の除外
 
 ### 8.15 ライフサイクル・電源・ログ
 
-- **起動**: `<HOME>` と下位ディレクトリを作る（`HomeLayout.createDirectories()`。`bin/` は作らない）→ 設定を読む（無ければ既定を書く）→ DB を開く（マイグレーション）→ Worker.start()（復旧）→ IngestService.start() → UI
+- **起動**: `<HOME>` と下位ディレクトリを作る（`HomeLayout.createDirectories()`。`bin/` は作らない）→ **単一起動のロック**（F-76）→ 設定を読む（無ければ既定を書く）→ DB を開く（マイグレーション）→ Worker.start()（復旧）→ IngestService.start() → UI
+- **単一起動のロック**（F-76）: 設定・DB・復旧・Worker より前に `<HOME>/state/app.lock`（`HomeLayout.appLock`。reaper.lock とは別）を `FileLock.tryAcquire`（待たない）で取り、アプリが生きている間持つ（fd は O_CLOEXEC なので子プロセスは受け継がない。落ちれば外れる）。
+  取れなければ別のインスタンスが動いている（`open -n`、dist/ と /Applications の両方の起動など）: `service_stopping version=… reason=already_running` を 1 行出し、**ほかは何もせず、何も表示せずに**終了する（パネルは先に起動したほうにある。D-7）。
+  2 つ目の起動の復旧が 1 つ目の処理中の行を戻すこと・二重の取り込み・whisper と llama-server の同時実行を防ぐ
 - **起動に失敗したとき**（`<HOME>` を作れない・DB を開けない）: `NSAlert` を 1 枚出して終了する（メニューバーに出さない。パネルからは直せないため）
-- **終了**: 「終了」→ 新しい工程を始めない → 実行中の子プロセスをプロセスグループごと止める → 最大 10 秒待って終了（`applicationShouldTerminate` で `.terminateLater`）。
-  中途の状態は次回起動時の復旧（§5.3）が戻す。`service_stopping`
+- **終了**: 「終了」→ 新しい工程を始めない → `ProcessRunner` を閉じて（以後の起動を拒む）実行中の子プロセスをプロセスグループごと止める（全部が終われば 5 秒を待たない。§8.2）→ 取り込みを止める →
+  llama-server の後始末（起動の途中なら中止させる。§8.5）→ Worker の終わりを待つ。**この後始末全体を最大 10 秒で打ち切って終了する**（`applicationShouldTerminate` で `.terminateLater`。
+  10 秒を超えたら残りを待たない。子を止める段を、時間の掛かりうる段より前に置く。F-76）。中途の状態は次回起動時の復旧（§5.3）が戻す。`service_stopping`
+  - **2 度目の終了要求**（F-76）: 後始末の最中に `applicationShouldTerminate` がもう一度呼ばれたら取り消さずに `.terminateLater` を返し、1 度目の後始末の終わりの reply で終わる（ログアウト・システムの終了を中断させない）。
+    なお AppKit は、`.terminateLater` の応答待ちの間の 2 度目の `terminate` ではデリゲートを呼ばずに**直ちに終了する**（`applicationWillTerminate` だけが呼ばれる。macOS 26 で確かめた）。
+    そのため `applicationWillTerminate` で ProcessRunner を閉じ、残った子のプロセスグループに SIGTERM → 直ちに SIGKILL を送る（別のタスクで行い、最大 1 秒待つ）。後始末が 10 秒で打ち切られたときも同じ。
+    ログアウト・システムの終了の Apple Event の経路は確かめていない（実機の確認が要る）
+  - **既知の制限**（F-76）: 再マウントの途中（`diskutil unmount` が成功した直後）に終了すると、続く `mount` が閉じた ProcessRunner に拒まれ、ボリュームが外れたまま残る。書き込み・削除はしない。挿し直せば戻る
 - **スリープ**: Worker が工程を実行している間だけ `ProcessInfo.processInfo.beginActivity(options: [.idleSystemSleepDisabled, .suddenTerminationDisabled], reason:)`。アイドルになったら `endActivity`
 - **アイドル時の CPU は 0 に近く保つ**: 常時ポーリングしない。Worker は通知か 30 秒の遅い周期、IngestService は通知か 300 秒
 - **ログ**（`VDCore/Log.swift`。voicedock log.py と同じ規則）: `os.Logger`（subsystem = BUNDLE_ID、category = モジュール名）と `<HOME>/logs/app.log`（5 MiB を超えたら `.1` へ rename して 1 世代）
@@ -2990,7 +3014,7 @@ RetryPolicy: `none`（再評価の契機まで待たない。FAILED なら reque
 | 16 | `NORMALIZED_MISSING` | nextConnect | FAILED | `needs_recopy = 1` |
 | 17 | `WHISPER_EXEC_MISSING` | none | FAILED | 起動に失敗したときだけ。**実行ファイルが無いことは工程に入る前のガード**（§5.4） |
 | 18 | `WHISPER_MODEL_MISSING` | none | — | **ガードの理由（要対応の表示）にだけ使い、行には書かない**（voicedock では設定検証のコード） |
-| 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない |
+| 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない、起動の前に前回の生 JSON を消せない（F-76） |
 | 20 | `WHISPER_TIMEOUT` | attempts | FAILED | |
 | 21 | `NO_SPEECH_DETECTED` | none | SKIPPED | |
 | 22 | `OBSIDIAN_RAW_WRITE_FAILED` | attempts | Part FAILED | 99 を超えた同名ファイルも。トリガが Raw に載らない・書き直しで RAW_SAVED 以降の Part の本文が消えるときも書かずにこれ（F-75。§8.6） |
@@ -3028,6 +3052,7 @@ model_downloaded model_download_failed diagnostics_completed
 
 主な reason / フィールド（逐語。新しい語を足すときはここに足す）:
 - `recovery_completed`: `rolled_back=<n>`（復旧）/ `requeued=<n>`（再評価）
+- `service_stopping`: `version=<版>`（Worker の停止要求で 1 回）。2 つ目の起動が単一起動のロックを取れずに終わるときは `reason=already_running` を足す（F-76。§8.15）
 - `source_delete_skipped`: `reason=delete_source_audio_disabled|lock_mismatch|mount_mode_ro|reaper_not_installed|reaper_invalid|device_readonly|already_absent|not_deletable|status_changed`（`not_deletable` は F-69・F-74・F-78 の決着。`recording_key` と `detail=source_info|pre_identity|transcript|raw_note|<RV の理由語>`（原因。RV の理由語は F-78 の reaper の拒否の打ち切り）を付ける。`already_absent` は F-64・F-78 の自動の完了と「手動で消した分を完了にする」で、`recording_key` を付ける。`lock_mismatch` は削除段の先頭の `session_key` のほか、要求ファイルを書く前後の reaper.conf の読み直し（§8.9.5）でも `recording_key` を付けて出す（書いた後の取り下げに失敗したときだけ WARNING）。F-72）
 - `source_delete_pending`: `reason=<RV の理由語>|still_in_inventory|no_result|queue_write_failed`
 - `disk_space_low`: `reason=<空き容量の文言>|staging_unlink_failed`
@@ -3441,4 +3466,5 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-72 | 誤 | §8.9.5・§8.9.8・§8.9.9・付録 A.4 | （2026-09-23。issue #112。全体コードレビューのテーマ 2（アプリ側）: 削除の同意）利用者が確かめた範囲・意図を超えて削除要求が書かれる経路があった（どれも各件は `canDeleteSource` と三重ロックを通るので、消してはいけない録音を消す経路ではない）→ (1) 後追いの実行は計画を立て直して全部を実行していたので、プレビューの後に条件を満たした Part（別のトランスミッターの過去分など）も書かれ、結果の「飛ばしました」は立て直した計画との差なので増えた分は知らされず、`panelDidClose` が `backlogState` を戻さないので古いプレビューと実行ボタンが残り続けた → 実行の仕事にプレビューの計画を載せ（`BacklogAction.execute(preview:reply:)`）、**プレビューの対象 ∩ 立て直した計画の対象**だけを実行する（照合はスカラー列。増えた対象は書かない・完了にしない。見せた対象は同意の内なので全体は見送らない）。結果は `BacklogExecution { previewed; added; done }` で、飛ばした数はプレビューの件数との差、増えた数は「実行していません（もう一度押してプレビューから確かめてください）」と添える。閉じたらプレビュー・結果を捨て、閉じる前に頼んだ返事は世代で捨てる。(2) 有効化の事前確認の「最新の診断結果」に、起動後に 1 回実行した結果が時刻なしで出続け、再実行のボタンも消えた → 診断の結果はパネルを閉じたら捨て、閉じた後に届いた結果も世代で捨てる（時刻を添えて古さを判定する案は、閾値の定数が要るので採らない）。閉じる前に始めた診断が終わるまで次の診断は起動しない（2 本同時に走らせない）。(3) 削除段・根拠 B・後追いは readiness を先頭で 1 回だけ評価するので、無効化の段 4（要求の取り下げ）の後に書かれた要求が残り、1 時間以内に再び有効化すると再評価なしで実行されえた → 要求を書く唯一の場所 `RequestWriter` が ② の前後で reaper.conf を読み直し、② の前に `DELETE_SOURCE_AUDIO=true` で読めなければ書かない（② の失敗と同じく ID を外して飛ばす。`source_delete_skipped recording_key=… reason=lock_mismatch`）。② の後に読めなければ書いた要求を自分で取り下げて ID を外す（段 1 の後なら自分で、段 1 の前なら段 4 が取り下げるので、どちらでも要求は残らない。取り下げに失敗したら ID を外さず ③ に進まない。期限切れが片付ける）。(4) 無効化の再マウントは `scanNow()` が見送られたかだけで判定し、読み書きできるままでも成功と出た → 走査の後の snapshot で接続中の全デバイスが `.readOnly` と観測できなければ段 `remount` の失敗（`.unknown` も失敗、0 台は成功）。(5) 「手動で消した分」の後始末は既に「遷移 → 取り下げ → ID を外す」の順（§8.9.9 のとおり）で、遷移に失敗したら要求と ID を残すことをテストで固定した（ID の無い PENDING の 2 遷移の間の失敗は次の起動の復旧が戻す）。辺・設定キー・ログのイベントは増やさない（`lock_mismatch` を `recording_key` で出す場面を足しただけ） |
 | F-74 | 誤 | §5.6・§8.9.2・§8.9.5・§8.9.6・§8.9.7・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.3・付録 A.4 | （2026-09-23。issue #114。全体コードレビューのテーマ 3「永久に終わらない状態」。F-69 の続き。CR-15）(1) F-69 の決着は RAW_SAVED にしか効かず、reaper の拒否（`size_mismatch` など）・期限切れ・`still_in_inventory` で `delete_request_id` の無い SOURCE_DELETE_PENDING になり、`canDeleteSource` が偽のまま元ファイルが一覧に在る Part があると、削除段が `delete_attempts += 1` を繰り返すだけで Session が完了せず、要対応の「過去分を削除対象にする」の案内も（後追いは COMPLETED の Session しか見ないので）効かなかった → `requestDeletions` の 5a を ID の無い SOURCE_DELETE_PENDING にも広げ、F-69 と同じ条件（期限・観測できた失敗・同じ接続で 2 回連続）で、**辺を足さず**既存の `SOURCE_DELETE_PENDING→SOURCE_DELETING→COMPLETED`（「手動で消した分を完了にする」と同じ 2 遷移。両方の detail `not_deletable`、2 つ目で Part の `error_message` に原因の語）で消さずに決着する。`source_deleted_at` は入れない。最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細の数え方は F-69 のまま、Session は完了し、後追いで再評価できる。PENDING のまま印を付けて Session だけ完了させる案は、数え方に入らず PENDING の件数が残るので採らない。一覧に無い PENDING は従来どおり「手動で消した分を完了にする」の担当（`failureIsObserved` の d で待つ）。(2) `undeletableCause` は調べ直して全部の検査が通っても `pre_identity` を返して決着させていた → nil を返し、決着を見送って連続を切る（原因を偽って決着させない）。(3) `TickContext.undeletableStreaks` と `DeletionDependencies.init(streaks:)` の既定値 `UndeletableStreaks()` を外した（渡し忘れると黙って連続が数えられず F-69 が効かない。Worker が持つ 1 つを渡すことをコンパイラに守らせる）。(4) 期限切れは同じ request_id の結果ファイルが在るだけで飛ばしていたので、reaper が読めない要求に `partkey: ""` で書いた結果（回収も取り下げも partkey で照合する）が在ると SOURCE_DELETING から抜けなかった → 飛ばすのは結果が読めて request_id と partkey がその Part と一致するときだけ。pend の後、その request_id で partkey の合わない結果は回収できないので捨てる（読めない結果は残す）。(5) 期限切れは取り下げの成否を見ずに pend して ID を外していた → その Part の要求が queue/delete に残れば（取り下げの失敗・読めない `<request_id>.json`）pend せず ID を持ったまま次の tick でやり直す（残った要求を reaper が再評価なしで実行し、結果が ID 不一致で捨てられて `source_deleted_at` が入らないのを防ぐ）。(6) 後追いの ①② の後・③ の前に止まると ID と要求を持つ COMPLETED が残り、回収の対象に COMPLETED が無いので DELETED が捨てられていた → 回収の対象に ID を持つ COMPLETED を足し、消えたと観測できたら遷移させずに `source_deleted_at` を書いて ID を外す（拒否・`still_in_inventory` は ID を外すだけで COMPLETED のまま）。(7) DELETED の後始末が「`source_deleted_at` と ID を書く → 遷移」の順で、遷移が失敗すると ID の無い SOURCE_DELETING が再起動まで残った → 遷移が先、`source_deleted_at` と ID を外すのは最後（失敗したら ID と結果が残り次の tick でやり直す）。(8) 統合で有効な Part の transcript が読めず segment が 0 件だと「本当に空」と区別されずに `session_empty` で COMPLETED（Daily が作られない）、MERGED 以降では毎 tick 黙って止まった → READY / MERGING では `MERGING→FAILED`、MERGED 以降では `→ANALYZING`（MERGED から通常の辺、ANALYZED / WRITING から ★ `stale_analysis`）→ `ANALYZING→FAILED` で、どちらも `SESSION_MERGE_FAILED`「文字起こしを読めない Part があります: <partkey>, …」と `session_merge_failed`（一部だけ読めないときは従来どおり飛ばして統合）。設定キー・遷移の辺・ログのイベントは増やさない（A.2 の注記、A.3 の `SESSION_MERGE_FAILED` と A.4 の `session_merge_failed` の説明を足した） |
 | F-75 | 誤 | §8.6・§8.7・§8.8・§8.11・付録 A.3・付録 D | （2026-09-23。issue #115。全体コードレビューのテーマ 4「Raw ノートの本文を守る」）Raw ノートは原本を消した後に本文が残る唯一の写しなのに、本文が黙って消える・状態が嘘になる経路があった → (1) Raw は Part が保存されるたびに全体を書き直し、transcript が読めない Part を黙って外していたので、COMPLETED（原本は削除済み）の Part の transcript が壊れる・消える・移行で失われた後に同じ Session の別の Part で書き直すと、その本文が Vault から消え、RN-6（書いた鍵の包含）は合格して新しい SHA が DB に入った → 書き込み先の既存のノートの `voicedock_recording_keys` に RAW_SAVED 以降の Part の鍵が在るのに新しい内容から抜けるなら、**書かずに**トリガを `RAW_WRITING→FAILED`（`OBSIDIAN_RAW_WRITE_FAILED`、「書き直すと Raw ノートから本文が消える Part があります（<n> 本）: <partkey>。<理由>」）。既存のノートが無ければいまどおり書き、読めないノートは従来どおり上書きしない（` (2)` へ）。判定は `OutputPathResolver.keysLostByOverwrite(_:protectedKeys:newKeys:)`（鍵は配列で渡し中でスカラー列の集合を作る。在るのに読めない・鍵の列が配列でなければ nil で書かない）。(2) トリガが載らなくても（transcript が読めない）ほかの Part が載れば RAW_SAVED にし（状態が嘘）、トリガだけなら毎 tick 黙って偽を返して TRANSCRIBED のまま止まった（ログも要対応も無い。voicedock からの持ち越し。X-38）→ Vault のガードと `TRANSCRIBED→RAW_WRITING` の後で `RAW_WRITING→FAILED`（`OBSIDIAN_RAW_WRITE_FAILED`、「文字起こしを読めません: <HOME からの相対パス>」か「開始時刻を読めません: <started_at>」）。requeue は `RAW_WRITING` へ戻し、transcript が戻っていれば書く（文字起こしからやり直す辺は足さない）。(3) 上書きの判定が frontmatter の `type` を見なかったので、Raw と Daily のフォルダが大文字小文字だけ違うと（APFS では同じファイル）Daily が Raw を置き換えた → 「上書きしてよい」に `type` の一致（`voice-raw` / `voice-daily`）と、鍵の列が配列であること（`voicedock_recording_keys` が無い・配列でない、Daily の failed / skipped が在るのに配列でないノートは上書きしない）を足した（X-11）。(4) DB の出力パスは「ファイルが無い」だけで使っていたので、親フォルダが無い（folderTemplate を変えて古いフォルダを消した）とその Session の書き込みが ENOENT で失敗し続けた → 親フォルダが無ければ基本名の探索へ進み、書けたら DB のパスが替わる。(1) の失敗は自動では直らない（transcript を戻すか、Obsidian で Raw ノートの名前を変えて再試行する）ので、FAILED を要対応にしない規則の例外として要対応 `rawNoteBlocked(n)`（「書き直せない Raw ノート <n> 件」、ボタン「詳細・診断を開く」。数えるのは FAILED・`OBSIDIAN_RAW_WRITE_FAILED`・error_message が §8.6 の文言で始まる Part の Session の数）を足し、Daily の警告行は「自動で再試行されます」の行に数えずに別の行（「… 本は Raw ノートに書けませんでした（…）。自動では直りません。VoiceDock の要対応を確かめてください。」）にした（§8.6・§8.11）。遷移の辺・ログのイベントと reason の語・エラーコード・設定キーは増やさない（`OBSIDIAN_RAW_WRITE_FAILED` と `raw_note_failed … reason=write` を使う） |
+| F-76 | 誤 | §2.1・§2.3・§8.2・§8.4・§8.5・§8.11・§8.15・付録 A.3・付録 A.4 | （2026-09-23。issue #116。全体コードレビューのテーマ 5「終了と子プロセス」）(1) `LlamaServerSupervisor.stop()` は起動の途中（最大 3 回 × 300 秒）の終わりを待ち、起動には取り消しが伝わらなかったので、18 GB の読み込み中に「終了」を押すと読み込みが終わるまで終わらず、300 秒を超えると終了要求の後に 2・3 回目を起動した → 起動中のプロセスを actor に持ち、`stop()` は中止の印を立ててそれを直ちに止め、起動は await の後ごとに印を見て次の試行・次の待ちに進まずに `server_start_failed: cancelled`（既存の理由語）で終える。停止の途中に来た `ensureRunning` は停止の終わりを待ってから起動する（停止中は起動しない。停止が終われば起動してよい）。(2) `ProcessRunner.terminateAll` は実行中の子の写しを 1 回取るだけで、その後の `run` / `spawn` を拒まず、Worker は停止要求を Part・Session の区切りでしか見ないので、変換中に終了すると後から whisper-cli が起動されアプリだけが終わった → `terminateAll` はまず閉じる（以後の `run` は `.spawnFailed(errno: ECANCELED)`、`spawn` は `SpawnError.spawnFailed(errno: ECANCELED)`。開き直さない。公開 API は増やさない）。SIGTERM の後は全部が終われば grace を待たずに戻る。アプリの終了は「停止要求 → terminateAll → 取り込みの停止 → llama の停止 → Worker の終わりの待ち」を順に行い、**全体**を §8.15 の最大 10 秒で打ち切る（これまでは Worker の待ちだけに掛かっていた。`AppDelegate.shutDown(within:_:)`）。(3) DR-09 は llama-server を止めず、`pendingJobs` の段（tick の最後）で起動したサーバが次の tick の `processReadySessions` の終わりまで残り、その前の Part 工程（whisper）と重なった（§2.1・LLM-15 に反する。T-32 はこの残り方を許していた） → `LLMProbeCheck.run` は `ensureRunning` を呼んだら、応答の後（成功でも失敗でも）`llama.stop()` を呼ぶ。(4) 単一起動の仕組みが無く、`open -n` や dist/ と /Applications の両方の起動で、2 つ目の起動の復旧が 1 つ目の処理中の行を戻しうる → 起動の最初（ディレクトリを作った後、設定・DB・復旧・Worker より前）に `<HOME>/state/app.lock`（`HomeLayout.appLock`。reaper.lock とは別）を `FileLock.tryAcquire` で取り、生きている間持つ。取れなければ `service_stopping reason=already_running` を 1 行出して、何も表示せずに終了する（`BootFailure.alreadyRunning`。警告の本文は nil）。(5) `Transcriber` は起動の前に前回の `whisper.json` を消さなかったので、落ちた前回の残りがあると、JSON を書かずに 0 で終わった whisper の結果を前回の JSON で成功にした（RK-34 の根拠が崩れる）→ 起動の前に `SafeUnlink.remove(…, under: .staging, missingOK: true)` で消し、消せなければ起動せずに `WHISPER_FAILED`「前回の生 JSON を消せません: <HOME からの相対パス>」。新しい設定キー・遷移の辺・ログのイベントは増やさない（A.4 の `service_stopping` に理由語 `already_running` を足した）。消す側に倒れる変更は無い（閉じた後は reaper も起動しない）。レビューで足した: 閉じた後の reaper の `--version` の拒否（ECANCELED。`ProcessRunner.closedErrno`）は版の不一致にせず「観測できなかった」とし、キャッシュせず `reaper_failed` も出さず、readiness を新しい値 `.unconfirmed`（要求も削除せずの完了もしない）にした（版の不一致として決着させると、停止要求の後も進む Session の削除段が RAW_SAVED→COMPLETED を永続化した）。2 度目の終了要求は取り消さずに `.terminateLater`、AppKit が後始末を飛ばして終わるときに備えて `applicationWillTerminate` で残った子を止める。再マウントの途中の終了は既知の制限として §8.15 に書いた |
 | F-78 | 誤 | §8.9.2・§8.9.5・§8.9.6・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.4 | （2026-09-23。issue #124。F-74（#114）のレビューで残った 2 点。利用者の決定「今回の流れで直す」。CR-15。どちらも消さない側に倒れていたが、Part や Session が完了しないまま残った）(1) 手で原本を消した後などで、ID の無い SOURCE_DELETE_PENDING の元ファイルがデバイスの一覧に無くなると、利用者が「手動で消した分を完了にする」を押すまで Part も Session も完了せず、要対応にも出なかった → `requestDeletions` の手順 4a（F-64）を ID の無い SOURCE_DELETE_PENDING にも広げ、同じ観測の条件（新鮮な snapshot・デバイスが接続中で列挙でき `unavailable` に無い・snapshot が PENDING にした時刻（updated_at）より確かに後に完了・relpath が一覧に無い）を満たしたら、**辺を足さず**「手動で消した分を完了にする」と同じ 2 遷移 `SOURCE_DELETE_PENDING→SOURCE_DELETING`（detail `resolve_absent`）→`SOURCE_DELETING→COMPLETED`（detail `already_absent`）、この Part の要求・結果の取り下げ、ID を外す、`source_delete_skipped recording_key=… reason=already_absent` で自動で完了させる。`source_deleted_at` は入れない（DELETED を観測していない）。未接続・列挙できない・snapshot が古い・`source_path` が無いときは完了させない。これで F-74 の `failureIsObserved` の (d) は RAW_SAVED にも PENDING にも防御になった。「手動で消した分を完了にする」は ID を持つ PENDING・COMPLETED の Session の PENDING のために残す。(2) アプリの `canDeleteSource` は真なのに reaper の独立した検証（RV-03〜13）だけが偽になる Part は、評価のたびに要求 → 拒否（回収の pend で ID の無い SOURCE_DELETE_PENDING）→ 再要求を繰り返し、Session は完了しなかった（`canDeleteSource` が真なので F-69 の 5a の対象にならず、要求を書いた評価では `delete_attempts` も増えない）→ 手順 5b: `canDeleteSource` が真の ID の無い SOURCE_DELETE_PENDING について、DB の events を新しい順に見て回収の pend（`SOURCE_DELETING→SOURCE_DELETE_PENDING`、`error_code` が `SOURCE_IDENTITY_MISMATCH`）を数え（間の要求の遷移 `RAW_SAVED` / `SOURCE_DELETE_PENDING` →`SOURCE_DELETING` で detail の無いものは読み飛ばし、それ以外の遷移で止める。`reaperRejectionStreak`）、定数 `reaperRejectionsToSettle = 3` 回続いていたら要求を書かずに、5a の PENDING と同じ 2 遷移（両方 detail `not_deletable`、2 つ目で `error_message` に原因の語）と `source_delete_skipped … reason=not_deletable detail=<原因>` で消さずに決着する。原因の語は最後の拒否の reaper の理由語（付録 B.2。5a の `source_info` / `pre_identity` / `transcript` / `raw_note` はアプリの検査のどれが落ちたか、5b の理由語はアプリの検査が全部通った後に reaper の検証のどれが落ちたかで、綴りは重ならない）。数え方は DB の履歴なので再起動で 0 に戻らず、拒否でない結果（DELETED・`still_in_inventory`・`no_result`）・起動時の復旧・決着・手動で消した分・後追いの要求の遷移で数え直す。要求を書かなかった評価は数えも切りもせず、要求を残す reaper の理由（`device_absent`・`mount_readonly`）は結果が来ないので数えない。挿し直しでは数え直さない（挿し直しで変わる食い違いはアプリの事前確認が同じ `TargetIdentity` で先に偽になる）。メモリの記録（`UndeletableStreaks` のような）で数える案は、再起動で 0 に戻り Worker の配線も要るので採らない。最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細・後追いの数え方は F-69 のまま（状態の詳細は reaper の理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す）。(3) 決着した Part（5a / 5b）を後追いで要求して reaper がまた拒否すると、pend で COMPLETED の Session に ID の無い PENDING が残り、自動では評価されず「消せなかった録音」からも状態の詳細の一覧からも外れて、解決したように見えて見えなくなった → 回収で、events の最後が後追いの ③（`COMPLETED→SOURCE_DELETING`、detail 無し）でその前が detail `not_deletable` の →COMPLETED のときだけ、pend せずに既存の `SOURCE_DELETING→COMPLETED`（detail `not_deletable`、`error_message` に理由語）で決着し直して ID を外す（§8.9.6）。後追いから外す案は後追い（T-41）の判定を変え、原因を直した 5a の Part の再評価も妨げるので採らない。(4) 要対応 `undeletableSources` の説明は 5b に合わなかった（直すものが無いのに後追いを勧めていた）→ 「消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください」に直した（§8.11）。既知の残り: reaper が要求を残す理由（`device_absent`・`mount_readonly`）では結果が来ず、期限切れで連続が切れて再要求が期限ごとに続く（アプリの事前確認が先に偽になるのでまず起きない）。決着していない Part の後追いの拒否・期限切れ・復旧の後の拒否は、従来どおり COMPLETED の Session に PENDING を残す（§8.9.9）。設定キー・遷移の辺・ログのイベントは増やさない（A.2 の注記と、A.4 の `source_delete_skipped` の `detail=` に `<RV の理由語>` を足した） |

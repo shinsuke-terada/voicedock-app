@@ -12,13 +12,24 @@ public protocol ProcessRunning: Sendable {
 public actor ProcessRunner: ProcessRunning {
     public static let killGrace: Duration = .seconds(5)  // SIGTERM から SIGKILL まで（PLAN §8.2）
     static let readerDrainGrace: Duration = .seconds(2)  // 子の終了後に出力の EOF を待つ上限
+    /// terminateAll の後の run / spawn が返す errno（起動しなかった。F-76）。呼び手が「観測できなかった」と見分けるのに使う
+    public static let closedErrno: Int32 = ECANCELED
+    /// terminateAll が子の終わりを見直す間隔（全部が終われば grace を待たずに戻る。F-76）
+    static let terminatePollInterval: Duration = .milliseconds(50)
 
     private var active: Set<pid_t> = []  // run 中と spawn 中の子（= プロセスグループ）
+    /// terminateAll の後は真。以後は子を起動しない（開き直さない。アプリの終了の後に子を残さない。F-76）
+    private var closed = false
 
     public init() {}
 
-    /// 完了まで待つ。起動の失敗は投げずに .spawnFailed で返す。タイムアウトと呼び手の取り消しは .timedOut
+    /// 完了まで待つ。起動の失敗は投げずに .spawnFailed で返す。タイムアウトと呼び手の取り消しは .timedOut。
+    /// terminateAll の後は起動せずに .spawnFailed(errno: ECANCELED)（F-76）
     public func run(_ spec: ProcessSpec, timeout: Duration) async -> ProcessResult {
+        if closed {
+            return ProcessResult(
+                termination: .spawnFailed(errno: Self.closedErrno), stdoutTail: Data(), stderrTail: Data())
+        }
         let child: SpawnedChild
         switch Spawn.start(spec) {
         case .success(let c):
@@ -51,8 +62,10 @@ public actor ProcessRunner: ProcessRunning {
             stderrTail: stderr.snapshot)
     }
 
-    /// 起動して手放す（llama-server）。止めるのは RunningProcess.terminate
+    /// 起動して手放す（llama-server）。止めるのは RunningProcess.terminate。
+    /// terminateAll の後は起動せずに SpawnError.spawnFailed(errno: ECANCELED) を投げる（F-76）
     public func spawn(_ spec: ProcessSpec) async throws(SpawnError) -> RunningProcess {
+        if closed { throw .spawnFailed(errno: Self.closedErrno) }
         let child = try Spawn.start(spec).get()
         let stdout = OutputTail(limit: ProcessResult.stdoutTailLimit)
         let stderr = OutputTail(limit: ProcessResult.stderrTailLimit)
@@ -77,12 +90,19 @@ public actor ProcessRunner: ProcessRunning {
         return process
     }
 
-    /// アプリの終了（PLAN §8.15）。全グループに SIGTERM → grace 待つ → 残りに SIGKILL
+    /// アプリの終了（PLAN §8.15）。まず閉じる（以後の run / spawn は起動しない。F-76）→ 全グループに SIGTERM →
+    /// 全部が終わるか grace が過ぎるまで待つ（呼び手の取り消しでも待つのをやめる）→ 残りに SIGKILL。
+    /// 閉じることと写しを取ることの間に await を挟まない（actor の中で続けて行い、その間に起動された子を取りこぼさない）
     public func terminateAll(grace: Duration) async {
+        closed = true
         let pids = active
         if pids.isEmpty { return }
         for pid in pids { Self.signalGroup(pid, SIGTERM) }
-        try? await Task.sleep(for: grace)
+        var waited: Duration = .zero
+        while waited < grace, !pids.isDisjoint(with: active) {
+            do { try await Task.sleep(for: Self.terminatePollInterval) } catch { break }
+            waited += Self.terminatePollInterval
+        }
         for pid in pids.intersection(active) { Self.signalGroup(pid, SIGKILL) }
     }
 
