@@ -1,5 +1,17 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-80・issue #119、2026-09-23。マージ後の追記）(1) 「一覧に在るか」は `SourcePresence.of(_:in:)`（internal）の 1 か所にまとめ、`AttentionEvaluator.sourcePresence` を置き換えた（削除の段と共有。PLAN §8.9.5）。
+> (2) 要対応の `undeletableSources` と状態の詳細の在否は、`snapshotMaxAgeSeconds` より古い snapshot では「一覧に在る」と数えない（`AttentionEvaluator.freshSnapshot`。状態の詳細は「デバイスを観測できない」）。
+> (3) DB から数える 2 つの件数は `AttentionInput.countStoredItems(from: ReadOnlyStore)`（public）で入れ、AppServices（`LiveServices.read`）はそれを呼ぶだけ（配線は PolicyTests の `AttentionWiringTests` がトークンで固定）。
+> (4) 設定エラー中（`configPresent == false`）は、停止理由（`PauseReason`）から作る項目を出さない（Worker は設定エラー中に停止理由を更新しない。PLAN §8.11）。§5 の `orderFollowsTheSpecTable` は設定が読めている入力で全部を並べる形に直した（18 件）。
+> (5) 状態の詳細の失敗した Part は、F-75 の定型の error_message（`OBSIDIAN_RAW_WRITE_FAILED` で PLAN §8.6 の 2 つの文言で始まるもの）だけを 3 行目 `    <error_message>` に出す（`StatusReport.FailedPart.note`・`StatusReporter.failureNote`。PLAN §8.12）。
+> (6) VDPipeline の中だけで使う `public` を internal にした（`undeletableStillListed`・`rawNoteBlockedSessions`・`isIngestSilent`・`StatusReporter` の表・`FailedPart` / `UndeletablePart` の init と `detail`）。下の §4 のコードの `public` はその分を読み替える。テストは T-38 の `DeletionRemainderTests`。
+> (7) `snapshot.unavailable` の理由語 `mount_failed`（F-81。再マウントの mount の失敗）も `deviceNeedsReplug` に写す（`AttentionEvaluator.mountFailedReason`・`replugReasons`）。
+> (8) `reaperUpdateRequired` は削除が有効な間だけ出す（`AttentionInput.deletionEnabled`（public。既定 false）。AppServices が `config.cleanup.deleteSourceAudio` を入れる）。§5 の `reaperUpdateRequired`・`orderFollowsTheSpecTable` は `deletionEnabled = true` で試す。
+
+> （F-81・issue #119。2026-09-23）DR-11 は `not_included`（改名の案内だけ）を数えず、`not_listable` が無く `mount_failed`（再マウントでアンマウントされたまま）が在れば 0 台でも ok にせず notice
+> 「<名前> は読み取り専用への切り替えの途中でアンマウントされたままです。取り外して、もう一度つなぎ直してください」（`DiagnosticTexts.leftUnmounted`）。PLAN §8.11 の表（SPEC S6）。テストは `DiagnosticDeviceNoticeTests`。
+
 > （F-78・issue #124、2026-09-23。マージ後の追記）reaper の拒否が 3 回続いて打ち切った Part（T-38 §4.5 の手順 5b）も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と「消せなかった録音」に同じ数え方で入る。原因の語は reaper の理由語（付録 B.2）なので、
 > `StatusReporter.causeText(_:)`（internal）を足し、`causeTexts` に無く `IdentityReason.all` に在る語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（`UndeletablePart.detail` はこれを使う。型は変えない。テストは T-38 の `ReaperRejectionSettlementTests`）。
 > 要対応 `undeletableSources` の説明を、5a（直せば再評価できる）と 5b（削除モジュールの拒否。再評価しても同じ）の両方に合う文言に直した（下の表・`AttentionTextsTests`。PLAN §8.11）。

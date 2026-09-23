@@ -54,7 +54,8 @@ struct DeleteQueueTests {
         let tmp = try TempDirectory()
         let layout = try Self.layout(tmp)
         #expect(DeleteQueue.names(in: layout.queueDelete) == [])
-        #expect(DeleteQueue.hasPendingRequests(layout: layout) == false)
+        // F-79: 要求が在るかは宛先のデバイスの列で見る（hasPendingRequests は本番から使われなくなったので消した）
+        #expect(DeleteQueue.requestedDeviceIDs(layout: layout) == [])
     }
 
     @Test("要求は ContractJSON の符号化で書く（tmp を残さない）")

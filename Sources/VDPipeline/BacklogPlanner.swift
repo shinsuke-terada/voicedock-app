@@ -103,17 +103,21 @@ struct BacklogPlanner {
         var skipped: [BacklogSkip] = []
         // started_at, partkey 順
         for part in try deps.store.recordings(status: .sourceDeletePending) {
-            // デバイスが無い・snapshot が古い
-            guard let s = snapshot, let obs = s.devices[part.deviceID] else {
-                skipped.append(BacklogSkip(partkey: part.partkey, reason: DeletionReason.deviceAbsent))
-                continue
-            }
-            // 在る（source_path が無いものも「無い」と確かめられない）
-            guard let rel = part.sourcePath, !obs.relpaths.contains(where: { DeletionPolicy.sameKey($0, rel) }) else {
+            // 「一覧に在るか」は SourcePresence.of の 1 か所（F-80）
+            switch SourcePresence.of(part, in: snapshot) {
+            case .notListed:
+                eligible.append(part.partkey)
+            case .listed:
                 skipped.append(BacklogSkip(partkey: part.partkey, reason: DeletionReason.stillPresent))
-                continue
+            case .unobserved:
+                // 接続中で列挙できていれば source_path が無いか空（「無い」と確かめられない）。そうでなければ
+                // デバイスが無い・列挙できない・snapshot が古い
+                let observed = snapshot.map { $0.unavailable[part.deviceID] == nil && $0.devices[part.deviceID] != nil }
+                skipped.append(
+                    BacklogSkip(
+                        partkey: part.partkey,
+                        reason: observed == true ? DeletionReason.stillPresent : DeletionReason.deviceAbsent))
             }
-            eligible.append(part.partkey)
         }
         return BacklogPlan(eligible: eligible, skipped: skipped)
     }
@@ -173,10 +177,8 @@ struct BacklogPlanner {
                     deps.logStatusChanged(recordingKey: pk)
                     continue
                 }
-                // 実行の時点で「無い」を確かめ直す（在れば完了にしない）
-                guard let s = snapshot, let obs = s.devices[part.deviceID], let rel = part.sourcePath,
-                    !obs.relpaths.contains(where: { DeletionPolicy.sameKey($0, rel) })
-                else { continue }
+                // 実行の時点で「無い」を確かめ直す（在れば・観測できなければ完了にしない。SourcePresence.of。F-80）
+                guard SourcePresence.of(part, in: snapshot) == .notListed else { continue }
                 // 後始末は 遷移 → 取り下げ → ID を外す の順（F-72）。遷移に失敗したら ID と要求を残す
                 // （ID を持つ SOURCE_DELETING は回収と期限切れ（§8.9.6・§8.9.7）が片付ける。先に外すと誰も拾わない）
                 try deps.store.recordPartTransition(

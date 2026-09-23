@@ -23,6 +23,9 @@ struct DeviceDetectorTests {
             volume = try FakeVolume(in: tmp)
             try volume.addFile(Self.origRelpath, data: Data("x".utf8), mtime: FakeVolume.oldMtime)
             config = AppConfig.defaults(timeZone: "Asia/Tokyo").device
+            // 既定の include は ["DJIMIC3"]（F-81）。ほかの名前のボリュームで規則 2 以降を弾かせるので、規則 1 は素通りにする
+            // （既定の include の振る舞いは DeviceDetectorNetworkTests）
+            config.includeVolumes = []
             inspector = FakeMountInspector.mounted([
                 volume.volumesRoot.appendingPathComponent("DJIMIC3", isDirectory: false).path(percentEncoded: false)
             ])

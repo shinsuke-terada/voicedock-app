@@ -1,5 +1,8 @@
 # T-10 VDCore: 時刻・ログ・SafeUnlink・AppPaths・Transcript 型・指紋・Block
 
+> （F-81・issue #119。2026-09-23）`SafeUnlink` の検査 2（`..` を含まない）は、パスを Unicode スカラーの `/`（UTF-8 の 0x2F）で分けた要素がちょうど `..` のものが無いことで見る
+> （`split(separator: "/")` の書記素の分割は `/` の直後の結合文字で区切りを見落とす。ASCII のパスの結果は変わらない）。テストは `SafeUnlinkScalarTests`。
+>
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`LogEvent.coexistenceBlocked`（`coexistence_blocked`）は消し、イベントは 47 個になった。以下の本文の共存ガードの記述は記録として残す。
 
 > （F-83・issue #119、2026-09-23。マージ後の追記）`LogFile` の回転の rename に失敗したとき大きさを 0 に戻さない（開き直した `st_size` を使う。一時的な失敗だけが直り、失敗が続くと伸び続ける。PLAN §8.15）。

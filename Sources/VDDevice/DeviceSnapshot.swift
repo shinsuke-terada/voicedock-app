@@ -8,7 +8,8 @@ public struct DeviceSnapshot: Equatable, Sendable {
     public let connectEpoch: UInt64
     /// key = device_id。0 台なら空（「不明」ではない。DEL-32）
     public let devices: [String: DeviceObservation]
-    /// 名前 → not_listable / mount_name_mismatch / invalid_device_id
+    /// 名前 → not_listable / mount_name_mismatch / invalid_device_id / mount_failed（再マウントでアンマウントされたまま）/
+    /// not_included（名前が include に無いがデバイスに見える。改名の案内だけで、取り込まず削除もしない）。F-81
     public let unavailable: [String: String]
     /// not_listable の errno（EPERM のときだけ TCC の案内。DR-11）
     public let notListableErrno: [String: Int32]

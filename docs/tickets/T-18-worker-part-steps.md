@@ -1,5 +1,7 @@
 # T-18 VDPipeline: ConfigStore・Worker の枠・復旧・requeue・工程内リトライ・ガード・Part の変換と文字起こし
 
+> （F-82・issue #119。2026-09-23。マージ後の追記）(1) `renormalizeOrFail` は inbox を先に確かめ、無ければ今の状態のまま `needs_recopy = 1` を書いてから `→NORMALIZING`（PLAN §8.4 手順 2）。(2) 変換の成功で `needs_recopy = 0` を書く（§8.3 手順 7）。(3) 入力のヘッダの長さと実データの量が合わない `NORMALIZE_VERIFY_FAILED` も遷移の前に `needs_recopy = 1`（`PartSteps.needsRecopy`。契機 4 では戻さない。利用者の決定）。(4) 終了で止めた whisper（`TranscribeOutcome.stopped`）は行を動かさない。(5) ライセンスで止めた tick も待っている仕事に返事をする（`Worker.replyPaused`。`Worker+Jobs.swift`。文言「ライセンス」）。(6) inbox の孤児の relpath は列挙子の相対位置（`producesRelativePathURLs`）から作る（<HOME> の途中の symlink で partkey がずれない）。テストは `PartStepsRecopyTests`・`PartStepsTranscribeStoppedTests`・`PartStepsTranscribeRepairedTests`・`WorkerLicenseReplyTests`・`InboxMaintenanceSymlinkTests`（表示名は `F-82` で始まる）。
+
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）Worker の `.coexistenceBlocked` による保留と `coexistenceBlockedDoesNothing` は外した。start が取り込みの `state()` を見なくなったので、`concurrentStartWaitsForTheFirst` の門は設定の actor（観測を渡した `ConfigStore.update` の mutate の中で待つ）へ移した。以下の本文の共存ガードの記述は記録として残す。
 
 > （F-83・issue #119、2026-09-23。マージ後の追記）`ConfigStore.update` は書く前に今の `config.json` を読み直し（`ConfigLoader.decodeStructure`。load と同じ厳密な経路。無ければメモリの値から作り直す）、

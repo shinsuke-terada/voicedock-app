@@ -23,7 +23,8 @@ struct SessionSteps {
     var layout: HomeLayout { ctx.deps.layout }
 
     /// session_key が NULL の Part を Session に入れる（PLAN §5.6。voicedock session.py:136-270）。
-    /// 閉じた Session（OPEN 以外）への追加は events を書かず、再オープンもしない（SM-11 / SM-12）。
+    /// 閉じた Session（OPEN 以外）への追加は events を書かず、処理待ちの Part なら再オープンもしない（SM-11 / SM-12）。
+    /// 分組より先に終端（FAILED / SKIPPED）になっていた Part は、行き先が決まったこの時点で再オープンの契機にする（F-82）。
     func groupNewParts() throws {
         for part in try store.ungroupedRecordings() {
             // 自分で書いた ISO なので起きない。起きたら未分組のまま
@@ -32,18 +33,15 @@ struct SessionSteps {
             let day = zone.localDate(started)
             // KeyError（device_id が不正）は分組しない
             guard let key = try? targetKey(part, day) else { continue }
-            let status: SessionStatus
-            if let s = try store.session(key) {
-                status = s.status
-            } else {
-                try store.insertSession(NewSession(sessionKey: key, dayDate: day.dashed, deviceID: part.deviceID))
-                status = .open
-            }
-            try store.updateRecording(part.partkey, [.sessionKey(key)])
-            try store.refreshSessionAggregates(key)
-            if status == .open {
-                // 新規作成の直後も書く（SM-02）
-                try store.recordSessionTransition(sessionKey: key, from: .open, to: .open, detail: part.partkey)
+            // Session の作成・session_key・集計・OPEN→OPEN（新規作成の直後も書く。SM-02）を 1 トランザクションで（F-82）
+            guard
+                let status = try store.groupPart(
+                    part.partkey, into: NewSession(sessionKey: key, dayDate: day.dashed, deviceID: part.deviceID))
+            else { continue }
+            // 工程の skip / fail は session_key の無い Part の再オープンを呼べない。閉じた Session（SAVED / COMPLETED など）に
+            // 除外の Part が黙って増えると Daily に警告行が載らない（NOTE-05）ので、ここで再オープンする（既存の辺。F-82）
+            if status != .open, PartStates.terminal.contains(part.status) {
+                _ = reopenSession(key)
             }
         }
     }
