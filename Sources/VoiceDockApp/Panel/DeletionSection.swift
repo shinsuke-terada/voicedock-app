@@ -80,6 +80,7 @@ struct DeletionSection: View {
                 } icon: {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
                 }
+                // 最新の診断結果 = パネルを開いている間に実行したもの（閉じたら AppModel が捨てる。F-72）。無ければ実行のボタン
                 if case .done(let results) = model.diagnostics {
                     Text(Diagnostics.summary(results)).font(.caption).foregroundStyle(.secondary)
                 } else {

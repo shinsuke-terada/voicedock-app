@@ -45,9 +45,11 @@ final class AppModel {
     var loginItemError: String?
     /// ui-state.json に書けなかった
     var uiStateSaveFailed = false
-    // T-32（書くのは AppModel+Diagnostics だけ）
-    /// 診断の実行と結果（画面にだけ在る値）
+    // T-32（書くのは AppModel+Diagnostics と panelDidClose だけ）
+    /// 診断の実行と結果（画面にだけ在る値。閉じたら捨てる。F-72）
     var diagnostics: DiagnosticsPanelState = .idle
+    /// 診断の世代（押すたび・閉じるたびに 1 増やす）。開始時と世代が違う結果は捨てる（F-72。DR-09 と同じ形）
+    @ObservationIgnored var diagnosticsGeneration = 0
     /// DR-09 の実行と結果（結果は 1 件）
     var probe: DiagnosticsPanelState = .idle
     /// DR-09 の世代（押すたび・閉じるたびに 1 増やす）。開始時と世代が違う返事は捨てる
@@ -74,6 +76,8 @@ final class AppModel {
     private(set) var backlogState: BacklogPanelState = .idle
     /// working が実行の返事を待っているか（preview から入ったら真。「実行しています…」を出す）
     private(set) var backlogExecuting = false
+    /// 後追いの世代（押すたび・やめるたび・閉じるたびに 1 増やす）。開始時と世代が違う返事は捨てる（F-72）
+    @ObservationIgnored private var backlogGeneration = 0
 
     // F-66（書くのは AppModel+SummarizeNow と panelDidClose だけ）
     /// 「今すぐ要約」の実行と結果（画面にだけ在る値）
@@ -252,6 +256,12 @@ final class AppModel {
         // 今すぐ要約も同じ（閉じた後に届いた返事は捨て、次に開いたときに古い通知を出さない。F-66）
         summarizeNow = .idle
         summarizeNowGeneration += 1
+        // 診断の結果も捨てる（「元音声の削除」の事前確認に、前に開いたときの結果を「最新」として出さない。
+        // 閉じた後に届いた結果も捨てる。F-72）
+        diagnostics = .idle
+        diagnosticsGeneration += 1
+        // 後追いのプレビュー・結果も捨てる（古いプレビューと実行ボタンを残さない。閉じた後に届いた返事も捨てる。F-72）
+        dismissBacklog()
         // 次に開いたときは主画面から（F-65）。「詳細・診断」を出たので状態の詳細も捨てる
         screen = .main
         if detailsExpanded {
@@ -376,21 +386,32 @@ extension AppModel {
         if case .working = backlogState { return }
         backlogExecuting = false
         backlogState = .working(kind)
-        // reply は Worker の文脈で呼ばれるので MainActor へ移してから状態を変える
+        let generation = nextBacklogGeneration()
+        // reply は Worker の文脈で呼ばれるので MainActor へ移してから状態を変える（世代が違えば捨てる）
         let action = BacklogAction.preview(reply: { [weak self] result in
-            Task { @MainActor in self?.receive(kind, result) }
+            Task { @MainActor in
+                guard let self, self.backlogGeneration == generation else { return }
+                self.receive(kind, result)
+            }
         })
         enqueueBacklog(kind, action)
     }
 
-    /// 2 回目の押下（preview の状態からだけ）。working にして execute の仕事を入れる
+    /// 2 回目の押下（preview の状態からだけ）。working にして execute の仕事を入れる。
+    /// 実行はプレビューで見せた計画の対象に限る（計画を仕事に載せる。F-72）
     func executeBacklog(_ kind: BacklogKind) {
-        guard case .preview(let current, _) = backlogState, current == kind else { return }
+        guard case .preview(let current, let plan) = backlogState, current == kind else { return }
         backlogExecuting = true
         backlogState = .working(kind)
-        let action = BacklogAction.execute(reply: { [weak self] result in
-            Task { @MainActor in self?.receive(kind, result) }
-        })
+        let generation = nextBacklogGeneration()
+        let action = BacklogAction.execute(
+            preview: plan,
+            reply: { [weak self] result in
+                Task { @MainActor in
+                    guard let self, self.backlogGeneration == generation else { return }
+                    self.receive(kind, result)
+                }
+            })
         enqueueBacklog(kind, action)
     }
 
@@ -398,6 +419,12 @@ extension AppModel {
     func dismissBacklog() {
         backlogState = .idle
         backlogExecuting = false
+        backlogGeneration += 1
+    }
+
+    private func nextBacklogGeneration() -> Int {
+        backlogGeneration += 1
+        return backlogGeneration
     }
 
     /// preview の返事（backlogState が .working(kind) のときだけ受け取る）

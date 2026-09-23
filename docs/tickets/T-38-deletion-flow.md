@@ -4,6 +4,9 @@
 
 > （F-69・issue #98、2026-09-23）一覧に在るのに `canDeleteSource` が偽のまま変わらない RAW_SAVED の Part は、期限（backoff を使い切った）を過ぎ、観測できた失敗が同じ接続で 2 回続いたら、消さずに RAW_SAVED→COMPLETED（detail `not_deletable`、原因の語を `error_message` に）にする（§4.5 の手順 5a・`UndeletableStreaks`）。要対応の `undeletableSources` と状態の詳細の一覧は T-32 の型に足した（PLAN §8.9.2・§8.9.5・§8.11・§8.12）。テストは §6.13。
 
+> （F-72・issue #112、2026-09-23。マージ後の追記）`RequestWriter.write` は `async` になり、① の後・② の前に reaper.conf を読み直す（`await deps.locks.observeReaperConf()`）。`DELETE_SOURCE_AUDIO=true` で読めなければ（false・無い・不正）書かず、② の失敗と同じく ID を外して nil を返す（`source_delete_skipped recording_key=… reason=lock_mismatch`、INFO）。
+> readiness は各段の先頭で 1 回だけ評価するので、その後に無効化が走っても要求を書かないため（PLAN §8.9.5）。呼び手（§4.5 の手順 6・根拠 B・T-41 の後追い）は `try await`。テストは `RequestWriterRecheckTests`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-38 |

@@ -7,8 +7,9 @@ import VDStore
 struct RequestWriter {
     let deps: DeletionDependencies
 
-    /// 書けたら request_id。書けなければ nil（理由はログに出してある）。Store の予期しない例外は投げる
-    func write(part: RecordingRow, sessionKey: String) throws -> String? {
+    /// 書けたら request_id。書けなければ nil（理由はログに出してある）。Store の予期しない例外は投げる。
+    /// F-72: ② の直前に reaper.conf を読み直す（readiness は削除段の先頭で 1 回だけ評価する。その後に無効化が走っていたら書かない）
+    func write(part: RecordingRow, sessionKey: String) async throws -> String? {
         // 1. 削除条件が真なら揃っている。防御
         guard let relpath = part.sourcePath, let size = part.sourceSize, let mtime = part.sourceMtime else {
             return nil
@@ -22,11 +23,19 @@ struct RequestWriter {
             deps.logStatusChanged(recordingKey: part.partkey)
             return nil
         }
-        // 4. DEL-12: size / mtime は DB の値 = デバイス上の原本。PR-17: 絶対パスを持たない
+        // 4. F-72: ロック 1 を読み直す。DELETE_SOURCE_AUDIO=true で読めなければ書かない（無い・不正も書かない。② の失敗と同じく ID を外す）
+        guard case .valid(let conf) = await deps.locks.observeReaperConf(), conf.deleteSourceAudio else {
+            try deps.store.updateRecording(part.partkey, [.deleteRequestID(nil)])
+            deps.log.info(
+                .sourceDeleteSkipped,
+                [(.recordingKey, .string(part.partkey)), (.reason, .string(DeletionReason.lockMismatch))])
+            return nil
+        }
+        // 5. DEL-12: size / mtime は DB の値 = デバイス上の原本。PR-17: 絶対パスを持たない
         let request = DeleteRequest(
             requestID: id, createdAt: deps.zone.iso(now), deviceID: part.deviceID, partkey: part.partkey,
             sessionKey: sessionKey, target: DeleteTarget(relpath: relpath, size: size, mtime: mtime))
-        // 5. ② 要求ファイル
+        // 6. ② 要求ファイル
         do {
             try DeleteQueue.write(request, layout: deps.layout)
         } catch {
@@ -39,7 +48,7 @@ struct RequestWriter {
                 ])
             return nil
         }
-        // 6.
+        // 7.
         return id
     }
 }

@@ -4,6 +4,8 @@
 > `SourcePresence`・`AttentionEvaluator.sourcePresence(_:snapshot:)`・`undeletableStillListed(_:snapshot:)`、`ReadOnlyStore.completedParts(lastDetail:)`、`StatusReport.UndeletablePart`・`undeletable` / `undeletableTotal` と状態の詳細の「消せなかった録音」の行を足した（PLAN §8.11・§8.12。決着そのものは T-38 §4.5 の手順 5a）。
 > 下の表はその分を直した。テストは T-38 §6.13 の `UndeletableSettlementTests`。
 
+> （F-72・issue #112、2026-09-23。マージ後の追記）診断の結果（`AppModel.diagnostics`）は `panelDidClose` で `.idle` に戻し、閉じた後に届いた結果も捨てる（`diagnosticsGeneration`。DR-09 の `probeGeneration` と同じ形）。「元音声の削除」の事前確認に前に開いたときの結果を「最新」として出さないため（PLAN §8.9.8 の 1）。テストは `AppModelConsentTests`。
+
 | 項目 | 内容 |
 |---|---|
 | ID | T-32 |

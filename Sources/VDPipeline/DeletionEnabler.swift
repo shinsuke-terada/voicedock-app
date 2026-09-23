@@ -192,8 +192,8 @@ public actor DeletionEnabler {
         if f > 0 {
             failed.append(DeletionStage.withdrawRequests)
         }
-        // 5. 再マウント（走査が見送られた = 読み取り専用に戻せていない）
-        if await ingest.scanNow() == nil {
+        // 5. 再マウント（走査が見送られた・走査の後の観測で読み取り専用でないデバイスがある = 戻せていない。F-72）
+        if await !remountedReadOnly() {
             failed.append(DeletionStage.remount)
         }
         // 6.
@@ -225,6 +225,18 @@ public actor DeletionEnabler {
     }
 
     // MARK: - 内部
+
+    /// 無効化の段 5（PLAN §8.9.8。F-72）。`scanNow()` で再マウントを促し、その走査の後の snapshot で、接続中（`devices`）の
+    /// 全デバイスが読み取り専用と観測できたときだけ真（§8.9.2 と同じ statfs の MNT_RDONLY の観測。`DeviceWritability`）。
+    /// 見送り・snapshot が無い・その走査より古い snapshot・`.writable`・`.unknown`（観測できない。読み取り専用に丸めない）は偽。0 台は真
+    private func remountedReadOnly() async -> Bool {
+        guard let generation = await ingest.scanNow(), let snapshot = await ingest.latestSnapshot(),
+            snapshot.generation >= generation
+        else { return false }
+        return snapshot.devices.keys.allSatisfy {
+            DeviceWritability.observe(deviceID: $0, snapshot: snapshot) == .readOnly
+        }
+    }
 
     /// Swift の `==` は正準等価で比べるので使わない（00-api-map §0）
     private func isConfirmed(_ s: String) -> Bool {

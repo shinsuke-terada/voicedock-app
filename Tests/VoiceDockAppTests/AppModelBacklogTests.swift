@@ -56,11 +56,11 @@ struct AppModelBacklogTests {
         #expect(model.backlogState == .working(.backlog))
         #expect(model.backlogExecuting == true)
         #expect(await Self.waitUntil { fake.jobs.count == 2 })
-        guard case .backlog(.execute(let executeReply)) = try #require(fake.jobs.last) else {
+        guard case .backlog(.execute(_, let executeReply)) = try #require(fake.jobs.last) else {
             Issue.record("過去分の execute の仕事ではない")
             return
         }
-        let execution = BacklogExecution(plan: Self.plan, done: 1)
+        let execution = BacklogExecution(previewed: 1, added: 0, done: 1)
         executeReply(.success(execution))
         #expect(await Self.waitUntil { model.backlogState == .done(.backlog, execution) })
         model.dismissBacklog()
@@ -89,7 +89,7 @@ struct AppModelBacklogTests {
         model.previewBacklog(.backlog)
         model.receive(.resolveAbsent, .success(Self.plan))
         #expect(model.backlogState == .working(.backlog))
-        model.receive(.resolveAbsent, .success(BacklogExecution(plan: Self.plan, done: 1)))
+        model.receive(.resolveAbsent, .success(BacklogExecution(previewed: 1, added: 0, done: 1)))
         #expect(model.backlogState == .working(.backlog))
         model.dismissBacklog()
         model.receive(.backlog, .success(Self.plan))
