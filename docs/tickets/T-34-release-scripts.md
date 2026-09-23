@@ -158,6 +158,7 @@ Contents/_CodeSignature/CodeResources
 ```
 
 - `Contents/_CodeSignature/CodeResources` は `codesign` が作る。**署名の後に**照合する
+- `Contents/CodeResources` は `stapler staple` が置く公証チケット。**許可リストには入れない**（`--files-only` は staple の前に走るので、入れると足りなくて落ちる）。staple の後の検査（`verify-bundle.sh` を `--files-only` なしで呼ぶ `release.sh` の 7/7）だけ、期待の一覧に足す。初めて `make release` を通したとき（2026-09-24）に V-1 が「一覧が一致しません」で落ちて分かった
 - プロンプトの 4 本は `Resources/prompts/` の中身と一致すること（テスト `manifestListsEveryPromptFile` が照合する。プロンプトを増やす PR はこの一覧も直す）
 - `.DS_Store`・`*.dSYM`・`Contents/PkgInfo`・`Contents/Frameworks` は**入れない**（一覧に無いので落ちる）
 
