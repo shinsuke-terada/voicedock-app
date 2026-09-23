@@ -224,6 +224,8 @@ statfs(新しいパス) → MNT_RDONLY を出す
 2. 入力は 3 種: 実機の 24 bit BWF、実機の 32 bit float BWF（DJI の設定を切り替えて録る。録音とコピーは【利用者が行う】）、voicedock の `tests/fixtures/make_wav.py` 相当で作った fmt 16 バイト・tag 3 の float WAV
 3. 各入力で ffmpeg 版（`ffmpeg -i in.wav -ar 16000 -ac 1 -c:a pcm_s16le ff.wav`）も作り、`afinfo` で長さを比べる（合格: 差 ≤ 1.0 秒）
 4. 両方の 16 kHz を P0-04 の whisper にかけ、`text` の差分（`diff <(jq -r .transcription[].text a.json) <(jq -r .transcription[].text b.json)`）を貼る。判定は「実用上同等」（語の欠落・幻覚の増加が無い）を人が判断し、理由を書く
+5. （F-77・issue #117 で追加。任意）実機の WAV のチャンクの並びを記録する: コピーした各入力で、先頭から辿ったチャンクの id とサイズ、data の開始位置と宣言したサイズ、ファイルのサイズ（`xxd -l 64` と、`data` の位置の前後の `xxd -s <位置> -l 16`）を貼り、`ファイルのサイズ − data の開始位置` が宣言したサイズと一致するか（data の後ろにチャンクや詰め物が無いか）を書く。
+   電池が切れるまで録り続ける・録音中に電源を切るなどで途中で止まった録音が取れたら（録音とコピーは【利用者が行う】。デバイスの上では読むだけ）、同じ記録と `afinfo` の長さ（ヘッダの長さ）を貼る。ヘッダが実データより短ければ、本アプリは PLAN §8.3 手順 6 で `NORMALIZE_VERIFY_FAILED` にして消さない
 
 ### 8. P0-06 llama-server（章 7）
 
