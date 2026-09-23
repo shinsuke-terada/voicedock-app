@@ -152,12 +152,22 @@ struct ResultCollectorTests {
         #expect(FileManager.default.fileExists(atPath: hidden.path(percentEncoded: false)))
     }
 
-    /// ID を持つ COMPLETED は F-74 で回収の対象になった（ResultCollectorCompletedTests）
-    @Test("待っていない Part の結果は捨てる（#160。ID nil）")
-    func resultForAPartNotWaitingIsDiscarded() async throws {
-        let f = await Self.fixture(try DeletionScene())
-        let id = try await Self.requestOne(f)
-        try f.scene.store.updateRecording(Self.pk, [.deleteRequestID(nil)])
+    /// ID を持つ COMPLETED は F-74 で回収の対象になった（StuckDeleteResultTests）。対象外の状態は FAILED で確かめる
+    @Test(
+        "待っていない Part の結果は捨てる（#160。パラメータ化: ID nil・対象外の状態（FAILED）で ID を持つ）",
+        arguments: ["ID nil", "FAILED で ID を持つ"])
+    func resultForAPartNotWaitingIsDiscarded(_ kind: String) async throws {
+        let f: Fixture
+        let id: String
+        if kind == "ID nil" {
+            f = await Self.fixture(try DeletionScene())
+            id = try await Self.requestOne(f)
+            try f.scene.store.updateRecording(Self.pk, [.deleteRequestID(nil)])
+        } else {
+            f = await Self.fixture(try DeletionScene(status: .failed, errorCode: .whisperFailed))
+            id = Self.manualID
+            try f.scene.store.updateRecording(Self.pk, [.deleteRequestID(id)])
+        }
         let before = try Self.part(f.scene).status
         try Self.deleted(f, id)
         await Self.collectAfterScan(f)

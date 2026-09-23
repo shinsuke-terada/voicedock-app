@@ -3,19 +3,24 @@
 // F-69 と同じ条件で既存の 2 遷移（PENDING→SOURCE_DELETING→COMPLETED）で消さずに決着させ、Session を完了させる。
 // あわせて、調べ直して原因が見つからなければ決着させないこと（R2）と、連続回数の記録の配線（R6）。舞台は DeletionScene。
 import Foundation
+import GRDB
 import TestSupport
 import Testing
 import VDContract
 import VDCore
 import VDDevice
-import VDStore
 
 @testable import VDPipeline
+@testable import VDStore
 
 @Suite("PendingSettlement")
 struct PendingSettlementTests {
     static let pk = DeletionScene.partkey
     static let key = DeletionScene.sessionKey
+    /// 要求を書かずに ID だけを持たせるときの request_id
+    static let manualID = "20260912T030000Z-8483e42457304a9d-abcdef"
+    /// 決着の 2 つ目の遷移を DB で失敗させるトリガの名前
+    static let blockTrigger = "f74_block_second_step"
     /// 既定の backoff（60, 300, 900, 3600）の段の数と合計
     static let backoffCount = 4
     static let backoffTotal = 4860
@@ -214,6 +219,59 @@ struct PendingSettlementTests {
         #expect(!scene.logLines.contains { $0.contains(" config_warning ") })
         #expect(try Self.part(scene).status == .sourceDeleting)
         #expect(!(try Self.events(scene).contains { $0.detail == "not_deletable" }))
+    }
+
+    @Test("F-74 結果待ち（delete_request_id を持つ）SOURCE_DELETE_PENDING は、原因があり期限を過ぎていても決着させない（結果か期限切れを待つ）")
+    func pendingAwaitingAResultIsNotSettled() async throws {
+        let scene = try Self.pendingScene()
+        try scene.store.updateRecording(Self.pk, [.deleteRequestID(Self.manualID)])
+        try Self.breakDeletability(scene, "原本のサイズの食い違い")
+        try Self.elapse(scene, attempts: Self.backoffCount, seconds: Self.backoffTotal)
+        await Self.evaluate(scene, streaks: UndeletableStreaks())
+        let part = try Self.part(scene)
+        #expect(part.status == .sourceDeletePending)
+        #expect(part.deleteRequestID == Self.manualID)
+        #expect(!Self.settledLog(scene))
+        #expect(try Self.settledParts(scene) == [])
+        #expect(try Self.session(scene).status == .sourceDeleting)
+    }
+
+    @Test("F-74 PENDING の決着の 2 遷移の間で落ちたら ID の無い SOURCE_DELETING が残るが、起動時の復旧が PENDING に戻し、次の評価で決着し直す")
+    func interruptedSettleIsRecoveredAndSettledAgain() async throws {
+        let scene = try Self.pendingScene()
+        try Self.breakDeletability(scene, "原本のサイズの食い違い")
+        try Self.elapse(scene, attempts: Self.backoffCount, seconds: Self.backoffTotal)
+        // 2 つ目の遷移（SOURCE_DELETING→COMPLETED）だけを DB で失敗させる（落ちた姿の代わり）
+        try await scene.store.pool.write { db in
+            try db.execute(
+                sql: "CREATE TRIGGER " + Self.blockTrigger
+                    + " BEFORE UPDATE OF status ON recordings WHEN OLD.status = '"
+                    + PartStatus.sourceDeleting.rawValue + "' AND NEW.status = '" + PartStatus.completed.rawValue
+                    + "' BEGIN SELECT RAISE(ABORT, 'f74'); END")
+        }
+        await Self.evaluate(scene, streaks: UndeletableStreaks())
+        var part = try Self.part(scene)
+        #expect(part.status == .sourceDeleting)
+        #expect(part.deleteRequestID == nil)
+        #expect(!Self.settledLog(scene))
+        #expect(scene.logLines.contains { $0.contains(" config_warning rule=store ") })
+        try await scene.store.pool.write { db in try db.execute(sql: "DROP TRIGGER " + Self.blockTrigger) }
+        // 起動時の復旧（付録 A.1 の SOURCE_DELETING→SOURCE_DELETE_PENDING。Part と Session の 2 行）
+        let recovery = Recovery(
+            store: scene.store, layout: scene.layout, log: scene.log, config: scene.config, zone: scene.zone)
+        #expect(try recovery.run() == 2)
+        #expect(try Self.part(scene).status == .sourceDeletePending)
+        #expect(try Self.session(scene).status == .sourceDeletePending)
+        // 復旧で updated_at が進んだので期限をもう一度過ぎてから。連続回数はメモリなので 0 から数え直す
+        try Self.elapse(scene, attempts: Self.backoffCount, seconds: Self.backoffTotal)
+        await Self.evaluate(scene, streaks: UndeletableStreaks())
+        part = try Self.part(scene)
+        #expect(part.status == .completed)
+        #expect(part.errorMessage == "pre_identity")
+        #expect(part.sourceDeletedAt == nil)
+        #expect(try Self.events(scene).last?.detail == "not_deletable")
+        #expect(try Self.settledParts(scene).map(\.partkey) == [Self.pk])
+        #expect(try Self.session(scene).status == .completed)
     }
 
     // MARK: - R2: 調べ直して原因が見つからなければ決着させない
