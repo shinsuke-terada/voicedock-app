@@ -86,10 +86,10 @@ struct Readme: Sendable {
     ]
 
     /// `Info.plist` と一字一句同じでなければならない 2 つの説明文（V-13・V-14）。
-    static let usageDescriptions: [String] = [
-        "録音デバイスから音声を読み込むために使います",
-        "Obsidian の保管庫がこのフォルダにある場合に、ノートを書き込むために使います",
-    ]
+    static let usageDescriptions: [String] = Array(verbatim.suffix(2))
+
+    /// V-3（許可を出し直すシステム設定の経路）。
+    static let systemSettingsPath: String = verbatim[2]
 
     /// 本文の見出し（`#` の個数と本文）を、表の書き方の 1 行にしたもの。
     func headingLines() -> [String] {
@@ -322,7 +322,7 @@ struct ReadmeTests {
     func theInstallChapterExplainsTCC() throws {
         let readme = try Readme.load()
         let body = try readme.document.section("2. 最初の起動と、許可の出し方").joined(separator: "\n")
-        #expect(body.contains(Readme.verbatim[2]))
+        #expect(body.contains(Readme.systemSettingsPath))
         #expect(body.contains(Readme.usageDescriptions[0]))
     }
 }
