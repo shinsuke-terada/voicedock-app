@@ -1,5 +1,8 @@
 # T-15 VDDevice: 再マウント・snapshot・IngestService の走査
 
+> （F-73・issue #113。2026-09-23）`remountReadOnly(path:node:)` の手順 3 の後に、手順 1 の `info` の `mountFromName == node` と `mountOnName == realpath(path)`（スカラー列）を確かめ、違えば diskutil を呼ばずに `.failed(reason: "no_device_node")` を返す手順を足した
+> （判定から再マウントまでに挿し直されて disk 番号が変わった・外れた場合に、別のディスクを unmount / mount しない）。`RemounterTests` の舞台は path のディレクトリを作って realpath にした。テストは `RemounterNodeCheckTests`。
+>
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）走査の手順 1（共存ガード）・`IngestState.coexistenceBlocked`・`coexistence_blocked` は外した。以下の本文の共存ガードの記述は記録として残す。
 >
 > （F-67・issue #97。2026-09-23）`listing.complete` は、項目の `lstat` が `ENOENT` 以外で失敗したときも偽になった（T-14 の注記）。偽のデバイスを `devices` に載せず `unavailable` に `not_listable`（`errno: nil`）で載せる手順は変えない。

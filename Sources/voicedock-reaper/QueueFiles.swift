@@ -53,16 +53,26 @@ final class QueueFiles {
         String(name.dropLast(5))
     }
 
-    /// `openat(deleteFD, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)` → 通常ファイル → `Contract.maxRequestBytes` 以下 → 全部読む。
-    /// どれかが偽なら nil
-    func readRequest(named name: String) -> Data? {
-        let fd = openat(deleteFD, name, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
-        guard fd >= 0 else { return nil }
+    /// 要求の読み取りの結果（F-73）
+    enum RequestRead: Equatable, Sendable {
+        case read(Data)
+        /// openat が ENOENT（列挙の後に取り下げられた）。呼び手は何も書かずに次へ進む
+        case gone
+        /// それ以外の読めない要求（開けない・symlink・通常ファイルでない・64 KiB 超・読み取りの失敗）
+        case unreadable
+    }
+
+    /// `openat(deleteFD, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)` → 通常ファイル → `Contract.maxRequestBytes` 以下 → 全部読む。
+    /// `O_NONBLOCK` は FIFO を置かれても開くところで止まらないため（通常ファイルの読み取りには影響しない。F-73）
+    func readRequest(named name: String) -> RequestRead {
+        let fd = openat(deleteFD, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
+        guard fd >= 0 else { return errno == ENOENT ? .gone : .unreadable }
         defer { close(fd) }
         var st = stat()
-        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { return nil }
-        guard st.st_size <= Contract.maxRequestBytes else { return nil }
-        return ReaperIO.readAll(fd: fd, limit: Contract.maxRequestBytes + 1)
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else { return .unreadable }
+        guard st.st_size <= Contract.maxRequestBytes else { return .unreadable }
+        guard let data = ReaperIO.readAll(fd: fd, limit: Contract.maxRequestBytes + 1) else { return .unreadable }
+        return .read(data)
     }
 
     /// `renameat(deleteFD, name, rejectedFD, name)`。同名は上書きされる。成功で true

@@ -61,9 +61,9 @@ public enum TargetIdentity {
         defer {
             if let owned { close(owned) }
         }
-        // RV-09。macOS では symlink も通常ファイルも FIFO も ENOTDIR になる
+        // RV-09。symlink は ELOOP、通常ファイルと FIFO は ENOTDIR になる
         for comp in dirs {
-            let next = openat(current, comp, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC)
+            let next = openDirectory(in: current, named: comp)
             if next < 0 {
                 let error = errno
                 if error == ENOTDIR || error == ELOOP {
@@ -108,6 +108,13 @@ public enum TargetIdentity {
         // body の中では parentFD が開いている（owned は defer で body の後に閉じる）
         let result = body(VerifiedTarget(parentFD: parentFD, name: name))
         return .success(result)
+    }
+
+    /// RV-09 の openat 連鎖の 1 段。`O_NOFOLLOW_ANY` は名前のどの要素の symlink も辿らない（`O_NOFOLLOW` は最後の要素だけ。
+    /// 名前に "/" が紛れても途中の symlink を辿らないための二重の守り。F-73）。`O_NOFOLLOW` と併せると EINVAL になるので併せない。
+    /// 失敗なら -1（errno はそのまま）
+    static func openDirectory(in directoryFD: Int32, named name: String) -> Int32 {
+        openat(directoryFD, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY | O_CLOEXEC)
     }
 }
 

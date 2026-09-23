@@ -13,13 +13,16 @@ struct RemounterTests {
 
     struct Fixture {
         let tmp: TempDirectory
-        /// <tmp>/Volumes/DJIMIC3（/Volumes ではない）
+        /// <tmp>/Volumes/DJIMIC3（/Volumes ではない）の realpath。在るディレクトリ（remountReadOnly は realpath(path) を
+        /// statfs の f_mntonname と照らす。F-73。TempDirectory.url は /var/… のことがあるので realpath にしておく）
         let path: String
 
         init() throws {
             tmp = try TempDirectory()
-            path = tmp.url.appendingPathComponent("Volumes", isDirectory: true)
+            let raw = tmp.url.appendingPathComponent("Volumes", isDirectory: true)
                 .appendingPathComponent("DJIMIC3", isDirectory: false).path(percentEncoded: false)
+            try FileManager.default.createDirectory(atPath: raw, withIntermediateDirectories: true)
+            path = SystemMountInspector.realPath(raw) ?? raw
         }
 
         /// path を rw で観測できる inspector。mounts には node の項目（mountOnName = mountedOn）

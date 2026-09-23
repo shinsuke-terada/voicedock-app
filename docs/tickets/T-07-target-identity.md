@@ -1,5 +1,8 @@
 # T-07 VDContract: TargetIdentity（削除対象の同定。openat の連鎖と検証済みの親 fd）
 
+> （F-73・issue #113。2026-09-23）openat 連鎖の 1 段は `O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY | O_CLOEXEC`（internal の `TargetIdentity.openDirectory(in:named:)`）になった（`O_NOFOLLOW` と併せると EINVAL。symlink は ELOOP、通常ファイルは ENOTDIR で、理由語は変わらない）。
+> relpath の要素は `RelPath.components` がスカラーで分ける。以下の本文のフラグは記録として残す。テストは `TargetIdentityChainTests`。
+
 | 項目 | 値 |
 |---|---|
 | Phase | 1（骨組みと防護柵） |

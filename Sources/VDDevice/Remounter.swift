@@ -1,5 +1,6 @@
 // 読み取り専用での再マウントと、再走査の契機の購読（PLAN §8.1。ロック 2-B の実施側）。diskutil の出力文言は使わない。
 import Foundation
+import VDCore
 import VDProcess
 
 /// 読み取り専用での再マウントの結果（PLAN §8.1）。
@@ -8,7 +9,8 @@ public enum RemountOutcome: Equatable, Sendable {
     case alreadyReadOnly
     /// unmount → mount readOnly が成功し、マウント一覧に node が在った
     case remounted(newPath: String)
-    /// no_device_node / unmount_failed / mount_failed
+    /// no_device_node（statfs が取れない・node が /dev/ で始まらない・今の statfs の node やマウント点と合わない。F-73）/
+    /// unmount_failed / mount_failed
     case failed(reason: String)
 }
 
@@ -37,6 +39,12 @@ public struct DiskutilRemounter: Remounter {
         // 毎回 unmount し直さない。DiskArbitration は ro の unmount を拒むことがある（DEL-31・#107）
         if info.readOnly { return .alreadyReadOnly }
         guard node.hasPrefix("/dev/") else { return .failed(reason: "no_device_node") }
+        // 判定のときの node と、今の statfs（上の 1 回）を照らす（F-73）。path がそれ自身マウント点で、その f_mntfromname が
+        // node のときだけ diskutil を呼ぶ。判定から今までに挿し直されて disk 番号が変わった・外れて親の FS が見えている、
+        // のどちらでも別のディスクを unmount / mount しない。比べるのはスカラー列（00-api-map §0）
+        guard PyText.scalarsEqual(info.mountFromName, node),
+            let real = SystemMountInspector.realPath(path), PyText.scalarsEqual(info.mountOnName, real)
+        else { return .failed(reason: "no_device_node") }
         let unmount = await runner.run(
             ProcessSpec(
                 executable: Self.diskutil, arguments: ["unmount", path], environment: ProcessEnvironment.cLocale),
