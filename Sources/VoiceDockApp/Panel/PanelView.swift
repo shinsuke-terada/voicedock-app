@@ -50,7 +50,11 @@ struct PanelView: View {
                     value: model.showsTrash ? Strings.deletionOn : Strings.deletionOff
                 ) { Task { await model.show(.deletion) } }  // 7  T-40
             }
-            PanelRow(systemImage: "stethoscope", title: Strings.rowDetails) {
+            PanelRow(
+                systemImage: "stethoscope", title: Strings.rowDetails,
+                // 起動したときの値のまま動いている設定があれば、短い印だけ出す（中身は詳細・診断。F-84）
+                value: model.snapshot.settingsAwaitingRestart.isEmpty ? nil : Strings.restartPendingRow
+            ) {
                 Task { await model.show(.details) }
             }  // 8  T-32
             // 9。押せることが一目で分かるよう、枠つきのボタンに電源のアイコンを添える（実機の確認で利用者の指摘）

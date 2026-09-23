@@ -44,6 +44,9 @@ final class AppContext {
     /// 単一起動のロック（`<HOME>/state/app.lock`。F-76）。アプリが生きている間ずっと持つ（手放すと 2 つ目の起動を拒めない）。
     /// 本番は Bootstrap が渡す。テストの組み立ては持たない（nil）
     let instanceLock: FileLock?
+    /// 起動の手順 8 で時刻帯とログに実際に使った値（F-84）。Store・IngestService・AppLog はこの値のまま動き、
+    /// 「設定を読み直す」では変わらない（LiveServices.read が今の設定と比べ、違えばパネルに「再起動すると反映されます」を出す）
+    let runningSettings: EffectiveSettings
 
     init(
         layout: HomeLayout, paths: AppPaths, clock: any AppClock, log: AppLog, catalog: ModelCatalog,
@@ -51,7 +54,8 @@ final class AppContext {
         diagnostics: DiagnosticsDependencies, llama: LlamaServerSupervisor, ingest: IngestService,
         worker: Worker, enabler: DeletionEnabler, models: ModelManager, downloader: ModelDownloader,
         loginItem: any LoginItemControlling,
-        uiState: UIStateStore, physicalMemoryBytes: UInt64, instanceLock: FileLock? = nil
+        uiState: UIStateStore, physicalMemoryBytes: UInt64, instanceLock: FileLock? = nil,
+        runningSettings: EffectiveSettings = EffectiveSettings.resolve(nil)
     ) {
         self.layout = layout
         self.paths = paths
@@ -73,6 +77,7 @@ final class AppContext {
         self.uiState = uiState
         self.physicalMemoryBytes = physicalMemoryBytes
         self.instanceLock = instanceLock
+        self.runningSettings = runningSettings
     }
 }
 
@@ -126,11 +131,14 @@ enum Bootstrap {
         case .success(let c): catalog = c
         case .failure(let e): return .failure(.catalog(ErrorText.describe(e)))
         }
-        // 4. 時計とログ（設定を読む前のログは既定のレベルで出す）
+        // 4. 時計とログ（設定を読む前のログは既定のレベルで出す。既定は設定が無いときの EffectiveSettings。F-84）
         let clock: any AppClock = SystemClock()
-        let bootZone = ZonedTime(timeZone: TimeZone.current)
+        let bootTimeZone = TimeZone.current
+        let bootSettings = EffectiveSettings.resolve(nil, current: bootTimeZone)
         let sink = TeeSink([OSLogSink(subsystem: logSubsystem), LogFile(url: layout.appLog)])
-        var log = AppLog(sink: sink, level: .info, unsafeContent: false, zone: bootZone, clock: clock, category: "app")
+        var log = AppLog(
+            sink: sink, level: bootSettings.logLevel, unsafeContent: bootSettings.unsafeLogContent,
+            zone: ZonedTime(timeZone: bootSettings.timeZone), clock: clock, category: "app")
         // 4 の後. 単一起動（F-76）。設定・DB・復旧・Worker より前に <HOME>/state/app.lock を取る。ほかが持っていれば別の
         // インスタンスが動いている（2 つ目の復旧が 1 つ目の処理中の行を戻さないように）。ログの 1 行のほかは何もせずに終わる。
         // 開けない（EACCES・EISDIR・ENOSPC・ELOOP など）ときは黙って終わらず、起動の失敗として NSAlert を出す（F-84）
@@ -164,16 +172,16 @@ enum Bootstrap {
             ingest: enablerIngest, log: log.withCategory("pipeline"))
         await config.setLock1Reconciler { [enabler] in await enabler.reconcileLock1() }
         let loaded = await config.load()  // 修復口を挿した後に読む
-        // 8. ログを設定で作り直す（ここから後のログだけが設定のレベルに従う）
-        var zone = bootZone
+        // 8. ログを設定で作り直す（ここから後のログだけが設定のレベルに従う）。時刻帯とログに使う値は EffectiveSettings の
+        // 1 か所で解き、AppContext に残す（Store・IngestService・AppLog は読み直しで変わらないので、違えばパネルに出す。F-84）。
+        // 設定が読めなければ手順 4 と同じ値（TimeZone.current・INFO・本文を出さない）
         var loadedConfig: AppConfig?
-        if case .valid(let c) = loaded {
-            zone = ZonedTime(timeZone: TimeZone(identifier: c.timeZone) ?? .current)
-            log = AppLog(
-                sink: sink, level: LogLevel(configValue: c.logging.level) ?? .info,
-                unsafeContent: c.logging.unsafeLogContent, zone: zone, clock: clock, category: "app")
-            loadedConfig = c
-        }
+        if case .valid(let c) = loaded { loadedConfig = c }
+        let running = EffectiveSettings.resolve(loadedConfig, current: bootTimeZone)
+        let zone = ZonedTime(timeZone: running.timeZone)
+        log = AppLog(
+            sink: sink, level: running.logLevel, unsafeContent: running.unsafeLogContent, zone: zone, clock: clock,
+            category: "app")
         // 9. DB
         let store: Store
         do { store = try Store(url: layout.database, clock: clock, zone: zone) } catch {
@@ -234,7 +242,7 @@ enum Bootstrap {
             runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
             enabler: enabler, models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
-            physicalMemoryBytes: physicalMemoryBytes, instanceLock: instanceLock)
+            physicalMemoryBytes: physicalMemoryBytes, instanceLock: instanceLock, runningSettings: running)
         ctx.workerTask = await startServices(
             workerStart: { await worker.start() }, workerRun: { await worker.run() },
             ingestStart: { await ingest.start() })

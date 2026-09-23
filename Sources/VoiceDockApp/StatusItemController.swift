@@ -67,8 +67,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
-        // reopenAfterModal はここで消さない（runModal が開き直す）
-        model.panelDidClose()
+        // reopenAfterModal はここで消さない（runModal が開き直す）。モーダルのために閉じたときは要対応の枠を残す（F-84）
+        model.panelDidClose(reopening: reopenAfterModal)
     }
 
     @objc private func toggle(_ sender: Any?) {

@@ -44,14 +44,16 @@ extension AppModel {
     func toggleDetails() async {
         detailsExpanded.toggle()
         guard detailsExpanded else {
+            statusReportAwaitsWorker = nil
             setStatusReport(nil)
             return
         }
         await loadStatusReport()
     }
 
-    /// 「詳細・診断」の画面にいる間だけ、状態の詳細を読み直す（F-84。同じ画面での再試行・設定の読み直し・後追いの実行の後。
-    /// 画面に入ったときの 1 回だけでは、操作の後も古いまま残る）。画面にいなければ何もしない（inbox も staging も走査しない）
+    /// 「詳細・診断」の画面にいる間だけ、状態の詳細を読み直す（F-84。同じ画面での設定の読み直し・後追いの実行の返事の後と、
+    /// 再試行の後に Worker が idle に戻ったとき。画面に入ったときの 1 回だけでは、操作の後も古いまま残る）。
+    /// 画面にいなければ何もしない（inbox も staging も走査しない）
     func reloadStatusReport() async {
         guard detailsExpanded else { return }
         await loadStatusReport()

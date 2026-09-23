@@ -95,6 +95,39 @@ struct AppModelRefreshTests {
         #expect(fake.savedStates.map(\.lastConnectedAt) == [Self.t])
     }
 
+    @Test("F-84 先に始まった read が最終接続を書いた後に、その前のファイルを読んだ read が入っても、「今はしない」の後もファイルに残る（F-70）")
+    func laterReadWithOldFileKeepsWrittenLastConnected() async throws {
+        let tmp = try TempDirectory()
+        defer { tmp.remove() }
+        let store = AppModelLastConnectedTests.store(tmp)
+        var connected = AppModelTests.present()
+        connected.device = LastConnectedTests.snapshot(at: Self.t, ids: ["MIC-A"])
+        var gone = AppModelTests.present()
+        gone.device = LastConnectedTests.snapshot(at: Self.t.adding(seconds: 60), ids: [])
+        let fake = FakeServices(connected, uiStore: store)
+        let model = AppModelTests.makeModel(fake)
+        // read k がデバイスを観測して止まる → read j がまだ最終接続の無いファイルを読んで止まる
+        fake.holdNextReads(2)
+        let k = Task { await model.refresh() }
+        #expect(await AppModelTests.waitUntil { fake.heldReadCount == 1 })
+        fake.set(gone)
+        let j = Task { await model.refresh() }
+        #expect(await AppModelTests.waitUntil { fake.heldReadCount == 2 })
+        // k が先に終わって t を書く
+        fake.releaseOldestRead()
+        await k.value
+        #expect(store.load().lastConnectedAt == Self.t)
+        // 後から始まった j は、古い uiState のまま入る（j のほうが新しい観測なので捨てない）
+        fake.releaseReads()
+        await j.value
+        #expect(model.snapshot.uiState.lastConnectedAt == nil)
+        // その後の「今はしない」は、この起動で書いた t をファイルに残す
+        await model.dismissLoginItem()
+        let file = store.load()
+        #expect(file.loginItemDecided == true)
+        #expect(file.lastConnectedAt == Self.t)
+    }
+
     @Test("F-84 新しい結果がデバイスを観測していれば、古い結果の最終接続で書き換えない")
     func staleReadDoesNotReplaceConnectedTime() async {
         var old = AppModelTests.present()
@@ -119,17 +152,61 @@ struct AppModelRefreshTests {
 
     // MARK: G8 状態の詳細の読み直し
 
-    @Test("F-84 「詳細・診断」の画面で再試行したら状態の詳細を読み直す")
-    func retryReloadsStatusReport() async {
-        let fake = FakeServices(AppModelTests.present())
+    /// Worker の今の工程を差し替えた観測（再試行の後に Worker が遅れて DB を書き換える様子を作る）
+    static func working(_ activity: WorkerActivity) -> AppSnapshot {
+        var s = AppModelTests.present()
+        s.worker = WorkerStatus(activity: activity, paused: [])
+        return s
+    }
+
+    @Test("F-84 再試行の後は、Worker が要求を片付けて idle に戻った後の refresh で状態の詳細を読み直す（すぐには読まない）")
+    func retryReloadsAfterWorkerReturnsToIdle() async {
+        let fake = FakeServices(Self.working(.idle))
         let model = AppModelTests.makeModel(fake)
         await model.show(.details)
         #expect(fake.statusReportCount == 1)
-        fake.setStatusReport(Self.report(undeletable: 3))
+        // requeue は要求を積むだけ。直後の refresh はまだ前の DB（Worker は tick を始めていない）
         await model.requeueManual()
         #expect(fake.requeueCount == 1)
+        #expect(fake.statusReportCount == 1)
+        // Worker が tick を始め、再試行した Part を処理している間は読まない
+        fake.set(Self.working(.transcribing(partkey: "20260829/DJI_01_20260829_071200_orig.wav", startedAt: "x")))
+        await model.refresh()
+        #expect(fake.statusReportCount == 1)
+        // 処理を終えて DB を書き換え、idle に戻った後の最初の refresh で読み直す
+        fake.setStatusReport(Self.report(undeletable: 3))
+        fake.set(Self.working(.idle))
+        await model.refresh()
         #expect(fake.statusReportCount == 2)
         #expect(model.snapshot.statusReport?.undeletableTotal == 3)
+        // 読み直したら印を下ろす（その後の周期の refresh では読まない）
+        await model.refresh()
+        #expect(fake.statusReportCount == 2)
+    }
+
+    @Test("F-84 再試行の後に Worker がすぐ片付けても（処理中を観測しなくても）、次の refresh で読み直す")
+    func retryReloadsOnTheNextRefreshWhenWorkerWasQuick() async {
+        let fake = FakeServices(Self.working(.idle))
+        let model = AppModelTests.makeModel(fake)
+        await model.show(.details)
+        await model.requeueManual()
+        #expect(fake.statusReportCount == 1)
+        fake.setStatusReport(Self.report(undeletable: 4))
+        await model.refresh()
+        #expect(fake.statusReportCount == 2)
+        #expect(model.snapshot.statusReport?.undeletableTotal == 4)
+    }
+
+    @Test("F-84 再試行の後、読み直す前に「詳細・診断」を出たら読み直さない")
+    func leavingDetailsCancelsTheRetryReload() async {
+        let fake = FakeServices(Self.working(.idle))
+        let model = AppModelTests.makeModel(fake)
+        await model.show(.details)
+        await model.requeueManual()
+        await model.show(.main)
+        await model.refresh()
+        #expect(fake.statusReportCount == 1)
+        #expect(model.snapshot.statusReport == nil)
     }
 
     @Test("F-84 「詳細・診断」の画面で設定を読み直したら状態の詳細を読み直す")
@@ -192,7 +269,7 @@ struct AppModelRefreshTests {
         let entering = Task { await model.show(.details) }
         #expect(await AppModelTests.waitUntil { fake.heldStatusReportCount == 1 })
         fake.setStatusReport(Self.report(undeletable: 7))
-        await model.requeueManual()
+        await model.reloadConfig()
         #expect(model.snapshot.statusReport?.undeletableTotal == 7)
         fake.releaseStatusReports()
         await entering.value

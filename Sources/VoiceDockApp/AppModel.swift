@@ -60,6 +60,10 @@ final class AppModel {
     var detailsExpanded = false
     /// 状態の詳細の読み込みの世代（読み始めるたびに 1 増やす）。開始時と世代が違う結果は捨てる（F-84。書くのは AppModel+Diagnostics だけ）
     @ObservationIgnored var statusReportGeneration = 0
+    /// 「再試行」の後に状態の詳細を読み直すのを待っている印（F-84）。値は印を立てたときの refresh の世代。
+    /// requeue は Worker に要求を積むだけで、DB を書き換えるのは次の tick なので、これより後に始まった refresh で
+    /// Worker が idle と観測できたら読み直して下ろす（「詳細・診断」を出たら・閉じたら下ろす）
+    @ObservationIgnored var statusReportAwaitsWorker: Int?
     /// パネルの中の今の画面（F-65。書くのは AppModel+Navigation の show と panelDidClose だけ）
     var screen: PanelScreen = .main
     /// 要対応の「モデルの節を開く」（主画面に戻してモデルのカードを目立たせる。F-65）。閉じたら戻す（F-84）
@@ -77,6 +81,9 @@ final class AppModel {
     private(set) var deletionBusy = false
     /// 無効化の実行中（最後の再マウントの完了を待つ間に「読み取り専用へ戻しています…」を出す。F-84）
     private(set) var deletionDisabling = false
+    /// パネルを閉じた回数（F-84）。有効化・根拠 B は始めたときの値を控え、終わるまでに閉じられていたら失敗の表示を立てない
+    /// （panelDidClose が戻した enableError を、閉じた後に終わった操作が立て直さない）
+    @ObservationIgnored private var panelCloses = 0
     // T-41（書くのは下の extension だけ）
     /// 後追いの 2 つのボタンの状態（PLAN §8.9.9。画面にだけ在る値）
     private(set) var backlogState: BacklogPanelState = .idle
@@ -236,6 +243,11 @@ final class AppModel {
         // 挿し直しの案内は、読み書きできるデバイスを観測したら消す（PLAN §8.9.8 の 5）
         if deletionNotice != nil, Self.observesWritableDevice(snapshot.device) { deletionNotice = nil }
         persistLastConnected()
+        // 「再試行」の後、印より後に始まった refresh で Worker が idle なら、要求を片付けた後の DB を読む（F-84）
+        if let since = statusReportAwaitsWorker, generation > since, snapshot.worker.activity == .idle {
+            statusReportAwaitsWorker = nil
+            await reloadStatusReport()
+        }
     }
 
     /// 捨てる古い refresh の結果から、最終接続だけを引き継ぐ（F-84・F-70）。古い読み込みがデバイスを観測した後に抜かれると、
@@ -285,7 +297,9 @@ final class AppModel {
         }
     }
 
-    func panelDidClose() {
+    /// パネルが閉じた。`reopening` は NSOpenPanel などのモーダルのために閉じ、終わったら開き直すとき（StatusItemController.runModal）。
+    /// そのときは要対応で付けた枠を残す（モーダルの前後で目立たせたカードを見失わない。F-84）
+    func panelDidClose(reopening: Bool = false) {
         isPanelOpen = false
         // 次に開いたときに古い結果を出さない
         reloadResult = nil
@@ -305,9 +319,13 @@ final class AppModel {
         dismissBacklog()
         // 要対応で付けた枠と、有効化・根拠 B の失敗の表示も戻す（何日も前の枠と「有効にできませんでした」を残さない。F-84）。
         // 無効化に失敗した段（disableFailedStages）は戻さない（消す能力が残っているかもしれない間は「無効にする」を出し続ける）
-        modelsHighlighted = false
-        deletionHighlighted = false
+        if !reopening {
+            modelsHighlighted = false
+            deletionHighlighted = false
+        }
         enableError = nil
+        panelCloses += 1
+        statusReportAwaitsWorker = nil
         // 次に開いたときは主画面から（F-65）。「詳細・診断」を出たので状態の詳細も捨てる
         screen = .main
         if detailsExpanded {
@@ -319,8 +337,9 @@ final class AppModel {
     func requeueManual() async {
         await services.requeueManual()
         await refresh()
-        // 「詳細・診断」の画面の「再試行」なら、FAILED の一覧を読み直す（F-84）
-        await reloadStatusReport()
+        // 「詳細・診断」の画面の「再試行」なら、Worker が要求を片付けた後（この後に始まる refresh で idle を観測したとき）に
+        // FAILED の一覧を読み直す（F-84。requeue は要求を積むだけで、すぐ読み直しても前の DB を読む）
+        if detailsExpanded { statusReportAwaitsWorker = refreshStarted }
     }
 
     func reloadConfig() async {
@@ -367,12 +386,27 @@ extension AppModel {
     /// 「無効にする」を出すか: 消える可能性がある間（trash と同じ）と、前回の無効化に失敗した段がある間
     var showsDisableButton: Bool { showsTrash || !disableFailedStages.isEmpty }
 
+    /// 「無効にする」のカードを出すか（F-84）: 押せる間と、無効化の終わりを待つ間。無効化の途中の読み直しで
+    /// showsDisableButton が偽になっても、「読み取り専用へ戻しています…」を最後の再マウントの観測まで出し続ける
+    var showsDisableSection: Bool { showsDisableButton || deletionDisabling }
+
     /// 削除が有効な間に削除モジュールの版が違う（要対応 `reaperUpdateRequired`）なら、長押しの「更新する」を出す（F-84）。
     /// 更新は有効化フローをもう一度通す（PLAN §8.9.3 の 5。`enableDeletion`）。「削除が有効」は根拠 B を出す条件と同じ
-    /// （アプリの設定が有効。片方だけ有効な中途の状態では出さない。無効なら「有効にする」が出ている）
+    /// （アプリの設定が有効）。reaper.conf だけが有効な中途の状態では出さない。アプリの設定が有効で reaper.conf が無効・無い・
+    /// 読めない中途の状態は `DeletionPanelState` の値から見分けられないので出る（そのとき有効化フローは reaper.conf も有効に書く。
+    /// 既知の残り。起動と設定の読み直しでは CV-30 の修復が両方を無効に揃える）
     var showsReaperUpdate: Bool {
         guard let deletion, deletion.showsSkippedToggle else { return false }
         return snapshot.attention.contains(.reaperUpdateRequired)
+    }
+
+    /// 根拠 B（「無音・重複も消す」）のカードを出すか: 削除が有効で根拠 B がまだ無効の間。ただし「更新する」を出している間は
+    /// 出さない（赤い長押しを 2 つ並べない。reaper の版が違う間は削除モジュールを起動しないので根拠 B も働かない。F-84）
+    var showsSkippedDeletionCard: Bool {
+        guard let deletion, deletion.showsTrash, deletion.showsSkippedToggle, !deletion.skippedEnabled else {
+            return false
+        }
+        return !showsReaperUpdate
     }
 
     /// 「元音声の削除を有効にする」。赤いボタンの 3 秒の長押しが完了したときだけ呼ぶ（HoldToConfirmButton。F-65）。
@@ -380,6 +414,7 @@ extension AppModel {
     func enableDeletion() async -> Result<Void, EnableError> {
         deletionBusy = true
         defer { deletionBusy = false }
+        let closes = panelCloses
         let r = await services.enableDeletion(confirmation: DeletionStrings.confirmationWord)
         switch r {
         case .success:
@@ -387,7 +422,8 @@ extension AppModel {
             disableFailedStages = []
             deletionNotice = DeletionStrings.reinsertNotice
         case .failure(let e):
-            enableError = e
+            // 待っている間にパネルを閉じたら、失敗の表示は立てない（閉じて戻した表示を立て直さない。F-84）
+            if closes == panelCloses { enableError = e }
         }
         await refresh()
         return r
@@ -397,10 +433,11 @@ extension AppModel {
     func enableSkippedDeletion() async -> Result<Void, EnableError> {
         deletionBusy = true
         defer { deletionBusy = false }
+        let closes = panelCloses
         let r = await services.enableSkippedDeletion(confirmation: DeletionStrings.confirmationWord)
         switch r {
         case .success: enableError = nil
-        case .failure(let e): enableError = e
+        case .failure(let e): if closes == panelCloses { enableError = e }
         }
         await refresh()
         return r

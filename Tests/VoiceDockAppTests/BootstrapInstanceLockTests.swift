@@ -59,7 +59,7 @@ struct BootstrapInstanceLockTests {
         }
     }
 
-    @Test("F-76 空の HOME（state が無い）ではロックを取れず、何も作らない（ディレクトリを作ってから取る）")
+    @Test("F-84 空の HOME（state が無い）では app.lock を開けず、起動の失敗（NSAlert）にして何も作らない（F-76。ディレクトリを作ってから取る）")
     func emptyHomeCannotLock() throws {
         let tmp = try TempDirectory()
         defer { tmp.remove() }

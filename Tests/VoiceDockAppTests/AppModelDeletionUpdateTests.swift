@@ -49,7 +49,7 @@ struct AppModelDeletionUpdateTests {
         #expect(model.deletion?.notices == ["削除モジュールの更新が必要です"])
     }
 
-    @Test("F-84 削除が無効なら版が違っても「更新する」を出さない（「有効にする」の側に任せる）")
+    @Test("F-84 削除が無効なら版が違っても「更新する」を出さない")
     func updateHiddenWhileDisabled() async {
         let (model, _) = await Self.model(
             Self.snapshot(
@@ -106,18 +106,45 @@ struct AppModelDeletionUpdateTests {
         #expect(model.showsReaperUpdate == false)
     }
 
-    @Test("F-84 更新と無効化の待ちの文言（ボタン・長押しの案内・要対応の説明）")
+    @Test("F-84 更新と無効化の待ちの文言（ボタン・長押しの案内・読み上げ・要対応の説明）")
     func updateTexts() {
         #expect(Strings.buttonUpdateReaper == "更新する")
         #expect(
             Strings.holdToUpdateHint
                 == "削除モジュールの版がアプリと違うため、削除を止めています。赤いボタンを 3 秒長押しすると、有効化をもう一度通して入れ直します。途中で離すと取り消します")
+        #expect(Strings.holdToUpdateAccessibilityHint == "赤いボタンを 3 秒長押しすると更新します。途中で離すと取り消します")
         #expect(Strings.disablingDeletion == "読み取り専用へ戻しています…")
         #expect(AttentionTexts.title(.reaperUpdateRequired) == "削除モジュールの更新が必要です")
         #expect(
             AttentionTexts.detail(.reaperUpdateRequired, path: "/v", marker: ".obsidian")
-                == "「元音声の削除」を開いて、赤いボタンの長押しで有効化をやり直してください")
+                == "「元音声の削除」を開いて、「更新する」を 3 秒長押ししてください")
         #expect(AttentionTexts.button(.openDeletionFlow) == "有効化フローを開く")
+    }
+
+    @Test("F-84 「更新する」を出している間は根拠 B（無音・重複も消す）のカードを出さない（赤い長押しを 2 つ並べない）")
+    func skippedCardHiddenWhileUpdateIsShown() async {
+        let (model, fake) = await Self.model(
+            Self.snapshot(
+                deletion: Self.panel(appEnabled: true, conf: .enabled, reaper: Self.mismatch),
+                attention: [.reaperUpdateRequired]))
+        #expect(model.showsReaperUpdate == true)
+        #expect(model.showsSkippedDeletionCard == false)
+        // 版が合えば根拠 B のカードに戻る
+        fake.set(
+            Self.snapshot(
+                deletion: Self.panel(appEnabled: true, conf: .enabled, reaper: .valid(version: "0.1.0")),
+                attention: []))
+        await model.refresh()
+        #expect(model.showsReaperUpdate == false)
+        #expect(model.showsSkippedDeletionCard == true)
+    }
+
+    @Test("F-84 削除が無効なら根拠 B のカードを出さない（従来どおり）")
+    func skippedCardHiddenWhileDisabled() async {
+        let (model, _) = await Self.model(
+            Self.snapshot(
+                deletion: Self.panel(appEnabled: false, conf: .disabled, reaper: .notInstalled), attention: []))
+        #expect(model.showsSkippedDeletionCard == false)
     }
 
     // MARK: G11 無効化の待ち
@@ -138,6 +165,26 @@ struct AppModelDeletionUpdateTests {
         #expect(model.deletionBusy == false)
     }
 
+    @Test("F-84 無効化の途中の読み直しで「無効にする」の条件が偽になっても、終わるまで待ちの表示のカードを残す")
+    func disablingSectionSurvivesTheIntermediateRefresh() async {
+        let (model, fake) = await Self.model(Self.snapshot(deletion: AppModelTests.deletionOn, attention: []))
+        #expect(model.showsDisableSection == true)
+        fake.setHoldDisable(true)
+        let disabling = Task { await model.disableDeletion() }
+        #expect(await AppModelTests.waitUntil { fake.disableCount == 1 })
+        // 手順 3（config を無効に書く）の後の周期の読み直し: trash も「無効にする」の条件も偽になる
+        fake.set(
+            Self.snapshot(
+                deletion: Self.panel(appEnabled: false, conf: .disabled, reaper: .notInstalled), attention: []))
+        await model.refresh()
+        #expect(model.showsDisableButton == false)
+        #expect(model.showsDisableSection == true)
+        #expect(model.deletionDisabling == true)
+        fake.releaseDisable()
+        _ = await disabling.value
+        #expect(model.showsDisableSection == false)
+    }
+
     // MARK: G13 閉じたときの戻し
 
     @Test("F-84 閉じたら要対応の枠（モデル・削除）と有効化の失敗の表示を戻す")
@@ -155,6 +202,38 @@ struct AppModelDeletionUpdateTests {
         #expect(model.modelsHighlighted == false)
         #expect(model.deletionHighlighted == false)
         #expect(model.enableError == nil)
+    }
+
+    @Test("F-84 NSOpenPanel などのモーダルのために閉じたときは、要対応の枠を残す（開き直して見失わない）")
+    func modalCloseKeepsHighlights() {
+        let fake = FakeServices(AppModelTests.present())
+        let model = AppModelTests.makeModel(fake)
+        model.perform(.openModels)
+        model.perform(.openDeletionFlow)
+        model.panelDidClose(reopening: true)
+        #expect(model.modelsHighlighted == true)
+        #expect(model.deletionHighlighted == true)
+        model.panelDidClose()
+        #expect(model.modelsHighlighted == false)
+        #expect(model.deletionHighlighted == false)
+    }
+
+    @Test("F-84 閉じた後に終わった有効化の失敗は表示に立てない（閉じる前に始めた操作の結果）")
+    func enableFailureAfterCloseIsDropped() async {
+        let fake = FakeServices(AppModelTests.present())
+        fake.setEnableResult(.failure(.signature))
+        fake.setHoldEnable(true)
+        let model = AppModelTests.makeModel(fake)
+        let enabling = Task { await model.enableDeletion() }
+        #expect(await AppModelTests.waitUntil { fake.enableConfirmations.count == 1 })
+        model.panelDidClose()
+        fake.releaseEnable()
+        _ = await enabling.value
+        #expect(model.enableError == nil)
+        // 開いている間に終わった失敗は出す
+        fake.setHoldEnable(false)
+        _ = await model.enableDeletion()
+        #expect(model.enableError == .signature)
     }
 
     @Test("F-84 閉じても無効化に失敗した段は残す（「無効にする」を出し続ける）")

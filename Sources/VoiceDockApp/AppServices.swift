@@ -63,6 +63,8 @@ struct LiveServices: AppServices {
         let config = await context.config.current()
         s.configPresent = (config != nil)
         s.configViolations = await context.config.violations()
+        // F-84: 起動で時刻帯とログに使った値と、今の設定から解いた値の違い（読み直しでは届かず、再起動で変わる）
+        s.settingsAwaitingRestart = EffectiveSettings.differences(running: context.runningSettings, config: config)
         if let c = config {
             s.timeZone = c.timeZone
             s.vaultPath = c.vault.path

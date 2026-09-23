@@ -66,6 +66,27 @@ enum Strings {
     static let reloadOK = "設定を読み直しました"
     static func reloadInvalid(_ count: Int) -> String { "設定にエラーがあります（" + String(count) + " 件）" }
 
+    // F-84: 起動したときの値のまま動いている設定（PLAN §8.12 の 8・§8.15。自動では再起動しない。時刻帯の変更は促さない。RK-32）
+    static let restartPendingTitle = "次の設定は起動したときの値のまま動いています。「設定を読み直す」では変わらず、再起動すると変わります"
+    /// 主画面の「詳細・診断」の行の右に出す短い印
+    static let restartPendingRow = "再起動で反映される設定あり"
+    static func restartPending(_ d: EffectiveSettings.Difference) -> String {
+        switch d {
+        case .timeZone(let running, let configured):
+            "時刻帯: 起動したときの " + running + " のまま（設定は " + configured + "）。取り込みの時刻とログは起動したときの時刻帯、"
+                + "ほかの処理は設定の時刻帯で動いています。使い始めた後に時刻帯を変えると記録の時刻が混ざるので、"
+                + "変えるつもりがなければ設定を元に戻してください"
+        case .logLevel(let running, let configured):
+            "ログのレベル: 起動したときの " + logLevelWord(running) + " のまま（設定は " + logLevelWord(configured) + "）"
+        case .unsafeLogContent(true):
+            "ログに本文を出す設定: 起動したときの「出す」のまま。再起動するまで、DEBUG の行には本文が出続けます"
+        case .unsafeLogContent(false):
+            "ログに本文を出す設定: 起動したときの「出さない」のまま"
+        }
+    }
+    /// ログのレベルの表記（行に出す語から空白を除いたもの。config.json の logging.level と同じ語）
+    static func logLevelWord(_ level: LogLevel) -> String { String(level.token.filter { $0 != " " }) }
+
     static func versionLine(_ version: String) -> String { "版 " + version }
 
     // アイコン
@@ -169,6 +190,8 @@ enum Strings {
     static let holdToUpdateHint =
         "削除モジュールの版がアプリと違うため、削除を止めています。赤いボタンを " + holdSeconds
         + " 秒長押しすると、有効化をもう一度通して入れ直します。途中で離すと取り消します"
+    /// 「更新する」の読み上げの補足（F-84）
+    static let holdToUpdateAccessibilityHint = "赤いボタンを " + holdSeconds + " 秒長押しすると更新します。途中で離すと取り消します"
     static let disablingDeletion = "読み取り専用へ戻しています…"
 
     // F-65: カード型のパネルと、popover の中の画面（PLAN §8.12）

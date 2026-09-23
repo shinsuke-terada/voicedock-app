@@ -9,18 +9,19 @@ import VDPipeline
 struct DeletionSection: View {
     let model: AppModel
 
-    /// 主画面に「元音声の削除」の行を出すか（設定が読めているか、消す能力が残っている間）
+    /// 主画面に「元音声の削除」の行を出すか（設定が読めているか、消す能力が残っている間か、無効化の終わりを待つ間）
     static func isAvailable(_ model: AppModel) -> Bool {
-        model.deletion != nil || model.showsDisableButton
+        model.deletion != nil || model.showsDisableSection
     }
 
     var body: some View {
         if let deletion = model.deletion {
             released(deletion)
-        } else if !model.showsDisableButton {
+        } else if !model.showsDisableSection {
             Text(Strings.deletionUnavailable).font(.callout).foregroundStyle(.secondary)
         }
-        if model.showsDisableButton {
+        // 無効化の途中の読み直しで「無効にする」の条件が偽になっても、終わるまでカードと待ちの表示を残す（F-84）
+        if model.showsDisableSection {
             SectionBox {
                 // 確認を出さない（止めたいときに止められること）
                 Button {
@@ -72,13 +73,18 @@ struct DeletionSection: View {
                 SectionBox {
                     Text(Strings.holdToUpdateHint).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    HoldToConfirmButton(title: Strings.buttonUpdateReaper, disabled: model.deletionBusy) {
+                    HoldToConfirmButton(
+                        title: Strings.buttonUpdateReaper, disabled: model.deletionBusy,
+                        accessibilityHintText: Strings.holdToUpdateAccessibilityHint
+                    ) {
                         Task { _ = await model.enableDeletion() }
                     }
                 }
+                // 要対応の「有効化フローを開く」で来たら目立たせる（F-84。枠はこのカードだけ）
                 .attentionHighlight(model.deletionHighlighted)
             }
-            if deletion.showsSkippedToggle && !deletion.skippedEnabled {
+            // 更新が要る間は根拠 B を出さない（赤い長押しを 2 つ並べない。版が違う間は削除モジュールを起動しないので働かない。F-84）
+            if model.showsSkippedDeletionCard {
                 SectionBox {
                     Text(Strings.holdToEnableHint).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -116,8 +122,6 @@ struct DeletionSection: View {
                     Task { _ = await model.enableDeletion() }
                 }
             }
-            // 要対応の「有効化フローを開く」で来たら目立たせる（F-84）
-            .attentionHighlight(model.deletionHighlighted)
         }
     }
 }
