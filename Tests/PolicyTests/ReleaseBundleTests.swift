@@ -253,6 +253,16 @@ struct ReleaseBundleTests {
         #expect(try Self.text("scripts/verify-bundle.sh").contains(check))
     }
 
+    @Test("staple の後の検査だけが、stapler の足す Contents/CodeResources を許す")
+    func verifyBundleAllowsTheStapledTicketOnlyAfterStapling() throws {
+        let script = try Self.text("scripts/verify-bundle.sh")
+        let guardLine = "if [ \"$files_only\" -eq 0 ]; then\n"
+        let addLine = "  expected=\"$(printf '%s\\nContents/CodeResources\\n' \"$expected\""
+        #expect(script.contains(guardLine + addLine))
+        // 許可リスト自体には入れない（`--files-only` は staple の前に走るので、入れると足りなくて落ちる）
+        #expect(!(try Self.manifest().contains("Contents/CodeResources")))
+    }
+
     @Test("`--files-only` が在り、make-app が使う")
     func verifyBundleSupportsFilesOnly() throws {
         #expect(try Self.text("scripts/verify-bundle.sh").contains("--files-only"))

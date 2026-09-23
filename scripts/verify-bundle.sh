@@ -29,6 +29,10 @@ step() { echo "== $1"; }
 # V-1 中身の一覧が Resources/bundle-manifest.txt と完全一致（ディレクトリは一覧の各行の親から導き、空のディレクトリも見つける）
 step "V-1 バンドルの中身"
 expected="$(grep -v -e '^#' -e '^$' "$root/Resources/bundle-manifest.txt" | LC_ALL=C sort)"
+# stapler は公証チケットを Contents/CodeResources に置く。staple の後の検査（--files-only でない）だけ、その 1 件を許す
+if [ "$files_only" -eq 0 ]; then
+  expected="$(printf '%s\nContents/CodeResources\n' "$expected" | LC_ALL=C sort)"
+fi
 actual="$(cd "$app" && find . -type f -o -type l | sed 's|^\./||' | LC_ALL=C sort)"
 if [ "$expected" = "$actual" ]; then
   ok "$(wc -l <<<"$expected" | tr -d ' ') 件が一致"
