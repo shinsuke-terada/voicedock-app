@@ -279,16 +279,6 @@ struct DeletionRequesterTests {
         #expect(scene.requests() == [])
     }
 
-    @Test("F-64 SOURCE_DELETE_PENDING は一覧に無くても自動で完了にしない（手動で消した分を完了にする の対象。§8.9.9）")
-    func absentPendingIsLeftForResolveAbsent() async throws {
-        let scene = try DeletionScene()
-        try scene.movePart(Self.pk, to: .sourceDeletePending)
-        let (_, deps) = Self.setUp(scene, snapshot: Self.absentSnapshot(scene))
-        #expect(await Self.request(deps) == 0)
-        #expect(try Self.part(scene).status == .sourceDeletePending)
-        #expect(!scene.logLines.contains { $0.contains(" source_delete_skipped ") })
-    }
-
     @Test("F-64 結果待ち（delete_request_id が在る）の RAW_SAVED は一覧に無くても完了にしない")
     func absentAwaitingResultIsNotCompleted() async throws {
         let scene = try DeletionScene()

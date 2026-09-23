@@ -2,6 +2,10 @@
 
 > （F-67・issue #97、2026-09-23）走査の `lstat` が `ENOENT` 以外で失敗したら一覧は不完全（`complete = false`）になり、そのデバイスは snapshot の `devices` に載らない。以後、深さの上限の内側では一覧は完全な列挙で、F-64 の `sourceIsObservedAbsent` の「一覧は完全な列挙を保証しない」という記述は上限の外（と `maxScanDepth` を下げた場合）に限られる（PLAN §8.1・§8.9.5）。
 
+> （F-78・issue #124、2026-09-23。マージ後の追記）手順 4a（F-64）を ID の無い SOURCE_DELETE_PENDING にも広げた: 一覧に無いと観測できたら「手動で消した分を完了にする」と同じ 2 遷移（detail `resolve_absent` → `already_absent`）・要求と結果の取り下げ・ID を外して自動で完了する（`completeAsAbsent`。`source_deleted_at` は入れない）。
+> 手順 5b を足した: `canDeleteSource` が真の ID の無い SOURCE_DELETE_PENDING で、reaper の拒否（回収の pend）が events の上で続けて `reaperRejectionsToSettle`（3）回に達していれば、要求を書かずに 5a と同じ 2 遷移（detail `not_deletable`、原因は最後の拒否の理由語）で決着する（`reaperRejectionStreak`・`persistentRejection`）。
+> 状態の詳細は reaper の理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（T-32 の `StatusReporter.causeText`）。§6.3 の `absentPendingIsLeftForResolveAbsent` を外し、§6.14 の `absentPendingIsNotSettled` の期待を直した。テストは §6.16・§6.17（PLAN §8.9.2・§8.9.5・§8.9.9）。
+
 > （F-74・issue #114、2026-09-23。マージ後の追記）手順 5a の決着を ID の無い SOURCE_DELETE_PENDING にも広げた（辺を足さず既存の PENDING→SOURCE_DELETING→COMPLETED、両方 detail `not_deletable`）。`undeletableCause` は何も見つからなければ nil を返し、決着を見送って連続を切る。
 > `TickContext.undeletableStreaks` と `DeletionDependencies.init(streaks:)` の既定値を外した。期限切れは読めて request_id と partkey が一致する結果のときだけ飛ばし、取り下げの後に要求が残れば pend しない（`DeleteQueue.hasRequest`・`DeleteQueue.result(requestID:)`）。
 > 回収は ID を持つ COMPLETED も拾い（遷移させずに `source_deleted_at` と ID）、DELETED の後始末は遷移が先で ID を外すのは最後。§6.5 の `resultForAPartNotWaitingIsDiscarded` から COMPLETED の場合を外した。テストは `PendingSettlementTests`・`StuckDeleteResultTests`（PLAN §8.9.5〜§8.9.7）。
@@ -65,6 +69,8 @@ Worker の tick の空の段（T-18）と、Raw の直後・SAVED の直後の�
 | `Tests/VDPipelineTests/UndeletableSettlementTests.swift`（F-69 で追加） | 期限での決着と、要対応・状態の詳細の数え方（§6.13） |
 | `Tests/VDPipelineTests/PendingSettlementTests.swift`（F-74 で追加） | ID の無い SOURCE_DELETE_PENDING の決着・原因が見つからないときの見送り・連続回数の記録の配線 |
 | `Tests/VDPipelineTests/StuckDeleteResultTests.swift`（F-74 で追加） | partkey の合わない結果・取り下げきれない要求・ID を持つ COMPLETED の回収・遷移が先の後始末 |
+| `Tests/VDPipelineTests/AbsentPendingCompletionTests.swift`（F-78 で追加） | 一覧に無い、ID の無い SOURCE_DELETE_PENDING の自動の完了（§6.16） |
+| `Tests/VDPipelineTests/ReaperRejectionSettlementTests.swift`（F-78 で追加） | reaper が拒否し続ける Part の打ち切り（§6.17） |
 | `Tests/VDPipelineTests/SessionDeletionStageTests.swift` | |
 | `Tests/VDPipelineTests/ResultCollectorTests.swift` | |
 | `Tests/VDPipelineTests/RunReaperTests.swift` | |
@@ -238,9 +244,12 @@ struct DeletionRequester {
    2. `part.status == .sourceDeleting || part.status == .completed` なら飛ばす（通常経路は COMPLETED を消しにいかない。二重に要求しない）
    3. `part.deleteRequestID != nil` なら飛ばす（結果待ち）
    4. `deps.pended.contains(part.partkey)` なら飛ばす（同じ周回で再要求しない。DEL-11）
-   4a. （**F-64 で追加**）`part.status == .rawSaved && Self.sourceIsObservedAbsent(part, in: snapshot, zone: deps.zone)` なら、要求を書かずに
-       `do { try deps.store.recordPartTransition(partkey: part.partkey, from: .rawSaved, to: .completed, detail: DeletionReason.alreadyAbsent) } catch is TransitionConflict { deps.logStatusChanged(recordingKey: part.partkey); continue }`、
-       `deps.log.info(.sourceDeleteSkipped, [(.recordingKey, .string(part.partkey)), (.reason, .string(DeletionReason.alreadyAbsent))])`、飛ばす（`source_deleted_at` は入れない）
+   4a. （**F-64 で追加**。F-78 で ID の無い SOURCE_DELETE_PENDING も）`Self.sourceIsObservedAbsent(part, in: snapshot, zone: deps.zone)` なら、要求を書かずに `try completeAsAbsent(part)` して飛ばす
+       （手順 1〜3 の後に残るのは RAW_SAVED と ID の無い SOURCE_DELETE_PENDING だけ。`source_deleted_at` は入れない）。`completeAsAbsent`:
+       RAW_SAVED は `recordPartTransition(partkey:, from: .rawSaved, to: .completed, detail: DeletionReason.alreadyAbsent)`、
+       SOURCE_DELETE_PENDING は（F-78）`from: .sourceDeletePending, to: .sourceDeleting, detail: DeletionReason.resolveAbsentDetail` → `from: .sourceDeleting, to: .completed, detail: DeletionReason.alreadyAbsent` →
+       `DeleteQueue.withdrawRequests(partkey:)`・`DeleteQueue.withdrawResults(partkey:)` → `updateRecording(pk, [.deleteRequestID(nil)])`（T-41 の `executeResolveAbsent` と同じ形）、それ以外の状態は何もしない。
+       `TransitionConflict` → `deps.logStatusChanged(recordingKey:)` で戻る（ほかの例外は投げる）。遷移できたら `deps.log.info(.sourceDeleteSkipped, [(.recordingKey, .string(part.partkey)), (.reason, .string(DeletionReason.alreadyAbsent))])`
    5. `DeletionPolicy.canDeleteSource(DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx)` が偽なら飛ばす。
    5a. （**F-69 で追加**。F-74 で SOURCE_DELETE_PENDING も）5 が偽で `settleableStatuses`（RAW_SAVED・SOURCE_DELETE_PENDING）に在れば、飛ばす前に `considerSettling(part, session:, parts:, snapshot:, ctx:)`:
        `failureIsObserved` が偽なら `deps.streaks.reset(partkey)`、真なら `n = deps.streaks.record(partkey, connectEpoch: snapshot.connectEpoch)`。
@@ -248,7 +257,9 @@ struct DeletionRequester {
        RAW_SAVED は `recordPartTransition(partkey:, from: .rawSaved, to: .completed, errorMessage: cause, detail: DeletionReason.notDeletable)`、
        SOURCE_DELETE_PENDING は `from: .sourceDeletePending, to: .sourceDeleting, detail: notDeletable` → `from: .sourceDeleting, to: .completed, errorMessage: cause, detail: notDeletable`（F-74）（TransitionConflict → `deps.logStatusChanged(recordingKey:)`）、
        `deps.log.info(.sourceDeleteSkipped, [(.recordingKey, …), (.reason, .string(DeletionReason.notDeletable)), (.detail, .string(cause))])`（`source_deleted_at` は入れない。消していない）。
-       5 が真なら `deps.streaks.reset(partkey)` してから 6 へ
+       5 が真なら `deps.streaks.reset(partkey)` してから 5b へ
+   5b. （**F-78 で追加**）`part.status == .sourceDeletePending` で `let reason = try persistentRejection(part)` が nil でなければ、要求を書かずに `settleAsNotDeletable(part, cause: reason)` して飛ばす
+       （5a の SOURCE_DELETE_PENDING と同じ 2 遷移・ログ。原因の語は最後の拒否の reaper の理由語）
    6. `guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: session.sessionKey) else { continue }`（①②）
    7. ③ `do { try deps.store.recordPartTransition(partkey: part.partkey, from: part.status, to: .sourceDeleting) } catch is TransitionConflict { deps.logStatusChanged(recordingKey: part.partkey); continue }`（RAW_SAVED か SOURCE_DELETE_PENDING から）
    8. `deps.log.info(.deleteRequested, [(.requestID, .string(id)), (.recordingKey, .string(part.partkey)), (.sessionKey, .string(session.sessionKey))])`
@@ -268,10 +279,17 @@ struct DeletionRequester {
   - `static func failureIsObserved(_ part: RecordingRow, parts: [RecordingRow], snapshot: DeviceSnapshot, ctx: DeletionContext) -> Bool`:
     (a) `parts` がすべて `PartStates.terminal`、(b) `snapshot.unavailable[part.deviceID] == nil`・`snapshot.devices[part.deviceID]` が在り `DeviceWritability.observe` が `.writable`、
     (c) `VaultCheck.evaluate(path:marker:).isAvailable`、(d) `part.sourcePath` が nil か空なら真、そうでなければ relpath が一覧に（`sameKey` で）**在る**ときだけ真
-    （無い RAW_SAVED は 4a の F-64 が先に拾うので RAW_SAVED にとって d は防御。無い SOURCE_DELETE_PENDING は d が偽で待つ。F-74）
+    （無い RAW_SAVED と ID の無い SOURCE_DELETE_PENDING は 4a（F-64・F-78）が先に拾うので d は防御。F-74 から F-78 までは無い PENDING を d が止めていた）
   - `static func undeletableCause(_ part:, session:, parts:, ctx:) -> String?`: `source_info`（source_path・size・mtime のどれかが無い）→ `pre_identity`（`preIdentityCheck` が偽）→ `transcript` → `raw_note`、どれでもなければ nil（F-74）
   - `func considerSettling(…)`・`func settleAsNotDeletable(_ part: RecordingRow, cause: String)`（衝突のテストから直接呼ぶ）
   - 新しい設定キーは作らない（既定の backoff で SAVED から約 81 分。PLAN §8.9.5）
+- 4a・5b の関数（internal。**F-78 で追加**。PLAN §8.9.5）:
+  - `func completeAsAbsent(_ part: RecordingRow) throws`（手順 4a の本体。衝突のテストから直接呼ぶ）
+  - `static let reaperRejectionsToSettle = 3`（定数。設定キーは作らない）
+  - `static func reaperRejectionStreak(_ events: [EventRow]) -> (count: Int, lastReason: String?)`: events を新しい順に見て、
+    `fromStatus == SOURCE_DELETING`・`toStatus == SOURCE_DELETE_PENDING`・`errorCode == ErrorCode.sourceIdentityMismatch.rawValue` の遷移（回収の pend）を数え（いちばん新しいものの `detail` が `lastReason`）、
+    `toStatus == SOURCE_DELETING` で `detail == nil` かつ `fromStatus` が RAW_SAVED か SOURCE_DELETE_PENDING の遷移（要求）は読み飛ばし、それ以外で止まる。状態名・エラーコードは `PartStatus` / `ErrorCode` の rawValue で比べる（PT-06）
+  - `func persistentRejection(_ part: RecordingRow) throws -> String?`: `deps.store.events(entity: .recording, key: part.partkey)` の `reaperRejectionStreak` が `reaperRejectionsToSettle` 以上なら `lastReason ?? ""`、でなければ nil（DB の履歴で数えるので再起動で 0 に戻らない）
 - **Session の状態で門前払いしない**（OPEN・READY でも評価する。AY-1）
 - 結果の回収はここでしない（voicedock は先頭で回収していた。本アプリは tick の段で全件を回収する。§8.9.6）
 
@@ -657,12 +675,13 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `listedSourceIsRequested` | F-64 一覧に在る RAW_SAVED は無いと扱わず、要求を書く通常の経路へ進む | 時計を 60 秒進め、`snapshot(relpaths: [DeletionScene.relpath, 上の別の録音])`（取り込みより後の走査） | 1、SOURCE_DELETING、`source_delete_skipped` のログが無い |
 | `absentRawSavedCompletesWithoutRequest` | F-64 一覧に無い RAW_SAVED は要求を書かずに RAW_SAVED→COMPLETED（detail already_absent） | `snapshot(relpaths: ["TX_MIC001_20260912_100000/TX00_MIC001_20260912_100000_orig.wav"])` | 0、`requests() == []`、COMPLETED、`sourceDeletedAt == nil`、`deleteRequestID == nil`、`source_delete_skipped recording_key=<pk> reason=already_absent` |
 | `snapshotBeforeIngestionDoesNotComplete` | F-64 取り込み前の snapshot では完了にしない（updated_at と同じ秒・前の走査。境界: ちょうど 1 秒後なら完了） | 時計を 60 秒進め、`completedAt: now + (−60000 / 0 / 999 / 1000) ミリ秒` | 0、`requests() == []`、RAW_SAVED / RAW_SAVED / RAW_SAVED / COMPLETED |
-| `absentPendingIsLeftForResolveAbsent` | F-64 SOURCE_DELETE_PENDING は一覧に無くても自動で完了にしない（手動で消した分を完了にする の対象。§8.9.9） | `movePart(pk, to: .sourceDeletePending)`、上と同じ snapshot | 0、SOURCE_DELETE_PENDING のまま、`source_delete_skipped` のログが無い |
 | `absentAwaitingResultIsNotCompleted` | F-64 結果待ち（delete_request_id が在る）の RAW_SAVED は一覧に無くても完了にしない | `updateRecording(pk, [.deleteRequestID(…)])`、上と同じ snapshot | 0、RAW_SAVED |
 | `missingSourcePathIsNotAbsent` | F-64 source_path が無い・空なら無いと確かめられないので完了にしない（パラメータ化） | `StorePaths.setSourcePath(store, partkey: pk, nil / "")`、上と同じ snapshot | 0、RAW_SAVED、`source_delete_skipped` のログが無い |
 | `absentOnReadOnlyDeviceCompletes` | F-64 読み取り専用で接続中でも、無いと観測できれば完了する（消さないので観測値の書き込み可否は問わない） | `snapshot(readOnly: true, relpaths: [上と同じ])` | 0、COMPLETED |
 | `emptySessionWritesNothing` | TEST-28 Part 0 件の Session は 0 | `addSession(key: "DJIMIC3:20260913", dayDate: "2026-09-13")` を評価 | 0 |
 | `missingSessionWritesNothing` | Session が無ければ 0 | `"DJIMIC3:20990101"` | 0、ログに config_warning が無い |
+
+（F-78）`absentPendingIsLeftForResolveAbsent`（「F-64 SOURCE_DELETE_PENDING は一覧に無くても自動で完了にしない」）は外した。ID の無い SOURCE_DELETE_PENDING も手順 4a が自動で完了させるようになったので、期待が逆になった（§6.16 の `absentPendingCompletesWithoutRequest` が引き継ぐ）。
 
 ### 6.4 `Tests/VDPipelineTests/SessionDeletionStageTests.swift`（`@Suite("SessionDeletionStage")`）
 
@@ -830,7 +849,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 |---|---|---|---|
 | `pendingPartSettlesWithoutDeleting` | F-74 ID の無い SOURCE_DELETE_PENDING も期限を過ぎ観測できた失敗が 2 回続いたら、消さずに PENDING→SOURCE_DELETING→COMPLETED（detail not_deletable・原因を記録）で Session も完了する（パラメータ化: 原因 4 つ） | (4, 4860 秒)、1 回目・2 回目 | 1 回目は待つ（Part PENDING・Session SOURCE_DELETING・attempts + 1）。2 回目で Part COMPLETED・`errorCode == nil`・`errorMessage` が原因の語・`sourceDeletedAt == nil`、最後の 2 本の遷移 `SOURCE_DELETE_PENDING→SOURCE_DELETING`・`SOURCE_DELETING→COMPLETED` の detail が両方 `not_deletable`、ログ `… reason=not_deletable detail=<語>`、要求なし、元ファイルが残る、Session COMPLETED |
 | `pendingPartBeforeTheDeadlineWaits` | F-74 期限の前（PENDING にしてから backoff の合計に 1 秒足りない）は SOURCE_DELETE_PENDING のまま待つ | (4, 4859 秒)、2 回評価 | 待った姿 |
-| `absentPendingIsNotSettled` | F-74 一覧に無い SOURCE_DELETE_PENDING は not_deletable で決着させない（「手動で消した分を完了にする」の担当） | 別の録音だけの一覧、(4, 4860 秒)、2 回評価 | 待った姿、`completedParts(lastDetail:)` が 0 件 |
+| `absentPendingIsNotSettled` | F-74 一覧に無い SOURCE_DELETE_PENDING は not_deletable で決着させない（F-78 で手順 4a が already_absent で完了させる） | 別の録音だけの一覧、(4, 4860 秒)、2 回評価 | `not_deletable` のログが無い、`completedParts(lastDetail:)` が 0 件、Part COMPLETED・`sourceDeletedAt == nil`・最後の遷移の detail `already_absent`、要求なし（F-78 で期待を「待った姿」から直した） |
 | `settledPendingIsCountedAndRetargeted` | F-74 SOURCE_DELETE_PENDING から決着した Part も要対応・状態の詳細に数え、「過去分を削除対象にする」で再評価され、原因が直れば対象になる | size を壊して決着、`StatusReporter.build`、`planBacklog`、size を戻して再び | `completedParts` と `undeletableStillListed` が 1 件、「消せなかった録音（1 件。…）」の次の行が `  <partkey>`・`    事前確認で原本が合わない（サイズ・時刻・場所）、デバイスに在る`、Session COMPLETED、対象外 `not_deletable` → 対象 |
 | `pendingSettleConflictLogsStatusChanged` | F-74 PENDING の決着の 1 つ目の遷移が衝突したら status_changed を出して飛ばす（not_deletable のログも遷移も書かない） | 読んだ行の後に `PENDING→SOURCE_DELETING` へ進め、`settleAsNotDeletable` を直接呼ぶ | `reason=status_changed`、`not_deletable` のログ・`config_warning`・detail `not_deletable` の遷移が無い |
 | `pendingAwaitingAResultIsNotSettled` | F-74 結果待ち（delete_request_id を持つ）SOURCE_DELETE_PENDING は、原因があり期限を過ぎていても決着させない（結果か期限切れを待つ） | `updateRecording(pk, [.deleteRequestID(id)])`、size を壊す、(4, 4860 秒)、2 回評価 | Part PENDING・ID のまま、`not_deletable` のログが無い、数えない、Session SOURCE_DELETING |
@@ -851,6 +870,32 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | `failedResultOfCompletedPartOnlyClearsTheID` | F-74 ID を持つ COMPLETED の拒否・一覧にまだ在るは ID を外すだけ（COMPLETED のまま、source_deleted_at は入れない）（パラメータ化） | (a) `SOURCE_IDENTITY_MISMATCH`（`size_mismatch`） (b) DELETED で一覧にまだ在る | COMPLETED・ID nil・`sourceDeletedAt == nil`、events が増えない、結果が無い、`source_delete_pending … reason=size_mismatch / still_in_inventory` |
 | `failedTransitionKeepsTheIDAndResult` | F-74 DELETED の遷移が DB で失敗したら ID と結果を残し（ID の無い SOURCE_DELETING を残さない）、次の回収でやり直す | 要求 1 件・DELETED の結果、トリガで COMPLETED への遷移を失敗させて回収 → トリガを消して回収 | 1 回目: SOURCE_DELETING・ID のまま・`sourceDeletedAt == nil`・結果が残る・`config_warning rule=store`。2 回目: COMPLETED・ID nil・`sourceDeletedAt` が入る・結果が無い |
 | `emptyQueueHasNoRequestOrResult` | F-74 TEST-28 queue が空なら要求は残っておらず結果も無い（request_id が空文字でも） | 既定の舞台。request_id は RequestID の形のものと `""` | `hasRequest == false`・`result(requestID:) == nil` |
+
+### 6.16 `Tests/VDPipelineTests/AbsentPendingCompletionTests.swift`（`@Suite("AbsentPendingCompletion")`。F-78 で追加）
+
+舞台は `DeletionScene(status: .sourceDeletePending, errorCode: .sourceIdentityMismatch, sessionStatus: .sourceDeleting)`（Part を PENDING にした時刻は `DeletionScene.now`）。「一覧に無い走査」は時計を 60 秒進めて `snapshot(relpaths: ["TX_MIC001_20260912_100000/TX00_MIC001_20260912_100000_orig.wav"])`。
+
+| 関数名 | 表示名 | 入力 | 期待 |
+|---|---|---|---|
+| `absentPendingCompletesWithoutRequest` | F-78 一覧に無い、ID の無い SOURCE_DELETE_PENDING は要求を書かずに →SOURCE_DELETING（resolve_absent）→COMPLETED（already_absent）で完了し、Session も完了する（source_deleted_at は入れない） | 一覧に無い走査で `deleteSourcesIfSafe` | 要求なし、Part COMPLETED・`sourceDeletedAt == nil`・ID nil・`errorCode == nil`、最後の 2 本の遷移 `SOURCE_DELETE_PENDING→SOURCE_DELETING`・`SOURCE_DELETING→COMPLETED` の detail が `resolve_absent`・`already_absent`、`source_delete_skipped recording_key=<pk> reason=already_absent`、Session COMPLETED・`deleteAttempts == 0`、元ファイルが残る、`completedParts(lastDetail: not_deletable)` が 0 件、`planResolveAbsent` が空 |
+| `emptyListingCompletesPending` | F-78 TEST-28 一覧が空（録音 0 件）でも、接続中で列挙できていれば ID の無い SOURCE_DELETE_PENDING は完了する | `snapshot(relpaths: [])` | 上と同じ完了の姿 |
+| `unobservedAbsenceKeepsPending` | F-78 無いと観測できなければ ID の無い SOURCE_DELETE_PENDING を完了にしない（パラメータ化: 未接続・列挙できない・unavailable が観測より優先・snapshot が古い・source_path が無い） | (a) `includeDevice: false` (b) devices 空・`unavailable: [deviceID: "not_listable"]` (c) 観測は在り `unavailable` にも載る (d) 一覧に無い走査の後に時計を 901 秒進める (e) `StorePaths.setSourcePath(store, partkey: pk, nil)` | Part PENDING・`SOURCE_IDENTITY_MISMATCH` のまま、events が増えない、`already_absent` のログが無い、要求なし、Session SOURCE_DELETING・`deleteAttempts == 1` |
+| `snapshotBeforePendingDoesNotComplete` | F-78 PENDING にする前・同じ秒の snapshot では完了にしない（updated_at は秒に切り捨て。境界: ちょうど 1 秒後なら完了） | 時計を 60 秒進め、`completedAt: DeletionScene.now + (−60000 / 0 / 999 / 1000) ミリ秒` で `requestDeletions` | 0、要求なし、PENDING / PENDING / PENDING / COMPLETED、`already_absent` のログは最後だけ |
+| `absentPendingAwaitingAResultIsNotCompleted` | F-78 結果待ち（delete_request_id を持つ）SOURCE_DELETE_PENDING は一覧に無くても自動で完了にしない（結果か期限切れを待つ） | `updateRecording(pk, [.deleteRequestID(id)])`、一覧に無い走査 | 0、PENDING・ID のまま、`already_absent` のログが無い |
+| `strayRequestAndResultAreWithdrawn` | F-78 完了のとき、同じ Part の取り残しの要求・結果を取り下げる（「手動で消した分を完了にする」と同じ。ほかの Part の結果は残す） | `RequestWriter.write` の後に ID だけ外す、この Part の結果とほかの Part（`DJIMIC3/TX_MIC001_20260912_100000/…`）の結果を置く、一覧に無い走査 | 0、COMPLETED、要求なし、結果はほかの Part のものだけ、`already_absent` のログ |
+| `absentCompletionConflictLogsStatusChanged` | F-78 PENDING の完了の 1 つ目の遷移が衝突したら status_changed を出して飛ばす（already_absent のログも遷移も書かない） | 読んだ行の後に `PENDING→SOURCE_DELETING` へ進め、`completeAsAbsent` を直接呼ぶ | `reason=status_changed`、`already_absent` のログ・`config_warning`・detail `resolve_absent` / `already_absent` の遷移が無い、SOURCE_DELETING のまま |
+
+### 6.17 `Tests/VDPipelineTests/ReaperRejectionSettlementTests.swift`（`@Suite("ReaperRejectionSettlement")`。F-78 で追加）
+
+舞台は既定の `DeletionScene()`（消せる Part）。評価は毎回新しい依存で `deleteSourcesIfSafe`（連続回数の記録を持ち越さない）。reaper の拒否は「要求ファイルを消し、Part の request_id で `writeResult(status: .sourceIdentityMismatch, detail: <理由語>)` → `collectDeleteResults(reaperScanGeneration: 0)`」で作る。
+
+| 関数名 | 表示名 | 入力 | 期待 |
+|---|---|---|---|
+| `threeRejectionsSettleWithoutDeleting` | F-78 アプリは消せると判断するのに reaper が続けて 3 回拒否したら、次の評価で要求を書かずに消さずに PENDING→SOURCE_DELETING→COMPLETED（detail not_deletable・原因は最後の拒否の理由語）で決着し Session も完了する（2 回までは要求を書く） | 評価 → 拒否を 3 回（`size_mismatch`・`size_mismatch`・`mtime_mismatch`）→ 評価 | 3 回とも評価で要求を書き（SOURCE_DELETING・要求 1 件）、拒否で PENDING・ID nil。`reaperRejectionStreak` が (3, `mtime_mismatch`)。4 回目の評価で Part COMPLETED・`errorMessage == "mtime_mismatch"`・`errorCode == nil`・`sourceDeletedAt == nil`、最後の 2 本の遷移の detail が両方 `not_deletable`、`… reason=not_deletable detail=mtime_mismatch`、要求なし・`delete_requested` は 3 回のまま、元ファイルが残る、Session COMPLETED |
+| `interveningOutcomeRestartsTheCount` | F-78 拒否の間に拒否でない結果（一覧にまだ在る・期限切れ・起動時の復旧）が挟まると 0 から数え直す（パラメータ化） | 拒否 2 回 → 評価（要求）→ (a) DELETED の結果で一覧にまだ在る (b) 時計を 3600 秒進めて期限切れ (c) `Recovery.run()` の後にその要求を拒否 → 拒否 2 回 → 評価 → 拒否 → 評価 | 挟まった後は PENDING・ID nil・`reaperRejectionStreak` が 0（(a) `SOURCE_DELETE_FAILED` (b) `DELETE_TIMEOUT` (c) 復旧が 2 行戻す）。その後の拒否 2 回では 3 回目の要求を書き、次の拒否（`unlink_failed`）の後の評価で打ち切る（原因 `unlink_failed`） |
+| `undeletablePartIsLeftToTheDeadline` | F-78 canDeleteSource が偽になれば、拒否が 3 回続いていても 5b では決着させない（5a の期限と観測の条件に従って待つ） | 拒否 3 回 → Raw ノートを手で編集 → 評価 2 回 | PENDING・`SOURCE_IDENTITY_MISMATCH` のまま、`not_deletable` のログが無い、要求なし、数えない、Session SOURCE_DELETING・`deleteAttempts == 2` |
+| `settledRejectionIsCountedAndRetargeted` | F-78 reaper の拒否で打ち切った Part も要対応・状態の詳細（削除モジュールの検証で拒否され続けた（<理由語>））に数え、「過去分を削除対象にする」で要求を書き、拒否の回数は 0 から数え直す | 拒否 3 回（`size_mismatch`）→ 評価で打ち切り → `StatusReporter.build` → `planBacklog`・`executeBacklog` → 拒否 | `completedParts` と `undeletableStillListed` が 1 件、「消せなかった録音（1 件。消さずに完了にしたもの）」の次の行が `  <partkey>`・`    削除モジュールの検証で拒否され続けた（size_mismatch）、デバイスに在る`、後追いの対象 `[pk]`・実行 1 件で SOURCE_DELETING、拒否の後は PENDING で `reaperRejectionStreak` が (1, `size_mismatch`) |
+| `emptyHistoryHasNoRejection` | F-78 TEST-28 events が 0 件なら reaper の拒否は 0 回（理由語も無い） | `reaperRejectionStreak([])` | (0, nil) |
 
 ## 7. 破壊による証明
 
@@ -893,7 +938,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 35 | （F-64）`sourceIsObservedAbsent` の `unavailable` の確認を消す | `unobservedAbsenceWaits`(unavailable が優先) |
 | 36 | （F-64）手順 1 の freshSnapshot を `ingest.latestSnapshot()` にする（3 と同じ壊し方） | `unobservedAbsenceWaits`(snapshot が古い)、`staleSnapshotWritesNothing` |
 | 37 | （F-64）`sourceIsObservedAbsent` が一覧を見ずに真を返す | `listedSourceIsRequested`（ほかのテストの snapshot は updated_at と同じ時刻なので「取り込みより後」で先に偽になり、これだけが落ちる） |
-| 38 | （F-64）手順 4a の `part.status == .rawSaved` を外す | `absentPendingIsLeftForResolveAbsent` |
+| 38 | （F-64）手順 4a の `part.status == .rawSaved` を外す | （F-78 で 4a は状態を見なくなり（手順 1〜3 の後に残るのは RAW_SAVED と ID の無い PENDING だけ）、`absentPendingIsLeftForResolveAbsent` も外したので、この項目は 69 に置き換えた） |
 | 39 | （F-64）`sourceIsObservedAbsent` の `!relpath.isEmpty` を消す | `missingSourcePathIsNotAbsent`("") |
 | 40 | （F-64）手順 4a で `source_deleted_at` を入れる | `observedAbsentSourceCompletes`、`emptyListingCompletes`、`absentRawSavedCompletesWithoutRequest` |
 | 41 | （F-64）手順 4a の遷移に detail を付けない | `observedAbsentSourceCompletes`、`emptyListingCompletes` |
@@ -908,7 +953,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 50 | （F-69）`observedFailuresToSettle` を 1 にする（連続を求めない） | `firstEvaluationAfterLongAbsenceDoesNotSettle`(開けない)、`streakRestartsOnReconnect`、`atTheDeadlineSettlesWithoutDeleting` |
 | 51 | （F-69）`failureIsObserved` の (c)（Vault）を消す | `unobservedDoesNotSettle`(Vault が使えない) |
 | 52 | （F-69）`undeletableStillListed` が `.unobserved` も数える（抜いている間・source_path が無いものも要対応に出す） | `onlyStillListedPartsAreAttention`、`settledWithoutSourcePathIsNotAttention` |
-| 53 | （F-69・F-74）`failureIsObserved` の (d)（一覧に在る）を常に真にする | `absentPendingIsNotSettled`（一覧に無い SOURCE_DELETE_PENDING は d だけが止める。RAW_SAVED は手順 4a（F-64）が先に `already_absent` で完了させるので、RAW_SAVED のテストは落ちない） |
+| 53 | （F-69・F-74。F-78 で防御に戻った）`failureIsObserved` の (d)（一覧に在る）を常に真にする | 落ちるテストは無い（F-78 で一覧に無い ID の無い SOURCE_DELETE_PENDING も手順 4a が先に `already_absent` で完了させるので、d は RAW_SAVED にも PENDING にも防御。`absentPendingIsNotSettled` は 4a で COMPLETED になるので通る） |
 | 54 | （F-74）`settleableStatuses` を `[.rawSaved]` に戻す | `pendingPartSettlesWithoutDeleting`、`settledPendingIsCountedAndRetargeted`、`interruptedSettleIsRecoveredAndSettledAgain` |
 | 55 | （F-74）PENDING の 2 つ目の遷移の detail `not_deletable` を外す | `pendingPartSettlesWithoutDeleting`、`settledPendingIsCountedAndRetargeted`（最後の遷移の detail で数える） |
 | 56 | （F-74）`settleAsNotDeletable` の `.sourceDeletePending` の枝を消す | `pendingPartSettlesWithoutDeleting`、`settledPendingIsCountedAndRetargeted`、`pendingSettleConflictLogsStatusChanged` |
@@ -924,6 +969,20 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 | 66 | （F-74）`collectableStatuses` から COMPLETED を外す | `deletedResultOfCompletedPartIsCollected`、`failedResultOfCompletedPartOnlyClearsTheID` |
 | 67 | （F-74）DELETED の後始末を「`source_deleted_at` と ID → 遷移」の順に戻す | `failedTransitionKeepsTheIDAndResult` |
 | 68 | （F-74）`DeleteQueue.result(requestID:)` の lstat による存在の確認を消す | `emptyQueueHasNoRequestOrResult` |
+| 69 | （F-78）`completeAsAbsent` の `.sourceDeletePending` の枝を消す（`default` に落ちて何もしない） | `absentPendingCompletesWithoutRequest`、`emptyListingCompletesPending`、`strayRequestAndResultAreWithdrawn`、`snapshotBeforePendingDoesNotComplete`(1000)、`absentPendingIsNotSettled`、`absentCompletionConflictLogsStatusChanged`（`default` に落ちて status_changed も出さない） |
+| 70 | （F-78）PENDING の完了で要求・結果を取り下げない | `strayRequestAndResultAreWithdrawn` |
+| 71 | （F-78）PENDING の完了の 1 つ目の遷移の detail を `resolve_absent` でなくす（detail 無し） | `absentPendingCompletesWithoutRequest`、`emptyListingCompletesPending` |
+| 72 | （F-78）PENDING の完了で `source_deleted_at` を入れる | `absentPendingCompletesWithoutRequest`、`emptyListingCompletesPending`、`absentPendingIsNotSettled` |
+| 73 | （F-78）`sourceIsObservedAbsent` の「PENDING にした時刻より後」の条件を消す（42 と同じ壊し方） | `snapshotBeforePendingDoesNotComplete`(−60000・0・999)（42 の `snapshotBeforeIngestionDoesNotComplete`・`unobservedAbsenceWaits` も落ちる） |
+| 74 | （F-78）`completeAsAbsent` の `catch is TransitionConflict` を消す（衝突を投げる） | `absentCompletionConflictLogsStatusChanged` |
+| 75 | （F-78）手順 5b を消す（拒否が続いても要求を書き続ける。不具合の再現） | `threeRejectionsSettleWithoutDeleting`、`interveningOutcomeRestartsTheCount`、`settledRejectionIsCountedAndRetargeted` |
+| 76 | （F-78）`reaperRejectionsToSettle` を 2 にする | `threeRejectionsSettleWithoutDeleting`（3 回目の評価で要求を書かずに打ち切る）、`interveningOutcomeRestartsTheCount`、`undeletablePartIsLeftToTheDeadline`、`settledRejectionIsCountedAndRetargeted`（どれも 3 回目の要求を前提にしている） |
+| 77 | （F-78）`reaperRejectionStreak` で要求の遷移を読み飛ばさない（すぐ止まる） | `threeRejectionsSettleWithoutDeleting`、`interveningOutcomeRestartsTheCount`、`settledRejectionIsCountedAndRetargeted` |
+| 78 | （F-78）`reaperRejectionStreak` で `error_code` を見ない（`SOURCE_DELETING→SOURCE_DELETE_PENDING` を全部数える） | `interveningOutcomeRestartsTheCount`（3 つとも） |
+| 79 | （F-78）`reaperRejectionStreak` の理由語をいちばん古い拒否から取る | `threeRejectionsSettleWithoutDeleting`、`interveningOutcomeRestartsTheCount` |
+| 80 | （F-78）手順 5b を `canDeleteSource` の前に移す | `undeletablePartIsLeftToTheDeadline` |
+| 81 | （F-78）`StatusReporter.causeText` の reaper の理由語の枝を消す（「原因不明」になる） | `settledRejectionIsCountedAndRetargeted` |
+| 82 | （F-78）`reaperRejectionStreak` の理由語の初期値を空文字にする | `emptyHistoryHasNoRejection` |
 
 ## 8. 受け入れ条件
 
@@ -938,6 +997,7 @@ readOnlyObserved・staleSnapshot は ingest の snapshot を差し替える。�
 
 なし（A.4 は反映済み）。F-64 で A.2 の注記に「元ファイルが無いと観測できた RAW_SAVED は既存の RAW_SAVED→COMPLETED を detail `already_absent` で使う」を足した（辺も語も増やさない。`tools/spec/make-spec.py` で SPEC を作り直した）。
 F-69 で A.2 の注記に detail `not_deletable` を、A.4 の `source_delete_skipped` の理由語に `not_deletable` と原因の `detail=source_info|pre_identity|transcript|raw_note` を足した（辺は増やさない。SPEC を作り直した）。
+F-78 で A.2 の注記に「reaper の拒否の打ち切りは PENDING の 2 遷移を detail `not_deletable` で」「一覧に無い ID の無い PENDING は `resolve_absent` → `already_absent` の 2 遷移で」を、A.4 の `source_delete_skipped` の原因の `detail=` に `<RV の理由語>` を足した（辺も語も増やさない。SPEC を作り直した）。
 
 ## 10. マージ後にやること
 

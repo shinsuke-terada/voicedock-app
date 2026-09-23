@@ -1694,11 +1694,13 @@ func skipReasonIsBacked(...) -> Bool {
   - `readiness` が `.disabled` → 削除せずに完了する（`source_delete_skipped session_key=… reason=<語>`）。待っても変わらない条件で待たない（DEL-15 / DEL-16）
   - デバイスが**接続中で** `.readOnly` か `.unknown` → 削除せずに完了する（`reason=device_readonly`。voicedock と同じ。有効化の直後で挿し直す前のデバイスもここに入る。消し損ねた分は「過去分を削除対象にする」で拾える）
   - デバイスが **`.absent`（未接続）なら待つ**（`delete_attempts += 1` して backoff。voicedock は未接続を「書き込み可能」扱いにして要求を書かず待っていた）
-  - デバイスが**接続中で列挙でき**、RAW_SAVED の Part の元ファイルが一覧に**無い** → その Part は消す必要が無いので、要求を書かずに完了する（§8.9.5 の `requestDeletions`。F-64）。
+  - デバイスが**接続中で列挙でき**、RAW_SAVED か `delete_request_id` の無い SOURCE_DELETE_PENDING（F-78。手で原本を消した後など）の Part の元ファイルが一覧に**無い** → その Part は消す必要が無いので、要求を書かずに完了する（§8.9.5 の `requestDeletions`。F-64・F-78）。
     事前確認（`preIdentityCheck`）は不在のファイルを同定できず永久に偽なので、待っても変わらない（CR-15）。未接続・列挙できない・snapshot が古いときは「無い」と判定せず待つ
   - デバイスが**接続中で列挙でき書き込み可能**で、Session の Part がすべて終端、RAW_SAVED か `delete_request_id` の無い SOURCE_DELETE_PENDING（F-74。reaper の拒否や期限切れの後）の Part の元ファイルが一覧に**在る**のに `canDeleteSource` が偽のまま、**期限**（`cleanup.deleteEvaluationBackoffSeconds` を使い切った）を過ぎ、その「観測できた失敗」が同じ接続で **2 回続いた** → その Part は**消さずに**完了する（§8.9.5 の `requestDeletions` の 5a。F-69・F-74）。
     原本の size / mtime が変わった、Raw ノートを手で編集した、transcript が欠けた、`source_path` / `source_size` が無い、などは待っても変わらない（CR-15）。消す側には倒さない（`source_deleted_at` は入れない）。
     パネルの「要対応」に「消せなかった録音 <n> 本」を出して利用者に知らせる（§8.11）。未接続・列挙できない・snapshot が古い・読み取り専用・Vault が使えない・後続の Part が処理中のうちは決着させず、従来どおりに扱う（観測できないうちは決めない）
+  - `canDeleteSource` は**真**なのに、reaper の独立した検証（§8.9.4）が同じ Part を**続けて 3 回**拒否した（`SOURCE_IDENTITY_MISMATCH`）→ その Part は**消さずに**完了する（§8.9.5 の `requestDeletions` の 5b。F-78）。
+    アプリと reaper の判定の食い違いは待っても変わらず、放っておくと評価のたびに要求 → 拒否 → 再要求を繰り返し、Session が完了しない（CR-15）。消す側には倒さず（要求を書かない。`source_deleted_at` は入れない）、同じく「消せなかった録音」で知らせる
 - 消し損ねた分は「過去分を削除対象にする」（§8.9.9）で後から拾える
 
 #### 8.9.3 ロック 2-A: 同梱して複製で解除（D-5）
@@ -1820,8 +1822,13 @@ for part in Session の Part（started_at, partkey 順）:
   part.status ∈ {SOURCE_DELETING, COMPLETED} → 飛ばす（通常経路は COMPLETED を消しにいかない）
   part.delete_request_id != nil → 飛ばす（結果待ち）
   part.partkey ∈ この tick で PENDING に落とした集合 → 飛ばす（同じ周回で再要求しない。DEL-11）
-  part.status == RAW_SAVED かつ sourceIsObservedAbsent(part, snapshot):                          // F-64。要求を書かない
-      part.status RAW_SAVED→COMPLETED（detail already_absent）                                  // TransitionConflict → source_delete_skipped … reason=status_changed、飛ばす
+  sourceIsObservedAbsent(part, snapshot):                                                       // 4a。F-64・F-78。要求を書かない
+                                                                                               // ここに来るのは RAW_SAVED と ID の無い SOURCE_DELETE_PENDING だけ（上の 3 つ）
+      RAW_SAVED: part.status RAW_SAVED→COMPLETED（detail already_absent）                        // F-64
+      SOURCE_DELETE_PENDING: part.status →SOURCE_DELETING（detail resolve_absent）                // F-78。「手動で消した分を完了にする」（§8.9.9）と同じ。辺を足さない
+                             → SOURCE_DELETING→COMPLETED（detail already_absent）
+                             → この Part の要求・結果を取り下げ → delete_request_id = nil
+      // どの遷移も TransitionConflict → source_delete_skipped … reason=status_changed、飛ばす
       log source_delete_skipped recording_key reason=already_absent; 飛ばす                    // source_deleted_at は入れない（アプリが消したのではない）
   canDeleteSource(...) が偽:                                                                   // 5a。F-69・F-74
       part.status ∈ {RAW_SAVED, SOURCE_DELETE_PENDING} なら:                                     // PENDING は ID が nil のものだけがここに来る（上の手順 3）。F-74
@@ -1837,6 +1844,11 @@ for part in Session の Part（started_at, partkey 順）:
                    log source_delete_skipped recording_key reason=not_deletable detail=<cause>    // source_deleted_at は入れない（消していない）
       飛ばす
   （canDeleteSource が真なら streak(part) を 0 に戻してから要求へ）
+  part.status == SOURCE_DELETE_PENDING かつ reaperRejectionStreak(part の events).count ≥ 3:       // 5b。F-78。要求を書かない
+      cause = 最後の拒否の理由語（付録 B.2。その pend の events.detail）
+      part.status →SOURCE_DELETING（detail not_deletable）
+                 → SOURCE_DELETING→COMPLETED（detail not_deletable、error_message = cause）           // 5a の PENDING と同じ 2 遷移。TransitionConflict → status_changed、飛ばす
+      log source_delete_skipped recording_key reason=not_deletable detail=<cause>; 飛ばす           // source_deleted_at は入れない（消していない）
   id = RequestID.make(partkey, now)
   updateRecording(delete_request_id = id)                         // ① ID を先に
   要求ファイルを AtomicFile で書く                                 // ② 失敗 → updateRecording(delete_request_id = nil)、
@@ -1852,16 +1864,24 @@ for part in Session の Part（started_at, partkey 順）:
   これは事前確認であり、**reaper は同じ検証を unlink の直前に独立してやり直す**（判断と直前の再検証を分ける。DEL-26）
 - **元ファイルが無いと観測できた `sourceIsObservedAbsent(part, snapshot)`**（F-64）: 上の新鮮な snapshot で、`snapshot.unavailable[device_id]` が無く、
   `snapshot.devices[device_id]` が在り（接続中で列挙できた。列挙に失敗したと分かったデバイスは IngestService が devices に載せない）、`source_path` が nil でも空でもなく、
-  **snapshot がその Part の取り込みより後の観測である**（`snapshot.completedAt ≥ updated_at + 1 秒`。updated_at は RAW_SAVED にした時刻で取り込みより後。秒に切り捨てて記録されるので 1 秒足す。読めなければ偽）、
+  **snapshot がその Part の取り込みより後の観測である**（`snapshot.completedAt ≥ updated_at + 1 秒`。updated_at は RAW_SAVED / SOURCE_DELETE_PENDING にした時刻で取り込みより後。秒に切り捨てて記録されるので 1 秒足す。読めなければ偽）、
   そしてその relpath が一覧に**無い**。どれかが欠ければ偽（観測できたときだけ「無い」と言う。安全側は「待つ」）。書き込み可否（`readOnly`）は問わない（消さないので）。
   取り込みより後の条件が無いと、Raw の直後（§5.5）に 1 つ前の走査（その Part を取り込む前）の snapshot が経過時間だけで新鮮とされ、挿し直した直後の新しい録音を「無い」と判定しうる。
   `devices` に載った一覧（`DeviceObservation.relpaths`）は、深さの上限（§8.1）の内側では完全な列挙: 読めないディレクトリ（`opendir` / `readdir` の失敗）か `ENOENT` 以外で `lstat` が失敗した項目が 1 つでもあれば `complete == false` になり、そのデバイスは `devices` に載らない（F-67）。
   含まれないのは、深さの上限の外（取り込みの範囲の外なので Part にならない。ただし `maxScanDepth` を下げる前に取り込んだ Part は例外）と、列挙から `lstat` までの間に消えた項目（`ENOENT`。本当に無い）だけ。
   前者の例外と下の正規化の違いでは在る元ファイルが「無い」に見えうるが、完了は消さない側なので録音は失われない（消し損ねは「過去分を削除対象にする」では拾えず、デバイスに残る）。
   照合は `sameKey`（Unicode のスカラー列の一致。NFC / NFD の正規化はしない）。`source_path` は同じデバイスの走査の一覧から取った列なので通常は一致するが、正規化の違う名前は「無い」に見えうる（上と同じく消さない側）
-  RAW_SAVED だけが対象で、SOURCE_DELETE_PENDING は従来どおり「手動で消した分を完了にする」（§8.9.9）に任せる。`delete_request_id` を持つ Part は結果待ちなので手前で飛ぶ。
+  RAW_SAVED と、`delete_request_id` の無い SOURCE_DELETE_PENDING（F-78）が対象。`delete_request_id` を持つ Part は結果待ちなので手前で飛ぶ。
   これが無いと、削除が有効（`.configured`・`.writable`）なのに元ファイルが消えている RAW_SAVED の Part は、事前確認が永久に偽で要求が書かれず、
   削除段が `requested == 0` のまま `delete_attempts += 1` を繰り返して Session が COMPLETED にならない（抜け道は削除を無効にすることだけだった。CR-15・DEL-15/16）
+- **一覧に無い SOURCE_DELETE_PENDING の自動の完了**（F-78。手順 4a）: 手で原本を消した後、reaper が消したのに一覧に残って見えた（`still_in_inventory`）後の走査で消えた、などで、ID の無い SOURCE_DELETE_PENDING の元ファイルが一覧に無くなることがある。
+  F-74 までは利用者が「手動で消した分を完了にする」（§8.9.9）を押すまで Part も Session も完了せず、要対応にも出なかった（CR-15）。
+  RAW_SAVED と同じ観測の条件（上の `sourceIsObservedAbsent`。snapshot がその Part を PENDING にした時刻より確かに後に完了していることを含む）を満たしたら、**辺を足さず**「手動で消した分を完了にする」と同じ手順で完了させる:
+  `SOURCE_DELETE_PENDING→SOURCE_DELETING`（detail `resolve_absent`）→ `SOURCE_DELETING→COMPLETED`（detail `already_absent`）→ この Part の要求・結果を取り下げ → ID を外す（手順 3 で無いと分かっているが同じ形にそろえる）→ `source_delete_skipped recording_key=… reason=already_absent`。
+  `source_deleted_at` は入れない（reaper が消したのかもしれないが、DELETED を観測していないので消した記録にしない。不可逆操作の記録に嘘を混ぜない）。未接続・列挙できない・snapshot が古い・`source_path` が無いときは完了させない（待つ）。
+  最後の遷移の detail が `already_absent` なので、要対応・状態の詳細の「消せなかった録音」（detail `not_deletable`）には数えない。
+  2 遷移の間に落ちたら ID の無い SOURCE_DELETING が残るが、起動時の復旧（A.1）で PENDING に戻り、次の評価で完了し直す（「手動で消した分を完了にする」と同じ）。
+  「手動で消した分を完了にする」は、ID を持つ PENDING（復旧の後など）、COMPLETED の Session の PENDING（後追いで要求して拒否された後）、削除が無効な間の PENDING（`readiness` が `.configured` でなければ手順 2 で 0 を返す）のために残す
 - **消せないまま待つのをやめる**（F-69。`canDeleteSource` が偽の RAW_SAVED と、`delete_request_id` の無い SOURCE_DELETE_PENDING（F-74）についてだけ見る）: 次をすべて満たしたときだけ決着する。
   1. **期限 `deadlineHasPassed`**: backoff を使い切った（Session の `delete_attempts ≥ deleteEvaluationBackoffSeconds.count`）うえで、`now − updated_at（その Part を RAW_SAVED / SOURCE_DELETE_PENDING にした時刻）≥ backoff の合計`。
      backoff が空（CV-52 違反）なら偽。**新しい設定キーは作らない**（長くしたければ backoff の列を伸ばす）。
@@ -1872,8 +1892,8 @@ for part in Session の Part（started_at, partkey 順）:
         （読み取り専用・不明は削除段が `device_readonly` で完了させる従来の経路。未接続・列挙できない・snapshot が古いときは待つ）
      c. **Vault が使える**（`VaultCheck` が `.available`。使えないのは待てば戻り、要対応の `vaultUnavailable` が別に出る）
      d. **元ファイルが一覧に在る**（`sameKey`）。`source_path` が nil か空なら一覧と照らせず待っても変わらないので真。
-        一覧に無い RAW_SAVED は手順 4a（F-64）が先に完了させる（期限の後の新鮮な snapshot は必ず取り込みより後なので `sourceIsObservedAbsent` の条件を満たす）ので、RAW_SAVED にとって d は防御。
-        一覧に無い SOURCE_DELETE_PENDING は 4a の対象外なので d が偽で待ち、「手動で消した分を完了にする」（§8.9.9）に任せる（`not_deletable` と誤って決着させない。F-74）
+        一覧に無い RAW_SAVED と ID の無い SOURCE_DELETE_PENDING は手順 4a（F-64・F-78）が先に `already_absent` で完了させる（期限の後の新鮮な snapshot は必ず RAW_SAVED / PENDING にした時刻より後なので `sourceIsObservedAbsent` の条件を満たす）ので、d は防御で、壊しても落ちるテストは無い
+        （F-74 から F-78 までの間は、4a の対象外だった一覧に無い SOURCE_DELETE_PENDING を d が止め、`not_deletable` と誤って決着させないようにしていた）
   3. **2 回続いた**: 観測できた失敗が、同じ `connectEpoch` のまま 2 回続いた（`UndeletableStreaks`。Worker が tick をまたいでメモリで持つ）。
      観測できない評価・`canDeleteSource` が真の評価・挿し直し（`connectEpoch` が変わる）・決着の直前に原因を調べ直して何も見つからなかった評価（F-74）で数え直す。再起動で 0 に戻っても決着が遅れるだけ（消す側には倒れない）。
      未接続の間も `delete_attempts` は増え期限は満たされうるので、長く抜いていた後の最初の評価の一時的な失敗（ボリュームを開けない など）では決着させないためにある
@@ -1887,6 +1907,23 @@ for part in Session の Part（started_at, partkey 順）:
     最後の遷移の detail が `not_deletable` の COMPLETED なので、RAW_SAVED の決着と同じ数え方（§8.11 `undeletableSources`・§8.12 の状態の詳細）に入り、Session は `awaitingDeletion` の Part が無くなって完了し、「過去分を削除対象にする」（COMPLETED の Session の COMPLETED の Part。§8.9.9）で再評価できる。
     PENDING のまま印を付けて Session だけ完了させる案は、数え方（最後の遷移が COMPLETED で detail が `not_deletable`）に入らず、PENDING の件数が消せる見込みの無いまま残るので採らない。
     2 遷移の間に落ちたら ID の無い SOURCE_DELETING が残るが、起動時の復旧（SOURCE_DELETING→SOURCE_DELETE_PENDING。A.1）で戻り、次の評価で決着し直す（「手動で消した分を完了にする」と同じ）
+- **reaper が拒否し続ける Part の打ち切り**（F-78。手順 5b）: アプリの `canDeleteSource` は真なのに、reaper の独立した検証（§8.9.4 の RV-03〜13 のうち要求を拒否するもの。判断と直前の再検証を分ける。DEL-26）だけが偽になる Part は、
+  評価のたびに要求 → 拒否（回収の pend で ID の無い SOURCE_DELETE_PENDING。§8.9.6）→ 再要求を繰り返し、Session が完了しなかった（`canDeleteSource` が真なので 5a の対象にならず、要求を書いた評価では Session の `delete_attempts` も増えない。CR-15）。
+  1. **数え方 `reaperRejectionStreak`**: DB の Part の events を新しい順に見て、回収の pend（`SOURCE_DELETING→SOURCE_DELETE_PENDING` で `error_code` が `SOURCE_IDENTITY_MISMATCH`）を数え、
+     間の要求の遷移（`RAW_SAVED` / `SOURCE_DELETE_PENDING` →`SOURCE_DELETING` で detail の無いもの）は読み飛ばし、それ以外の遷移で止める。最後の拒否（いちばん新しい pend）の detail が reaper の理由語。
+     DB の履歴で数えるので再起動で 0 に戻らない（新しい列・設定キー・メモリの記録を作らない）
+  2. **閾値 `reaperRejectionsToSettle = 3`**（定数。設定キーは作らない）。3 回続けて拒否されたら、次の評価で `canDeleteSource` が真でも要求を書かずに決着する（reaper の起動は 3 回で止まる）。
+     1 回・2 回では決めない（その間の一時的な食い違い（評価と reaper の実行の間に原本が変わった など）で決着させない）
+  3. **数え直し**: 拒否でない結果（DELETED で完了・一覧にまだ在る `still_in_inventory`・期限切れ `no_result`）の遷移、起動時の復旧（detail `recovery`）、決着（`not_deletable`）、手動で消した分（`resolve_absent`）、
+     後追いの要求（`COMPLETED→SOURCE_DELETING`）で止まるので、そこから 0 に戻る（後追いで再評価した Part は 0 から数え直す）。
+     数えないもの: 要求を書かなかった評価（`canDeleteSource` が偽・未接続・pend した tick。events を残さず、間に reaper の判定が無いので、数えも切りもしない）、
+     要求を残す reaper の理由（`device_absent`・`mount_readonly`。結果を書かないので回収されない）、ID を持つ RAW_SAVED / PENDING（②の後・③の前、復旧の後）の拒否（状態を動かさない pend は遷移を残さない。遅れる側）。
+     挿し直しでは数え直さない（履歴に接続の区切りが無い。アプリの事前確認は reaper と同じ `TargetIdentity` を先にかけるので、挿し直しで変わる食い違い（マウント点・読み取り専用・ボリュームを開けない）はアプリが先に偽になり、5b には来ない）
+  4. **決着**: 5a の SOURCE_DELETE_PENDING と同じ 2 遷移（両方の detail `not_deletable`、2 つ目で `error_message` に原因の語）と `source_delete_skipped recording_key=… reason=not_deletable detail=<原因>`。`source_deleted_at` は入れない。
+     **原因の語は最後の拒否の reaper の理由語**（付録 B.2。`size_mismatch` など。空なら空のまま）。5a の原因の語（`source_info` / `pre_identity` / `transcript` / `raw_note`）はアプリの検査（`canDeleteSource`）のどれが落ちたかを言い、
+     5b の理由語はアプリの検査が全部通った後に reaper の検証のどれが落ちたかを言う（綴りは重ならない。状態の詳細は理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す。§8.12）
+  5. 最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細・後追いの数え方は F-69 のまま。Session は `awaitingDeletion` の Part が無くなって完了する。
+     後追い（§8.9.9）では `canDeleteSource` が真なので対象に入り、要求を書く。reaper がまた拒否すれば COMPLETED の Session に ID の無い PENDING が残る（後追いは利用者の操作なので繰り返さない。もう一度押せば同じ評価になる）
 - 書く順は ①ID → ②要求ファイル → ③遷移（§4.4）。②の後・③の前に落ちても、Part は RAW_SAVED のまま ID を持ち「結果待ち」として回収される（§8.9.6）
 - `evaluateDeletions`: 全 Session を `ORDER BY updated_at, session_key` で見て、`deleteEvaluated` に在り、`now − updated_at >= delay(delete_attempts)` のものに `deleteSourcesIfSafe`。
   `delay(a) = backoff[min(max(a, 1), backoff.count) − 1]`（**a = 0 と 1 はどちらも先頭の値**。voicedock pipeline.py:1855-1868。テスト: (1, 30 秒前)→評価しない、(1, 120)→する、(4, 1800)→しない、(4, 7200)→する）
@@ -2005,8 +2042,11 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
   実行: 各対象を読み直し、ID → 要求ファイル → `COMPLETED→SOURCE_DELETING` / `SOURCE_DELETE_PENDING→SOURCE_DELETING`（回収は §8.9.6 の全件回収が拾う）。
   期限で消さずに完了した Part（detail `not_deletable`。F-69）も COMPLETED で `source_deleted_at` が nil なので対象に入り、ここで再び評価される（原因を直せば消せる。直っていなければ `not_deletable` で対象外。自動では再評価しない）。
   SOURCE_DELETE_PENDING から決着した Part（F-74）も COMPLETED になり、Session が完了するので同じく対象に入る。
+  reaper の拒否が続いて打ち切った Part（F-78。§8.9.5 の 5b）も対象に入り、`canDeleteSource` が真なので要求を書く（reaper の拒否の回数は後追いの要求 `COMPLETED→SOURCE_DELETING` で 0 から数え直す。
+  また拒否されれば COMPLETED の Session に ID の無い PENDING が残り、自動では評価しない。もう一度押せば同じ評価になる）。
   ③ が失敗して ID と要求を持ったまま COMPLETED に残った Part は、次の計画では `delete_request_id` が在るので対象外で、reaper の結果は §8.9.6 の回収が COMPLETED のまま拾う（F-74）
-- 「手動で消した分を完了にする」（`planResolveAbsent`）: SOURCE_DELETE_PENDING の Part のうち（RAW_SAVED の Part は §8.9.5 の `requestDeletions` が同じ観測の条件で自動で完了にする。F-64）、**新鮮な snapshot にそのデバイスが載っていて relpath が無い**もの
+- 「手動で消した分を完了にする」（`planResolveAbsent`）: SOURCE_DELETE_PENDING の Part のうち（RAW_SAVED の Part と、削除を評価中の Session の ID の無い SOURCE_DELETE_PENDING の Part は、§8.9.5 の `requestDeletions` が同じ観測の条件で自動で完了にする。F-64・F-78。
+  ここに残るのは ID を持つもの・COMPLETED の Session のもの・削除が無効な間のもの）、**新鮮な snapshot にそのデバイスが載っていて relpath が無い**もの
   （デバイスが無い・snapshot が古い → 対象外 `device_absent`、relpath が在る → `still_present`、`source_path` が無い → `still_present`。voicedock は未接続でも「無い」と判定していた）。
   実行: `SOURCE_DELETE_PENDING→SOURCE_DELETING`（detail `resolve_absent`）→ `SOURCE_DELETING→COMPLETED`（detail `already_absent`）→ 要求・結果を取り下げ → ID を外す →
   `source_delete_skipped recording_key=… reason=already_absent`。**`source_deleted_at` は入れない**（不可逆操作の記録に嘘を混ぜない）
@@ -2103,7 +2143,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | `diskSpaceLow` | 変換のガード中 | — |
 | `lockMismatch` | CV-30 / CV-33 | — |
 | `reaperUpdateRequired` | reaper の版が違う | 有効化フローを開く |
-| `undeletableSources(n)` | 期限で消さずに完了した録音（F-69。SOURCE_DELETE_PENDING から決着したものも。F-74）のうち、最新の snapshot でデバイスが接続中で一覧にまだ在るものが 1 本以上。数え方は下記 | 詳細・診断を開く |
+| `undeletableSources(n)` | 期限で消さずに完了した録音（F-69。SOURCE_DELETE_PENDING から決着したものも。F-74。reaper の拒否が続いて打ち切ったものも。F-78）のうち、最新の snapshot でデバイスが接続中で一覧にまだ在るものが 1 本以上。数え方は下記 | 詳細・診断を開く |
 
 - **`undeletableSources` の数え方**（F-69）: DB の Part のうち、COMPLETED で `source_deleted_at` が NULL、最後の遷移の detail が `not_deletable` のもの（`ReadOnlyStore.completedParts(lastDetail:)`）で、
   `AttentionEvaluator.sourcePresence` が `.listed`（最新の snapshot でデバイスが `unavailable` に無く `devices` に載り、`source_path` が空でなく一覧に在る）ものの本数（`AttentionEvaluator.undeletableStillListed`）。
@@ -2192,9 +2232,10 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
 - 削除キュー: 要求ファイルの数、結果待ちの Part の数
 - staging の使用量（「<x.x> GiB / <上限> GiB」）、inbox の「処理待ち」と「取り残し」を分けた件数とサイズ（#120）
 - デバイス: 名前、観測（`デバイス未接続` / `不明` / `読み取り専用` / `読み書き可能`）、空き容量
-- 消せなかった録音（F-69）: 決着した Part（`completedParts(lastDetail: not_deletable)`。RAW_SAVED からも SOURCE_DELETE_PENDING からも。F-74）を**全部**数え、1 件以上のときだけ FAILED の一覧の後に「消せなかった録音（<n> 件。消さずに完了にしたもの）」、
+- 消せなかった録音（F-69）: 決着した Part（`completedParts(lastDetail: not_deletable)`。RAW_SAVED からも SOURCE_DELETE_PENDING からも。F-74。reaper の拒否の打ち切りも。F-78）を**全部**数え、1 件以上のときだけ FAILED の一覧の後に「消せなかった録音（<n> 件。消さずに完了にしたもの）」、
   partkey 順に最大 20 件を `  <partkey>` と `    <原因>、<在否>` の 2 行で、超過は「  … ほか <n> 件」。
-  原因は `error_message` の語を `source_info` → 「元の情報（場所・サイズ・時刻）が無い」、`pre_identity` → 「事前確認で原本が合わない（サイズ・時刻・場所）」、`transcript` → 「文字起こしが無いか読めない」、`raw_note` → 「Raw ノートの照合が合わない」、それ以外・無し → 「原因不明」。
+  原因は `error_message` の語を `source_info` → 「元の情報（場所・サイズ・時刻）が無い」、`pre_identity` → 「事前確認で原本が合わない（サイズ・時刻・場所）」、`transcript` → 「文字起こしが無いか読めない」、`raw_note` → 「Raw ノートの照合が合わない」、
+  付録 B.2 の reaper の理由語（F-78 の打ち切り）→ 「削除モジュールの検証で拒否され続けた（<理由語>）」、それ以外・無し → 「原因不明」。
   在否は `sourcePresence` を `.listed` → 「デバイスに在る」、`.notListed` → 「デバイスの一覧に無い」、`.unobserved` → 「デバイスを観測できない」
 
 - 初回起動時だけパネルを自動で開く（`config.json` が無かった起動）
@@ -2799,7 +2840,9 @@ FAILED→NORMALIZING | FAILED→TRANSCRIBING | FAILED→RAW_WRITING
 RAW_SAVED で結果を待っていた Part の DELETED も RAW_SAVED→SOURCE_DELETING→COMPLETED の 2 遷移で進める。
 元ファイルが無いと観測できた RAW_SAVED の Part は、既存の RAW_SAVED→COMPLETED を detail `already_absent` で使う（§8.9.5。F-64。辺は増やさない）。
 一覧に在るのに消せないまま期限を過ぎた RAW_SAVED の Part も、既存の RAW_SAVED→COMPLETED を detail `not_deletable` で使う（§8.9.5 の 5a。F-69。辺は増やさない）。
-同じく ID の無い SOURCE_DELETE_PENDING の Part は、既存の SOURCE_DELETE_PENDING→SOURCE_DELETING→COMPLETED の 2 遷移を両方 detail `not_deletable` で使う（§8.9.5 の 5a。F-74。辺は増やさない））
+同じく ID の無い SOURCE_DELETE_PENDING の Part は、既存の SOURCE_DELETE_PENDING→SOURCE_DELETING→COMPLETED の 2 遷移を両方 detail `not_deletable` で使う（§8.9.5 の 5a。F-74。辺は増やさない）。
+reaper の拒否が続いて打ち切る Part も、同じ 2 遷移を両方 detail `not_deletable` で使う（§8.9.5 の 5b。F-78。辺は増やさない）。
+元ファイルが無いと観測できた ID の無い SOURCE_DELETE_PENDING の Part は、「手動で消した分を完了にする」と同じ 2 遷移を detail `resolve_absent` → `already_absent` で使う（§8.9.5 の 4a。F-78。辺は増やさない））
 
 （Session の OPEN→READY の detail は `idle` / `summarize_now`（パネルの今すぐ要約。§5.4。F-66。辺は増やさない）。`stale_day` は F-66 で使わなくなった（過去の記録に残る））
 
@@ -2886,7 +2929,7 @@ model_downloaded model_download_failed diagnostics_completed
 
 主な reason / フィールド（逐語。新しい語を足すときはここに足す）:
 - `recovery_completed`: `rolled_back=<n>`（復旧）/ `requeued=<n>`（再評価）
-- `source_delete_skipped`: `reason=delete_source_audio_disabled|lock_mismatch|mount_mode_ro|reaper_not_installed|reaper_invalid|device_readonly|already_absent|not_deletable|status_changed`（`not_deletable` は F-69・F-74 の決着。`recording_key` と `detail=source_info|pre_identity|transcript|raw_note`（原因）を付ける）
+- `source_delete_skipped`: `reason=delete_source_audio_disabled|lock_mismatch|mount_mode_ro|reaper_not_installed|reaper_invalid|device_readonly|already_absent|not_deletable|status_changed`（`not_deletable` は F-69・F-74・F-78 の決着。`recording_key` と `detail=source_info|pre_identity|transcript|raw_note|<RV の理由語>`（原因。RV の理由語は F-78 の reaper の拒否の打ち切り）を付ける。`already_absent` は F-64・F-78 の自動の完了と「手動で消した分を完了にする」で、`recording_key` を付ける）
 - `source_delete_pending`: `reason=<RV の理由語>|still_in_inventory|no_result|queue_write_failed`
 - `disk_space_low`: `reason=<空き容量の文言>|staging_unlink_failed`
 - `pipeline_paused` / `pipeline_resumed`: `reason=disk_space_low|whisper_missing|model_missing|vad_model_missing|vault_not_configured|vault_unavailable|llm_not_selected|llm_model_missing|llm_insufficient_memory|llama_server_missing|license`
@@ -3295,3 +3338,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-69 | 誤 | §8.9.2・§8.9.5・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.4 | （2026-09-23。issue #98。F-64 のレビューで判明。利用者の決定「一定期間で消さず完了＋知らせる」、期間は約 81 分）削除が有効で元ファイルがデバイスの一覧に**在る**のに `canDeleteSource` が偽のまま変わらない RAW_SAVED の Part（原本の size / mtime の変化、Raw ノートの手の編集、transcript の欠け、`source_path` / `source_size` が無い）があると、削除段が `delete_attempts += 1` を繰り返すだけで Session が COMPLETED にならず、抜け道は削除の無効化だけだった（CR-15 に反する）→ `requestDeletions` の 5a: `canDeleteSource` が偽の RAW_SAVED で、(1) 期限（backoff を使い切った: Session の `delete_attempts ≥ backoff の段の数`、かつ Part を RAW_SAVED にしてから backoff の合計。新しい設定キーは作らない）を過ぎ、(2) 観測できた失敗（Session の Part がすべて終端、新鮮な snapshot でデバイスが接続中で列挙でき書き込み可能、Vault が使え、元ファイルが一覧に在る。`source_path` が無ければ照らせないので在る扱い）が、(3) 同じ `connectEpoch` で 2 回続いた（`UndeletableStreaks`。Worker がメモリで持つ。長く抜いた後の最初の評価の一時的な失敗で決着させない）なら、**消さずに** RAW_SAVED→COMPLETED（detail `not_deletable`、Part の `error_message` に原因の語 `source_info` / `pre_identity` / `transcript` / `raw_note`、`source_delete_skipped recording_key=… reason=not_deletable detail=<原因>`）。`source_deleted_at` は入れない。一覧に無いものは F-64。要対応に `undeletableSources(n)`（「消せなかった録音 <n> 本」、ボタン「詳細・診断を開く」＝ `AttentionAction.openDetails`。説明は原因を確かめ、直したら「過去分を削除対象にする」で再評価、手で消す前に Raw ノートと文字起こしを確かめるよう促す）を足した。数えるのは決着した Part のうち最新の snapshot で接続中かつ一覧にまだ在るものだけ（抜いている間・一覧に無い・`source_path` が無いものは出さない）。状態の詳細には決着した Part を全部、原因とデバイスでの在否を添えて出す。決着した Part は「過去分を削除対象にする」の対象に入り、原因を直せば消せる（自動では再評価しない）。辺・ログのイベント・設定キーは増やさない（A.4 の `source_delete_skipped` の理由語に `not_deletable` と原因の `detail=` を足した。`not_deletable` は後追いの対象外の語と同じ綴り） |
 | F-70 | 誤 | §2.3・§8.12 | （2026-09-23。issue #105。利用者との実機の動作確認で判明）パネルの「最終接続」を AppModel のメモリにだけ持っていたので、アプリを再起動すると「まだありません」に戻った → デバイスを最後に観測した時刻を `<HOME>/ui-state.json` の `lastConnectedAt`（epoch ミリ秒の整数。一度も観測していなければキーを書かない）に残し、起動直後の（メモリに値が無い）`read` はその値を使う（`LastConnected.resolve`）。書くのは AppModel の `refresh` で、この起動で最後に書こうとした値（無ければファイルの値）と違うときだけ（時計が戻った値も書く。差は桁あふれでトラップさせない）、接続中は観測時刻が 60 秒以上動いたときだけ、切れたら最後に見た時刻を 1 回だけ（`LastConnected.valueToSave`）。refresh が重なっても、この起動で書いた `loginItemDecided = true` と最終接続を古い read の値で戻さない（書くたびに AppModel が覚えた値と合わせる）。書けなくても表示は変えず、同じ値を書き直し続けない（「今はしない」の `uiStateSaveFailed` とは別）。`schema` は 1 のまま（足した鍵は任意で、F-70 より前の版の読み手は未知の鍵として無視する）。`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にし、`loginItemDecided` を失わない。DB の取り込みの時刻から導く案は、新しい録音が無かった接続を拾えないので採らない。表示の文言は変えない |
 | F-74 | 誤 | §5.6・§8.9.2・§8.9.5・§8.9.6・§8.9.7・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.3・付録 A.4 | （2026-09-23。issue #114。全体コードレビューのテーマ 3「永久に終わらない状態」。F-69 の続き。CR-15）(1) F-69 の決着は RAW_SAVED にしか効かず、reaper の拒否（`size_mismatch` など）・期限切れ・`still_in_inventory` で `delete_request_id` の無い SOURCE_DELETE_PENDING になり、`canDeleteSource` が偽のまま元ファイルが一覧に在る Part があると、削除段が `delete_attempts += 1` を繰り返すだけで Session が完了せず、要対応の「過去分を削除対象にする」の案内も（後追いは COMPLETED の Session しか見ないので）効かなかった → `requestDeletions` の 5a を ID の無い SOURCE_DELETE_PENDING にも広げ、F-69 と同じ条件（期限・観測できた失敗・同じ接続で 2 回連続）で、**辺を足さず**既存の `SOURCE_DELETE_PENDING→SOURCE_DELETING→COMPLETED`（「手動で消した分を完了にする」と同じ 2 遷移。両方の detail `not_deletable`、2 つ目で Part の `error_message` に原因の語）で消さずに決着する。`source_deleted_at` は入れない。最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細の数え方は F-69 のまま、Session は完了し、後追いで再評価できる。PENDING のまま印を付けて Session だけ完了させる案は、数え方に入らず PENDING の件数が残るので採らない。一覧に無い PENDING は従来どおり「手動で消した分を完了にする」の担当（`failureIsObserved` の d で待つ）。(2) `undeletableCause` は調べ直して全部の検査が通っても `pre_identity` を返して決着させていた → nil を返し、決着を見送って連続を切る（原因を偽って決着させない）。(3) `TickContext.undeletableStreaks` と `DeletionDependencies.init(streaks:)` の既定値 `UndeletableStreaks()` を外した（渡し忘れると黙って連続が数えられず F-69 が効かない。Worker が持つ 1 つを渡すことをコンパイラに守らせる）。(4) 期限切れは同じ request_id の結果ファイルが在るだけで飛ばしていたので、reaper が読めない要求に `partkey: ""` で書いた結果（回収も取り下げも partkey で照合する）が在ると SOURCE_DELETING から抜けなかった → 飛ばすのは結果が読めて request_id と partkey がその Part と一致するときだけ。pend の後、その request_id で partkey の合わない結果は回収できないので捨てる（読めない結果は残す）。(5) 期限切れは取り下げの成否を見ずに pend して ID を外していた → その Part の要求が queue/delete に残れば（取り下げの失敗・読めない `<request_id>.json`）pend せず ID を持ったまま次の tick でやり直す（残った要求を reaper が再評価なしで実行し、結果が ID 不一致で捨てられて `source_deleted_at` が入らないのを防ぐ）。(6) 後追いの ①② の後・③ の前に止まると ID と要求を持つ COMPLETED が残り、回収の対象に COMPLETED が無いので DELETED が捨てられていた → 回収の対象に ID を持つ COMPLETED を足し、消えたと観測できたら遷移させずに `source_deleted_at` を書いて ID を外す（拒否・`still_in_inventory` は ID を外すだけで COMPLETED のまま）。(7) DELETED の後始末が「`source_deleted_at` と ID を書く → 遷移」の順で、遷移が失敗すると ID の無い SOURCE_DELETING が再起動まで残った → 遷移が先、`source_deleted_at` と ID を外すのは最後（失敗したら ID と結果が残り次の tick でやり直す）。(8) 統合で有効な Part の transcript が読めず segment が 0 件だと「本当に空」と区別されずに `session_empty` で COMPLETED（Daily が作られない）、MERGED 以降では毎 tick 黙って止まった → READY / MERGING では `MERGING→FAILED`、MERGED 以降では `→ANALYZING`（MERGED から通常の辺、ANALYZED / WRITING から ★ `stale_analysis`）→ `ANALYZING→FAILED` で、どちらも `SESSION_MERGE_FAILED`「文字起こしを読めない Part があります: <partkey>, …」と `session_merge_failed`（一部だけ読めないときは従来どおり飛ばして統合）。設定キー・遷移の辺・ログのイベントは増やさない（A.2 の注記、A.3 の `SESSION_MERGE_FAILED` と A.4 の `session_merge_failed` の説明を足した） |
+| F-78 | 誤 | §8.9.2・§8.9.5・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.4 | （2026-09-23。issue #124。F-74（#114）のレビューで残った 2 点。利用者の決定「今回の流れで直す」。CR-15。どちらも消さない側に倒れていたが、Part や Session が完了しないまま残った）(1) 手で原本を消した後などで、ID の無い SOURCE_DELETE_PENDING の元ファイルがデバイスの一覧に無くなると、利用者が「手動で消した分を完了にする」を押すまで Part も Session も完了せず、要対応にも出なかった → `requestDeletions` の手順 4a（F-64）を ID の無い SOURCE_DELETE_PENDING にも広げ、同じ観測の条件（新鮮な snapshot・デバイスが接続中で列挙でき `unavailable` に無い・snapshot が PENDING にした時刻（updated_at）より確かに後に完了・relpath が一覧に無い）を満たしたら、**辺を足さず**「手動で消した分を完了にする」と同じ 2 遷移 `SOURCE_DELETE_PENDING→SOURCE_DELETING`（detail `resolve_absent`）→`SOURCE_DELETING→COMPLETED`（detail `already_absent`）、この Part の要求・結果の取り下げ、ID を外す、`source_delete_skipped recording_key=… reason=already_absent` で自動で完了させる。`source_deleted_at` は入れない（DELETED を観測していない）。未接続・列挙できない・snapshot が古い・`source_path` が無いときは完了させない。これで F-74 の `failureIsObserved` の (d) は RAW_SAVED にも PENDING にも防御になった。「手動で消した分を完了にする」は ID を持つ PENDING・COMPLETED の Session の PENDING のために残す。(2) アプリの `canDeleteSource` は真なのに reaper の独立した検証（RV-03〜13）だけが偽になる Part は、評価のたびに要求 → 拒否（回収の pend で ID の無い SOURCE_DELETE_PENDING）→ 再要求を繰り返し、Session は完了しなかった（`canDeleteSource` が真なので F-69 の 5a の対象にならず、要求を書いた評価では `delete_attempts` も増えない）→ 手順 5b: `canDeleteSource` が真の ID の無い SOURCE_DELETE_PENDING について、DB の events を新しい順に見て回収の pend（`SOURCE_DELETING→SOURCE_DELETE_PENDING`、`error_code` が `SOURCE_IDENTITY_MISMATCH`）を数え（間の要求の遷移 `RAW_SAVED` / `SOURCE_DELETE_PENDING` →`SOURCE_DELETING` で detail の無いものは読み飛ばし、それ以外の遷移で止める。`reaperRejectionStreak`）、定数 `reaperRejectionsToSettle = 3` 回続いていたら要求を書かずに、5a の PENDING と同じ 2 遷移（両方 detail `not_deletable`、2 つ目で `error_message` に原因の語）と `source_delete_skipped … reason=not_deletable detail=<原因>` で消さずに決着する。原因の語は最後の拒否の reaper の理由語（付録 B.2。5a の `source_info` / `pre_identity` / `transcript` / `raw_note` はアプリの検査のどれが落ちたか、5b の理由語はアプリの検査が全部通った後に reaper の検証のどれが落ちたかで、綴りは重ならない）。数え方は DB の履歴なので再起動で 0 に戻らず、拒否でない結果（DELETED・`still_in_inventory`・`no_result`）・起動時の復旧・決着・手動で消した分・後追いの要求の遷移で数え直す。要求を書かなかった評価は数えも切りもせず、要求を残す reaper の理由（`device_absent`・`mount_readonly`）は結果が来ないので数えない。挿し直しでは数え直さない（挿し直しで変わる食い違いはアプリの事前確認が同じ `TargetIdentity` で先に偽になる）。メモリの記録（`UndeletableStreaks` のような）で数える案は、再起動で 0 に戻り Worker の配線も要るので採らない。最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細・後追いの数え方は F-69 のまま（状態の詳細は reaper の理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す）。後追いで再評価して reaper がまた拒否すれば、COMPLETED の Session に ID の無い PENDING が残る（手動の操作なので繰り返さない）。設定キー・遷移の辺・ログのイベントは増やさない（A.2 の注記と、A.4 の `source_delete_skipped` の `detail=` に `<RV の理由語>` を足した） |

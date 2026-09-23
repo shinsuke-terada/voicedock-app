@@ -1,5 +1,8 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-78・issue #124、2026-09-23。マージ後の追記）reaper の拒否が 3 回続いて打ち切った Part（T-38 §4.5 の手順 5b）も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と「消せなかった録音」に同じ数え方で入る。原因の語は reaper の理由語（付録 B.2）なので、
+> `StatusReporter.causeText(_:)`（internal）を足し、`causeTexts` に無く `IdentityReason.all` に在る語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（`UndeletablePart.detail` はこれを使う。型・要対応の文言は変えない。テストは T-38 の `ReaperRejectionSettlementTests`）。
+
 > （F-74・issue #114、2026-09-23。マージ後の追記）SOURCE_DELETE_PENDING から決着した Part も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と状態の詳細の「消せなかった録音」に同じ数え方で入る（型・文言は変えない。テストは T-38 の `PendingSettlementTests`）。
 
 > （F-69・issue #98、2026-09-23。マージ後の追記）要対応の末尾に `undeletableSources(Int)`（「消せなかった録音 <n> 本」、操作 `[.openDetails]` =「詳細・診断を開く」）、`AttentionInput.undeletableSources`、
@@ -747,7 +750,7 @@ public enum StatusReporter {
 | … | `  <partkey>` と `    <detail>` の 2 行を `failedParts` の順に |
 | — | `  … ほか <failedTotal - failedParts.count> 件`（超過があるときだけ） |
 | — | （F-69）`消せなかった録音（<undeletableTotal> 件。消さずに完了にしたもの）`（0 件なら以降を出さない。失敗した Part の有無によらない） |
-| … | `  <partkey>` と `    <原因>、<在否>` の 2 行を partkey 順に最大 20 件（原因は `StatusReporter.causeTexts`、無ければ `原因不明`。在否は `presenceTexts`: `デバイスに在る` / `デバイスの一覧に無い` / `デバイスを観測できない`。文言は PLAN §8.12） |
+| … | `  <partkey>` と `    <原因>、<在否>` の 2 行を partkey 順に最大 20 件（原因は `StatusReporter.causeTexts`、付録 B.2 の reaper の理由語なら `削除モジュールの検証で拒否され続けた（<理由語>）`（F-78。`StatusReporter.causeText`）、どれでもなければ `原因不明`。在否は `presenceTexts`: `デバイスに在る` / `デバイスの一覧に無い` / `デバイスを観測できない`。文言は PLAN §8.12） |
 | — | `  … ほか <undeletableTotal - undeletable.count> 件`（超過があるときだけ） |
 
 - `デバイス:` の観測: `deviceSnapshotPresent == false` → `まだ走査していません`。`devices.isEmpty` → `StatusTexts.writabilityWord(.absent)`（`デバイス未接続`）。
