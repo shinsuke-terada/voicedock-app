@@ -92,7 +92,8 @@ struct DeletionStagesWiringTests {
         #expect(Self.requests(w).count == 1)
         #expect(!w.lines("delete_requested").isEmpty)
         #expect(w.sink.lines.contains { $0.hasSuffix(" reaper_run exit=0") })
-        #expect(await w.ingest.scanNowCalls == 1)
+        // 偽物の reaper は要求を処理しないので走査しない（F-79）
+        #expect(await w.ingest.scanNowCalls == 0)
     }
 
     @Test("次の tick で結果を回収して完了する")
