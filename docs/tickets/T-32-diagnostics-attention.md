@@ -1,5 +1,8 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-81・issue #119。2026-09-23）DR-11 は `not_included`（改名の案内だけ）を数えず、`not_listable` が無く `mount_failed`（再マウントでアンマウントされたまま）が在れば 0 台でも ok にせず notice
+> 「<名前> は読み取り専用への切り替えの途中でアンマウントされたままです。取り外して、もう一度つなぎ直してください」（`DiagnosticTexts.leftUnmounted`）。PLAN §8.11 の表（SPEC S6）。テストは `DiagnosticDeviceNoticeTests`。
+
 > （F-78・issue #124、2026-09-23。マージ後の追記）reaper の拒否が 3 回続いて打ち切った Part（T-38 §4.5 の手順 5b）も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と「消せなかった録音」に同じ数え方で入る。原因の語は reaper の理由語（付録 B.2）なので、
 > `StatusReporter.causeText(_:)`（internal）を足し、`causeTexts` に無く `IdentityReason.all` に在る語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（`UndeletablePart.detail` はこれを使う。型は変えない。テストは T-38 の `ReaperRejectionSettlementTests`）。
 > 要対応 `undeletableSources` の説明を、5a（直せば再評価できる）と 5b（削除モジュールの拒否。再評価しても同じ）の両方に合う文言に直した（下の表・`AttentionTextsTests`。PLAN §8.11）。

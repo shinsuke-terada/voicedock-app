@@ -250,18 +250,29 @@ enum DiagnosticChecks {
     @Sendable static func dr11(_ ctx: DiagnosticsContext) async -> DiagnosticResult {
         let id = DiagnosticID.devices
         guard let s = ctx.snapshot else { return result(id, .skip, [DiagnosticTexts.noSnapshot]) }
-        if s.devices.isEmpty && s.unavailable.isEmpty {
+        // not_included（名前が設定に無い録音のボリューム）は改名の案内だけで、列挙の検査では数えない（「はじめに」の⑤。F-81）
+        let unavailable = s.unavailable.filter { $0.value != DetectionReason.notIncluded.rawValue }
+        if s.devices.isEmpty && unavailable.isEmpty {
             return result(id, .skip, [DiagnosticTexts.noDevice])
         }
-        let bad = s.unavailable.filter { $0.value == DetectionReason.notListable.rawValue }.keys
-            .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
-        if bad.isEmpty {
-            return result(id, .ok, [DiagnosticTexts.devicesListed(s.devices.count)])
+        let bad = names(unavailable, DetectionReason.notListable.rawValue)
+        if !bad.isEmpty {
+            return result(
+                id, .fail,
+                bad.map { DiagnosticTexts.notListable($0, errno: s.notListableErrno[$0]) }
+                    + [DiagnosticTexts.tccRemovableVolumes])
         }
-        return result(
-            id, .fail,
-            bad.map { DiagnosticTexts.notListable($0, errno: s.notListableErrno[$0]) }
-                + [DiagnosticTexts.tccRemovableVolumes])
+        // 再マウントでアンマウントされたままのデバイスは「列挙できた」にしない（F-81。挿し直せば戻る）
+        let unmounted = names(unavailable, RemountOutcome.mountFailedReason)
+        if !unmounted.isEmpty {
+            return result(id, .notice, unmounted.map(DiagnosticTexts.leftUnmounted))
+        }
+        return result(id, .ok, [DiagnosticTexts.devicesListed(s.devices.count)])
+    }
+
+    /// unavailable のうち理由が reason の名前（UTF-8 のバイト順）
+    static func names(_ unavailable: [String: String], _ reason: String) -> [String] {
+        unavailable.filter { $0.value == reason }.keys.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
     }
 
     /// DR-12 ログイン項目（.enabled 以外は notice）

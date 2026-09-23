@@ -33,13 +33,14 @@ final class QueueFiles {
         if rejectedFD >= 0 { close(rejectedFD) }
     }
 
-    /// `.` で始まらない名前を UTF-8 のバイト順の昇順に。読めなければ []
+    /// `.` で始まらない名前を UTF-8 のバイト順の昇順に。読めなければ []。
+    /// 「`.` で始まる」は先頭の Unicode スカラーで見る（Character で見ると "." の直後の結合文字で一致しない。F-81）
     func names() -> [String] {
         guard
             let all = try? FileManager.default.contentsOfDirectory(
                 atPath: layout.queueDelete.path(percentEncoded: false))
         else { return [] }
-        return all.filter { !$0.hasPrefix(".") }
+        return all.filter { $0.unicodeScalars.first != "." }
             .sorted { Array($0.utf8).lexicographicallyPrecedes(Array($1.utf8)) }
     }
 

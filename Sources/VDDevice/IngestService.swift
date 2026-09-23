@@ -28,6 +28,19 @@ public actor IngestService {
     var waiters: [(minStart: UInt64, continuation: CheckedContinuation<UInt64?, Never>)] = []
     var ingestState: IngestState = .idle
     var previousUnavailable: [String: String] = [:]
+    /// 再マウントで unmount は成功し mount が失敗して、マウント点でなくなったデバイスの名前（F-81）。
+    /// アンマウントされたデバイスは /Volumes に現れないので、次の走査の判定では見えず「未接続」に見える。
+    /// 名前が判定に戻る（挿し直し・手でマウント。not_a_mount_point のままは戻ったとみなさない）まで、毎回の snapshot の
+    /// unavailable に mount_failed で載せ続ける。node（`/dev/diskN`）が消えたら（抜かれた）外す。メモリだけで持つ（再起動で消える）。
+    /// 鍵は名前のスカラー列（00-api-map §0。Set<String> の正準等価で別の名前とまとめない）
+    var unmountedByRemount: [[Unicode.Scalar]: UnmountedDevice] = [:]
+
+    /// 再マウントでアンマウントされたままのデバイス（F-81）
+    struct UnmountedDevice: Equatable, Sendable {
+        let name: String
+        /// 判定のときの f_mntfromname（例 "/dev/disk4s1"）。取れなかったら空
+        let node: String
+    }
     var updateContinuations: [UUID: AsyncStream<Void>.Continuation] = [:]
     var backgroundTasks: [Task<Void, Never>] = []
     var started = false
@@ -43,6 +56,10 @@ public actor IngestService {
         let depth = config.device.maxScanDepth
         let listing =
             await (try? BlockingIO.run { reader.scan(volumeRoot: root, maxDepth: depth) }) ?? .incomplete
+        // 列挙の直後の statfs（F-81）。unmount と重なると、マウント点だった空のディレクトリや親の FS を「完全な一覧」と
+        // 読みうるので、走査がこれを列挙の前の値と照らしてから snapshot に載せる。コピーの後ではなくここで取るのは、
+        // 列挙からの間を短くして、抜いて挿し直した（同じ node・同じマウント点に戻った）間の一覧を見逃さないため
+        let mountAfterListing = deps.inspector.mountInfo(path: root)
         for rel in listing.unparsable {
             deps.log.debug(.unparsableFilename, [(.relpath, .string(rel))])
         }
@@ -51,7 +68,7 @@ public actor IngestService {
             selection = try selectCandidates(deviceID: deviceID, origRelpaths: listing.origCandidates)
         } catch {
             deps.log.warning(.copyFailed, [(.reason, .string(CopyError.writeError(EIO).reason))])
-            return DeviceIngestResult(listing: listing, copied: 0)
+            return DeviceIngestResult(listing: listing, copied: 0, mountAfterListing: mountAfterListing)
         }
         let stable = await StabilityChecker(config: config.device, clock: deps.clock, sleeper: deps.sleeper)
             .stableCandidates(selection.candidates, stat: { rel in reader.stat(volumeRoot: root, relpath: rel) })
@@ -70,7 +87,7 @@ public actor IngestService {
                 recopyRow: selection.recopyRows[rel], config: config)
             if case .copied = outcome { copied += 1 }
         }
-        return DeviceIngestResult(listing: listing, copied: copied)
+        return DeviceIngestResult(listing: listing, copied: copied, mountAfterListing: mountAfterListing)
     }
 
     /// 取り込みの候補（PLAN §8.1 安定性判定の 1）: DB に行が無いか needs_recopy の行があり、imported_keys に無い _orig
@@ -165,18 +182,41 @@ public actor IngestService {
         final: URL, duration: Double?, recopyRow: RecordingRow?
     ) throws -> Bool {
         guard let inboxRel = deps.layout.relativePath(of: final) else { throw CopyError.writeError(EINVAL) }
-        if recopyRow != nil {
+        if let row = recopyRow {
             // 状態は変えない（PLAN §5.4 の契機 4 が再評価する）
-            try deps.store.updateRecording(
-                partkey,
-                [
-                    .inboxPath(inboxRel), .sha256Helper(sha256), .sourceSize(stat.size), .sourceMtime(stat.mtime),
-                    .needsRecopy(false),
-                ])
+            var fields: [RecordingField] = [
+                .inboxPath(inboxRel), .sha256Helper(sha256), .sourceSize(stat.size), .sourceMtime(stat.mtime),
+                .needsRecopy(false),
+            ]
+            // 長さは取り直したファイルで測り直す（F-81）。機器がヘッダを直した原本を取り直しても、登録したときの短い長さの
+            // ままだと 16 kHz 変換の長さの照合（NORMALIZE_VERIFY_FAILED「長さが入力と…ずれています」）が通らず自動で直らない。
+            // 測れない（nil）・登録と同じなら従来の値を残し、Session の集計も書き直さない（updated_at を動かさない）
+            var remeasured = false
+            if let duration, duration != row.durationSeconds {
+                fields += [
+                    .durationSeconds(duration),
+                    .endedAt(recopyEndedAt(startedAt: row.startedAt, parsed: parsed, duration: duration)),
+                ]
+                remeasured = true
+            }
+            try deps.store.updateRecording(partkey, fields)
+            // Session の recorded_seconds・ended_at は Part の長さから作るので、属していれば数え直す（§5.6 の集計と同じ SQL）。
+            // VDStore に行の更新と集計を 1 つのトランザクションで行う公開 API が無いので 2 回の書き込みになる。集計の失敗は
+            // 取り込みの失敗にしない（行は正しい。集計は次に同じ Session へ Part が分組されるときに数え直される）。
+            // DB の例外は付録 A.4 の約束どおり config_warning rule=store message=<型名>（WARNING。専用のイベントを増やさない）
+            if remeasured, let key = row.sessionKey {
+                do {
+                    try deps.store.refreshSessionAggregates(key)
+                } catch {
+                    deps.log.warning(
+                        .configWarning,
+                        [(.rule, .string(Self.storeRule)), (.message, .string(String(describing: type(of: error))))])
+                }
+            }
             return false
         }
         let start = deps.zone.instant(of: parsed.local)  // ファイル名の時刻にタイムゾーンを付与するだけ（TIME-03）
-        let endedAt = duration.flatMap(Self.durationMillis).map { deps.zone.iso(start.adding(milliseconds: $0)) }
+        let endedAt = endedAtISO(start: start, duration: duration, in: deps.zone)
         try deps.store.insertRecording(
             NewRecording(
                 partkey: partkey, deviceID: deviceID, sourceFolder: RelPath.parent(relpath),
@@ -187,11 +227,46 @@ public actor IngestService {
         return true
     }
 
+    /// DB の例外の config_warning の rule（付録 A.4。VDPipeline の warnStore と同じ語）
+    static let storeRule = "store"
+
+    /// 再コピーの ended_at（F-81）。登録済みの started_at の瞬間 + 長さを、started_at と同じオフセットで書く
+    /// （voicedock の `started_at + timedelta(seconds=duration)` と同じ意味。後でタイムゾーンを変えても開始と同じ書式。RK-32）。
+    /// started_at を読めなければ最初のコピーと同じくファイル名の時刻に設定のタイムゾーンを付ける
+    func recopyEndedAt(startedAt: String, parsed: ParsedFile, duration: Double) -> String? {
+        guard let start = deps.zone.parseISO(startedAt), let offset = Self.isoOffsetSeconds(startedAt) else {
+            return endedAtISO(start: deps.zone.instant(of: parsed.local), duration: duration, in: deps.zone)
+        }
+        return endedAtISO(start: start, duration: duration, in: ZonedTime(fixedOffsetSeconds: offset))
+    }
+
+    /// `ZonedTime.iso` の形（25 スカラーの `±HH:MM` か 28 スカラーの `±HH:MM:SS` で終わる）のオフセットの秒。形が違えば nil
+    static func isoOffsetSeconds(_ iso: String) -> Int? {
+        let s = Array(iso.unicodeScalars)
+        guard s.count == 25 || s.count == 28, s[19] == "+" || s[19] == "-" else { return nil }
+        func twoDigits(_ i: Int) -> Int? {
+            let digits: ClosedRange<Unicode.Scalar> = "0"..."9"
+            guard digits.contains(s[i]), digits.contains(s[i + 1]) else { return nil }
+            return Int(s[i].value - 48) * 10 + Int(s[i + 1].value - 48)
+        }
+        guard let hours = twoDigits(20), let minutes = twoDigits(23) else { return nil }
+        let seconds = s.count == 28 ? twoDigits(26) : 0
+        guard let seconds else { return nil }
+        let magnitude = hours * 3600 + minutes * 60 + seconds
+        return s[19] == "-" ? -magnitude : magnitude
+    }
+
     /// Python の `timedelta(seconds=s)` は µ 秒に偶数丸めし、`isoformat(timespec="seconds")` は切り捨てる。ms へは切り捨てで落とす。
     /// Int64 の µ 秒で表せない長さ（壊れたファイルが巨大なフレーム数を名乗る場合など）は nil（ended_at を書かない。トラップしない。PT-19）
     static func durationMillis(_ seconds: Double) -> Int64? {
         guard let micros = Int64(exactly: (seconds * 1_000_000).rounded(.toNearestOrEven)) else { return nil }
         return micros / 1000
+    }
+
+    /// ended_at = start + duration（秒未満切り捨て）を zone の書式で。duration が nil・µ 秒で表せなければ nil
+    /// （最初のコピーと再コピーで共有する。CR-06）
+    func endedAtISO(start: Instant, duration: Double?, in zone: ZonedTime) -> String? {
+        duration.flatMap(Self.durationMillis).map { zone.iso(start.adding(milliseconds: $0)) }
     }
 
     /// copy_failed。changed だけ INFO、ほかは WARNING
@@ -208,6 +283,8 @@ public actor IngestService {
 struct DeviceIngestResult: Equatable, Sendable {
     let listing: ScanListing
     let copied: Int
+    /// 列挙の直後の statfs（取れなければ nil）。走査が列挙の前の値と照らす（F-81）
+    let mountAfterListing: MountInfo?
 }
 
 /// key = relpath
@@ -353,17 +430,22 @@ extension IngestService {
         }
         var unavailable: [String: String] = [:]
         var notListableErrno: [String: Int32] = [:]
+        // 規則 1 で外したが名前のほかはデバイスに見えるもの（改名の案内。取り込まず削除もしない。F-81）
+        let lookalikes = Set(detection.notIncludedDevices.map { Array($0.unicodeScalars) })
         for skip in detection.skipped {
             recordSkip(
-                name: skip.name, reason: skip.reason, errno: skip.listingError?.code, into: &unavailable,
+                name: skip.name, reason: skip.reason, errno: skip.listingError?.code,
+                lookalike: lookalikes.contains(Array(skip.name.unicodeScalars)), into: &unavailable,
                 &notListableErrno)
         }
+        carryUnmounted(detection, into: &unavailable)
         var observations: [String: DeviceObservation] = [:]
         var copiedTotal = 0
         for device in detection.devices {
             if stopRequested { break }
             var mountPath = device.mountPath
             var remounted = false
+            var remountFailure: String? = nil
             if config.device.mode == .ro {
                 switch await deps.remounter.remountReadOnly(path: mountPath, node: device.node ?? "") {
                 case .alreadyReadOnly:
@@ -383,6 +465,7 @@ extension IngestService {
                     }
                 case .failed(let reason):
                     // 取り込みは続ける（記録の保護）
+                    remountFailure = reason
                     deps.log.warning(.remountFailed, [(.name, .string(device.deviceID)), (.reason, .string(reason))])
                 }
             }
@@ -397,6 +480,13 @@ extension IngestService {
                 deps.log.debug(
                     .volumeSkipped,
                     [(.name, .string(device.deviceID)), (.reason, .string(DetectionReason.notAMountPoint.rawValue))])
+                // unmount は成功し mount が失敗して、アンマウントされたまま残った（F-81）。「未接続」に見せないよう
+                // unavailable に載せ、次の走査からも名前が判定に戻るまで載せ続ける（unmountedByRemount）
+                if remountFailure == RemountOutcome.mountFailedReason {
+                    unmountedByRemount[Array(device.deviceID.unicodeScalars)] = UnmountedDevice(
+                        name: device.deviceID, node: device.node ?? "")
+                    unavailable[device.deviceID] = RemountOutcome.mountFailedReason
+                }
                 continue
             }
             // 観測値。試行の成否から推論しない（DEL-31）
@@ -407,8 +497,9 @@ extension IngestService {
             }
             let result = await ingestDevice(deviceID: device.deviceID, mountPath: mountPath, config: config)
             copiedTotal += result.copied
-            // 一覧を信用しない（「消えた」と誤読させない）
-            if !result.listing.complete {
+            // 一覧を信用しない（「消えた」と誤読させない）。列挙の直後の statfs が列挙の前（info）と違う、つまり列挙が
+            // unmount と重なったときも同じ（空の一覧を complete のまま公開すると F-64 / F-78 が「無い」と判断する。F-81）
+            if !result.listing.complete || !Self.sameMount(info, result.mountAfterListing) {
                 recordSkip(
                     name: device.deviceID, reason: .notListable, errno: nil, into: &unavailable, &notListableErrno)
                 continue
@@ -428,23 +519,61 @@ extension IngestService {
         finishWaiters(upTo: index, generation)
     }
 
-    /// 利用者の操作が要る理由は unavailable に載せる。WARNING は前回の走査から変わったときだけ（OPS-12）
+    /// 利用者の操作が要る理由は unavailable に載せる。WARNING は前回の走査から変わったときだけ（OPS-12）。
+    /// lookalike は規則 1（not_included）で外したが名前のほかはデバイスに見えるもの（F-81。改名の案内のために載せる）
     func recordSkip(
-        name: String, reason: DetectionReason, errno: Int32?, into unavailable: inout [String: String],
-        _ notListableErrno: inout [String: Int32]
+        name: String, reason: DetectionReason, errno: Int32?, lookalike: Bool = false,
+        into unavailable: inout [String: String], _ notListableErrno: inout [String: Int32]
     ) {
-        if reason.needsUserAction {
+        let needsUserAction = reason.needsUserAction || (lookalike && reason == .notIncluded)
+        if needsUserAction {
             unavailable[name] = reason.rawValue
             if let errno { notListableErrno[name] = errno }
         }
         var fields: [(LogKey, LogValue)] = [(.name, .string(name)), (.reason, .string(reason.rawValue))]
         // errno は detail に残す（PLAN §8.1 規則 5。付録 A.4 に errno のキーは無い）
         if let errno { fields.append((.detail, .int(Int64(errno)))) }
-        if reason.needsUserAction && previousUnavailable[name] != reason.rawValue {
+        if needsUserAction && previousUnavailable[name] != reason.rawValue {
             deps.log.warning(.volumeSkipped, fields)
         } else {
             deps.log.debug(.volumeSkipped, fields)
         }
+    }
+
+    /// 前の走査の再マウントでアンマウントされたままのデバイス（unmountedByRemount）のうち、名前が判定に戻ったもの
+    /// （devices か、not_a_mount_point 以外の理由の skipped）と、node（`/dev/diskN`）の lstat が ENOENT になったもの
+    /// （抜かれた）を外し、残りを unavailable に mount_failed で載せる（F-81）。
+    /// not_a_mount_point は、アンマウントの後にマウント点のディレクトリが残っただけかもしれないので戻ったとみなさない。
+    /// node は `/dev` を lstat するだけ（デバイスを開かない。PR-11）。node が空・ENOENT 以外の失敗なら残す。
+    /// node の番号が別のディスクに使い回されると残る（既知の残り）。名前はスカラー列で照らす（00-api-map §0）
+    func carryUnmounted(_ detection: DetectionResult, into unavailable: inout [String: String]) {
+        if unmountedByRemount.isEmpty { return }
+        let back =
+            detection.devices.map(\.deviceID)
+            + detection.skipped.filter { $0.reason != .notAMountPoint }.map(\.name)
+        for name in back {
+            unmountedByRemount[Array(name.unicodeScalars)] = nil
+        }
+        unmountedByRemount = unmountedByRemount.filter { _, device in
+            guard !device.node.isEmpty, case .failure(let error) = deps.reader.lstatKind(device.node) else {
+                return true
+            }
+            return error.code != ENOENT
+        }
+        for device in unmountedByRemount.values {
+            unavailable[device.name] = RemountOutcome.mountFailedReason
+        }
+    }
+
+    /// 列挙の前（before）と列挙の直後（after）の statfs が同じマウントか（F-81）。f_mntonname と f_mntfromname を
+    /// スカラー列で比べる（00-api-map §0）。列挙の前に statfs が取れなかった（規則 4 だけで通した）ときは、列挙の後も
+    /// 取れないときだけ同じとみなす（観測値を nil のまま載せる従来の扱い。DEL-32。本番の MountInspector は規則 4 も
+    /// statfs で見るので、statfs が取れなければ列挙まで来ない）
+    static func sameMount(_ before: MountInfo?, _ after: MountInfo?) -> Bool {
+        guard let before else { return after == nil }
+        guard let after else { return false }
+        return PyText.scalarsEqual(before.mountOnName, after.mountOnName)
+            && PyText.scalarsEqual(before.mountFromName, after.mountFromName)
     }
 
     /// 最大 130 回試し、試行の間に 1 秒待つ（待ちは最大 129 回）。取れなければ nil（この回を見送る）
