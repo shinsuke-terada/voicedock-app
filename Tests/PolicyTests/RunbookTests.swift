@@ -338,7 +338,11 @@ struct RunbookTests {
     func theVerdictTableMatchesTheSpec() throws {
         let spec = try Self.specIDs()
         #expect(!spec.isEmpty)
-        #expect(try Self.runbook().rows().map(\.id) == spec)
+        // 取り下げた E2E-15・18 は PLAN 付録 B.3 で `~~` で打ち消してあり（F-85）、SPEC の生きた ID に入らない。
+        // docs/E2E.md は番号を詰めないので「取り下げ」の行を残す。生きた行だけを SPEC と 1 対 1・同順で比べる。
+        let rows = try Self.runbook().rows()
+        #expect(rows.filter { $0.title != "取り下げ" }.map(\.id) == spec)
+        #expect(rows.filter { $0.title == "取り下げ" }.map(\.id) == ["E2E-15", "E2E-18"])
     }
 
     @Test("判定表の「削除」の列が SPEC と一致", arguments: try specDeletion().keys.sorted())
