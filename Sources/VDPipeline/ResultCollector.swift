@@ -155,17 +155,17 @@ struct ResultCollector {
 
     /// snapshot が新鮮な tick だけ呼ぶ（呼び手が確かめる）。戻り値は新しい reaperScanGeneration（起動しなければ引数のまま）
     func runReaperIfNeeded(reaperScanGeneration: UInt64) async -> UInt64 {
-        // 確かめる順は 要求 → writable → readiness（安いものから。無駄に --version の子プロセスを起動しない）
-        guard DeleteQueue.hasPendingRequests(layout: deps.layout) else { return reaperScanGeneration }
-        guard let snapshot = await deps.ingest.latestSnapshot(),
-            snapshot.devices.keys.contains(where: {
-                DeviceWritability.observe(deviceID: $0, snapshot: snapshot) == .writable
-            })
+        // 確かめる順は 要求 → writable → readiness（安いものから。無駄に --version の子プロセスを起動しない）。
+        // 見るのは要求の宛先のデバイス（F-79。別のデバイスが書き込み可能なだけでは、reaper はその要求を残して終わる）
+        let requested = DeleteQueue.requestedDeviceIDs(layout: deps.layout)
+        guard !requested.isEmpty, let snapshot = await deps.ingest.latestSnapshot(),
+            Self.anyWritable(requested, in: snapshot)
         else { return reaperScanGeneration }
         // 起動の直前はキャッシュを使わない（キャッシュの鍵に ctime が無い。§8.9.2・§8.9.6）
         guard await deps.locks.readiness(config: deps.config, useCache: false) == .configured else {
             return reaperScanGeneration
         }
+        let before = DeleteQueue.listing(layout: deps.layout)
         switch await deps.reaper.run() {
         case .notLaunched(let reason):
             deps.log.warning(.reaperFailed, [(.reason, .string(reason))])
@@ -174,7 +174,11 @@ struct ResultCollector {
             logRun(result)
         }
         let next: UInt64
-        if let g = await deps.ingest.scanNow() {
+        if DeleteQueue.listing(layout: deps.layout) == before {
+            // 何も処理されなかった（要求を残した・busy）→ 走査しない。走査の公開は Worker をすぐに起こし、
+            // 起動 → 走査 → tick が期限まで間を置かずに続く（F-79）。DELETED は次に完了する走査まで残す（見送りと同じ）
+            next = ((await deps.ingest.latestSnapshot())?.generation ?? 0) + 1
+        } else if let g = await deps.ingest.scanNow() {
             // 呼び出しの後に始まり完了した走査
             next = g
         } else {
@@ -183,6 +187,14 @@ struct ResultCollector {
         }
         await collectDeleteResults(reaperScanGeneration: next)
         return next
+    }
+
+    /// 要求の device_id のどれかが snapshot で `.writable` か（F-79。PLAN §8.9.6）。device_id はスカラー単位で照合する
+    static func anyWritable(_ deviceIDs: [String], in snapshot: DeviceSnapshot) -> Bool {
+        snapshot.devices.keys.contains { key in
+            deviceIDs.contains { DeletionPolicy.sameKey($0, key) }
+                && DeviceWritability.observe(deviceID: key, snapshot: snapshot) == .writable
+        }
     }
 
     /// reaper_run exit=<n> は起動したら常に出す（PLAN 付録 A.4）。0 以外は reaper_failed（4 は busy）

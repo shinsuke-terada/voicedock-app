@@ -15,6 +15,12 @@ struct QueuedResult: Sendable {
     let result: DeleteResult?
 }
 
+/// queue/delete と queue/result の名前の並び（F-79。どちらも names(in:) の順）。
+struct QueueListing: Equatable, Sendable {
+    let requests: [String]
+    let results: [String]
+}
+
 /// queue/delete と queue/result の読み書き。取り下げ・捨てるの失敗は記録しない（残ったものは DEL-08 と冪等な回収で決着する）。
 enum DeleteQueue {
     /// `.` で始まらない `*.json` の名前を UTF-8 のバイト順に。ディレクトリが読めなければ []
@@ -53,6 +59,23 @@ enum DeleteQueue {
     /// names(in: queueDelete) が空でない
     static func hasPendingRequests(layout: HomeLayout) -> Bool {
         !names(in: layout.queueDelete).isEmpty
+    }
+
+    /// 読める要求（ContractJSON で読めたもの）の device_id を names(in: queueDelete) の順に（重複を除かない）。
+    /// 読めない要求は数えない。無ければ []（F-79。PLAN §8.9.6。reaper を起動するかの判定に使う）
+    static func requestedDeviceIDs(layout: HomeLayout) -> [String] {
+        names(in: layout.queueDelete).compactMap { name in
+            let url = layout.queueDelete.appendingPathComponent(name, isDirectory: false)
+            guard let data = readSmallFile(url), case .success(let r) = ContractJSON.decodeRequest(data) else {
+                return nil
+            }
+            return r.deviceID
+        }
+    }
+
+    /// queue/delete と queue/result の名前の並び（F-79。PLAN §8.9.6。reaper の実行の前後で比べ、何か処理されたかを見る）
+    static func listing(layout: HomeLayout) -> QueueListing {
+        QueueListing(requests: names(in: layout.queueDelete), results: names(in: layout.queueResult))
     }
 
     /// names(in: queueResult) の順

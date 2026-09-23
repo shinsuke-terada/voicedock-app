@@ -24,9 +24,11 @@ struct RunReaperTests {
         let id: String
     }
 
-    /// 要求を 1 件書いた状態（要求は scene.locks の deps で書く）。起動は runner に記録する
+    /// 要求を 1 件書いた状態（要求は scene.locks の deps で書く）。起動は runner に記録する。
+    /// consumes が真なら、reaper の起動のときに要求を消して DELETED の結果を書く（reaper が処理した姿。F-79）
     static func fixture(
-        _ reaperResults: [ProcessResult] = [ScriptedProcessRunner.exited(0)], scene: DeletionScene? = nil
+        _ reaperResults: [ProcessResult] = [ScriptedProcessRunner.exited(0)], scene: DeletionScene? = nil,
+        consumes: Bool = false
     ) async throws -> Fixture {
         let scene = try scene ?? DeletionScene()
         let ingest = ScriptedIngest(snapshot: scene.snapshot())
@@ -34,7 +36,10 @@ struct RunReaperTests {
         #expect(await DeletionRequester(deps: requestDeps).requestDeletions(sessionKey: DeletionScene.sessionKey) == 1)
         let id = try #require(try scene.store.recording(pk)?.deleteRequestID)
         let runner = ScriptedProcessRunner(results: [ScriptedProcessRunner.version()] + reaperResults)
-        let locks = LockEvaluator(layout: scene.layout, verifier: scene.verifier, runner: runner, log: scene.log)
+        let acting: (any ProcessRunning)? =
+            consumes ? ActingReaperRunner(inner: runner, act: { try ReaperIdleRunTests.consume(scene, id) }) : nil
+        let locks = LockEvaluator(
+            layout: scene.layout, verifier: scene.verifier, runner: acting ?? runner, log: scene.log)
         return Fixture(
             scene: scene, ingest: ingest, runner: runner, locks: locks,
             deps: scene.deletionDependencies(ingest: ingest, locks: locks), id: id)
@@ -52,19 +57,14 @@ struct RunReaperTests {
         scene.logLines.contains { $0.hasSuffix(" " + body) }
     }
 
-    static func deleted(_ f: Fixture) throws {
-        try f.scene.writeResult(partkey: pk, requestID: f.id, status: .deleted, detail: DeletionScene.relpath)
-    }
-
     static func part(_ scene: DeletionScene) throws -> RecordingRow {
         try #require(try scene.store.recording(pk))
     }
 
     @Test("要求と書き込み可能なデバイスがあれば起動し、走査の後に回収する")
     func launchesAndCollectsAfterTheScan() async throws {
-        let f = try await Self.fixture()
+        let f = try await Self.fixture(consumes: true)
         await f.ingest.script([.publish(f.scene.snapshot(generation: 2, relpaths: []))])
-        try Self.deleted(f)
         #expect(await Self.run(f) == 2)
         let recorded = await f.runner.recorded
         #expect(recorded.count == 2)
@@ -135,7 +135,8 @@ struct RunReaperTests {
         if code == 4 {
             #expect(!Self.logged(f.scene, "reaper_failed reason=exit_4"))
         }
-        #expect(await f.ingest.scanNowCalls == 1)
+        // 偽物の reaper は何も処理しないので走査しない（F-79）
+        #expect(await f.ingest.scanNowCalls == 0)
     }
 
     @Test("タイムアウトは reason=timeout")
@@ -159,11 +160,11 @@ struct RunReaperTests {
 
     @Test("走査が見送られたら「今の generation + 1」を待つ")
     func skippedScanWaitsForTheNextScan() async throws {
-        let f = try await Self.fixture()
+        let f = try await Self.fixture(consumes: true)
         await f.ingest.setSnapshot(f.scene.snapshot(generation: 5, relpaths: []))
         await f.ingest.script([.skip])
-        try Self.deleted(f)
         #expect(await Self.run(f) == 6)
+        #expect(await f.ingest.scanNowCalls == 1)
         #expect(f.scene.results().count == 1)
         #expect(try Self.part(f.scene).status == .sourceDeleting)
     }

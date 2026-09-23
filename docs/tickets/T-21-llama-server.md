@@ -1,5 +1,7 @@
 # T-21 VDLLM: llama-server の管理・ループバック HTTP
 
+> （F-79・issue #118。2026-09-23。マージ後の追記）chat/completions と `/health` の要求は、`willPerformHTTPRedirection` で nil を返す delegate（`RedirectRefusal`。`LoopbackHTTP.swift` の internal）を `data(for:delegate:)` に渡し、HTTP のリダイレクトに従わない（既定のままだと 3xx の `Location` へ本文と Bearer キーを付けて送り直す）。chat は 2xx 以外を `LLM_UNAVAILABLE`「HTTP <code>: <本文の先頭 200 スカラー>」にする（`LoopbackChatTransport.succeeded`。これまでは 400 以上と 0 だけ）。`LlamaServerSupervisor` は `/health` の 200 の後に子がまだ生きていることを確かめ、死んでいれば既存の理由語（`exited(<n>)` など）で次の試行へ進む（ポートを取った別のプロセスの 200 を起動済みと見ない）。公開 API は変えない。テストは `Tests/VDLLMTests/LoopbackRedirectTests.swift`（127.0.0.1 の本物の HTTP サーバで確かめる）と `Tests/VDLLMTests/LlamaServerHealthResponderTests.swift`。下の本文の §4.1 の手順 3・4（`data(for:)`、`status >= 400` か `0`）と `LoopbackHealth.check`、§4.3 の `/health` の待ち（200 で起動済み）は記録として残す。破壊による証明は §6 の末尾の F-79 の行。
+
 > （F-76・issue #116。2026-09-23）`stop()` は起動の途中（/health が 200 になる前）なら中止の印を立てて起動中のプロセスを直ちに止め、起動を次の試行・次の待ちに進ませずに `server_start_failed: cancelled` で終わらせる（読み込みの完了を待たない。アプリの終了が 15 分止まらないように）。停止の途中に来た `ensureRunning` は停止の終わりを待ってから起動する。テストは `Tests/VDLLMTests/LlamaServerSupervisorStopTests.swift`。下の本文の「起動の途中なら、その終わりを待ってから止める」は記録として残す。
 
 | 項目 | 値 |
@@ -37,6 +39,7 @@
 
 テスト（`Tests/VDLLMTests/`）:
 - `LoopbackHTTPTests.swift`、`LlamaArgsTests.swift`、`LlamaServerSupervisorTests.swift`
+- （F-79 で追加）`LoopbackRedirectTests.swift`（リダイレクトに従わない。127.0.0.1 の本物の HTTP サーバとループバック以外を失敗させる URLProtocol はこのファイルの private）、`LlamaServerHealthResponderTests.swift`（/health の 200 の後の子の生存）
 
 `Tests/PolicyTests/ConfigEffectPending.swift`（変更。§5.4）: 自分のキーの行を消す。
 
@@ -385,6 +388,10 @@ pid の生死を確かめるため、本物の `ProcessRunner` に委ねて spaw
 | `content(of:)` を `JSONSerialization` に戻す | `contentKeepsLeadingBOM` |
 | 2 回目の `ensureRunning` で生死を確かめずに起動し直す | `reusesARunningServer` |
 | `ensureRunning` の `stopCurrent()` を `starting` の Task の外で `await` し、その後の `starting` の再確認を消す（v1 の手順） | `concurrentCallsKeepOnlyOneAlive` |
+| （F-79）chat/completions の `data(for:delegate:)` に `RedirectRefusal` を渡さない（不具合の再現） | `redirectIsNotFollowed`（3 つとも）、`emptyRedirectBodyIsUnavailable` |
+| （F-79）`LoopbackHealth.check` の `data(for:delegate:)` に `RedirectRefusal` を渡さない | `healthRedirectIsNotFollowed` |
+| （F-79）`succeeded` を「400 未満で 0 でない」に戻す（3xx を content にする） | `redirectStatusIsUnavailable`（5 つとも）、`onlyTwoHundredsSucceed`、`redirectIsNotFollowed`、`emptyRedirectBodyIsUnavailable` |
+| （F-79）`/health` の 200 の後の `process.isRunning` の確認を消す（不具合の再現） | `deadChildIsNotStarted`、`deadChildrenFailWithExistingReason` |
 
 実施の結果（2026-09-21。コミット後の清潔な状態で 1 項目ずつ壊し、`git checkout --` で戻した）: どの項目でも表のテストが落ちた。表に無いテストも落ちたのは次のとおり。
 - `-c` にする: `startsAndWaitsForHealth`・`ceContextSize` も落ちる
