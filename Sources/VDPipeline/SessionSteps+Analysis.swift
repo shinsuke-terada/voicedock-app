@@ -68,6 +68,9 @@ extension SessionSteps {
         let handle: LlamaServerHandle
         switch await ctx.deps.llama.ensureRunning(model: target.model, modelID: target.modelID, config: cfg.llm) {
         case .failure(let f):
+            // アプリの終了（停止要求 → 子の停止 → llama.stop() の順）の後の失敗（server_start_failed: cancelled など）は
+            // 記録しない。ANALYZING のまま返し、次回起動時の復旧が ANALYZING→MERGED に戻す（PLAN §8.15。F-82）
+            if ctx.stop.isSet { return false }
             try failSession(key, from: .analyzing, code: f.code, message: f.message, event: .llmFailed)
             return false
         case .success(let h):
@@ -81,7 +84,8 @@ extension SessionSteps {
         let elapsed = DurationSeconds.of(clock.uptime() - t0)
         switch outcome {
         case .failure(let f):
-            // 13.
+            // 13. 停止要求の後の失敗（止められたサーバとの通信の失敗など）は記録しない（上と同じ。F-82）
+            if ctx.stop.isSet { return false }
             try failSession(
                 key, from: .analyzing, code: f.code, message: f.message,
                 event: f.code == .sessionMergeFailed ? .sessionMergeFailed : .llmFailed)
