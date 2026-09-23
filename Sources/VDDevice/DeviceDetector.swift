@@ -58,6 +58,10 @@ public struct DeviceDetector: Sendable {
 
     /// 1 つ目に当たった理由で対象外にする。判定はファイルを開かない（列挙・lstat・statfs だけ）。access(2) を使わない（DEV-03）
     public func detect() -> DetectionResult {
+        // 判定の最初に、待たずに取れるマウントの一覧（getmntinfo(MNT_NOWAIT)）からネットワークの FS のマウント点を集める
+        // （F-81）。応答しない共有では lstat・statfs・realpath・ボリューム名の取得が止まり、走査が reaper.lock を持ったまま
+        // 止まるので、そのパスにはどれも呼ばない。一覧が取れなければ（空）従来どおり判定する
+        let remote = Set(inspector.allMounts().filter { !$0.isLocal }.map(\.mountOnName))
         let names: [String]
         switch reader.listEntries(of: volumesRoot) {
         case .failure(let err):
@@ -71,7 +75,7 @@ public struct DeviceDetector: Sendable {
             if name.hasPrefix(".") { continue }
             let path = URL(fileURLWithPath: volumesRoot, isDirectory: true)
                 .appendingPathComponent(name, isDirectory: false).path(percentEncoded: false)
-            switch evaluate(name: name, path: path) {
+            switch evaluate(name: name, path: path, remote: remote) {
             case .some(let skip):
                 skipped.append(skip)
             case .none:
@@ -88,14 +92,22 @@ public struct DeviceDetector: Sendable {
         volumeName.map { PyText.scalarsEqual($0, name) } ?? false
     }
 
-    /// 規則 1〜9 をこの順に。通れば nil
-    private func evaluate(name: String, path: String) -> SkippedVolume? {
-        // 規則 1: include が空でなければ、どれかの glob に一致すること（DEV-05: 名前だけで判定）
+    /// 規則 1〜9 をこの順に。通れば nil。remote はネットワークの FS のマウント点（detect が getmntinfo から集める）
+    private func evaluate(name: String, path: String, remote: Set<String>) -> SkippedVolume? {
+        // 規則 1: include が空でなければ、どれかの glob に一致すること（DEV-05: 名前だけで判定）。
+        // fnmatch は C 文字列（UTF-8 のバイト列）で比べるので、正準等価でも綴りの違う名前は一致しない（F-81）
         if !config.includeVolumes.isEmpty, !config.includeVolumes.contains(where: { fnmatch($0, name, 0) == 0 }) {
             return SkippedVolume(name: name, reason: .notIncluded, listingError: nil)
         }
         // 規則 2: exclude の glob（正規表現ではない。DEV-07）
         if config.excludeVolumes.contains(where: { fnmatch($0, name, 0) == 0 }) {
+            return SkippedVolume(name: name, reason: .excluded, listingError: nil)
+        }
+        // 規則 2 の続き（F-81）: ネットワークの FS（MNT_LOCAL でない）のマウント点も excluded（新しい理由語を足さない）。
+        // 規則 3 以降の lstat・statfs・realpath・ボリューム名は、応答しない共有で止まるので呼ばない。
+        // 除外の側なので Set<String> の照合（Swift の == と同じ正準等価）で広めに当てる（綴りの違いで取りこぼして、
+        // 止まる呼び出しに進まない）
+        if remote.contains(path) {
             return SkippedVolume(name: name, reason: .excluded, listingError: nil)
         }
         // 規則 3: エントリ自体が symlink（DEV-08）

@@ -28,6 +28,12 @@ public actor IngestService {
     var waiters: [(minStart: UInt64, continuation: CheckedContinuation<UInt64?, Never>)] = []
     var ingestState: IngestState = .idle
     var previousUnavailable: [String: String] = [:]
+    /// 再マウントで unmount は成功し mount が失敗して、マウント点でなくなったデバイスの名前（F-81）。
+    /// アンマウントされたデバイスは /Volumes に現れないので、次の走査の判定では見えず「未接続」に見える。
+    /// 名前が判定に戻る（挿し直し・手でマウント。not_a_mount_point のままは戻ったとみなさない）まで、毎回の snapshot の
+    /// unavailable に mount_failed で載せ続ける。メモリだけで持つ（再起動で消える。抜いた後も挿し直すまで残る）。
+    /// 鍵は名前のスカラー列（00-api-map §0。Set<String> の正準等価で別の名前とまとめない）、値は名前
+    var unmountedByRemount: [[Unicode.Scalar]: String] = [:]
     var updateContinuations: [UUID: AsyncStream<Void>.Continuation] = [:]
     var backgroundTasks: [Task<Void, Never>] = []
     var started = false
@@ -43,6 +49,10 @@ public actor IngestService {
         let depth = config.device.maxScanDepth
         let listing =
             await (try? BlockingIO.run { reader.scan(volumeRoot: root, maxDepth: depth) }) ?? .incomplete
+        // 列挙の直後の statfs（F-81）。unmount と重なると、マウント点だった空のディレクトリや親の FS を「完全な一覧」と
+        // 読みうるので、走査がこれを列挙の前の値と照らしてから snapshot に載せる。コピーの後ではなくここで取るのは、
+        // 列挙からの間を短くして、抜いて挿し直した（同じ node・同じマウント点に戻った）間の一覧を見逃さないため
+        let mountAfterListing = deps.inspector.mountInfo(path: root)
         for rel in listing.unparsable {
             deps.log.debug(.unparsableFilename, [(.relpath, .string(rel))])
         }
@@ -51,7 +61,7 @@ public actor IngestService {
             selection = try selectCandidates(deviceID: deviceID, origRelpaths: listing.origCandidates)
         } catch {
             deps.log.warning(.copyFailed, [(.reason, .string(CopyError.writeError(EIO).reason))])
-            return DeviceIngestResult(listing: listing, copied: 0)
+            return DeviceIngestResult(listing: listing, copied: 0, mountAfterListing: mountAfterListing)
         }
         let stable = await StabilityChecker(config: config.device, clock: deps.clock, sleeper: deps.sleeper)
             .stableCandidates(selection.candidates, stat: { rel in reader.stat(volumeRoot: root, relpath: rel) })
@@ -70,7 +80,7 @@ public actor IngestService {
                 recopyRow: selection.recopyRows[rel], config: config)
             if case .copied = outcome { copied += 1 }
         }
-        return DeviceIngestResult(listing: listing, copied: copied)
+        return DeviceIngestResult(listing: listing, copied: copied, mountAfterListing: mountAfterListing)
     }
 
     /// 取り込みの候補（PLAN §8.1 安定性判定の 1）: DB に行が無いか needs_recopy の行があり、imported_keys に無い _orig
@@ -208,6 +218,8 @@ public actor IngestService {
 struct DeviceIngestResult: Equatable, Sendable {
     let listing: ScanListing
     let copied: Int
+    /// 列挙の直後の statfs（取れなければ nil）。走査が列挙の前の値と照らす（F-81）
+    let mountAfterListing: MountInfo?
 }
 
 /// key = relpath
@@ -358,12 +370,14 @@ extension IngestService {
                 name: skip.name, reason: skip.reason, errno: skip.listingError?.code, into: &unavailable,
                 &notListableErrno)
         }
+        carryUnmounted(detection, into: &unavailable)
         var observations: [String: DeviceObservation] = [:]
         var copiedTotal = 0
         for device in detection.devices {
             if stopRequested { break }
             var mountPath = device.mountPath
             var remounted = false
+            var remountFailure: String? = nil
             if config.device.mode == .ro {
                 switch await deps.remounter.remountReadOnly(path: mountPath, node: device.node ?? "") {
                 case .alreadyReadOnly:
@@ -383,6 +397,7 @@ extension IngestService {
                     }
                 case .failed(let reason):
                     // 取り込みは続ける（記録の保護）
+                    remountFailure = reason
                     deps.log.warning(.remountFailed, [(.name, .string(device.deviceID)), (.reason, .string(reason))])
                 }
             }
@@ -397,6 +412,12 @@ extension IngestService {
                 deps.log.debug(
                     .volumeSkipped,
                     [(.name, .string(device.deviceID)), (.reason, .string(DetectionReason.notAMountPoint.rawValue))])
+                // unmount は成功し mount が失敗して、アンマウントされたまま残った（F-81）。「未接続」に見せないよう
+                // unavailable に載せ、次の走査からも名前が判定に戻るまで載せ続ける（unmountedByRemount）
+                if remountFailure == RemountOutcome.mountFailedReason {
+                    unmountedByRemount[Array(device.deviceID.unicodeScalars)] = device.deviceID
+                    unavailable[device.deviceID] = RemountOutcome.mountFailedReason
+                }
                 continue
             }
             // 観測値。試行の成否から推論しない（DEL-31）
@@ -407,8 +428,9 @@ extension IngestService {
             }
             let result = await ingestDevice(deviceID: device.deviceID, mountPath: mountPath, config: config)
             copiedTotal += result.copied
-            // 一覧を信用しない（「消えた」と誤読させない）
-            if !result.listing.complete {
+            // 一覧を信用しない（「消えた」と誤読させない）。列挙の直後の statfs が列挙の前（info）と違う、つまり列挙が
+            // unmount と重なったときも同じ（空の一覧を complete のまま公開すると F-64 / F-78 が「無い」と判断する。F-81）
+            if !result.listing.complete || !Self.sameMount(info, result.mountAfterListing) {
                 recordSkip(
                     name: device.deviceID, reason: .notListable, errno: nil, into: &unavailable, &notListableErrno)
                 continue
@@ -445,6 +467,34 @@ extension IngestService {
         } else {
             deps.log.debug(.volumeSkipped, fields)
         }
+    }
+
+    /// 前の走査の再マウントでアンマウントされたままのデバイス（unmountedByRemount）のうち、名前が判定に戻ったもの
+    /// （devices か、not_a_mount_point 以外の理由の skipped）を外し、残りを unavailable に mount_failed で載せる（F-81）。
+    /// not_a_mount_point は、アンマウントの後にマウント点のディレクトリが残っただけかもしれないので戻ったとみなさない。
+    /// 名前はスカラー列で照らす（00-api-map §0）
+    func carryUnmounted(_ detection: DetectionResult, into unavailable: inout [String: String]) {
+        if unmountedByRemount.isEmpty { return }
+        let back =
+            detection.devices.map(\.deviceID)
+            + detection.skipped.filter { $0.reason != .notAMountPoint }.map(\.name)
+        for name in back {
+            unmountedByRemount[Array(name.unicodeScalars)] = nil
+        }
+        for name in unmountedByRemount.values {
+            unavailable[name] = RemountOutcome.mountFailedReason
+        }
+    }
+
+    /// 列挙の前（before）と列挙の直後（after）の statfs が同じマウントか（F-81）。f_mntonname と f_mntfromname を
+    /// スカラー列で比べる（00-api-map §0）。列挙の前に statfs が取れなかった（規則 4 だけで通した）ときは、列挙の後も
+    /// 取れないときだけ同じとみなす（観測値を nil のまま載せる従来の扱い。DEL-32。本番の MountInspector は規則 4 も
+    /// statfs で見るので、statfs が取れなければ列挙まで来ない）
+    static func sameMount(_ before: MountInfo?, _ after: MountInfo?) -> Bool {
+        guard let before else { return after == nil }
+        guard let after else { return false }
+        return PyText.scalarsEqual(before.mountOnName, after.mountOnName)
+            && PyText.scalarsEqual(before.mountFromName, after.mountFromName)
     }
 
     /// 最大 130 回試し、試行の間に 1 秒待つ（待ちは最大 129 回）。取れなければ nil（この回を見送る）

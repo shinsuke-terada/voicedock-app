@@ -34,6 +34,8 @@ struct IngestServiceDiskImageTests {
             let log = AppLog(sink: CapturingLogSink(), level: .debug, unsafeContent: false, zone: zone, clock: clock)
             var config = AppConfig.defaults(timeZone: "Asia/Tokyo")
             config.device.mountMode = mountMode
+            // イメージの名前は VDT で始まる（DJIMIC3 を使わない）。既定の include ["DJIMIC3"]（F-81）では検出されないので空にする
+            config.device.includeVolumes = []
             let provided = config
             let inspector = SystemMountInspector()
             let deps = IngestDependencies(

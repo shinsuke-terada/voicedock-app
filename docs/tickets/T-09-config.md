@@ -1,5 +1,9 @@
 # T-09 VDCore: AppConfig・ConfigLoader（CV-01〜59）・ConfigMigrator・既定値・ModelCatalog
 
+> （F-81・issue #119。2026-09-23。利用者の決定）`device.includeVolumes` の既定を `[]` から `["DJIMIC3"]` にした（PLAN §6.2。下の `defaults` の逐語も直した）。
+> 設定キーは足さない。既定値は config.json が無いときだけ書くので、既存の config.json の値（`[]` を含む）は変わらない。
+> テストは `AppConfigTests` の §6.2 の JSON（`"includeVolumes": ["DJIMIC3"]`）と `ConfigStoreIncludeDefaultTests`（VDPipeline）。
+
 | 項目 | 値 |
 |---|---|
 | Phase | 2（記録の土台） |
@@ -152,7 +156,7 @@ public static func defaults(timeZone: String) -> AppConfig {
         schemaVersion: 1,
         timeZone: timeZone,
         vault: VaultConfig(path: nil, marker: ".obsidian"),
-        device: DeviceConfig(includeVolumes: [], excludeVolumes: ["Macintosh HD", "com.apple.TimeMachine.*", ".*"], mountMode: "ro",
+        device: DeviceConfig(includeVolumes: ["DJIMIC3"], excludeVolumes: ["Macintosh HD", "com.apple.TimeMachine.*", ".*"], mountMode: "ro",
                              stabilityFastPathSeconds: 60, stabilityIntervalSeconds: 3, stabilityChecks: 2,
                              maxScanDepth: 3, scanIntervalSeconds: 300, snapshotMaxAgeSeconds: 900),
         audio: AudioConfig(timeoutFactor: 0.5, minTimeoutSeconds: 180, durationToleranceSeconds: 1.0,

@@ -12,6 +12,10 @@ public enum RemountOutcome: Equatable, Sendable {
     /// no_device_node（statfs が取れない・node が /dev/ で始まらない・今の statfs の node やマウント点と合わない。F-73）/
     /// unmount_failed / mount_failed
     case failed(reason: String)
+
+    /// unmount は成功し、mount readOnly が失敗した（か、成功と言いながらマウント一覧に node が無い）ときの理由語。
+    /// デバイスはアンマウントされたまま残りうるので、走査は snapshot の unavailable に載せる（F-81）
+    static let mountFailedReason = "mount_failed"
 }
 
 public protocol Remounter: Sendable {
@@ -54,10 +58,12 @@ public struct DiskutilRemounter: Remounter {
         let mount = await runner.run(
             ProcessSpec(executable: Self.diskutil, arguments: arguments, environment: ProcessEnvironment.cLocale),
             timeout: Self.timeout)
-        guard mount.termination == .exited(0) else { return .failed(reason: "mount_failed") }
-        guard let newPath = inspector.allMounts().first(where: { $0.mountFromName == node })?.mountOnName else {
-            return .failed(reason: "mount_failed")
-        }
+        guard mount.termination == .exited(0) else { return .failed(reason: RemountOutcome.mountFailedReason) }
+        // node はスカラー列で探す（00-api-map §0。正準等価で別の項目に当てない。F-81）
+        guard
+            let newPath = inspector.allMounts().first(where: { PyText.scalarsEqual($0.mountFromName, node) })?
+                .mountOnName
+        else { return .failed(reason: RemountOutcome.mountFailedReason) }
         return .remounted(newPath: newPath)
     }
 }

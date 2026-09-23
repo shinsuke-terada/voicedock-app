@@ -1,5 +1,11 @@
 # T-13 VDDevice: デバイス判定・マウント情報・共存ガード
 
+> （F-81・issue #119。2026-09-23）`detect()` は最初に `inspector.allMounts()`（`getmntinfo(MNT_NOWAIT)`。待たない）から `MNT_LOCAL` の立っていないマウント点を集め、
+> 規則 2 の続きとしてそのパスを `excluded` で外す（規則 3 以降の lstat・statfs・realpath・ボリューム名は応答しないネットワーク共有で止まるので呼ばない。新しい理由語は足さない）。
+> `MountInfo` に `isLocal: Bool`（`f_flags & MNT_LOCAL`。公開の init は既定値 true の引数）を足した。`DeviceID.isValid` の「`.` で始まる」は先頭のスカラーで見る。
+> 既定の `includeVolumes` は `["DJIMIC3"]`（T-09 の注記）になったので、`DeviceDetectorTests` の舞台は規則 1 を素通りさせるため `includeVolumes = []` にした（下の表の「既定の `[]`」は記録として残す）。
+> テストは `DeviceDetectorNetworkTests`（ネットワークの FS・既定の include・include のバイト列の照合）と `KeyScalarTests`（VDContract）。
+
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`CoexistenceGuard` と `CoexistenceGuardTests` は消した。以下の本文の共存ガードの記述は記録として残す。
 
 | 項目 | 値 |

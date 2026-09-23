@@ -15,7 +15,7 @@ struct AppConfigTests {
           "timeZone": "Asia/Tokyo",
           "vault": { "path": null, "marker": ".obsidian" },
           "device": {
-            "includeVolumes": [],
+            "includeVolumes": ["DJIMIC3"],
             "excludeVolumes": ["Macintosh HD", "com.apple.TimeMachine.*", ".*"],
             "mountMode": "ro",
             "stabilityFastPathSeconds": 60, "stabilityIntervalSeconds": 3, "stabilityChecks": 2,
