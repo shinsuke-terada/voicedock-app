@@ -11,7 +11,7 @@
 | 取り下げ | 1 本（T-33。PLAN F-60） |
 | 残り | 2 本（T-43 README、T-44 v1.0 リリース） |
 
-`develop` の先頭は `44cb84c`（PR #136 のマージ）。マージ済みの PR は 75 本。
+`develop` の先頭は `61ef1e2`（PR #137 のマージ）。マージ済みの PR は 76 本。開いている PR は無い。
 
 2026-09-23 に**全体コードレビュー**を行い、見つかった不具合を F-71〜F-78 の 8 本の PR と、残り（issue #118・#119）を F-79〜F-84 の 6 本の PR で直した（§4）。レビューの issue（#112〜#120・#124）はすべて閉じた。
 
@@ -50,18 +50,34 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 - **Daily ノート**: `obsidian_saved path="Daily/Voice/Wiki/20260922/2026-09-22 Voice.md" bytes=1775`。Raw は `Daily/Voice/Raw/20260922/2026-09-22 raw.md`
 - **要約の契機**: 2026-09-23 00:00 の Daily ノートは、当時の 0:00 の自動要約で走った。その後 F-66 で 0:00 の自動要約を**廃止**し、パネルの「今すぐ要約」に置き換えた（PR #102・#107）。「今すぐ要約」ボタンは、レビュー用のビルド（worktree の dist）で利用者が押し、「新しく要約する録音はありません」が出て 4 秒で消えることを確かめた
 
-> **注意**: 本体のチェックアウトの `dist/VoiceDock.app` は古いことがある（実機の確認は、その時々の worktree で組んだ `.app` で行った）。実機に触る前に、必ず develop で `make vendor && make app` を回し直してから使う。
-> F-71〜F-84 はまだ実機の `.app` で試していない（いま `dist/VoiceDock.app` は 2026-09-23 02:30 の古いビルド）。F-77 より前のビルドで NORMALIZED 以降になった Part は再検査されない。
+> **注意**: 本体のチェックアウトの `dist/VoiceDock.app` は古いことがある。実機に触る前に、必ず develop で `make vendor && make app` を回し直してから使う。
+> `dist/VoiceDock.app` は 2026-09-23 20:37 に develop（`44cb84c`。F-71〜F-84 をすべて含む）で組み直した。F-77 より前のビルドで NORMALIZED 以降になった Part は再検査されない。
 
-### F-71〜F-84 の後に【利用者が行う】確認（未実施）
+### F-71〜F-84 の後の実機の確認（2026-09-23 夜に利用者と行った。組み直した `.app`）
 
-- モデルの読み込み中に終了すると 10 秒以内に終わる（F-76）
-- 終了の後に `pgrep -fl 'whisper-cli|llama-server'` が空（F-76）
-- 2 つ目の起動が何も表示せずに終わる（F-76。単一起動のロック `<HOME>/state/app.lock`）
-- 終了の後始末の最中（取り込みか文字起こしの途中で「終了」を押した直後）にログアウトしても、ログアウトが中断されず子も残らない（F-76）
+**確認できたもの**
+
+| 項目 | 結果 |
+|---|---|
+| 終了の後に `whisper-cli` / `llama-server` が残らない（F-76） | ✅ 終了は 1 秒未満、`pgrep` は空 |
+| 2 つ目の起動が何も表示せずに終わる（F-76） | ✅ `open -n` の後、`service_stopping reason=already_running`、アイコンは 1 つ |
+| `logging.level` を変えて「設定を読み直す」→「再起動で反映される設定あり」（F-84） | ✅ 通知・ログのレベルの行・主画面の印の 3 つが出て、元に戻すと 3 つとも消えた |
+| `state/app.lock` を開けないときの NSAlert（F-84） | ✅ `chmod 000` で起動 → NSAlert → 閉じるとアプリは終わる。`chmod 644` で戻して通常起動 |
+| 名前が DJIMIC3 でない DJI 形式のボリューム（F-81） | ✅ `BACKUP`（読み取り専用の dmg）で `volume_skipped reason=not_included`、取り込まず「はじめに」の⑤の案内。detach で案内も消えた |
+| 取り込み中のツールチップ（F-84） | ✅ 表示された |
+| 取り込み中に「無効にする」→「読み取り専用へ戻しています…」（F-84） | ✅ 約 1 秒残り、その後「有効」に戻らなかった。`deletion_disabled`・`config.json` と `reaper.conf` は `false`・`mountMode` は `ro` |
+| 取り込みの途中でデバイスを抜いた後・「無効にする」を押した後の削除（観察） | ✅ 抜いた後は文字起こしと Raw の保存が最後まで進み、`delete_requested` は出ず `RAW_SAVED` のまま。挿し直した直後に「無効にする」を押すと、3 本とも `source_deleted_at` が空のまま残った（どの修正の効果かの切り分けはしていない） |
+
+**確かめられなかったもの**
+
+- **モデルの読み込み中に終了すると 10 秒以内に終わる（F-76）** — 使っているモデルが 2.5 GB で、疎通確認が 1〜3 秒で終わるため、読み込み中を狙えない。`LlamaServerSupervisor.stop()` が起動中のプロセスを待たずに止めるコードで確かめた（実機では未確認）。読み込みに時間がかかる大きなモデル（PLAN の想定は 18 GB 級）なら狙える
+- **終了の後始末の最中にログアウトしても中断されず、子も残らない（F-76）** — ログアウトを伴うので未実施。次に、ほかの作業をしていないときに行う
+- 「再試行」の後の状態の詳細の読み直し（F-84）— FAILED の Part が無く、変化が見えない。FAILED が出たときに確かめる
+- 「モデルの節を開く」の枠がファイル選択の後も残る（F-84）— 要対応の「モデルの節を開く」が出るのは、処理待ちがあるのにモデルが無い・LLM が未選択のとき。出たときに確かめる
+- 「更新する」（F-84）— 次に版を上げたとき（T-44）
 - 任意: P0-05 のついでに、32 bit float の設定の録音・電池切れや録音中の電源断で止まった録音がどういう WAV になるか（F-77。`docs/tickets/P0-poc.md` §7 の 5）
-- F-84 の UI（手順は PR #136 の本文）: 取り込み中のツールチップの書き変わり、無効化の待ちの「読み取り専用へ戻しています…」、「再試行」の後の状態の詳細の読み直し、`logging.level` を変えて読み直したときの「再起動で反映される設定あり」、ファイル選択の後も要対応の枠が残る、`state/app.lock` を開けないときの NSAlert
-- F-81: 名前が DJIMIC3 でない DJI 形式のボリューム（`NO NAME`・`DJIMIC3 1`・録音の写しのメモリ）を挿すと、取り込まずに「はじめに」の⑤の案内が出る
+
+> **この確認は `docs/E2E.md` の E2E-02・10・17 の実施にはならない**（利用者と確認した）。E2E.md は決まった記録（[C-1]〜[C-16]・`diff`・退避）と前提（E2E-10 は削除 OFF の 13 件が PASS 済み）を求める。今回のログは下見として使い、判定表は「未実施」のままにする。
 
 `make test-disk`（R3）は F-73 の PR の先端と、F-80 の PR の先端（F-79〜F-82 を含む）で、実機を抜いてから利用者が回し、どちらも全部緑だった（2026-09-23）。
 
@@ -76,9 +92,9 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 | LLM モデル | `<HOME>/models/llm/custom-3605803b982cb64a.gguf`（2.5 GB。ファイルから取り込み） |
 | 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
 | 退避先 | `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`） |
-| 削除 | **有効**（利用者が意図して有効化。`<HOME>/bin/reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`config.json` は `cleanup.deleteSourceAudio=true`・`deleteSkippedSource=true`） |
+| 削除 | **無効**（2026-09-23 夜の確認で「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`deleteSkippedSource=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`）。**有効に戻すときは削除の画面で赤いボタンを 3 秒長押し**（事前に `docs/E2E.md` §3.10 の退避と件数の照合） |
 | 取り込むデバイスの名前 | `config.json` の `device.includeVolumes` は `["DJIMIC3"]`（F-81 の既定に合わせて 2026-09-23 に利用者が手で直した。控えは `config.json.bak`） |
-| 実機 | いまは未接続（`ls /Volumes` は `Macintosh HD` のみ） |
+| 実機 | この記録を書いた時点で **`/Volumes/DJIMIC3` に接続中**（エージェントのシェルには `/Volumes/DJIMIC3` を読む権限が無く、中身は確かめていない）。DB では `TX00_MIC002_20260923_224805`・`TX00_MIC003_20260923_225400`・`TX00_MIC004_20260923_230356` が `RAW_SAVED` で `source_deleted_at` が空＝**アプリはこの 3 本を消していない**（削除は無効）。次のセッションを始める前に**必ず抜いてもらう** |
 
 ## 4. 2026-09-22〜23 に利用者が決めたこと・直したこと
 
@@ -136,7 +152,7 @@ PR がマージされても issue が開いたままなのは、**実機・実�
 
 ## 6. 次のセッションで最初にやること
 
-1. `git fetch origin && git switch develop && git pull`（先頭が `44cb84c` より進んでいないか確かめる）
+1. `git fetch origin && git switch develop && git pull`（先頭が `61ef1e2` より進んでいないか確かめる）
 2. `ls /Volumes` で**実機が挿さっていないこと**を確かめる。挿さっていたら、ディスクを触る作業の前に利用者に抜いてもらう
 3. `python3 docs/porting-notes/check-tickets.py` が 0 件、`make lint && make test` が緑であることを確かめる
 4. どちらへ進むかを利用者に聞く
