@@ -3,10 +3,12 @@ import Foundation
 import VDContract
 
 public enum ConfigValidator {
-    /// CV-13 で許すプレースホルダ。
-    static let allowedPlaceholders: Set<String> = ["yyyymmdd", "date", "time"]
-    /// CV-54 で許すログの水準（大小区別）。
-    static let allowedLevels: Set<String> = ["DEBUG", "INFO", "WARNING", "ERROR"]
+    /// CV-13 で許すプレースホルダ（F-83: 名前はスカラー列で照らす）。
+    static let allowedPlaceholders: [String] = ["yyyymmdd", "date", "time"]
+    /// CV-14 で弾くプレースホルダ。
+    static let titlePlaceholder = "{title}"
+    /// F-83: CV-52・CV-53 の backoff の配列の要素数の上限（合計 × 1000 のミリ秒を桁あふれさせない。既定は 4 個と 3 個）。
+    static let maxBackoffCount = 64
     /// CV-56 で `maxItems` を見る節（F-54。`SectionName.all` の順のうち `maxItems` を持つ 5 つ）。
     static let sectionsWithMaxItems: [String] = ["key_points", "tasks", "decisions", "ideas", "tags"]
     /// F-71: 掛け算・待ちに使う秒のキーの上限（365 日）。× 1000 のミリ秒と `Task.sleep` を桁あふれさせない（CR-16）。
@@ -64,7 +66,8 @@ public enum ConfigValidator {
         if !(raw.folderTemplate != wiki.folderTemplate) {
             out.add("CV-12", "obsidian.wiki.folderTemplate", "raw.folderTemplate と同一にできない（\(wiki.folderTemplate)）")
         }
-        let wikiFilenameHasTitle = wiki.filenameTemplate.contains("{title}")
+        // F-83: スカラー単位で探す（書記素単位だと `{title}\u{301}` の `}` が結合文字と 1 文字になり見逃す）
+        let wikiFilenameHasTitle = containsScalars(wiki.filenameTemplate, titlePlaceholder)
         if wikiFilenameHasTitle {
             out.add("CV-14", "obsidian.wiki.filenameTemplate", "{title} を含んではならない（再生成のたびにファイルが増殖する）")
         }
@@ -100,16 +103,29 @@ public enum ConfigValidator {
     }
 
     /// CV-13 のプレースホルダの走査（voicedock の `\{([^}]*)\}` と同じ結果）。許可に無い最初の名前、無ければ nil。
+    /// F-83: スカラー単位で走査する（Python と同じ。書記素単位だと `{bad}\u{301}` の `}` を見逃して通した。`NoteTemplate.render` も
+    /// スカラー単位で置換するので、見逃した `{…}` はフォルダ名・ファイル名にそのまま残った）
     static func firstUnknownPlaceholder(_ template: String) -> String? {
-        var rest = template[...]
-        while let open = rest.firstIndex(of: "{") {
-            let afterOpen = rest.index(after: open)
-            guard let close = rest[afterOpen...].firstIndex(of: "}") else { return nil }
-            let name = String(rest[afterOpen..<close])
-            if !allowedPlaceholders.contains(name) { return name }
-            rest = rest[rest.index(after: close)...]
+        let scalars = Array(template.unicodeScalars)
+        var from = 0
+        while let open = scalars[from...].firstIndex(of: "{") {
+            guard let close = scalars[(open + 1)...].firstIndex(of: "}") else { return nil }
+            let name = Array(scalars[(open + 1)..<close])
+            if !allowedPlaceholders.contains(where: { $0.unicodeScalars.elementsEqual(name) }) {
+                return String(String.UnicodeScalarView(name))
+            }
+            from = close + 1
         }
         return nil
+    }
+
+    /// haystack のスカラー列が needle のスカラー列を連続して含むか（F-83。`String.contains` は書記素単位）
+    static func containsScalars(_ haystack: String, _ needle: String) -> Bool {
+        let h = Array(haystack.unicodeScalars)
+        let n = Array(needle.unicodeScalars)
+        guard !n.isEmpty else { return true }
+        guard h.count >= n.count else { return false }
+        return (0...(h.count - n.count)).contains { i in h[i..<(i + n.count)].elementsEqual(n) }
     }
 
     /// 順 9〜11: CV-17・18・19。
@@ -185,8 +201,12 @@ public enum ConfigValidator {
         if let path = c.vault.path, !path.hasPrefix("/") {
             out.add("CV-40", "vault.path", "絶対パスであること（\(path)）")
         }
+        // F-83: スカラー単位で見る（書記素単位だと `a/\u{301}b` の `/` が結合文字と 1 文字になり見逃す）
         let marker = c.vault.marker
-        if !(!marker.isEmpty && !marker.contains("/") && marker != "." && marker != "..") {
+        let markerScalars = marker.unicodeScalars
+        if !(!markerScalars.isEmpty && !markerScalars.contains("/") && !PyText.scalarsEqual(marker, ".")
+            && !PyText.scalarsEqual(marker, ".."))
+        {
             out.add("CV-41", "vault.marker", "空でなく、/ を含まず、. と .. 以外であること（\(marker)）")
         }
         if let modelID = c.llm.modelID, catalog.entry(kind: .llm, id: modelID) == nil,
@@ -255,16 +275,17 @@ public enum ConfigValidator {
         if cleanup.deleteEvaluationBackoffSeconds.isEmpty {
             out.add("CV-52", "cleanup.deleteEvaluationBackoffSeconds", "空にできない")
         }
-        within(
-            "CV-52", 0, maxSeconds, prefix: "cleanup.deleteEvaluationBackoffSeconds.",
-            indexed(cleanup.deleteEvaluationBackoffSeconds), &out)
+        backoffElements(
+            "CV-52", keyPath: "cleanup.deleteEvaluationBackoffSeconds", cleanup.deleteEvaluationBackoffSeconds, &out)
         within(
             "CV-52", 60, maxSeconds, prefix: "cleanup.",
             [("deleteResultTimeoutSeconds", cleanup.deleteResultTimeoutSeconds)], &out)
         atLeast("CV-53", 1, prefix: "retry.", [("maxAttempts", c.retry.maxAttempts)], &out)
-        within("CV-53", 0, maxSeconds, prefix: "retry.backoffSeconds.", indexed(c.retry.backoffSeconds), &out)
-        if !allowedLevels.contains(c.logging.level) {
-            out.add("CV-54", "logging.level", "DEBUG / INFO / WARNING / ERROR のどれかであること（\(c.logging.level)）")
+        backoffElements("CV-53", keyPath: "retry.backoffSeconds", c.retry.backoffSeconds, &out)
+        // F-83: 語は LogLevel の 1 か所（CR-06）
+        if LogLevel(configValue: c.logging.level) == nil {
+            let words = LogLevel.allCases.map(\.configValue).joined(separator: " / ")
+            out.add("CV-54", "logging.level", "\(words) のどれかであること（\(c.logging.level)）")
         }
         checkTranscription(c.transcription, &out)
         checkLLMNumbers(llm, &out)
@@ -386,6 +407,16 @@ public enum ConfigValidator {
                 atMost(rule, maximum, prefix: prefix, [pair], &out)
             }
         }
+    }
+
+    /// CV-52・CV-53 の backoff の配列（F-83）: 要素数が `maxBackoffCount` 以下（超えたら `要素は <上限> 個以下であること（<個数>）` の
+    /// 1 件だけにし、要素ごとの検査は出さない）、各要素が 0〜`maxSeconds`（要素ごとに 1 件）。
+    private static func backoffElements(_ rule: String, keyPath: String, _ values: [Int], _ out: inout Collector) {
+        guard values.count <= maxBackoffCount else {
+            out.add(rule, keyPath, "要素は \(maxBackoffCount) 個以下であること（\(values.count)）")
+            return
+        }
+        within(rule, 0, maxSeconds, prefix: keyPath + ".", indexed(values), &out)
     }
 
     /// 配列の要素を `(添字, 値)` にする（keyPath の末尾が添字になる）。

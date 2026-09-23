@@ -47,13 +47,37 @@ public enum Frontmatter {
         return lines.joined(separator: "\n") + "\n"
     }
 
-    /// `\` → `\\`、`"` → `\"` の後、U+0000〜U+001F と U+007F を取り除き、二重引用符で囲む（C1・U+2028・U+2029 は残す）。
+    /// `\` → `\\`、`"` → `\"` の後、U+0000〜U+001F と U+007F を取り除き、二重引用符で囲む（U+0085・U+2028・U+2029 は残す）。
+    /// F-83: YAML の読み手（libyaml・PyYAML）が拒む文字（`isUnreadableByYAML`）は `\uXXXX`（大文字 16 進 4 桁）にする。
+    /// そのまま書くと frontmatter 全体が読めず、保存の検証が落ちて再試行ごとに ` (2)` … のノートが増えた（X-40）。
     /// 置換は `.literal`（スカラー単位）。既定の比較は結合文字が続く `\` / `"` を見逃す（PLAN §5.7）。
     public static func quote(_ s: String) -> String {
         var escaped = s.replacingOccurrences(of: "\\", with: "\\\\", options: .literal)
         escaped = escaped.replacingOccurrences(of: "\"", with: "\\\"", options: .literal)
         escaped = ScalarText.removing(escaped, Sanitize.controlScalars)
-        return "\"" + escaped + "\""
+        return "\"" + escapingUnreadable(escaped) + "\""
+    }
+
+    /// F-83: libyaml の読み取り（`CYaml/src/reader.c`、「control characters are not allowed」）と PyYAML（`Reader.NON_PRINTABLE`、
+    /// 「special characters are not allowed」）が拒む文字のうち、`quote` が取り除く U+0000〜U+001F・U+007F を除いたもの:
+    /// U+0080〜U+0084、U+0086〜U+009F、U+FFFE、U+FFFF（U+0085 と U+00A0 以降は受ける。サロゲートは Swift の文字列に無い）
+    static func isUnreadableByYAML(_ scalar: Unicode.Scalar) -> Bool {
+        let v = scalar.value
+        return (0x80...0x84).contains(v) || (0x86...0x9F).contains(v) || v == 0xFFFE || v == 0xFFFF
+    }
+
+    /// `isUnreadableByYAML` のスカラーを二重引用符の中のエスケープ `\uXXXX`（大文字 16 進 4 桁）にする。値はそのまま読み戻せる
+    static func escapingUnreadable(_ s: String) -> String {
+        var out = String.UnicodeScalarView()
+        for scalar in s.unicodeScalars {
+            guard isUnreadableByYAML(scalar) else {
+                out.append(scalar)
+                continue
+            }
+            let hex = String(scalar.value, radix: 16, uppercase: true)
+            out.append(contentsOf: ("\\u" + String(repeating: "0", count: max(0, 4 - hex.count)) + hex).unicodeScalars)
+        }
+        return String(out)
     }
 
     /// 本文の行頭（先頭と各 `\n` の直後）の `---` を `\---` にする（`re.sub(r"^---", r"\---", s, flags=re.M)`）。

@@ -62,7 +62,6 @@ public actor DeletionEnabler {
     static let maxReaperBytes = 64 * 1024 * 1024
     /// `AppConfig` の `device.mountMode` は String（T-09 §4）
     static let mountModeRW = "rw"
-    static let mountModeRO = "ro"
     /// 根拠 B の有効化のログの reason
     static let skippedScope = "skipped_source"
 
@@ -178,14 +177,20 @@ public actor DeletionEnabler {
         }
         // 3. config を無効側。観測は「これから揃える先（false）」を渡す（F-37。自分の CV-30 に阻まれない）
         let observation = ReaperConfObservation.valid(ReaperConf(deleteSourceAudio: false, volumesRoot: volumesRoot))
-        let r = await config.update(
-            { c in
-                c.cleanup.deleteSourceAudio = false
-                c.cleanup.deleteSkippedSource = false
-                c.device.mountMode = DeletionEnabler.mountModeRO
-            }, reaperConfObservation: observation)
-        if case .failure = r {
+        let r = await config.update({ ConfigStore.turnDeletionOff(&$0) }, reaperConfObservation: observation)
+        if case .failure(let violations) = r {
             failed.append(DeletionStage.config)
+            // F-83: 理由を捨てずに出し、メモリの設定だけ無効側に倒す（IngestService が段 5 で読み取り専用に戻せる。
+            // config.json は次の読み込みの CV-30 の修復が揃える）
+            for v in violations {
+                log.warning(
+                    .configWarning,
+                    [
+                        (.rule, .string(v.rule)),
+                        (.message, .string("無効化で config.json を書けません（メモリの設定だけ無効側にしました）: \(v.keyPath): \(v.message)")),
+                    ])
+            }
+            await config.disableDeletionInMemory()
         }
         // 4. 要求の取り下げ
         let (_, f) = DeleteQueue.withdrawAllRequests(layout: layout)

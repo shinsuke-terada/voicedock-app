@@ -34,7 +34,7 @@ struct ConfigStoreIncludeDefaultTests {
         func writeConfig(includeVolumes: [String]) throws -> [UInt8] {
             var config = AppConfig.defaults(timeZone: "Asia/Tokyo")
             config.device.includeVolumes = includeVolumes
-            let data = ConfigLoader.encode(config)
+            let data = try ConfigLoader.encode(config)
             try AtomicFile.write(data, to: layout.configFile)
             return Array(data)
         }

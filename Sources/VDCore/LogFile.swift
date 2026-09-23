@@ -31,8 +31,9 @@ public final class LogFile: LogSink {
                 Darwin.close(state.fd)
                 state.fd = -1
                 _ = Darwin.rename(path, path + ".1")
+                // F-83: 大きさは開き直した app.log の st_size（open が入れる）。rename に失敗したときに 0 と思い込むと、
+                // 次に上限を超えるまで回転を試みず、ログが上限を超えて伸び続けた
                 guard Self.open(path, into: &state) else { return }
-                state.size = 0
             }
             var offset = 0
             while offset < bytes.count {

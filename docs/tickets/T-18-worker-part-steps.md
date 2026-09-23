@@ -4,6 +4,11 @@
 
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）Worker の `.coexistenceBlocked` による保留と `coexistenceBlockedDoesNothing` は外した。start が取り込みの `state()` を見なくなったので、`concurrentStartWaitsForTheFirst` の門は設定の actor（観測を渡した `ConfigStore.update` の mutate の中で待つ）へ移した。以下の本文の共存ガードの記述は記録として残す。
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）`ConfigStore.update` は書く前に今の `config.json` を読み直し（`ConfigLoader.decodeStructure`。load と同じ厳密な経路。無ければメモリの値から作り直す）、
+> その値に mutate を当てて、渡された観測で検証して書く（手の編集を消さない・無効化の途中に偽の CV-30 を出さない）。読めない・壊れていれば書かずに違反、手で変えられた値が検証に落ちたら「設定を読み直す」への案内（CV-39）を添える。
+> 書く直前にもう一度照らし、書けたら current・violations・覚えた内容を同時に替える。CV-30 の修復も `decodeStructure` で読む。符号化できない値（`ConfigLoader.encode` が投げる）は書かずに CV-39。
+> `turnDeletionOff`・`disableDeletionInMemory` を足した（T-40）。PLAN §6.1。テストは `ConfigStoreConflictTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-18 |
