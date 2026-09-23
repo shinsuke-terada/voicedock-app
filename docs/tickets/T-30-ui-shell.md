@@ -746,6 +746,8 @@ struct NSWorkspaceFinder: FinderOpening { func reveal(_ url: URL) { NSWorkspace.
 
 **`panelDidOpen()`**: `isPanelOpen = true` → `if let wake = wakeContinuation { wake.yield(()) } else { Task { await refresh() } }`（開いた瞬間に最新にする。ループが回っていれば 30 秒の眠りを起こし、読み直して 1 秒周期へ切り替える。回っていなければ 1 回だけ読む）
 **`panelDidClose()`**: `isPanelOpen = false`、`reloadResult = nil`（次に開いたときに古い結果を出さない）。F-65: `screen = .main`、`detailsExpanded` が真なら偽にして `setStatusReport(nil)`（次は主画面から開く）
+- （F-72 で足す。`summarizeNow` の初期化（§4.11c の 5）の後、`screen = .main` の前）`diagnostics = .idle`、`diagnosticsGeneration += 1`（T-32 の診断の結果を捨て、閉じた後に届いた結果も捨てる。「元音声の削除」の事前確認に前に開いたときの結果を「最新」として出さない）、
+  `dismissBacklog()`（T-41 の後追いのプレビュー・結果を捨て、`backlogGeneration` を進めて閉じる前に頼んだ返事を捨てる。古いプレビューの件数で実行ボタンを残さない。PLAN §8.9.8 の 1・§8.9.9）
 
 **`requeueManual()`**: `await services.requeueManual()` → `await refresh()`
 **`reloadConfig()`**: `switch await services.reloadConfig() { case .valid: reloadResult = .ok; case .invalid(let v): reloadResult = .invalid(v) }` → `await refresh()`

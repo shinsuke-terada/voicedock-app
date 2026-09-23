@@ -4,6 +4,11 @@
 
 > （F-69・issue #98、2026-09-23。マージ後の追記）期限で消さずに完了した Part（RAW_SAVED→COMPLETED の detail `not_deletable`。T-38 §4.5 の手順 5a）も COMPLETED で `source_deleted_at` が nil なので「過去分を削除対象にする」の対象に入り、再び評価される（原因が直っていれば対象、直っていなければ対象外 `not_deletable`）。コードの変更は無い（PLAN §8.9.9。テストは T-38 §6.13 の `settledPartIsRetargetedByBacklog`）。
 
+> （F-72・issue #112、2026-09-23。マージ後の追記）**実行はプレビューで見せた対象に限る**（§11 の 7 の決着。PLAN §8.9.9）。`BacklogAction.execute(preview:reply:)` がプレビューの計画を運び、`handle` は立て直した計画との積（`BacklogPlanner.consented(preview:rebuilt:)`。照合はスカラー列、順は立て直した計画の順）だけを実行し、増えた対象は書かない・完了にしない。
+> `BacklogExecution` は `{ previewed; added; done }`（`plan` をやめた）。結果の 1 行の「飛ばしました」はプレビューの件数との差、増えた数は「。プレビューの後に増えた n 件は実行していません（もう一度押してプレビューから確かめてください）」。
+> `AppModel.panelDidClose` が `dismissBacklog()` を呼び、返事は世代（`backlogGeneration`）で捨てる（§4.4 の最後の箇条の「将来」がこれ）。「手動で消した分」の後始末の順（遷移 → 取り下げ → ID を外す）は変えず、遷移の失敗で ID と要求を残すことをテストで固定した。
+> 下の §4.1・§4.3・§4.4 はその分を直した。テストは `BacklogConsentTests`・`AppModelConsentTests`・`BacklogTextsConsentTests`（既存の表の `BacklogExecution(plan:done:)` は `BacklogExecution(previewed:added:done:)` に読み替える）。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-41 |
@@ -75,9 +80,10 @@ public struct BacklogPlan: Equatable, Sendable {
 }
 
 public struct BacklogExecution: Equatable, Sendable {
-    public let plan: BacklogPlan   // 実行の直前に立て直した計画
+    public let previewed: Int      // プレビューで見せた対象の数（F-72）
+    public let added: Int          // 立て直した計画に在り、プレビューに無かった対象の数（実行しない。F-72）
     public let done: Int
-    public init(plan: BacklogPlan, done: Int)
+    public init(previewed: Int, added: Int, done: Int)
 }
 
 public struct BacklogFailure: Error, Equatable, Sendable {
@@ -88,7 +94,7 @@ public struct BacklogFailure: Error, Equatable, Sendable {
 /// パネルからの 1 件の仕事（Worker の直列ループで実行する）。reply は Worker の文脈で 1 回だけ呼ばれる。
 public enum BacklogAction: Sendable {
     case preview(reply: @Sendable (Result<BacklogPlan, BacklogFailure>) -> Void)
-    case execute(reply: @Sendable (Result<BacklogExecution, BacklogFailure>) -> Void)
+    case execute(preview: BacklogPlan, reply: @Sendable (Result<BacklogExecution, BacklogFailure>) -> Void)   // F-72
 }
 
 struct BacklogPlanner {
@@ -175,11 +181,13 @@ switch action:
 case .preview(let reply):
     do { reply(.success(kind == .backlog ? try await planBacklog() : try await planResolveAbsent())) }
     catch { reply(.failure(BacklogFailure(message: ErrorText.describe(error)))) }
-case .execute(let reply):
+case .execute(let preview, let reply):
     do {
         plan = kind == .backlog ? try await planBacklog() : try await planResolveAbsent()
-        done = plan.eligible.isEmpty ? 0 : (kind == .backlog ? try await executeBacklog(plan) : try await executeResolveAbsent(plan))
-        reply(.success(BacklogExecution(plan: plan, done: done)))
+        scope = consented(preview: preview.eligible, rebuilt: plan.eligible)          // F-72: 積だけを実行する。増えた対象は書かない
+        targets = BacklogPlan(eligible: scope.targets, skipped: [])
+        done = targets.eligible.isEmpty ? 0 : (kind == .backlog ? try await executeBacklog(targets) : try await executeResolveAbsent(targets))
+        reply(.success(BacklogExecution(previewed: preview.eligible.count, added: scope.added.count, done: done)))
     } catch { reply(.failure(BacklogFailure(message: ErrorText.describe(error)))) }
 ```
 - プレビューは**何も書かない**（DB・queue・ログ。`--dry-run` と同じ）
@@ -264,7 +272,8 @@ enum BacklogTexts {
 4. `kind == .resolveAbsent && n > 0` なら `resolveAbsentNote`
 
 `resultLine(kind, e)`: `.backlog` → `String(e.done) + " 件の削除要求を書きました"`、`.resolveAbsent` → `String(e.done) + " 件を完了にしました"`。
-`e.done < e.plan.eligible.count` なら後ろに `"（" + String(e.plan.eligible.count - e.done) + " 件は状態が変わったため飛ばしました）"`。
+`e.done < e.previewed` なら後ろに `"（" + String(e.previewed - e.done) + " 件は状態が変わったため飛ばしました）"`。
+`e.added > 0` なら更に `"。プレビューの後に増えた " + String(e.added) + " 件は実行していません（もう一度押してプレビューから確かめてください）"`（F-72）。
 
 ### 4.4 `AppModel.swift`（T-30 のファイルへの追加）
 
@@ -289,10 +298,13 @@ func executeBacklog(_ kind: BacklogKind)
 func dismissBacklog()
 ```
 - 仕事は `Task { await services.enqueue(.backlog(.preview(reply: { [weak self] result in Task { @MainActor in self?.receive(kind, result) } }))) }`（resolveAbsent は `.resolveAbsent(…)`。AppModel は Worker を直接持たず、T-32 の `AppServices.enqueue(_:)` を通す）。reply は Worker の文脈で呼ばれるので MainActor へ移してから状態を変える
+  - （F-72 で直した形）押すたびに `let generation = nextBacklogGeneration()`（`backlogGeneration += 1` して返す）で控え、reply は
+    `Task { @MainActor in guard let self, self.backlogGeneration == generation else { return }; self.receive(kind, result) }`（世代が違えば捨てる）。
+    `executeBacklog` は `guard case .preview(let current, let plan) = backlogState, current == kind` の `plan` を `BacklogAction.execute(preview: plan, reply: …)` に載せる（reply は preview と同じ形）
 - `previewBacklog` は `backlogExecuting = false`、`executeBacklog` は `backlogExecuting = true` にしてから `.working(kind)` に入れる。`dismissBacklog` は `false` に戻す
 - `receive`: `.success(plan)` → `.preview(kind, plan)`、`.success(execution)` → `.done(kind, execution)`、`.failure(f)` → `.failed(kind, f.message)`
 - 返事が来る前に `dismissBacklog()` されたら、届いた返事は捨てる（`backlogState` が `.working(kind)` のときだけ受け取る）
-- 世代の番号は持たない。`.working` の間は「やめる」「閉じる」のボタンが出ない（§4.5）ので、返事を待っている間に `dismissBacklog()` が呼ばれて押し直され、古い返事を新しい押下の返事として受け取ることは起きない。将来 `dismissBacklog()` を他から呼ぶ（パネルを閉じたときなど）なら、DR-09 の `probeGeneration` と同じ世代が要る
+- ~~世代の番号は持たない。~~（F-72 で `panelDidClose` が `dismissBacklog()` を呼ぶようになったので、DR-09 の `probeGeneration` と同じ世代 `backlogGeneration` を持つ。押すたび・やめるたび・閉じるたびに 1 増やし、開始時と世代が違う返事は捨てる。`executeBacklog` は `.preview(kind, plan)` の `plan` を `.execute(preview:reply:)` に載せる）
 
 ### 4.5 `BacklogControls.swift` と `DetailsSection.swift`
 
@@ -436,4 +448,4 @@ F-65 で「詳細・診断」は popover の中の別の画面になり、`Backl
 4. PLAN §8.9.9 に「結果待ち（`delete_request_id` が在る。復旧で SOURCE_DELETE_PENDING に戻った Part は ID を持ったまま）は `not_deletable`（二重に要求しない）」「`source_path` が無い PENDING は `still_present`（無いと確かめられない）」「実行の時点で計画を立て直す」を足す
 5. **（2026-09-22 利用者が承認し、T-41 の PR で地図に反映済み）** 00-api-map §11 の `BacklogFailure` は `public enum BacklogFailure: Error, Equatable, Sendable`（case が書かれていない）だが、本チケットは `public struct BacklogFailure: Error, Equatable, Sendable { public let message: String; public init(message: String) }`（`ErrorText.describe(error)` の 1 行をパネルに出す）。実装は本チケットに合わせた。地図の行を `struct … { message: String }` に直し、`BacklogKind`（`public enum BacklogKind: String, Sendable, Equatable { case backlog, resolveAbsent }`）も同じ行に足す提案（T-41 の実装で発見）
 6. （記録。T-32 の既存の動き。別で扱う）ライセンスで止まった tick（`deps.license.allowsProcessing()` が偽）は `pauses.trip(.license)` で戻り、pendingJobs に返事をしない。後追いも DR-09 も、ライセンスが戻るまでパネルが「対象を調べています…」のままになる。設定エラー中と同じく `replyUnavailable` 相当で返すかは T-32 の側で決める
-7. （記録）実行は計画を立て直す（§4.1 `handle`）ので、プレビューの後に新しく条件を満たした Part があれば、プレビューで見せた件数より多く実行しうる。実行した計画は結果に載せ（`BacklogExecution.plan`）、結果の 1 行は立て直した計画の件数で出す。プレビューの計画に限るかは PLAN §8.9.9 で決める
+7. （記録）実行は計画を立て直す（§4.1 `handle`）ので、プレビューの後に新しく条件を満たした Part があれば、プレビューで見せた件数より多く実行しうる。実行した計画は結果に載せ（`BacklogExecution.plan`）、結果の 1 行は立て直した計画の件数で出す。プレビューの計画に限るかは PLAN §8.9.9 で決める → **F-72 で決着**（プレビューの対象 ∩ 立て直した計画の対象だけを実行し、増えた対象は書かない。`BacklogExecution.plan` は `previewed`・`added` に替えた。冒頭の注記）

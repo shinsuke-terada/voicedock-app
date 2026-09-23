@@ -33,13 +33,18 @@ public struct BacklogPlan: Equatable, Sendable {
     }
 }
 
+/// 実行の結果。実行はプレビューで利用者に見せた対象に限る（F-72。PLAN §8.9.9）
 public struct BacklogExecution: Equatable, Sendable {
-    /// 実行の直前に立て直した計画
-    public let plan: BacklogPlan
+    /// プレビューで見せた対象の数（同意の範囲。実行はこの中だけ）
+    public let previewed: Int
+    /// 実行の直前に立て直した計画に在り、プレビューに無かった対象の数（利用者が見ていないので実行しない）
+    public let added: Int
+    /// 実行した数（要求を書いた・完了にした。previewed 以下）
     public let done: Int
 
-    public init(plan: BacklogPlan, done: Int) {
-        self.plan = plan
+    public init(previewed: Int, added: Int, done: Int) {
+        self.previewed = previewed
+        self.added = added
         self.done = done
     }
 }
@@ -55,7 +60,8 @@ public struct BacklogFailure: Error, Equatable, Sendable {
 /// パネルからの 1 件の仕事（Worker の直列ループで実行する）。reply は Worker の文脈で 1 回だけ呼ばれる。
 public enum BacklogAction: Sendable {
     case preview(reply: @Sendable (Result<BacklogPlan, BacklogFailure>) -> Void)
-    case execute(reply: @Sendable (Result<BacklogExecution, BacklogFailure>) -> Void)
+    /// preview はプレビューで利用者に見せた計画（同意の範囲。実行はその対象と、立て直した計画の対象の積だけ。F-72）
+    case execute(preview: BacklogPlan, reply: @Sendable (Result<BacklogExecution, BacklogFailure>) -> Void)
 }
 
 /// 後追いの計画と実行。プレビューは何も書かない（DB・queue・ログ。`--dry-run` と同じ）。
@@ -135,8 +141,8 @@ struct BacklogPlanner {
                     DeletionPolicy.canDeleteSource(
                         DeletionCandidate(part: part, session: session, parts: parts, twin: nil), ctx)
                 else { continue }
-                // ①ID → ②要求ファイル
-                guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: key) else { continue }
+                // ①ID → ②要求ファイル（② の直前に reaper.conf を読み直す。F-72）
+                guard let id = try await RequestWriter(deps: deps).write(part: part, sessionKey: key) else { continue }
                 // ③ COMPLETED か SOURCE_DELETE_PENDING から
                 try deps.store.recordPartTransition(partkey: pk, from: part.status, to: .sourceDeleting)
                 deps.log.info(
@@ -171,6 +177,8 @@ struct BacklogPlanner {
                 guard let s = snapshot, let obs = s.devices[part.deviceID], let rel = part.sourcePath,
                     !obs.relpaths.contains(where: { DeletionPolicy.sameKey($0, rel) })
                 else { continue }
+                // 後始末は 遷移 → 取り下げ → ID を外す の順（F-72）。遷移に失敗したら ID と要求を残す
+                // （ID を持つ SOURCE_DELETING は回収と期限切れ（§8.9.6・§8.9.7）が片付ける。先に外すと誰も拾わない）
                 try deps.store.recordPartTransition(
                     partkey: pk, from: .sourceDeletePending, to: .sourceDeleting,
                     detail: DeletionReason.resolveAbsentDetail)
@@ -195,7 +203,24 @@ struct BacklogPlanner {
         return done
     }
 
-    /// 仕事を実行して reply を 1 回呼ぶ。実行は計画を立て直してから（プレビューの後に状態が変わりうる）
+    /// F-72: 実行してよい対象（プレビューの対象 ∩ 立て直した計画の対象。立て直した計画の順）と、増えた対象（立て直した計画にだけ在る）。
+    /// 照合は sameKey と同じスカラー列の一致（Swift の == は正準等価で比べるので、見せていない別の Part を同じと見なしうる）
+    static func consented(preview: [String], rebuilt: [String]) -> (targets: [String], added: [String]) {
+        let shown = Set(preview.map { Array($0.unicodeScalars) })
+        var targets: [String] = []
+        var added: [String] = []
+        for pk in rebuilt {
+            if shown.contains(Array(pk.unicodeScalars)) {
+                targets.append(pk)
+            } else {
+                added.append(pk)
+            }
+        }
+        return (targets, added)
+    }
+
+    /// 仕事を実行して reply を 1 回呼ぶ。実行は計画を立て直してから（プレビューの後に状態が変わりうる）。
+    /// F-72: 実行するのはプレビューで見せた対象のうち、立て直した計画にも在るものだけ（増えた対象は利用者が見ていないので書かない）
     func handle(_ action: BacklogAction, kind: BacklogKind) async {
         switch action {
         case .preview(let reply):
@@ -204,13 +229,17 @@ struct BacklogPlanner {
             } catch {
                 reply(.failure(BacklogFailure(message: ErrorText.describe(error))))
             }
-        case .execute(let reply):
+        case .execute(let preview, let reply):
             do {
                 let plan = kind == .backlog ? try await planBacklog() : try await planResolveAbsent()
+                let scope = Self.consented(preview: preview.eligible, rebuilt: plan.eligible)
+                let targets = BacklogPlan(eligible: scope.targets, skipped: [])
                 let done =
-                    plan.eligible.isEmpty
-                    ? 0 : (kind == .backlog ? try await executeBacklog(plan) : try await executeResolveAbsent(plan))
-                reply(.success(BacklogExecution(plan: plan, done: done)))
+                    targets.eligible.isEmpty
+                    ? 0
+                    : (kind == .backlog ? try await executeBacklog(targets) : try await executeResolveAbsent(targets))
+                reply(
+                    .success(BacklogExecution(previewed: preview.eligible.count, added: scope.added.count, done: done)))
             } catch {
                 reply(.failure(BacklogFailure(message: ErrorText.describe(error))))
             }

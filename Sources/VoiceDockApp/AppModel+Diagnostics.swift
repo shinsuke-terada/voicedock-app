@@ -3,11 +3,23 @@ import Foundation
 import VDPipeline
 
 extension AppModel {
-    /// 「診断を実行」。実行中は二重に押せない
+    /// 「診断を実行」。実行中は二重に押せない。閉じた後に届いた結果は捨てる（panelDidClose が idle に戻し世代を進める。F-72）。
+    /// 閉じて開き直した後に押されても、閉じる前に始めた診断が終わるまで次を起動しない（診断を同時に 2 本走らせない。F-72）
     func runDiagnostics() async {
         guard diagnostics != .running else { return }
         diagnostics = .running
-        diagnostics = .done(await services.runDiagnostics())
+        diagnosticsGeneration += 1
+        let generation = diagnosticsGeneration
+        let previous = diagnosticsTask
+        let services = self.services
+        let task = Task { () -> [DiagnosticResult] in
+            _ = await previous?.value
+            return await services.runDiagnostics()
+        }
+        diagnosticsTask = task
+        let results = await task.value
+        guard generation == diagnosticsGeneration else { return }
+        diagnostics = .done(results)
     }
 
     /// 「LLM の疎通確認」（DR-09）。Worker の直列ループに 1 件の仕事として入れる（PLAN §8.11）。実行中は二重に押せない

@@ -1,5 +1,8 @@
 # T-39 VDPipeline: 根拠 B（無音・重複の元音声の削除要求）と ND の集合の一致
 
+> （F-72・issue #112、2026-09-23。マージ後の追記）`RequestWriter.write` が `async` になり、② の前後で reaper.conf を読み直す（T-38 §4.4。PLAN §8.9.5）。根拠 B の手順 9 は `try await` で呼ぶ。
+> 読み直しで `DELETE_SOURCE_AUDIO=true` で読めなければ要求を残さず（取り下げに失敗したときだけ ID を残す）nil を返し、`source_delete_skipped recording_key=… reason=lock_mismatch` を出す（下の §5 のログの表の「RequestWriter」の行は T-38 §5 に合わせて読む）。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-39 |
@@ -75,7 +78,7 @@ struct SkippedSettler {
    6. `guard let session = try deps.store.session(sessionKey) else { continue }`
    7. `parts = try deps.store.recordings(inSession: sessionKey)`、`twin = try TwinPart.load(for: part, store: deps.store)`（双子の引き方は T-36 §4.7.2）
    8. `DeletionPolicy.canDeleteSource(DeletionCandidate(part: part, session: session, parts: parts, twin: twin), ctx)` が偽なら飛ばす
-   9. `guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: sessionKey) else { continue }`（① の `updateRecordingIfStatus(status: .skipped)` が状態の変化を捕まえる）
+   9. `guard let id = try await RequestWriter(deps: deps).write(part: part, sessionKey: sessionKey) else { continue }`（① の `updateRecordingIfStatus(status: .skipped)` が状態の変化を捕まえる）
    10. `deps.log.info(.deleteRequested, [(.requestID, .string(id)), (.recordingKey, .string(part.partkey)), (.sessionKey, .string(sessionKey))])`
    11. `requested += 1`
 8. `return requested`
@@ -115,7 +118,8 @@ struct SkippedSettler {
 | イベント | レベル | フィールド（この順） | 出す場所 |
 |---|---|---|---|
 | `delete_requested` | INFO | `request_id`, `recording_key`, `session_key` | settleSkippedDeletions |
-| `source_delete_pending` / `source_delete_skipped` | WARNING | T-38 §5 と同じ（RequestWriter の ②失敗・①の衝突） | RequestWriter |
+| `source_delete_pending` / `source_delete_skipped` | WARNING | T-38 §5 と同じ（RequestWriter の ②失敗・①の衝突・② の後の取り下げの失敗。F-72） | RequestWriter |
+| `source_delete_skipped` | INFO | `recording_key`, `reason=lock_mismatch`（T-38 §5。F-72） | RequestWriter |
 
 ## 6. テスト
 

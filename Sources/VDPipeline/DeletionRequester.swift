@@ -69,7 +69,8 @@ struct DeletionRequester {
                 }
                 deps.streaks.reset(part.partkey)
                 // 6. ①②
-                guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: session.sessionKey) else {
+                guard let id = try await RequestWriter(deps: deps).write(part: part, sessionKey: session.sessionKey)
+                else {
                     continue
                 }
                 // 7. ③（RAW_SAVED か SOURCE_DELETE_PENDING から）
