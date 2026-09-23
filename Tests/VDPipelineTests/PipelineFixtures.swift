@@ -91,7 +91,8 @@ struct PipelineWorld {
         guard let config = await configStore.current() else { throw PipelineFixtureError.noConfig }
         return TickContext(
             deps: deps, config: config, zone: Worker.zone(for: config), snapshot: snapshot, pauses: PauseBook(log: log),
-            activity: ActivityBoard(assertion: assertion ?? self.assertion), stop: stop)
+            activity: ActivityBoard(assertion: assertion ?? self.assertion), stop: stop,
+            undeletableStreaks: UndeletableStreaks())
     }
 
     /// assertion は self.assertion

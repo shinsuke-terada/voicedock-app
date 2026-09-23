@@ -152,18 +152,12 @@ struct ResultCollectorTests {
         #expect(FileManager.default.fileExists(atPath: hidden.path(percentEncoded: false)))
     }
 
-    @Test("待っていない Part の結果は捨てる（#160。パラメータ化: ID nil・COMPLETED）", arguments: ["ID nil", "COMPLETED"])
-    func resultForAPartNotWaitingIsDiscarded(_ kind: String) async throws {
+    /// ID を持つ COMPLETED は F-74 で回収の対象になった（ResultCollectorCompletedTests）
+    @Test("待っていない Part の結果は捨てる（#160。ID nil）")
+    func resultForAPartNotWaitingIsDiscarded() async throws {
         let f = await Self.fixture(try DeletionScene())
-        let id: String
-        if kind == "ID nil" {
-            id = try await Self.requestOne(f)
-            try f.scene.store.updateRecording(Self.pk, [.deleteRequestID(nil)])
-        } else {
-            id = Self.manualID
-            try f.scene.movePart(Self.pk, to: .completed)
-            try f.scene.store.updateRecording(Self.pk, [.deleteRequestID(id)])
-        }
+        let id = try await Self.requestOne(f)
+        try f.scene.store.updateRecording(Self.pk, [.deleteRequestID(nil)])
         let before = try Self.part(f.scene).status
         try Self.deleted(f, id)
         await Self.collectAfterScan(f)

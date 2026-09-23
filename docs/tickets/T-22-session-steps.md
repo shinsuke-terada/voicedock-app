@@ -1,5 +1,8 @@
 # T-22 VDPipeline: Session の工程（分組・閉じる・再オープン・統合・解析）と LLM のガード
 
+> （F-74・issue #114、2026-09-23。マージ後の追記）統合で segment が 0 件でも、有効な Part（FAILED / SKIPPED でない）の transcript が読めなければ `session_empty` にせず `MERGING→FAILED`（`SESSION_MERGE_FAILED`、「文字起こしを読めない Part があります: <partkey>, …」）。
+> MERGED 以降で統合結果が空になった Session は `→ANALYZING`（MERGED から通常の辺、ANALYZED / WRITING から ★ `stale_analysis`）→ `ANALYZING→FAILED`（同じコード）にする（`SessionSteps.failUnreadableAfterMerge`・`unreadableTranscriptPartkeys`。PLAN §5.6）。テストは `UnreadableTranscriptMergeTests`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-22 |
@@ -38,6 +41,7 @@ T-18 が置いた `SessionSteps` の骨組みに本体を書く: Part の分組�
 | `Tests/TestSupport/FakeLLMServer.swift` | `FakeLLMServer`（actor） |
 | `Tests/VDPipelineTests/PipelineFixtures.swift`（変更） | LLM の部品を足す |
 | `Tests/VDPipelineTests/SessionGroupTests.swift` ほか 7 本（`ModelFilesTests` は T-09） | §6 |
+| `Tests/VDPipelineTests/UnreadableTranscriptMergeTests.swift`（F-74 で追加） | 有効な Part の transcript が読めないときの統合の失敗（PLAN §5.6） |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | 7 キーを消す |
 
 ## 4. 仕様
