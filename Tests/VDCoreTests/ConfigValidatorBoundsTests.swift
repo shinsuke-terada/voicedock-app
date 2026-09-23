@@ -66,7 +66,7 @@ struct ConfigValidatorBoundsTests {
 
     // MARK: - 桁あふれ（H1）
 
-    @Test("F-71 CV-51 maxCharsPerRequest が Int の最大でも落ちずに違反")
+    @Test("CV-51 maxCharsPerRequest が Int の最大でも落ちずに違反（F-71）")
     func cv51SumOverflowIsViolation() {
         #expect(
             Self.check { $0.llm.maxCharsPerRequest = Int.max } == [
@@ -76,7 +76,7 @@ struct ConfigValidatorBoundsTests {
             ])
     }
 
-    @Test("F-71 CV-51 2048 を足すところで桁あふれしても違反")
+    @Test("CV-51 2048 を足すところで桁あふれしても違反（F-71）")
     func cv51LastAdditionOverflowIsViolation() {
         // 9223372036854771711 + 4096 = Int.max（ここではあふれない）、+ 2048 であふれる
         #expect(
@@ -87,7 +87,7 @@ struct ConfigValidatorBoundsTests {
             ])
     }
 
-    @Test("F-71 CV-10 chunkOverlapChars の 2 倍が Int の最大を超えても落ちずに違反")
+    @Test("CV-10 chunkOverlapChars の 2 倍が Int の最大を超えても落ちずに違反（F-71）")
     func cv10TwiceOverflowIsViolation() {
         #expect(
             Self.check { $0.llm.chunkOverlapChars = 4_611_686_018_427_387_904 } == [
@@ -98,7 +98,7 @@ struct ConfigValidatorBoundsTests {
             ])
     }
 
-    @Test("F-71 CV-10 chunkOverlapChars が Int の最小でも落ちずに違反")
+    @Test("CV-10 chunkOverlapChars が Int の最小でも落ちずに違反（F-71）")
     func cv10NegativeTwiceOverflowIsViolation() {
         #expect(
             Self.check { $0.llm.chunkOverlapChars = Int.min } == [
@@ -109,7 +109,7 @@ struct ConfigValidatorBoundsTests {
             ])
     }
 
-    @Test("F-71 CV-10 2 倍がちょうど Int に収まれば、いままでどおりの比較")
+    @Test("CV-10 2 倍がちょうど Int に収まれば、いままでどおりの比較（F-71）")
     func cv10LargestTwiceStillCompares() {
         #expect(
             Self.check { $0.llm.chunkOverlapChars = 4_611_686_018_427_387_903 } == [
@@ -146,7 +146,32 @@ struct ConfigValidatorBoundsTests {
                 == [Self.violation("CV-58", "audio.hashChunkBytes", "4096 以上であること（4095）")])
     }
 
-    @Test("F-71 CV-55 minTimeoutSeconds は maxTimeoutSeconds 以下の鎖で上限に収まる")
+    @Test("CV-46 大小関係の違反があるときは上限を出さない（1 キー 1 件。F-71）")
+    func cv46OrderViolationSuppressesUpperBound() {
+        #expect(
+            Self.check {
+                $0.device.scanIntervalSeconds = 40_000_000
+                $0.device.snapshotMaxAgeSeconds = 35_000_000
+            } == [
+                Self.violation(
+                    "CV-46", "device.snapshotMaxAgeSeconds", "scanIntervalSeconds より大きいこと（35000000 <= 40000000）"),
+                Self.violation("CV-50", "device.scanIntervalSeconds", "31536000 以下であること（40000000）"),
+            ])
+    }
+
+    @Test("CV-55 大小関係の違反があるときは上限を出さない（1 キー 1 件。F-71）")
+    func cv55OrderViolationSuppressesUpperBound() {
+        #expect(
+            Self.check {
+                $0.transcription.minTimeoutSeconds = 40_000_000
+                $0.transcription.maxTimeoutSeconds = 35_000_000
+            } == [
+                Self.violation(
+                    "CV-55", "transcription.maxTimeoutSeconds", "minTimeoutSeconds 以上であること（35000000 < 40000000）")
+            ])
+    }
+
+    @Test("CV-55 minTimeoutSeconds は maxTimeoutSeconds 以下の鎖で上限に収まる（F-71）")
     func cv55MinimumIsBoundedByChain() {
         #expect(
             Self.check { $0.transcription.minTimeoutSeconds = 31_536_001 } == [
@@ -222,31 +247,31 @@ struct ConfigValidatorBoundsTests {
 
     // MARK: - スカラー単位（H5）
 
-    @Test("F-71 CV-11 結合文字が続く .. も '..' として違反")
+    @Test("CV-11 結合文字が続く .. も '..' として違反（F-71）")
     func cv11ParentFollowedByCombiningMark() {
         #expect(
             Self.check { $0.obsidian.wiki.folderTemplate = "../\u{301}x" }
                 == [Self.violation("CV-11", "obsidian.wiki.folderTemplate", "'..' を含んではならない（../\u{301}x）")])
     }
 
-    @Test("F-71 CV-11 先頭の / に結合文字が続いても絶対パスとして違反")
+    @Test("CV-11 先頭の / に結合文字が続いても絶対パスとして違反（F-71）")
     func cv11SlashFollowedByCombiningMark() {
         #expect(
             Self.check { $0.obsidian.raw.folderTemplate = "/\u{301}abs/{yyyymmdd}" }
                 == [Self.violation("CV-11", "obsidian.raw.folderTemplate", "相対パスであること（/\u{301}abs/{yyyymmdd}）")])
     }
 
-    @Test("F-71 CV-11 結合文字の付いた ..\u{301} の要素は .. ではない")
+    @Test("CV-11 結合文字の付いた ..\u{301} の要素は .. ではない（F-71）")
     func cv11ParentWithCombiningMarkIsNotParent() {
         #expect(Self.check { $0.obsidian.wiki.folderTemplate = "a/..\u{301}/b" }.isEmpty)
     }
 
-    @Test("F-71 CV-11 空のテンプレートは違反にしない")
+    @Test("CV-11 空のテンプレートは違反にしない（F-71）")
     func cv11EmptyTemplate() {
         #expect(Self.check { $0.obsidian.raw.folderTemplate = "" }.isEmpty)
     }
 
-    @Test("F-71 CV-19 \\r\\n を含む見出しは違反")
+    @Test("CV-19 \\r\\n を含む見出しは違反（F-71）")
     func cv19CarriageReturnLineFeed() {
         #expect(
             Self.check { $0.llm.analysis.sections.summary.heading = "## A\r\nB" }
@@ -255,7 +280,7 @@ struct ConfigValidatorBoundsTests {
                 ])
     }
 
-    @Test("F-71 CV-19 # に結合文字が続いても # で始まる（Python の startswith と同じ）")
+    @Test("CV-19 # に結合文字が続いても # で始まる（Python の startswith と同じ。F-71 で変えた挙動）")
     func cv19HashFollowedByCombiningMark() {
         #expect(Self.check { $0.llm.analysis.sections.summary.heading = "#\u{301} Summary" }.isEmpty)
     }

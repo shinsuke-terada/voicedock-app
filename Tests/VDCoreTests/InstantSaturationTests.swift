@@ -25,6 +25,22 @@ struct InstantSaturationTests {
         #expect(Instant(epochMillis: 1_790_000_000_000).adding(seconds: -1800).epochMillis == 1_789_998_200_000)
     }
 
+    @Test("F-71 adding(seconds:) は × 1000 だけがあふれても和が収まれば厳密な値")
+    func addingSecondsIsExactWhenSumFits() {
+        // 9.3e15 秒 × 1000 = 9.3e18 は Int64 を超えるが、-1e18 を足した 8.3e18 は収まる
+        #expect(
+            Instant(epochMillis: -1_000_000_000_000_000_000).adding(seconds: 9_300_000_000_000_000).epochMillis
+                == 8_300_000_000_000_000_000)
+        #expect(
+            Instant(epochMillis: 1_000_000_000_000_000_000).adding(seconds: -9_300_000_000_000_000).epochMillis
+                == -8_300_000_000_000_000_000)
+        // 和も収まらなければ端
+        #expect(Instant(epochMillis: -1).adding(seconds: Int.max).epochMillis == Int64.max)
+        #expect(Instant(epochMillis: 1).adding(seconds: Int.min).epochMillis == Int64.min)
+        // 0 秒は同じ時刻
+        #expect(Instant(epochMillis: 0).adding(seconds: 0).epochMillis == 0)
+    }
+
     @Test("F-71 引き算の桁あふれは Int64 の端に寄せる")
     func differenceSaturates() {
         #expect(Instant(epochMillis: Int64.max) - Instant(epochMillis: -1) == Int64.max)

@@ -214,8 +214,10 @@ public enum ConfigValidator {
             out.add(
                 "CV-46", "device.snapshotMaxAgeSeconds",
                 "scanIntervalSeconds より大きいこと（\(d.snapshotMaxAgeSeconds) <= \(d.scanIntervalSeconds)）")
+        } else {
+            // F-71: 1 キー 1 件（大小関係の違反が先。そのときは上限を出さない）
+            atMost("CV-46", maxSeconds, prefix: "device.", [("snapshotMaxAgeSeconds", d.snapshotMaxAgeSeconds)], &out)
         }
-        atMost("CV-46", maxSeconds, prefix: "device.", [("snapshotMaxAgeSeconds", d.snapshotMaxAgeSeconds)], &out)
         for (i, name) in d.includeVolumes.enumerated() where name.isEmpty {
             out.add("CV-47", "device.includeVolumes.\(i)", "空文字にできない")
         }
@@ -295,8 +297,10 @@ public enum ConfigValidator {
             out.add(
                 "CV-55", "transcription.maxTimeoutSeconds",
                 "minTimeoutSeconds 以上であること（\(t.maxTimeoutSeconds) < \(t.minTimeoutSeconds)）")
+        } else {
+            // F-71: 1 キー 1 件（大小関係の違反が先。そのときは上限を出さない）
+            atMost("CV-55", maxSeconds, prefix: "transcription.", [("maxTimeoutSeconds", t.maxTimeoutSeconds)], &out)
         }
-        atMost("CV-55", maxSeconds, prefix: "transcription.", [("maxTimeoutSeconds", t.maxTimeoutSeconds)], &out)
         atLeast("CV-55", 1, prefix: "transcription.", [("minChars", t.minChars)], &out)
         if !(0 < t.vad.threshold && t.vad.threshold < 1) {
             out.add("CV-55", "transcription.vad.threshold", "0 より大きく 1 より小さいこと（\(t.vad.threshold)）")

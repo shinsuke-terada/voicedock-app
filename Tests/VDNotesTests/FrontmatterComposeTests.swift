@@ -1,5 +1,6 @@
 // frontmatter の読み取りを Yams.compose の Node から作ること（F-71・#120。PLAN §8.6）と、ノートの読み方（lstat・上限）。
 import Foundation
+import Synchronization
 import TestSupport
 import Testing
 import VDCore
@@ -41,7 +42,7 @@ struct FrontmatterComposeTests {
         let doc = try #require(
             Frontmatter.parse(
                 "---\ns: \"x\"\nplain: word\nq: '123'\nhex: 0x1F\noct: 017\nneg: -5\nunderscore: 1_000\n"
-                    + "yes: yes\nno: off\nf: 1.5\nn: null\ntilde: ~\nt: 2026-08-29\n---\n"))
+                    + "f: 1.5\nn: null\ntilde: ~\nt: 2026-08-29\n---\n"))
         #expect(doc["s"] as? String == "x")
         #expect(doc["plain"] as? String == "word")
         #expect(doc["q"] as? String == "123")
@@ -54,10 +55,33 @@ struct FrontmatterComposeTests {
         #expect(doc["tilde"] is NSNull)
         // timestamp は構築しない（元の文字列）
         #expect(doc["t"] as? String == "2026-08-29")
-        // 鍵の yes / no は bool に解決されるので、文字列の鍵としては載らない（Yams.load と同じ）
-        #expect(doc["yes"] == nil)
-        #expect(doc["no"] == nil)
         #expect(doc.count == 11)
+    }
+
+    /// F-71 で変えた挙動: 旧実装（`Yams.load`）は鍵をすべて文字列化していた（`yes:` は鍵 "yes"）。
+    /// 新しい実装は str の scalar でない鍵が 1 つでもあれば全体を読めない（nil）にする（上書きの判定を緩めない）
+    @Test(
+        "F-71 最上位に str でない鍵があれば全体が nil（新しい挙動。旧実装は文字列化していた）",
+        arguments: [
+            "---\nyes: 1\nvoicedock_session_key: \"DJIMIC3:20260829\"\n---\n",
+            "---\n123: a\nvoicedock_session_key: \"DJIMIC3:20260829\"\n---\n",
+            "---\nnull: a\n---\n", "---\n~: a\n---\n", "---\n1.5: a\n---\n", "---\n!!int 7: a\n---\n",
+        ])
+    func nonStringKeysMakeWholeUnreadable(text: String) {
+        #expect(Frontmatter.parse(text) == nil)
+    }
+
+    @Test("F-71 引用した鍵は str なので読める（\"yes\"・\"<<\"）")
+    func quotedKeysAreStrings() throws {
+        let doc = try #require(Frontmatter.parse("---\n\"yes\": 1\n'<<': x\n---\n"))
+        #expect(doc["yes"] as? Int == 1)
+        #expect(doc["<<"] as? String == "x")
+    }
+
+    @Test("F-71 複合鍵でも落ちずに nil（旧実装は強制アンラップで落ちていた）")
+    func complexKeysDoNotTrap() {
+        #expect(Frontmatter.parse("---\n? [a, b]\n: 1\n---\n") == nil)
+        #expect(Frontmatter.parse("---\n? {c: d}\n: 1\nvoicedock_session_key: \"x\"\n---\n") == nil)
     }
 
     @Test("F-71 bool の値は Bool")
@@ -94,11 +118,26 @@ struct FrontmatterComposeTests {
         #expect(Frontmatter.parse("---\n\u{304C}: 1\n\u{304B}\u{3099}: 2\n---\n") == nil)
     }
 
-    @Test("F-71 マージの鍵は展開しない")
-    func mergeKeysAreNotExpanded() throws {
-        let doc = try #require(Frontmatter.parse("---\n<<: {voicedock_session_key: \"DJIMIC3:20260829\"}\n---\n"))
-        #expect(doc[Frontmatter.keySessionKey] == nil)
-        #expect(doc.isEmpty)
+    @Test("F-71 マージの鍵があれば展開せず全体が nil（鍵を黙って落とさない）")
+    func mergeKeysMakeWholeUnreadable() {
+        #expect(Frontmatter.parse("---\n<<: {voicedock_session_key: \"DJIMIC3:20260829\"}\n---\n") == nil)
+        #expect(
+            Frontmatter.parse(
+                "---\nvoicedock_session_key: \"DJIMIC3:20260829\"\n"
+                    + "voicedock_recording_keys:\n  - \"DJIMIC3/A/B.wav\"\n<<: {voicedock_failed_parts: [\"DJIMIC3/C/D.wav\"]}\n---\n"
+            ) == nil)
+    }
+
+    @Test("F-71 マージの鍵がある自分のノートは上書きしない（mayOverwrite が偽）")
+    func mergeKeyBlocksOverwrite() throws {
+        let dir = try TempDirectory()
+        let url = try writeNote(
+            "---\nvoicedock_session_key: \"DJIMIC3:20260829\"\nvoicedock_recording_keys:\n  - \"DJIMIC3/A/B.wav\"\n"
+                + "<<: {voicedock_failed_parts: [\"USER/other.wav\"]}\n---\nbody\n", in: dir)
+        #expect(
+            !OutputPathResolver.mayOverwrite(
+                url, sessionKey: "DJIMIC3:20260829", ownedPartkeys: ["DJIMIC3/A/B.wav"], kind: .daily))
+        #expect(Frontmatter.recordingKeys(ofFile: url) == [])
     }
 
     @Test("F-71 空の frontmatter は nil")
@@ -106,12 +145,39 @@ struct FrontmatterComposeTests {
         #expect(Frontmatter.parse("---\n---\nbody\n") == nil)
     }
 
-    @Test("F-71 FIFO のノートは開かずに空（止まらない）", .timeLimit(.minutes(1)))
+    /// 別スレッドで読んだ結果（FIFO の番犬用）
+    final class Outcome: Sendable {
+        let keys = Mutex<[String]?>(nil)
+    }
+
+    /// `.timeLimit` は同期の open / read を中断できないので、別スレッドで呼んでセマフォで待つ。
+    /// 時間切れなら FIFO を書き手として開いて閉じ（読み手は EOF で戻る）、止まったことを Issue に記録する
+    @Test("F-71 FIFO のノートは開かずに空（止まらない）")
     func fifoIsNotRead() throws {
         let dir = try TempDirectory()
         let url = dir.url.appendingPathComponent("fifo.md")
-        #expect(mkfifo(url.path(percentEncoded: false), 0o600) == 0)
-        #expect(Frontmatter.recordingKeys(ofFile: url) == [])
+        let path = url.path(percentEncoded: false)
+        #expect(mkfifo(path, 0o600) == 0)
+        let outcome = Outcome()
+        let done = DispatchSemaphore(value: 0)
+        Thread.detachNewThread {
+            let keys = Frontmatter.recordingKeys(ofFile: url)
+            outcome.keys.withLock { $0 = keys }
+            done.signal()
+        }
+        if done.wait(timeout: .now() + 10) == .timedOut {
+            // 読み手を解放する（開いた読み手が居なければ ENXIO で -1。読み手がまだ open の手前なら繰り返す）
+            for _ in 0..<50 {
+                let writer = open(path, O_WRONLY | O_NONBLOCK)
+                if writer >= 0 {
+                    close(writer)
+                }
+                if done.wait(timeout: .now() + 0.2) == .success { break }
+            }
+            Issue.record("FIFO を読もうとして止まった（10 秒で戻らなかった）")
+            return
+        }
+        #expect(outcome.keys.withLock { $0 } == [])
     }
 
     @Test("F-71 symlink のノートは辿らずに空")

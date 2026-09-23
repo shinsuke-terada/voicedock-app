@@ -56,6 +56,40 @@ struct StabilityCheckerDuplicateTests {
         #expect(sleeper.recorded == [3, 3])
     }
 
+    @Test(
+        "F-71 重複した候補でも 1 回の待ちで 2 回数えない（3 回目の標本で size が変われば安定にしない）",
+        arguments: [[StabilityCheckerDuplicateTests.nfc, StabilityCheckerDuplicateTests.nfd], ["a.WAV", "a.WAV"]])
+    func duplicatesAreCountedOncePerWait(candidates: [String]) async {
+        // 時計は待つたびに 3 秒進む。標本の回（0・1・2）を時計から決め、3 回目（2）だけ size を変える
+        let clock = FixedClock(epochMillis: 1_790_000_000_000)
+        let sleeper = RecordingSleeper(clock: clock)
+        let checker = StabilityChecker(
+            config: AppConfig.defaults(timeZone: "Asia/Tokyo").device, clock: clock, sleeper: sleeper)
+        let result = await checker.stableCandidates(candidates) { _ in
+            let round = (clock.now().epochMillis - 1_790_000_000_000) / 3000
+            return FileStat(size: round >= 2 ? 11 : 10, mtime: 1_790_000_000)
+        }
+        #expect(result.isEmpty)
+        #expect(sleeper.recorded == [3, 3])
+    }
+
+    @Test("F-71 返る鍵のスカラー列は先に並んだ候補のもの（コピーはこの relpath で原本を開く）")
+    func returnedKeyKeepsFirstCandidateScalars() async throws {
+        let old = Self.nowSeconds - 3600
+        let first = await Self.checker(RecordingSleeper()).stableCandidates(
+            [Self.nfc, Self.nfd], stat: Self.stat(mtime: old))
+        #expect(first.count == 1)
+        let firstKey = try #require(first.keys.first)
+        #expect(firstKey.unicodeScalars.map(\.value).suffix(6) == [0x2F, 0x304C, 0x2E, 0x57, 0x41, 0x56])
+        #expect(firstKey.unicodeScalars.count == 31)
+        let reversed = await Self.checker(RecordingSleeper()).stableCandidates(
+            [Self.nfd, Self.nfc], stat: Self.stat(mtime: old))
+        #expect(reversed.count == 1)
+        let reversedKey = try #require(reversed.keys.first)
+        #expect(reversedKey.unicodeScalars.map(\.value).suffix(7) == [0x2F, 0x304B, 0x3099, 0x2E, 0x57, 0x41, 0x56])
+        #expect(reversedKey.unicodeScalars.count == 32)
+    }
+
     @Test("F-71 同じ relpath が 2 度並んでも（FAT の重複項目）落ちない")
     func identicalCandidates() async {
         let sleeper = RecordingSleeper()

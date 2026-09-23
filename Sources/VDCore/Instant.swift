@@ -15,10 +15,11 @@ public struct Instant: Comparable, Hashable, Sendable {
         let (sum, overflow) = epochMillis.addingReportingOverflow(milliseconds)
         return Instant(epochMillis: overflow ? (milliseconds < 0 ? .min : .max) : sum)
     }
-    /// 秒 × 1000 の桁あふれも Int64 の端に寄せる（F-71）。
+    /// `epochMillis + seconds × 1000` を 128 ビットで厳密に計算し、Int64 に収まればその値、収まらなければ端（F-71）。
+    /// （× 1000 だけがあふれても、基準が逆の符号なら和は収まりうる）
     public func adding(seconds: Int) -> Instant {
-        let (millis, overflow) = Int64(seconds).multipliedReportingOverflow(by: 1000)
-        return adding(milliseconds: overflow ? (seconds < 0 ? .min : .max) : millis)
+        let exact = Int128(epochMillis) + Int128(seconds) * 1000
+        return Instant(epochMillis: Int64(exactly: exact) ?? (exact < 0 ? .min : .max))
     }
     /// a − b のミリ秒。桁あふれは Int64 の端に寄せる（F-71）。
     public static func - (a: Instant, b: Instant) -> Int64 {

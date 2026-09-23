@@ -230,7 +230,7 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 - 各 CV にテストを 1 本以上（違反の例で落ちる・境界値で通る）。テストの表示名は `CV-nn` で始める（§10.3 の SPEC 同期が SPEC の表とテストを結ぶ）
 - **上限と桁あふれ（F-71。CR-16）**: 掛け算（`Int64(秒) × 1000` のミリ秒・`Instant.adding(seconds:)`）や待ち（`Task.sleep`）に使う秒のキーは **31,536,000（365 日）以下**、`audio.hashChunkBytes` は **67,108,864（64 MiB）以下**（読み取りのたびにこの大きさのバッファを確保する）、
   CV-10・CV-51 の算術に入る文字数・トークン数（`maxCharsPerRequest`・`chunkOverlapChars`・`maxOutputTokens`・`contextSize`）は **1,000,000,000 以下**。上限の内側なら使う側の算術はそのままで Int64 に収まる（backoff の合計 × 1000 も要素数が 2.9 億未満なら収まる）。
-  上限を超えた値の文言は `<上限> 以下であること（<値>）`（下限の `<下限> 以上であること（<値>）` と同じ形。1 キーに 1 件で、下限の違反が先）。
+  上限を超えた値の文言は `<上限> 以下であること（<値>）`（下限の `<下限> 以上であること（<値>）` と同じ形）。**1 キーに 1 件**: 下限の違反と、CV-46・CV-55 の大小関係（`snapshotMaxAgeSeconds > scanIntervalSeconds`・`maxTimeoutSeconds >= minTimeoutSeconds`）の違反が先で、そのときは同じキーの上限を出さない。
   検証の中の算術（CV-10 の 2 倍・CV-51 の和）は桁あふれを報告する形で行い、あふれたらその CV の違反にする（§6.1「違反してもアプリを落とさない」。文言は CV-10 `chunkOverlapChars の 2 倍より大きいこと（chunkOverlapChars の 2 倍が桁あふれ: <値>）`、CV-51 `maxCharsPerRequest + maxOutputTokens + 2048（桁あふれ）以上であること（<contextSize>）`）。
   上限を置かない秒のキー: `stabilityFastPathSeconds`・`requestTimeoutSeconds`・`maxDurationSeconds`・`vaultIndexCacheSeconds`（Double か `Duration` でしか使わず、桁あふれしない）
 

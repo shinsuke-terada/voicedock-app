@@ -85,11 +85,13 @@ public enum Frontmatter {
 
     /// frontmatter を辞書で返す。読めなければ nil。例外を投げない（Yams の例外・重複キーも nil）。
     /// F-71: `Yams.load` を使わない（既定の Constructor は 60 進の int `1:0:0:0:0:0:0:0:0:0:0` などの構築で桁あふれして落ちる）。
-    /// `Yams.compose` の Node の最上位の mapping（タグが map）から、鍵が文字列（タグが str）の項目だけを取る。値は:
+    /// `Yams.compose` の Node の最上位の mapping（タグが map）を読む。最上位の鍵が 1 つでも str の scalar でなければ
+    /// （マージの鍵 `<<`・`yes` などの bool・数・null・複合鍵）全体を nil にする。鍵を黙って落とすと、
+    /// 「載っている鍵 ⊆ 所有する鍵」（上書きの判定）が通りやすくなるため（3 つの呼び手すべてで nil が安全側）。
+    /// 旧実装（`Yams.load`）は鍵をすべて文字列化し、複合鍵では落ちていた。値は:
     /// - scalar: `scalarValue`（`Yams.load` と同じ型。int は自前で読む）
     /// - sequence: 各要素を `[Any]` に。要素の scalar は `scalarValue`、入れ子の配列・辞書は中を読まず空の `[Any]` / `[AnyHashable: Any]`
     /// - mapping: 中を読まず空の `[AnyHashable: Any]`（呼び手は読まない。別名の展開を増やさない）
-    /// マージの鍵（`<<`）は展開しない（鍵が欠ける側 = 上書きしない・消さない側）
     public static func parse(_ text: String) -> [String: Any]? {
         guard let (front, _) = split(text) else { return nil }
         let root: Node?
@@ -103,7 +105,7 @@ public enum Frontmatter {
         }
         var result: [String: Any] = [:]
         for (key, value) in mapping {
-            guard case .scalar(let name) = key, Tag.Name(rawValue: key.tag.rawValue) == .str else { continue }
+            guard case .scalar(let name) = key, Tag.Name(rawValue: key.tag.rawValue) == .str else { return nil }
             result[name.string] = topLevelValue(value)
         }
         return result
