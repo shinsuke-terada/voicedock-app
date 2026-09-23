@@ -159,7 +159,7 @@ model_downloaded model_download_failed diagnostics_completed
 
 主な reason / フィールド（逐語。新しい語を足すときはここに足す）:
 - `recovery_completed`: `rolled_back=<n>`（復旧）/ `requeued=<n>`（再評価）
-- `source_delete_skipped`: `reason=delete_source_audio_disabled|lock_mismatch|mount_mode_ro|reaper_not_installed|reaper_invalid|device_readonly|already_absent|not_deletable|status_changed`（`not_deletable` は F-69・F-74・F-78 の決着。`recording_key` と `detail=source_info|pre_identity|transcript|raw_note|<RV の理由語>`（原因。RV の理由語は F-78 の reaper の拒否の打ち切り）を付ける。`already_absent` は F-64・F-78 の自動の完了と「手動で消した分を完了にする」で、`recording_key` を付ける）
+- `source_delete_skipped`: `reason=delete_source_audio_disabled|lock_mismatch|mount_mode_ro|reaper_not_installed|reaper_invalid|device_readonly|already_absent|not_deletable|status_changed`（`not_deletable` は F-69・F-74・F-78 の決着。`recording_key` と `detail=source_info|pre_identity|transcript|raw_note|<RV の理由語>`（原因。RV の理由語は F-78 の reaper の拒否の打ち切り）を付ける。`already_absent` は F-64・F-78 の自動の完了と「手動で消した分を完了にする」で、`recording_key` を付ける。`lock_mismatch` は削除段の先頭の `session_key` のほか、要求ファイルを書く前後の reaper.conf の読み直し（§8.9.5）でも `recording_key` を付けて出す（書いた後の取り下げに失敗したときだけ WARNING）。F-72）
 - `source_delete_pending`: `reason=<RV の理由語>|still_in_inventory|no_result|queue_write_failed`
 - `disk_space_low`: `reason=<空き容量の文言>|staging_unlink_failed`
 - `pipeline_paused` / `pipeline_resumed`: `reason=disk_space_low|whisper_missing|model_missing|vad_model_missing|vault_not_configured|vault_unavailable|llm_not_selected|llm_model_missing|llm_insufficient_memory|llama_server_missing|license`
@@ -193,17 +193,17 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | # | 規則 | コード | 由来 |
 |---|---|---|---|
 | CV-01 | 未知のキーが無い（全階層） | CONFIG_UNKNOWN_KEY | V-1 |
-| CV-08 | `session.blockGapSeconds >= 0` | CONFIG_INVALID_VALUE | V-8 |
+| CV-08 | `0 <= session.blockGapSeconds <= 31,536,000` | CONFIG_INVALID_VALUE | V-8 |
 | CV-09 | `retry.backoffSeconds.count >= retry.maxAttempts` | CONFIG_INVALID_VALUE | V-9 |
-| CV-10 | `llm.maxCharsPerRequest > llm.chunkOverlapChars * 2` | CONFIG_INVALID_VALUE | V-10 |
-| CV-11 | raw / wiki の `folderTemplate` が相対パス（`/` で始まらない）で、`/` で分けた要素に `..` が無い | CONFIG_INVALID_VALUE | V-11 |
+| CV-10 | `llm.maxCharsPerRequest > llm.chunkOverlapChars * 2`（2 倍が Int に収まらなければ違反） | CONFIG_INVALID_VALUE | V-10 |
+| CV-11 | raw / wiki の `folderTemplate` が相対パス（`/` で始まらない）で、`/` で分けた要素に `..` が無い（どちらも Unicode スカラー単位で見る） | CONFIG_INVALID_VALUE | V-11 |
 | CV-12 | `raw.folderTemplate != wiki.folderTemplate` | CONFIG_INVALID_VALUE | V-12 |
 | CV-13 | 4 つのテンプレート（raw.folder / raw.filename / wiki.folder / wiki.filename）の `{…}` が `{yyyymmdd}` `{date}` `{time}` だけ | CONFIG_INVALID_VALUE | V-13 |
 | CV-14 | `wiki.filenameTemplate` に `{title}` を含まない（**CV-13 より先に判定し、該当したら CV-13 はそのテンプレートについて出さない**） | CONFIG_INVALID_VALUE | V-14 |
 | CV-16 | `obsidian.maxTitleBytes` が 1〜255 | CONFIG_INVALID_VALUE | V-16 |
 | CV-17 | `analysis.order` の各要素が sections の 7 キーのどれかで、重複が無い | CONFIG_INVALID_VALUE | V-17 |
 | CV-18 | `sections.summary.enabled == true`（DN-8 の前提） | CONFIG_INVALID_VALUE | V-18 |
-| CV-19 | `order` に載る各節の `heading` が null でなく、`#` で始まり、改行（`\n` `\r`）を含まない | CONFIG_INVALID_VALUE | V-19 |
+| CV-19 | `order` に載る各節の `heading` が null でなく、`#` で始まり、改行（`\n` `\r`）を含まない（Unicode スカラー単位で見る） | CONFIG_INVALID_VALUE | V-19 |
 | CV-22 | `audio.stagingMaxBytes > audio.freeSpaceMarginBytes` | CONFIG_INVALID_VALUE | V-22 |
 | CV-29 | `audio.inboxRetain` が `normalized` か `raw_saved` | CONFIG_INVALID_VALUE | V-29 |
 | CV-30 | ロック 1 が食い違っていない: reaper.conf が読めるとき（`.valid`）、`cleanup.deleteSourceAudio == reaperConf.deleteSourceAudio`（どちら向きの食い違いも違反）。reaper.conf が無い・読めないときはこの規則を評価しない（不明は §8.9.2 が「要求を書かない」側に倒す）。違反は §6.1 の修復を先に試す | CONFIG_LOCK_MISMATCH | V-30 |
@@ -216,22 +216,27 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | CV-43 | `cleanup.deleteSkippedSource == true` なら `cleanup.deleteSourceAudio == true` | CONFIG_INVALID_VALUE | 新規 |
 | CV-44 | `transcription.whisperModelID` がカタログの whisper の ID（**ファイルの有無は検査しない**。未入手は実行時のガード） | CONFIG_INVALID_VALUE | 新規 |
 | CV-45 | `transcription.vad.enabled` なら `vad.modelID` がカタログの vad の ID（同上） | CONFIG_INVALID_VALUE | 新規 |
-| CV-46 | `device.snapshotMaxAgeSeconds > device.scanIntervalSeconds` | CONFIG_INVALID_VALUE | 新規（DH-17 相当） |
+| CV-46 | `device.snapshotMaxAgeSeconds > device.scanIntervalSeconds`、`device.snapshotMaxAgeSeconds <= 31,536,000` | CONFIG_INVALID_VALUE | 新規（DH-17 相当） |
 | CV-47 | `device.includeVolumes` と `excludeVolumes` の各要素が空文字でない | CONFIG_INVALID_VALUE | helper.conf 検査 4 |
 | CV-48 | `device.mountMode` が `ro` か `rw` | CONFIG_INVALID_VALUE | helper.conf 検査 5 |
-| CV-49 | `device.stabilityFastPathSeconds >= 1`、`stabilityIntervalSeconds >= 1`、`stabilityChecks >= 1`、`maxScanDepth >= 1` | CONFIG_INVALID_VALUE | helper.conf 検査 7 |
-| CV-50 | `device.scanIntervalSeconds >= 60` | CONFIG_INVALID_VALUE | 新規 |
-| CV-51 | `llm.contextSize >= llm.maxCharsPerRequest + llm.maxOutputTokens + 2048`（20,000 文字のチャンクが収まらないと HTTP 400 を繰り返す） | CONFIG_INVALID_VALUE | 新規 |
-| CV-52 | `cleanup.deleteEvaluationBackoffSeconds` が空でなく各要素 `>= 0`、`cleanup.deleteResultTimeoutSeconds >= 60` | CONFIG_INVALID_VALUE | 新規 |
-| CV-53 | `retry.maxAttempts >= 1`、`retry.backoffSeconds` の各要素 `>= 0` | CONFIG_INVALID_VALUE | 新規 |
+| CV-49 | `device.stabilityFastPathSeconds >= 1`、`1 <= stabilityIntervalSeconds <= 31,536,000`、`stabilityChecks >= 1`、`maxScanDepth >= 1` | CONFIG_INVALID_VALUE | helper.conf 検査 7 |
+| CV-50 | `60 <= device.scanIntervalSeconds <= 31,536,000` | CONFIG_INVALID_VALUE | 新規 |
+| CV-51 | `llm.contextSize >= llm.maxCharsPerRequest + llm.maxOutputTokens + 2048`（20,000 文字のチャンクが収まらないと HTTP 400 を繰り返す。和が Int に収まらなければ違反） | CONFIG_INVALID_VALUE | 新規 |
+| CV-52 | `cleanup.deleteEvaluationBackoffSeconds` が空でなく各要素が `0〜31,536,000`、`60 <= cleanup.deleteResultTimeoutSeconds <= 31,536,000` | CONFIG_INVALID_VALUE | 新規 |
+| CV-53 | `retry.maxAttempts >= 1`、`retry.backoffSeconds` の各要素が `0〜31,536,000` | CONFIG_INVALID_VALUE | 新規 |
 | CV-54 | `logging.level` が `DEBUG` / `INFO` / `WARNING` / `ERROR` のどれか | CONFIG_INVALID_VALUE | 新規 |
-| CV-55 | transcription の数値: `threads >= 0`、`timeoutFactor > 0`、`1 <= minTimeoutSeconds <= maxTimeoutSeconds`、`minChars >= 1`、`0 < vad.threshold < 1`、vad の 3 つの ms `>= 0`、`language` が空でない | CONFIG_INVALID_VALUE | 新規 |
-| CV-56 | llm の数値: `0 <= temperature <= 2`、`0 < topP <= 1`、`maxOutputTokens >= 1`、`requestTimeoutSeconds >= 1`、`maxSecondsPerRequest >= 1`、`chunkOverlapChars >= 0`、`repairAttempts >= 0`、各節（`maxItems` を持つ 5 つ）の `maxItems` は null か `>= 1` | CONFIG_INVALID_VALUE | 新規 |
-| CV-57 | session の数値: `idleCloseSeconds >= 1`、`maxParts >= 1`、`maxDurationSeconds >= 1` | CONFIG_INVALID_VALUE | 新規 |
-| CV-58 | audio の数値: `timeoutFactor > 0`、`minTimeoutSeconds >= 1`、`durationToleranceSeconds >= 0`、`freeSpaceMultiplier >= 1`、`freeSpaceMarginBytes >= 0`、`hashChunkBytes >= 4096` | CONFIG_INVALID_VALUE | 新規 |
-| CV-59 | obsidian の数値: `raw.timestampIntervalSeconds >= 0`（0 は「見出しを入れない」。voicedock と同じ）、`wiki.vaultIndexCacheSeconds >= 0`、`wiki.maxLinks >= 0`、`defaultTags` の各要素が空でない | CONFIG_INVALID_VALUE | 新規 |
+| CV-55 | transcription の数値: `threads >= 0`、`timeoutFactor > 0`、`1 <= minTimeoutSeconds <= maxTimeoutSeconds <= 31,536,000`、`minChars >= 1`、`0 < vad.threshold < 1`、vad の 3 つの ms `>= 0`、`language` が空でない | CONFIG_INVALID_VALUE | 新規 |
+| CV-56 | llm の数値: `0 <= temperature <= 2`、`0 < topP <= 1`、`1 <= maxOutputTokens <= 1,000,000,000`、`requestTimeoutSeconds >= 1`、`1 <= maxSecondsPerRequest <= 31,536,000`、`0 <= chunkOverlapChars <= 1,000,000,000`、`repairAttempts >= 0`、`maxCharsPerRequest <= 1,000,000,000`、`contextSize <= 1,000,000,000`、各節（`maxItems` を持つ 5 つ）の `maxItems` は null か `>= 1` | CONFIG_INVALID_VALUE | 新規 |
+| CV-57 | session の数値: `1 <= idleCloseSeconds <= 31,536,000`、`maxParts >= 1`、`maxDurationSeconds >= 1` | CONFIG_INVALID_VALUE | 新規 |
+| CV-58 | audio の数値: `timeoutFactor > 0`、`1 <= minTimeoutSeconds <= 31,536,000`、`durationToleranceSeconds >= 0`、`freeSpaceMultiplier >= 1`、`freeSpaceMarginBytes >= 0`、`4096 <= hashChunkBytes <= 67,108,864` | CONFIG_INVALID_VALUE | 新規 |
+| CV-59 | obsidian の数値: `0 <= raw.timestampIntervalSeconds <= 31,536,000`（0 は「見出しを入れない」。voicedock と同じ）、`wiki.vaultIndexCacheSeconds >= 0`、`wiki.maxLinks >= 0`、`defaultTags` の各要素が空でない | CONFIG_INVALID_VALUE | 新規 |
 
 - 各 CV にテストを 1 本以上（違反の例で落ちる・境界値で通る）。テストの表示名は `CV-nn` で始める（§10.3 の SPEC 同期が SPEC の表とテストを結ぶ）
+- **上限と桁あふれ（F-71。CR-16）**: 掛け算（`Int64(秒) × 1000` のミリ秒・`Instant.adding(seconds:)`）や待ち（`Task.sleep`）に使う秒のキーは **31,536,000（365 日）以下**、`audio.hashChunkBytes` は **67,108,864（64 MiB）以下**（読み取りのたびにこの大きさのバッファを確保する）、
+  CV-10・CV-51 の算術に入る文字数・トークン数（`maxCharsPerRequest`・`chunkOverlapChars`・`maxOutputTokens`・`contextSize`）は **1,000,000,000 以下**。上限の内側なら使う側の算術はそのままで Int64 に収まる（backoff の合計 × 1000 も要素数が 2.9 億未満なら収まる）。
+  上限を超えた値の文言は `<上限> 以下であること（<値>）`（下限の `<下限> 以上であること（<値>）` と同じ形）。**1 キーに 1 件**: 下限の違反と、CV-46・CV-55 の大小関係（`snapshotMaxAgeSeconds > scanIntervalSeconds`・`maxTimeoutSeconds >= minTimeoutSeconds`）の違反が先で、そのときは同じキーの上限を出さない。
+  検証の中の算術（CV-10 の 2 倍・CV-51 の和）は桁あふれを報告する形で行い、あふれたらその CV の違反にする（§6.1「違反してもアプリを落とさない」。文言は CV-10 `chunkOverlapChars の 2 倍より大きいこと（chunkOverlapChars の 2 倍が桁あふれ: <値>）`、CV-51 `maxCharsPerRequest + maxOutputTokens + 2048（桁あふれ）以上であること（<contextSize>）`）。
+  上限を置かない秒のキー: `stabilityFastPathSeconds`・`requestTimeoutSeconds`・`maxDurationSeconds`・`vaultIndexCacheSeconds`（Double か `Duration` でしか使わず、桁あふれしない）
 
 ## S6. 診断 DR（PLAN §8.11）
 

@@ -95,7 +95,7 @@ struct DeletionRequesterTests {
         let (_, deps) = Self.setUp(scene)
         let stale = try Self.part(scene)
         try scene.movePart(Self.pk, to: .completed)
-        #expect(try RequestWriter(deps: deps).write(part: stale, sessionKey: DeletionScene.sessionKey) == nil)
+        #expect(try await RequestWriter(deps: deps).write(part: stale, sessionKey: DeletionScene.sessionKey) == nil)
         #expect(try Self.part(scene).deleteRequestID == nil)
         #expect(scene.requests() == [])
         #expect(Self.logged(scene, "source_delete_skipped recording_key=" + Self.pk + " reason=status_changed"))

@@ -58,7 +58,7 @@ struct SkippedSettler {
                         DeletionCandidate(part: part, session: session, parts: parts, twin: twin), ctx)
                 else { continue }
                 // 9. ① の updateRecordingIfStatus(status: .skipped) が状態の変化を捕まえる
-                guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: sessionKey) else {
+                guard let id = try await RequestWriter(deps: deps).write(part: part, sessionKey: sessionKey) else {
                     continue
                 }
                 // 10.

@@ -14,6 +14,10 @@
 
 > （F-69・issue #98、2026-09-23）一覧に在るのに `canDeleteSource` が偽のまま変わらない RAW_SAVED の Part は、期限（backoff を使い切った）を過ぎ、観測できた失敗が同じ接続で 2 回続いたら、消さずに RAW_SAVED→COMPLETED（detail `not_deletable`、原因の語を `error_message` に）にする（§4.5 の手順 5a・`UndeletableStreaks`）。要対応の `undeletableSources` と状態の詳細の一覧は T-32 の型に足した（PLAN §8.9.2・§8.9.5・§8.11・§8.12）。テストは §6.13。
 
+> （F-72・issue #112、2026-09-23。マージ後の追記）`RequestWriter.write` は `async` になり、② の前後で reaper.conf を読み直す（`observeLock1`。本番は `deps.locks.observeReaperConf()`）。
+> ② の前に `DELETE_SOURCE_AUDIO=true` で読めなければ書かずに ID を外す。② の後に読めなければ書いた要求を自分で取り下げて ID を外す（取り下げに失敗したら ID を外さずに nil）。どれも `source_delete_skipped recording_key=… reason=lock_mismatch`。
+> readiness は各段の先頭で 1 回だけ評価するので、その後に無効化が走っても要求を残さないため（PLAN §8.9.5）。呼び手（§4.5 の手順 6・根拠 B（T-39）・T-41 の後追い）は `try await`。下の §4.4・§4.5・§5 はその分を直した。テストは `RequestWriterRecheckTests`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-38 |
@@ -208,8 +212,18 @@ import VDStore
 
 struct RequestWriter {
     let deps: DeletionDependencies
+    /// ロック 1（reaper.conf）の読み。本番は `deps.locks.observeReaperConf()`（F-72）
+    let observeLock1: @Sendable () async -> ReaperConfObservation
+    /// `self.init(deps: deps, observeLock1: { await locks.observeReaperConf() })`（`let locks = deps.locks`）
+    init(deps: DeletionDependencies)
+    /// テスト用（@testable）: ロック 1 の読みを差し替える（② の前後で無効化が走った状況を作る）
+    init(deps: DeletionDependencies, observeLock1: @escaping @Sendable () async -> ReaperConfObservation)
     /// 書けたら request_id。書けなければ nil（理由はログに出してある）。Store の予期しない例外は投げる
-    func write(part: RecordingRow, sessionKey: String) throws -> String?
+    func write(part: RecordingRow, sessionKey: String) async throws -> String?
+    /// `guard case .valid(let conf) = await observeLock1() else { return false }; return conf.deleteSourceAudio`
+    private func lock1IsReleased() async -> Bool
+    /// `deps.log.log(level, .sourceDeleteSkipped, [(.recordingKey, .string(partkey)), (.reason, .string(DeletionReason.lockMismatch))])`
+    private func logLockMismatch(_ partkey: String, level: LogLevel)
 }
 ```
 
@@ -218,11 +232,16 @@ struct RequestWriter {
 2. `now = deps.clock.now()`、`seconds = now.epochMillis >= 0 ? now.epochMillis / 1000 : -((-now.epochMillis + 999) / 1000)`、
    `id = RequestID.make(partkey: part.partkey, utcEpochSeconds: seconds, randomHex6: RequestID.randomHex6())`
 3. **① ID を先に**: `guard try deps.store.updateRecordingIfStatus(part.partkey, status: part.status, [.deleteRequestID(id)]) else { deps.logStatusChanged(recordingKey: part.partkey); return nil }`
-4. `request = DeleteRequest(requestID: id, createdAt: deps.zone.iso(now), deviceID: part.deviceID, partkey: part.partkey, sessionKey: sessionKey, target: DeleteTarget(relpath: relpath, size: size, mtime: mtime))`
+4. （F-72）**ロック 1 を読み直す**: `guard await lock1IsReleased() else { try deps.store.updateRecording(part.partkey, [.deleteRequestID(nil)]); logLockMismatch(part.partkey, level: .info); return nil }`
+5. `request = DeleteRequest(requestID: id, createdAt: deps.zone.iso(now), deviceID: part.deviceID, partkey: part.partkey, sessionKey: sessionKey, target: DeleteTarget(relpath: relpath, size: size, mtime: mtime))`
    （size / mtime は **DB の値 = デバイス上の原本**。DEL-12。絶対パスを持たない。PR-17）
-5. **② 要求ファイル**: `do { try DeleteQueue.write(request, layout: deps.layout) } catch {` `try deps.store.updateRecording(part.partkey, [.deleteRequestID(nil)])`、
+6. **② 要求ファイル**: `do { try DeleteQueue.write(request, layout: deps.layout) } catch {` `try deps.store.updateRecording(part.partkey, [.deleteRequestID(nil)])`、
    `deps.log.warning(.sourceDeletePending, [(.recordingKey, .string(part.partkey)), (.reason, .string(DeletionReason.queueWriteFailed)), (.errorCode, .string(ErrorCode.deleteQueueFailed.rawValue))])`、`return nil }`
-6. `return id`
+7. （F-72）**② の後にもう一度読む**: `guard await lock1IsReleased() else {`
+   `do { try SafeUnlink.remove(DeleteQueue.requestURL(id, layout: deps.layout), under: .queueDelete, layout: deps.layout, missingOK: true) } catch { logLockMismatch(part.partkey, level: .warning); return nil }`（取り下げられなければ ID を持ったまま。期限切れが片付ける）、
+   `try deps.store.updateRecording(part.partkey, [.deleteRequestID(nil)])`、`logLockMismatch(part.partkey, level: .info)`、`return nil }`
+   （偽が見えたなら無効化の段 1 は済んでいるので自分で取り下げる。真が見えたなら段 1 はこの後なので段 4 が取り下げる。PLAN §8.9.5）
+8. `return id`
 
 - ②の後・③の前に落ちても、Part は ID を持ち「結果待ち」として回収か期限切れで決着する（PLAN §8.9.5）
 
@@ -262,7 +281,7 @@ struct DeletionRequester {
        5 が真なら `deps.streaks.reset(partkey)` してから 5b へ
    5b. （**F-78 で追加**）`part.status == .sourceDeletePending` で `let reason = try persistentRejection(part)` が nil でなければ、要求を書かずに `settleAsNotDeletable(part, cause: reason)` して飛ばす
        （5a の SOURCE_DELETE_PENDING と同じ 2 遷移・ログ。原因の語は最後の拒否の reaper の理由語）
-   6. `guard let id = try RequestWriter(deps: deps).write(part: part, sessionKey: session.sessionKey) else { continue }`（①②）
+   6. `guard let id = try await RequestWriter(deps: deps).write(part: part, sessionKey: session.sessionKey) else { continue }`（①②。F-72 で `await`）
    7. ③ `do { try deps.store.recordPartTransition(partkey: part.partkey, from: part.status, to: .sourceDeleting) } catch is TransitionConflict { deps.logStatusChanged(recordingKey: part.partkey); continue }`（RAW_SAVED か SOURCE_DELETE_PENDING から）
    8. `deps.log.info(.deleteRequested, [(.requestID, .string(id)), (.recordingKey, .string(part.partkey)), (.sessionKey, .string(session.sessionKey))])`
    9. `requested += 1`
@@ -619,6 +638,8 @@ extension DeletionScene {
 | `source_delete_skipped` | WARNING | `recording_key` か `session_key`, `reason=status_changed` | 衝突 |
 | `source_delete_pending` | WARNING | `recording_key`, `reason`（RV の理由語・`still_in_inventory`・`no_result`） | pend |
 | `source_delete_pending` | WARNING | `recording_key`, `reason=queue_write_failed`, `error_code=DELETE_QUEUE_FAILED` | RequestWriter |
+| `source_delete_skipped` | INFO | `recording_key`, `reason=lock_mismatch` | RequestWriter（② の前後の reaper.conf の読み直し。F-72） |
+| `source_delete_skipped` | WARNING | `recording_key`, `reason=lock_mismatch` | RequestWriter（② の後の取り下げに失敗して ID を残したとき。F-72） |
 | `disk_space_low` | WARNING | `session_key`, `reason=staging_unlink_failed` | finishCleanup |
 | `reaper_run` | INFO | `exit` | runReaperIfNeeded |
 | `reaper_failed` | WARNING | `reason`（`exit_<n>`・`busy`・`timeout`・`signature`） | runReaperIfNeeded（`version_mismatch` と検証の `signature` は T-36 の LockEvaluator） |

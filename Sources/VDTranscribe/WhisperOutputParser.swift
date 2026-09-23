@@ -41,6 +41,7 @@ public enum WhisperOutputParser {
     }
 
     /// ASR-05: offsets はミリ秒。整数でも小数でも受け、文字列・bool・null は nil。
+    /// F-71: 秒にして読めない値（NaN・±Infinity・絶対値が 10 億秒超）も nil（その要素だけ飛ばす。§8.4 の読み戻しと同じ条件）。
     static func seconds(_ v: PyJSONValue?) -> Double? {
         let ms: Double
         switch v {
@@ -48,6 +49,7 @@ public enum WhisperOutputParser {
         case .double(let d)?: ms = d
         default: return nil
         }
-        return PyRound.round(ms / 1000.0, digits: 3)
+        let s = PyRound.round(ms / 1000.0, digits: 3)
+        return SecondsToMillis.isReadable(s) ? s : nil
     }
 }

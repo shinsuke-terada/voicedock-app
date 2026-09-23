@@ -66,14 +66,18 @@ enum BacklogTexts {
         }
     }
 
+    /// 飛ばした数はプレビューで見せた件数との差。増えた分は実行していないことを添える（F-72）
     static func resultLine(_ kind: BacklogKind, _ execution: BacklogExecution) -> String {
         var line: String
         switch kind {
         case .backlog: line = String(execution.done) + " 件の削除要求を書きました"
         case .resolveAbsent: line = String(execution.done) + " 件を完了にしました"
         }
-        if execution.done < execution.plan.eligible.count {
-            line += "（" + String(execution.plan.eligible.count - execution.done) + " 件は状態が変わったため飛ばしました）"
+        if execution.done < execution.previewed {
+            line += "（" + String(execution.previewed - execution.done) + " 件は状態が変わったため飛ばしました）"
+        }
+        if execution.added > 0 {
+            line += "。プレビューの後に増えた " + String(execution.added) + " 件は実行していません（もう一度押してプレビューから確かめてください）"
         }
         return line
     }

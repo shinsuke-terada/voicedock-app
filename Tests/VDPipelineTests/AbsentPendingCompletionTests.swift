@@ -194,7 +194,7 @@ struct AbsentPendingCompletionTests {
         // 取り残しの要求（書いた後に ID だけが外れた姿）と結果、ほかの Part の結果
         let writerDeps = Self.deps(scene, snapshot: scene.snapshot())
         let row = try Self.part(scene)
-        #expect(try RequestWriter(deps: writerDeps).write(part: row, sessionKey: Self.key) != nil)
+        #expect(try await RequestWriter(deps: writerDeps).write(part: row, sessionKey: Self.key) != nil)
         try scene.store.updateRecording(Self.pk, [.deleteRequestID(nil)])
         try scene.writeResult(
             partkey: Self.pk, requestID: Self.strayID, status: .sourceIdentityMismatch, detail: "size_mismatch")
