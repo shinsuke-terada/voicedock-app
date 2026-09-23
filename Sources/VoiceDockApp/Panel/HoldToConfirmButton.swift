@@ -12,6 +12,8 @@ struct HoldToConfirmButton: View {
 
     let title: String
     let disabled: Bool
+    /// 読み上げの補足（既定は有効化の案内。「更新する」は更新の案内。F-84）
+    var accessibilityHintText: String = Strings.holdToEnableHint
     let onConfirm: @MainActor () -> Void
 
     @State private var tracker = Tracker()
@@ -59,7 +61,7 @@ struct HoldToConfirmButton: View {
         .onDisappear { end() }
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isButton)
-        .accessibilityHint(Strings.holdToEnableHint)
+        .accessibilityHint(accessibilityHintText)
     }
 
     /// 押し始め（同じ押下の 2 回目以降の onChanged は無視する）

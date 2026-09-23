@@ -2,7 +2,9 @@
 
 > （F-81・issue #119。2026-09-23）`PartKey.deviceID(of:)` / `relpath(of:)` の最初の `/` と、`DeviceID.isValid` の「`.` で始まる」も Unicode スカラーで見る
 > （`partkey.unicodeScalars.firstIndex(of: "/")`・`id.unicodeScalars.first == "."`。ASCII の入力の結果は変わらない）。以下の本文の `firstIndex(of: "/")`・`hasPrefix(".")` は記録として残す。テストは `KeyScalarTests`。
->
+
+> （F-84・issue #119。2026-09-23。マージ後の追記）`FileLock` に `static func tryAcquireResult(url:) -> Result<FileLock, FileLock.Failure>` と `enum Failure { held（flock が EWOULDBLOCK）, openFailed(errno:), lockFailed(errno:) }` を足した（手順は `tryAcquire` と同じ。errno は close の前に控える）。`tryAcquire` はこの結果を nil にするだけで振る舞いは変えない（reaper と IngestService はこれまでどおり `tryAcquire`）。アプリの単一起動のロック（T-30 の `Bootstrap.acquireInstanceLock`）が、ほかが持っているのと開けないのを分けるため。テストは `FileLockFailureTests`。
+
 > （F-73・issue #113。2026-09-23）`RelPath` の分割・先頭の `/`・`.` 始まりの判定を Unicode スカラー（UTF-8 の 0x2F）で行うようにした（書記素で見ると `/` の直後の結合文字で区切りを見落とす。ASCII の入力の結果は変わらない）。
 > `ReaperConf.observe` の open に `O_NONBLOCK`（FIFO で止まらない）、`FileLock.tryAcquire` の open に `O_NOFOLLOW`（symlink を辿らない）を足した。以下の本文の手順・フラグは記録として残す。
 > テストは `RelPathScalarTests`・`FileLockNoFollowTests`（reaper.conf の FIFO は `ReaperDefenseTests`）。

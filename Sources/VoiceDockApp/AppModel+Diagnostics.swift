@@ -44,12 +44,27 @@ extension AppModel {
     func toggleDetails() async {
         detailsExpanded.toggle()
         guard detailsExpanded else {
+            statusReportAwaitsWorker = nil
             setStatusReport(nil)
             return
         }
-        let report = await services.statusReport()
-        // 待っている間に閉じられたら差し込まない
+        await loadStatusReport()
+    }
+
+    /// 「詳細・診断」の画面にいる間だけ、状態の詳細を読み直す（F-84。同じ画面での設定の読み直し・後追いの実行の返事の後と、
+    /// 再試行の後に Worker が idle に戻ったとき。画面に入ったときの 1 回だけでは、操作の後も古いまま残る）。
+    /// 画面にいなければ何もしない（inbox も staging も走査しない）
+    func reloadStatusReport() async {
         guard detailsExpanded else { return }
+        await loadStatusReport()
+    }
+
+    /// 状態の詳細を読んで差し込む。待っている間に閉じられた・後から別の読み込みが始まったら差し込まない（F-84。世代で捨てる）
+    private func loadStatusReport() async {
+        statusReportGeneration += 1
+        let generation = statusReportGeneration
+        let report = await services.statusReport()
+        guard detailsExpanded, generation == statusReportGeneration else { return }
         setStatusReport(report)
     }
 

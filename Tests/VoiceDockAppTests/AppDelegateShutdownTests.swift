@@ -26,6 +26,7 @@ struct AppDelegateShutdownTests {
             requestStop: { log.add("requestStop") },
             terminateChildren: { log.add("terminateChildren") },
             stopIngest: { log.add("stopIngest") },
+            keepDownloadResumeData: { log.add("keepDownloadResumeData") },
             stopLLM: { log.add("stopLLM") },
             awaitWorker: { log.add("awaitWorker") })
     }
@@ -56,13 +57,18 @@ struct AppDelegateShutdownTests {
         #expect(order.withLock { $0 } == ["requestStop", "terminateAll", "llama", "worker"])
     }
 
-    @Test("F-76 本番の段の順: 停止要求 → 子を閉じて止める → 取り込み → llama → Worker の待ち（子を止める段が先）")
+    @Test(
+        "F-76 本番の段の順: 停止要求 → 子を閉じて止める → 取り込み → ダウンロードの再開データ（F-83）→ llama → Worker の待ち（子を止める段が先）"
+    )
     func productionStepsKillChildrenFirst() async {
         let log = StepLog()
         let finished = await AppDelegate.shutDown(
             within: .seconds(10), AppDelegate.shutdownSteps(Self.recordingParts(log)))
         #expect(finished)
-        #expect(log.all == ["requestStop", "terminateChildren", "stopIngest", "stopLLM", "awaitWorker"])
+        #expect(
+            log.all == [
+                "requestStop", "terminateChildren", "stopIngest", "keepDownloadResumeData", "stopLLM", "awaitWorker",
+            ])
     }
 
     @Test("F-76 終了の直前に残った子を止め、以後の起動を拒む（後始末を飛ばして終わるときの備え）")

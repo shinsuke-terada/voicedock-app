@@ -41,6 +41,16 @@ struct DetailsSection: View {
                 case .invalid(let v): Text(Strings.reloadInvalid(v.count)).font(.caption).foregroundStyle(.red)
                 }
             }
+            // 起動したときの値のまま動いている設定（read のたびに作る値。自動では再起動しない。F-84）
+            let pending = model.snapshot.settingsAwaitingRestart
+            if !pending.isEmpty {
+                Text(Strings.restartPendingTitle).font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+                ForEach(Array(pending.enumerated()), id: \.offset) { _, d in
+                    Text(Strings.restartPending(d)).font(.caption).foregroundStyle(.secondary).padding(.leading, 14)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
         .buttonStyle(.bordered)
         .controlSize(.small)

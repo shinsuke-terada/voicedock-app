@@ -22,6 +22,9 @@ enum PanelStyle {
         }
     }
 
+    /// 要対応の操作で目立たせるカードの枠（「モデルの節を開く」「有効化フローを開く」。F-65・F-84）
+    static let highlightOpacity: Double = 0.6
+
     /// 状態の見出しの色（待機＝緑、取り込み・処理中＝青、要対応＝橙）
     static func tint(_ state: IconState) -> Color {
         switch state {
@@ -63,6 +66,16 @@ struct SectionBox<Content: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous).fill(.quaternary.opacity(0.5))
+        )
+    }
+}
+
+extension View {
+    /// 要対応の操作で開いたカードに橙の枠を付ける（on が偽なら透明。枠の有無で大きさを変えない。F-65・F-84）
+    func attentionHighlight(_ on: Bool) -> some View {
+        overlay(
+            RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
+                .strokeBorder(Color.orange.opacity(on ? PanelStyle.highlightOpacity : 0), lineWidth: 1)
         )
     }
 }

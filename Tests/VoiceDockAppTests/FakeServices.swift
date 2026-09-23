@@ -62,6 +62,13 @@ final class FakeServices: AppServices {
         var disableCount = 0
         var holdDisable = false
         var disableGates: [AsyncStream<Void>.Continuation] = []
+        // F-84
+        /// 0 より大きければ、次の statusReport をその数だけ止める（返す値は止める前に決まる。重なりのテスト）
+        var holdReports = 0
+        var reportGates: [AsyncStream<Void>.Continuation] = []
+        /// 真なら enableDeletion を releaseEnable まで返さない（閉じた後に終わる有効化のテスト）
+        var holdEnable = false
+        var enableGates: [AsyncStream<Void>.Continuation] = []
     }
 
     private let state: Mutex<State>
@@ -120,6 +127,14 @@ final class FakeServices: AppServices {
     func holdNextReads(_ n: Int) { state.withLock { $0.holdReads = n } }
     /// 止まっている read の数
     var heldReadCount: Int { state.withLock { $0.readGates.count } }
+    /// 止まっている read のうち、いちばん先に止めたものだけを返す（F-84。重なった read の終わる順を決めるテスト）
+    func releaseOldestRead() {
+        let gate = state.withLock { st -> AsyncStream<Void>.Continuation? in
+            st.readGates.isEmpty ? nil : st.readGates.removeFirst()
+        }
+        gate?.yield(())
+        gate?.finish()
+    }
     /// 止まっている read をすべて返す
     func releaseReads() {
         let gates = state.withLock { st -> [AsyncStream<Void>.Continuation] in
@@ -302,9 +317,34 @@ final class FakeServices: AppServices {
     func enqueue(_ job: WorkerJob) async { state.withLock { $0.jobs.append(job) } }
 
     func statusReport() async -> StatusReport {
-        state.withLock {
-            $0.statusReportCount += 1
-            return $0.report ?? Self.emptyReport
+        let (report, hold) = state.withLock { s -> (StatusReport, Bool) in
+            s.statusReportCount += 1
+            let hold = s.holdReports > 0
+            if hold { s.holdReports -= 1 }
+            return (s.report ?? Self.emptyReport, hold)
+        }
+        if hold {
+            let (gate, continuation) = AsyncStream.makeStream(of: Void.self)
+            state.withLock { $0.reportGates.append(continuation) }
+            var it = gate.makeAsyncIterator()
+            _ = await it.next()
+        }
+        return report
+    }
+
+    /// 次の n 回の statusReport を止める（F-84）
+    func holdNextStatusReports(_ n: Int) { state.withLock { $0.holdReports = n } }
+    /// 止まっている statusReport の数
+    var heldStatusReportCount: Int { state.withLock { $0.reportGates.count } }
+    /// 止まっている statusReport をすべて返す
+    func releaseStatusReports() {
+        let gates = state.withLock { s -> [AsyncStream<Void>.Continuation] in
+            defer { s.reportGates = [] }
+            return s.reportGates
+        }
+        for g in gates {
+            g.yield(())
+            g.finish()
         }
     }
 
@@ -331,9 +371,29 @@ final class FakeServices: AppServices {
     }
 
     func enableDeletion(confirmation: String) async -> Result<Void, EnableError> {
-        state.withLock {
-            $0.enableConfirmations.append(confirmation)
-            return $0.enableResult
+        let hold = state.withLock { s -> Bool in
+            s.enableConfirmations.append(confirmation)
+            return s.holdEnable
+        }
+        if hold {
+            let (gate, continuation) = AsyncStream.makeStream(of: Void.self)
+            state.withLock { $0.enableGates.append(continuation) }
+            var it = gate.makeAsyncIterator()
+            _ = await it.next()
+        }
+        return state.withLock { $0.enableResult }
+    }
+
+    /// enableDeletion を releaseEnable まで返さない（F-84）
+    func setHoldEnable(_ hold: Bool) { state.withLock { $0.holdEnable = hold } }
+    func releaseEnable() {
+        let gates = state.withLock { s -> [AsyncStream<Void>.Continuation] in
+            defer { s.enableGates = [] }
+            return s.enableGates
+        }
+        for g in gates {
+            g.yield(())
+            g.finish()
         }
     }
 

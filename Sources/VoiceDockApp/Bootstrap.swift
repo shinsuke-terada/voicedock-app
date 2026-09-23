@@ -44,6 +44,9 @@ final class AppContext {
     /// 単一起動のロック（`<HOME>/state/app.lock`。F-76）。アプリが生きている間ずっと持つ（手放すと 2 つ目の起動を拒めない）。
     /// 本番は Bootstrap が渡す。テストの組み立ては持たない（nil）
     let instanceLock: FileLock?
+    /// 起動の手順 8 で時刻帯とログに実際に使った値（F-84）。Store・IngestService・AppLog はこの値のまま動き、
+    /// 「設定を読み直す」では変わらない（LiveServices.read が今の設定と比べ、違えばパネルに「再起動すると反映されます」を出す）
+    let runningSettings: EffectiveSettings
 
     init(
         layout: HomeLayout, paths: AppPaths, clock: any AppClock, log: AppLog, catalog: ModelCatalog,
@@ -51,7 +54,8 @@ final class AppContext {
         diagnostics: DiagnosticsDependencies, llama: LlamaServerSupervisor, ingest: IngestService,
         worker: Worker, enabler: DeletionEnabler, models: ModelManager, downloader: ModelDownloader,
         loginItem: any LoginItemControlling,
-        uiState: UIStateStore, physicalMemoryBytes: UInt64, instanceLock: FileLock? = nil
+        uiState: UIStateStore, physicalMemoryBytes: UInt64, instanceLock: FileLock? = nil,
+        runningSettings: EffectiveSettings = EffectiveSettings.resolve(nil)
     ) {
         self.layout = layout
         self.paths = paths
@@ -73,6 +77,7 @@ final class AppContext {
         self.uiState = uiState
         self.physicalMemoryBytes = physicalMemoryBytes
         self.instanceLock = instanceLock
+        self.runningSettings = runningSettings
     }
 }
 
@@ -84,8 +89,11 @@ enum BootFailure: Error, Equatable {
     case catalog(String)
     /// Store(url:clock:zone:) が投げた
     case database(String)
-    /// 単一起動のロック（`state/app.lock`）が取れない = 別のインスタンスが動いている（F-76）。知らせずに終わる
+    /// 単一起動のロック（`state/app.lock`）をほかが持っている = 別のインスタンスが動いている（F-76）。知らせずに終わる
     case alreadyRunning
+    /// 単一起動のロックを開けない・flock が EWOULDBLOCK 以外で失敗した（F-84。別のインスタンスが動いているとは限らない）。
+    /// 値は `<relpath>` と `<段>: errno <n> (<strerror>)`
+    case instanceLock(path: String, reason: String)
 
     /// 警告の本文。nil なら何も出さずに終わる（alreadyRunning。パネルは先に起動したほうにある。D-7）
     var message: String? {
@@ -94,6 +102,7 @@ enum BootFailure: Error, Equatable {
         case .catalog(let e): Strings.bootFailureCatalog(e)
         case .database(let e): Strings.bootFailureDatabase(e)
         case .alreadyRunning: nil
+        case .instanceLock(let path, let reason): Strings.bootFailureInstanceLock(path: path, reason: reason)
         }
     }
 }
@@ -122,17 +131,27 @@ enum Bootstrap {
         case .success(let c): catalog = c
         case .failure(let e): return .failure(.catalog(ErrorText.describe(e)))
         }
-        // 4. 時計とログ（設定を読む前のログは既定のレベルで出す）
+        // 4. 時計とログ（設定を読む前のログは既定のレベルで出す。既定は設定が無いときの EffectiveSettings。F-84）
         let clock: any AppClock = SystemClock()
-        let bootZone = ZonedTime(timeZone: TimeZone.current)
+        let bootTimeZone = TimeZone.current
+        let bootSettings = EffectiveSettings.resolve(nil, current: bootTimeZone)
         let sink = TeeSink([OSLogSink(subsystem: logSubsystem), LogFile(url: layout.appLog)])
-        var log = AppLog(sink: sink, level: .info, unsafeContent: false, zone: bootZone, clock: clock, category: "app")
-        // 4 の後. 単一起動（F-76）。設定・DB・復旧・Worker より前に <HOME>/state/app.lock を取る。取れなければ別のインスタンスが
-        // 動いている（2 つ目の復旧が 1 つ目の処理中の行を戻さないように）。ログの 1 行のほかは何もせずに終わる
-        guard let instanceLock = acquireInstanceLock(layout: layout) else {
-            log.info(
-                .serviceStopping, [(.version, .string(AppVersion.string)), (.reason, .string(alreadyRunningReason))])
-            return .failure(.alreadyRunning)
+        var log = AppLog(
+            sink: sink, level: bootSettings.logLevel, unsafeContent: bootSettings.unsafeLogContent,
+            zone: ZonedTime(timeZone: bootSettings.timeZone), clock: clock, category: "app")
+        // 4 の後. 単一起動（F-76）。設定・DB・復旧・Worker より前に <HOME>/state/app.lock を取る。ほかが持っていれば別の
+        // インスタンスが動いている（2 つ目の復旧が 1 つ目の処理中の行を戻さないように）。ログの 1 行のほかは何もせずに終わる。
+        // 開けない（EACCES・EISDIR・ENOSPC・ELOOP など）ときは黙って終わらず、起動の失敗として NSAlert を出す（F-84）
+        let instanceLock: FileLock
+        switch acquireInstanceLock(layout: layout) {
+        case .success(let lock): instanceLock = lock
+        case .failure(let failure):
+            if failure == .alreadyRunning {
+                log.info(
+                    .serviceStopping,
+                    [(.version, .string(AppVersion.string)), (.reason, .string(alreadyRunningReason))])
+            }
+            return .failure(failure)
         }
         // 5. 子プロセス
         let runner = ProcessRunner()
@@ -153,16 +172,16 @@ enum Bootstrap {
             ingest: enablerIngest, log: log.withCategory("pipeline"))
         await config.setLock1Reconciler { [enabler] in await enabler.reconcileLock1() }
         let loaded = await config.load()  // 修復口を挿した後に読む
-        // 8. ログを設定で作り直す（ここから後のログだけが設定のレベルに従う）
-        var zone = bootZone
+        // 8. ログを設定で作り直す（ここから後のログだけが設定のレベルに従う）。時刻帯とログに使う値は EffectiveSettings の
+        // 1 か所で解き、AppContext に残す（Store・IngestService・AppLog は読み直しで変わらないので、違えばパネルに出す。F-84）。
+        // 設定が読めなければ手順 4 と同じ値（TimeZone.current・INFO・本文を出さない）
         var loadedConfig: AppConfig?
-        if case .valid(let c) = loaded {
-            zone = ZonedTime(timeZone: TimeZone(identifier: c.timeZone) ?? .current)
-            log = AppLog(
-                sink: sink, level: LogLevel(configValue: c.logging.level) ?? .info,
-                unsafeContent: c.logging.unsafeLogContent, zone: zone, clock: clock, category: "app")
-            loadedConfig = c
-        }
+        if case .valid(let c) = loaded { loadedConfig = c }
+        let running = EffectiveSettings.resolve(loadedConfig, current: bootTimeZone)
+        let zone = ZonedTime(timeZone: running.timeZone)
+        log = AppLog(
+            sink: sink, level: running.logLevel, unsafeContent: running.unsafeLogContent, zone: zone, clock: clock,
+            category: "app")
         // 9. DB
         let store: Store
         do { store = try Store(url: layout.database, clock: clock, zone: zone) } catch {
@@ -217,13 +236,17 @@ enum Bootstrap {
         let models = ModelManager(
             layout: layout, catalog: catalog, downloader: downloader,
             cache: verificationCache, log: log.withCategory("models"), hashChunkBytes: hashChunkBytes)
+        // 14 の後. 前回の取り込みが途中で終わって残った models/llm/.custom-import-*.gguf.part を消す（F-83。PLAN §8.10）。
+        // 単一起動のロック（4 の後）を取った後なので、ほかのインスタンスの取り込みの途中のファイルは消さない。
+        // Worker と取り込みを始める（15）より前。消した数を出す既存のログのイベントは無いので出さない
+        await models.discardStaleImports()
         // 15. Worker.start()（復旧）を終えてから Worker のループと IngestService.start()（走査）を始める（PLAN §8.15）
         let ctx = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,
             runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
             enabler: enabler, models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
-            physicalMemoryBytes: physicalMemoryBytes, instanceLock: instanceLock)
+            physicalMemoryBytes: physicalMemoryBytes, instanceLock: instanceLock, runningSettings: running)
         ctx.workerTask = await startServices(
             workerStart: { await worker.start() }, workerRun: { await worker.run() },
             ingestStart: { await ingest.start() })
@@ -234,11 +257,23 @@ enum Bootstrap {
     /// 2 つ目の起動が出す `service_stopping` の reason（付録 A.4。F-76）
     static let alreadyRunningReason = "already_running"
 
-    /// 単一起動のロック（F-76）。`<HOME>/state/app.lock`（reaper.lock とは別）を `FileLock.tryAcquire` で取る（待たない）。
-    /// 取れなければ nil（別のインスタンスが持っている。開けないときも同じ）。state/ は先に作っておくこと（手順 2）。
+    /// 単一起動のロック（F-76）。`<HOME>/state/app.lock`（reaper.lock とは別）を `FileLock.tryAcquireResult` で取る（待たない）。
+    /// ほかが持っていれば（EWOULDBLOCK）`.alreadyRunning`。開けない・flock がほかの理由で失敗したら `.instanceLock`
+    /// （F-84。別のインスタンスが動いているとは限らないので、黙って終わらずに知らせる）。state/ は先に作っておくこと（手順 2）。
     /// fd は O_CLOEXEC なので子プロセス（whisper-cli・llama-server・reaper）はロックを受け継がない（アプリが落ちれば外れる）
-    static func acquireInstanceLock(layout: HomeLayout) -> FileLock? {
-        FileLock.tryAcquire(url: layout.appLock)
+    static func acquireInstanceLock(layout: HomeLayout) -> Result<FileLock, BootFailure> {
+        let path = layout.relativePath(of: layout.appLock) ?? layout.appLock.path(percentEncoded: false)
+        switch FileLock.tryAcquireResult(url: layout.appLock) {
+        case .success(let lock): return .success(lock)
+        case .failure(.held): return .failure(.alreadyRunning)
+        case .failure(.openFailed(let e)): return .failure(.instanceLock(path: path, reason: errnoText("open", e)))
+        case .failure(.lockFailed(let e)): return .failure(.instanceLock(path: path, reason: errnoText("flock", e)))
+        }
+    }
+
+    /// `<段>: errno <n> (<strerror>)`（F-84。起動の失敗の警告に出す）
+    static func errnoText(_ stage: String, _ e: Int32) -> String {
+        stage + ": errno " + String(e) + " (" + String(cString: strerror(e)) + ")"
     }
 
     /// 起動の順（PLAN §8.15）: 復旧（`Worker.start()`）を**待ってから** Worker のループを作り、最後に走査を始める。

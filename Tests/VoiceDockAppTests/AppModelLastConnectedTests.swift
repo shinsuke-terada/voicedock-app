@@ -194,11 +194,11 @@ struct AppModelLastConnectedTests {
         fake.set(Self.connected(at: Self.t))
         await model.refresh()
         #expect(store.load().lastConnectedAt == Self.t)
-        // 古い read が終わり、snapshot は最終接続の無い値に戻る
+        // 古い read が終わっても、後から始まった read の結果を先に入れたので、その結果は入れない（F-84。以前は最終接続の無い値に戻った）
         fake.set(Self.disconnected(last: nil))
         fake.releaseReads()
         await periodic.value
-        #expect(model.snapshot.uiState.lastConnectedAt == nil)
+        #expect(model.snapshot.uiState.lastConnectedAt == Self.t)
         // その後の「今はしない」は、この起動で書いた最終接続を残す
         await model.dismissLoginItem()
         let file = store.load()

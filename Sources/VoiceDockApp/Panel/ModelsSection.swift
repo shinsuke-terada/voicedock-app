@@ -38,11 +38,8 @@ struct ModelsSection: View {
                 Text(notice).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
-        // 要対応の「モデルの節を開く」で目立たせる（主画面のカードのまま。F-65）
-        .overlay(
-            RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
-                .strokeBorder(Color.orange.opacity(model.modelsHighlighted ? 0.6 : 0), lineWidth: 1)
-        )
+        // 要対応の「モデルの節を開く」で目立たせる（主画面のカードのまま。閉じたら戻す。F-65・F-84）
+        .attentionHighlight(model.modelsHighlighted)
     }
 
     /// 入手の対象になる LLM の枠（カタログの項目が選ばれているときだけ。読み込んだモデルは入手しない）

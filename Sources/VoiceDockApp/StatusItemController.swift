@@ -9,6 +9,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let popover: NSPopover
     private let model: AppModel
     private var iconObserver: Task<Void, Never>?
+    /// 状態の 1 行が変わったらツールチップを書き直す（F-84。アイコンが変わらない間も古いまま残さない）
+    private var statusLineObserver: Task<Void, Never>?
     private var reopenAfterModal = false
 
     init(model: AppModel) {
@@ -30,6 +32,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         applyIcon()
         iconObserver = Task { @MainActor [weak self] in
             for await _ in model.iconChanges { self?.applyIcon() }
+        }
+        statusLineObserver = Task { @MainActor [weak self] in
+            for await _ in model.statusLineChanges { self?.applyToolTip() }
         }
     }
 
@@ -62,8 +67,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
-        // reopenAfterModal はここで消さない（runModal が開き直す）
-        model.panelDidClose()
+        // reopenAfterModal はここで消さない（runModal が開き直す）。モーダルのために閉じたときは要対応の枠を残す（F-84）
+        model.panelDidClose(reopening: reopenAfterModal)
     }
 
     @objc private func toggle(_ sender: Any?) {
@@ -72,6 +77,10 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
 
     private func applyIcon() {
         item.button?.image = StatusIconImage.make(state: model.iconState, showsTrash: model.showsTrash)
+        applyToolTip()
+    }
+
+    private func applyToolTip() {
         item.button?.toolTip = model.statusLine
     }
 }

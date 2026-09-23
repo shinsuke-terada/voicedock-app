@@ -12,6 +12,8 @@ struct AppSnapshot: Equatable, Sendable {
     /// 設定が読めているか（偽 = 設定エラー状態。PLAN §6.1）
     var configPresent: Bool = false
     var configViolations: [ConfigViolation] = []
+    /// 起動で時刻帯とログに使った値のまま動いている設定（F-84。「設定を読み直す」では変わらず、再起動で変わる。設定エラー中は空）
+    var settingsAwaitingRestart: [EffectiveSettings.Difference] = []
     var timeZone: String = TimeZone.current.identifier
     var ingestState: IngestState = .idle
     var ingestActivity: IngestActivity = .idle
