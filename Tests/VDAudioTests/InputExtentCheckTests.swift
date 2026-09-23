@@ -112,6 +112,34 @@ struct InputExtentCheckTests {
                 == "入力のヘッダの長さと実データの量が合いません（ヘッダ 48000 フレーム、実データ 96008 フレーム）")
     }
 
+    @Test("F-77 data より前に奇数長のチャンク（パッド 1 バイトつき）があっても data を見つけて合格")
+    func oddChunkBeforeDataPasses() throws {
+        let tmp = try TempDirectory()
+        let samples = try HandMadeWAV.pcm24Samples(seconds: 2)
+        let blob = HandMadeWAV.riff(
+            HandMadeWAV.fmtPCM24() + HandMadeWAV.chunk("note", Data("VDock".utf8))
+                + HandMadeWAV.dataHeader(declared: 288_000) + samples)
+        #expect(try Self.check(blob, tmp) == nil)
+        #expect(
+            try Self.layout(blob, tmp)
+                == InputExtentCheck.Layout(
+                    dataStart: 58, declaredBytes: 288_000, fileBytes: 288_058, actualBytes: 288_000))
+    }
+
+    @Test("F-77 data が奇数長（24 bit mono の奇数フレーム）で終わりにパッド 1 バイトがあれば合格、実データは宣言どおり")
+    func oddDataWithPadPasses() throws {
+        let tmp = try TempDirectory()
+        let samples = try HandMadeWAV.pcm24Samples(frames: 48_001)
+        try #require(samples.count == 144_003)
+        let blob = HandMadeWAV.riff(
+            HandMadeWAV.fmtPCM24() + HandMadeWAV.dataHeader(declared: 144_003) + samples + Data([0x00]))
+        #expect(try Self.check(blob, tmp) == nil)
+        #expect(
+            try Self.layout(blob, tmp)
+                == InputExtentCheck.Layout(
+                    dataStart: 44, declaredBytes: 144_003, fileBytes: 144_048, actualBytes: 144_003))
+    }
+
     @Test("F-77 data のサイズがファイルより大きい（末尾が欠けた）ものはこの照合では落とさない")
     func declaredBeyondFileIsLeftToLengthCheck() throws {
         let tmp = try TempDirectory()

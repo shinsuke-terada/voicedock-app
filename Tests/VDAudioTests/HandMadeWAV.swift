@@ -9,10 +9,19 @@ enum HandMadeWAV {
     /// BWF の data のサイズの欄の位置（data は 32776 から。その直前の 4 バイト）
     static let bwfDataSizeOffset = BWFWriter.bwfHeaderBytes - 4
 
-    /// BWFWriter の実機どおりの BWF（speech）の、data のサイズの欄だけを `declared` に書き換える。
-    static func bwf(seconds: Double, format: BWFFormat = .pcm24, declared: UInt32) throws -> Data {
+    /// RIFF のサイズの欄の位置
+    static let riffSizeOffset = 4
+
+    /// BWFWriter の実機どおりの BWF（speech）の、data のサイズの欄を `declared` に書き換える。
+    /// `riffSize` を渡せば RIFF のサイズの欄も書き換える（ヘッダが古いまま残るときは両方が古いのがふつう）。
+    static func bwf(seconds: Double, format: BWFFormat = .pcm24, declared: UInt32, riffSize: UInt32? = nil) throws
+        -> Data
+    {
         var blob = try BWFWriter.build(seconds: seconds, format: format, content: .speech)
         blob.replaceSubrange(bwfDataSizeOffset..<(bwfDataSizeOffset + 4), with: le32(declared))
+        if let riffSize {
+            blob.replaceSubrange(riffSizeOffset..<(riffSizeOffset + 4), with: le32(riffSize))
+        }
         return blob
     }
 
@@ -20,6 +29,11 @@ enum HandMadeWAV {
     static func pcm24Samples(seconds: Double) throws -> Data {
         let blob = try BWFWriter.build(seconds: seconds, format: .pcm24, content: .speech, minimalHeader: true)
         return blob.subdata(in: BWFWriter.minimalHeaderBytes..<blob.count)
+    }
+
+    /// 24 bit mono 48 kHz の標本を `frames` フレーム分（奇数フレームなら奇数バイト。BWFWriter が足すパッドは除く）
+    static func pcm24Samples(frames: Int) throws -> Data {
+        Data(try pcm24Samples(seconds: Double(frames) / 48_000).prefix(frames * bytesPerFrame))
     }
 
     /// `form`（RIFF / RF64）＋ サイズ ＋ WAVE ＋ body。サイズを省くと 4 + body の長さ。
