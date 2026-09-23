@@ -121,6 +121,8 @@ public struct AttentionInput: Equatable, Sendable {
     public var paused: [PauseReason] = []
     public var vault: VaultStatus = .notConfigured
     public var reaper: ReaperStatus = .notInstalled
+    /// 削除が有効（アプリの設定の cleanup.deleteSourceAudio が真）。偽なら reaperUpdateRequired を出さない（F-80）
+    public var deletionEnabled = false
     public var snapshotMaxAgeSeconds = 900
     /// 消せないまま完了にした録音で、デバイスの一覧にまだ在るものの本数（AttentionEvaluator.undeletableStillListed の件数。F-69）
     public var undeletableSources = 0
@@ -152,6 +154,13 @@ public enum AttentionEvaluator {
     /// lockMismatch を出す設定の規則（ロック 1 と reaper.conf の食い違い、ro のままの削除）
     static let lockRules: Set<String> = ["CV-30", "CV-33"]
 
+    /// 再マウントの unmount は成功し mount が失敗したデバイスの unavailable の理由語（F-81 の IngestService が載せる。
+    /// VDDevice の Remounter が返す語と同じ綴り。deviceNeedsReplug に写す。F-80）
+    static let mountFailedReason = "mount_failed"
+
+    /// deviceNeedsReplug に写す unavailable の理由語（挿し直しを促す: mount_name_mismatch と mount_failed）
+    static let replugReasons: Set<String> = [DetectionReason.mountNameMismatch.rawValue, mountFailedReason]
+
     /// PLAN §8.11 の表の順に、条件を満たす項目だけを返す。
     public static func items(_ input: AttentionInput) -> [AttentionItem] {
         var items: [AttentionItem] = []
@@ -167,13 +176,14 @@ public enum AttentionEvaluator {
         if paused.contains(.llmInsufficientMemory) { items.append(.llmInsufficientMemory) }
         if paused.contains(.whisperMissing) { items.append(.toolMissing(.whisperCLI)) }
         if paused.contains(.llamaServerMissing) { items.append(.toolMissing(.llamaServer)) }
-        items += unavailable(input.snapshot, DetectionReason.notListable).map { .deviceNotListable($0) }
-        items += unavailable(input.snapshot, DetectionReason.mountNameMismatch).map { .deviceNeedsReplug($0) }
-        items += unavailable(input.snapshot, DetectionReason.invalidDeviceID).map { .deviceNameInvalid($0) }
+        items += unavailable(input.snapshot, [DetectionReason.notListable.rawValue]).map { .deviceNotListable($0) }
+        items += unavailable(input.snapshot, replugReasons).map { .deviceNeedsReplug($0) }
+        items += unavailable(input.snapshot, [DetectionReason.invalidDeviceID.rawValue]).map { .deviceNameInvalid($0) }
         if isIngestSilent(input) { items.append(.ingestSilent) }
         if paused.contains(.diskSpaceLow) { items.append(.diskSpaceLow) }
         if input.violations.contains(where: { lockRules.contains($0.rule) }) { items.append(.lockMismatch) }
-        if case .versionMismatch = input.reaper { items.append(.reaperUpdateRequired) }
+        // 削除が無効なら、有効化をやり直すよう促さない（削除を有効にする側へ誘わない。F-80）
+        if input.deletionEnabled, case .versionMismatch = input.reaper { items.append(.reaperUpdateRequired) }
         if input.undeletableSources > 0 { items.append(.undeletableSources(input.undeletableSources)) }
         if input.rawNoteBlocked > 0 { items.append(.rawNoteBlocked(input.rawNoteBlocked)) }
         return items
@@ -215,10 +225,10 @@ public enum AttentionEvaluator {
         return input.now.epochMillis - last > Int64(input.snapshotMaxAgeSeconds) * 1000
     }
 
-    /// snapshot.unavailable のうち理由が reason の名前（バイト順）
-    static func unavailable(_ snapshot: DeviceSnapshot?, _ reason: DetectionReason) -> [String] {
+    /// snapshot.unavailable のうち理由が reasons のどれかの名前（バイト順）
+    static func unavailable(_ snapshot: DeviceSnapshot?, _ reasons: Set<String>) -> [String] {
         guard let s = snapshot else { return [] }
-        return s.unavailable.filter { $0.value == reason.rawValue }.keys
+        return s.unavailable.filter { reasons.contains($0.value) }.keys
             .sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }
     }
 }

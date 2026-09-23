@@ -718,7 +718,7 @@ struct ReaperBench {
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `nd27ReplayedRequestIsRefused` | `ND-27 [R1] 同じ request_id の 2 回目は replayed` | 1 回目を走らせた後、**1 回目の結果ファイルを消し**（アプリが回収した後。残っていると RV-04 は結果を書かない）、同じ ID の要求をもう一度置いて 2 回目を走らせる | 2 回目は結果の `detail == "replayed"`、`processedLines()` が 1 行のまま（再追記しない）、要求が消える、`reason=replayed` のログ |
+| `nd27ReplayedRequestIsRefused` | `ND-27 [R1] 同じ request_id の 2 回目は replayed` | 1 回目を走らせた後（層 R1 の普通のディレクトリなので 1 回目は拒否。1 回目が成功して processed.log が `<request_id> DELETED` なら、2 回目は消し直さずに結果 DELETED を書き直す。F-80。`ProcessedLogTests`）、**1 回目の結果ファイルを消し**（アプリが回収した後。残っていると RV-04 は結果を書かない）、同じ ID の要求をもう一度置いて 2 回目を走らせる | 2 回目は結果の `detail == "replayed"`、`processedLines()` が 1 行のまま（再追記しない）、要求が消える、`reason=replayed` のログ |
 | `replayedDoesNotOverwriteAnExistingResult` | `RV-04 replayed は既に在る結果を上書きしない` | `processed.log` に ID を 1 行、`queue/result/<ID>.json` に `DELETED`（detail = relpath）を置き、同じ ID の要求を置く | 結果ファイルのバイト列が**変わらない**、要求が消える、`processedLines()` が 1 行のまま、`reason=replayed` のログ |
 | `nd44PartkeyMismatchIsRefused` | `ND-44 [R1] device_id/relpath が partkey と違えば partkey_mismatch` | `partkey: "VDT0037/other.wav"` | `detail == "partkey_mismatch"`、要求が消える、ファイルが在る |
 | `nd44DeviceIDMismatchIsRefused` | `ND-44 [R1] partkey の device_id だけが違えば partkey_mismatch` | `partkey: "OTHER/" + relpath` | 同上 |

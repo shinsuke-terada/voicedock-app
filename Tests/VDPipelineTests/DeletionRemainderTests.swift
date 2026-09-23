@@ -3,14 +3,15 @@
 // 「一覧に在るか」の 1 か所、要対応と状態の詳細の新鮮さ・設定エラー中の停止理由、DB から数える要対応の件数、
 // 状態の詳細の失敗した Part の注記、COMPLETED の Session に後から RAW_SAVED になった Part の評価。舞台は DeletionScene。
 import Foundation
+import GRDB
 import TestSupport
 import Testing
 import VDContract
 import VDCore
 import VDDevice
-import VDStore
 
 @testable import VDPipeline
+@testable import VDStore
 
 @Suite("DeletionRemainder")
 struct DeletionRemainderTests {
@@ -197,24 +198,62 @@ struct DeletionRemainderTests {
 
     // MARK: - R7: FAILED の兄弟
 
+    /// FAILED の兄弟の姿（R7）
+    struct SiblingCase: Sendable, CustomTestStringConvertible {
+        let name: String
+        let code: ErrorCode
+        let maxAttempts: Int
+        let needsRecopy: Bool
+        /// 兄弟の原本をデバイスに置く（snapshot の一覧に載る）
+        let onDevice: Bool
+        /// 兄弟の events を消す（FAILED の戻り先が読めない。InProcessRetry.delay も戻さない）
+        let dropEvents: Bool
+        let settles: Bool
+        var testDescription: String { name }
+    }
+
+    static let siblingCases = [
+        SiblingCase(
+            name: "工程内リトライが残る", code: .whisperFailed, maxAttempts: 3, needsRecopy: false, onDevice: true,
+            dropEvents: false, settles: false),
+        SiblingCase(
+            name: "再コピー待ちで原本が一覧に在る", code: .sourceHashMismatch, maxAttempts: 1, needsRecopy: true,
+            onDevice: true, dropEvents: false, settles: false),
+        SiblingCase(
+            name: "再コピー待ちだが原本が一覧に無い", code: .sourceHashMismatch, maxAttempts: 1, needsRecopy: true,
+            onDevice: false, dropEvents: false, settles: true),
+        SiblingCase(
+            name: "工程内リトライを使い切った", code: .whisperFailed, maxAttempts: 1, needsRecopy: false, onDevice: true,
+            dropEvents: false, settles: true),
+        SiblingCase(
+            name: "再試行の区分が none", code: .whisperExecMissing, maxAttempts: 3, needsRecopy: false, onDevice: true,
+            dropEvents: false, settles: true),
+        SiblingCase(
+            name: "FAILED の戻り先が読めない（InProcessRetry も戻さない）", code: .whisperFailed, maxAttempts: 3,
+            needsRecopy: false, onDevice: true, dropEvents: true, settles: true),
+    ]
+
     @Test(
-        "F-80 FAILED の兄弟が自動で戻りうる間は待ち、戻らないなら終端として数えて決着する（パラメータ化: 工程内リトライが残る・再コピー待ち・工程内リトライを使い切った・再試行の区分が none）",
-        arguments: [
-            ("工程内リトライが残る", ErrorCode.whisperFailed, 3, false, false),
-            ("再コピー待ち", .sourceHashMismatch, 1, true, false),
-            ("工程内リトライを使い切った", .whisperFailed, 1, false, true),
-            ("再試行の区分が none", .whisperExecMissing, 3, false, true),
-        ])
-    func failedSiblingWaitsWhileItCanReturn(
-        _ name: String, _ code: ErrorCode, _ maxAttempts: Int, _ needsRecopy: Bool, _ settles: Bool
-    ) async throws {
+        "F-80 FAILED の兄弟が自動で戻りうる間は待ち、戻らないなら終端として数えて決着する（パラメータ化: リトライが残る・再コピー待ち（原本が在る・無い）・使い切った・区分 none・戻り先が読めない）",
+        arguments: siblingCases)
+    func failedSiblingWaitsWhileItCanReturn(_ c: SiblingCase) async throws {
+        let name = c.name
+        let settles = c.settles
         let scene = try Self.stuckScene()
         // 兄弟は FAILED（retry_count 1）。transcript が無いので Raw ノートの照合の対象に入らない
         let sibling = try scene.addPart(
-            fileName: Self.siblingFile, startedAt: Self.siblingStartedAt, status: .failed, errorCode: code,
-            transcript: false, inRawNote: false)
+            fileName: Self.siblingFile, startedAt: Self.siblingStartedAt, status: .failed, errorCode: c.code,
+            onDevice: c.onDevice, transcript: false, inRawNote: false)
         #expect(try Self.part(scene, sibling).retryCount == 1)
-        if needsRecopy { try scene.store.updateRecording(sibling, [.needsRecopy(true)]) }
+        if c.needsRecopy { try scene.store.updateRecording(sibling, [.needsRecopy(true)]) }
+        if c.dropEvents {
+            try await scene.store.pool.write { db in
+                try db.execute(
+                    sql: "DELETE FROM events WHERE entity_type = 'recording' AND entity_key = ?", arguments: [sibling])
+            }
+            #expect(try scene.store.failedFromPart(sibling) == nil)
+        }
+        let maxAttempts = c.maxAttempts
         scene.updateConfig { $0.retry.maxAttempts = maxAttempts }
         let streaks = UndeletableStreaks()
         await Self.evaluate(scene, streaks: streaks)
@@ -501,5 +540,119 @@ struct DeletionRemainderTests {
         let session = try Self.session(scene)
         #expect(session.status == .completed)
         #expect(session.deleteAttempts == 1)
+    }
+
+    // MARK: - レビューの後: B8 の対象・R8 の Session が読めない・決着の直前の Vault
+
+    @Test(
+        "F-80 COMPLETED の Session では後から RAW_SAVED になった Part だけを評価し、同じ Session の ID の無い PENDING は要求も完了もしない（パラメータ化: PENDING の原本が一覧に在る（canDeleteSource が真）・無い）",
+        arguments: [true, false])
+    func completedSessionLeavesPendingToBacklog(_ pendingListed: Bool) async throws {
+        let scene = try Self.lateScene()
+        let pending = try scene.addPart(
+            fileName: Self.siblingFile, startedAt: Self.siblingStartedAt, status: .sourceDeletePending,
+            onDevice: pendingListed)
+        try scene.writeRawNote()
+        scene.clock.advance(seconds: Self.spacing)
+        if pendingListed {
+            // 評価すれば要求を書ける PENDING であること（空振りしない）
+            let ctx = await scene.context(snapshot: scene.snapshot())
+            #expect(DeletionPolicy.canDeleteSource(try scene.candidate(pending), ctx))
+        }
+        await Self.evaluate(scene, streaks: UndeletableStreaks())
+        // 後から RAW_SAVED になった Part には要求を書く
+        #expect(try Self.part(scene).status == .sourceDeleting)
+        #expect(scene.requests().count == 1)
+        // PENDING は後追い・手動で消した分の担当のまま
+        let row = try Self.part(scene, pending)
+        #expect(row.status == .sourceDeletePending)
+        #expect(row.deleteRequestID == nil)
+        #expect(!scene.logLines.contains { $0.contains("recording_key=" + pending) })
+        #expect(try Self.session(scene).status == .completed)
+    }
+
+    @Test("F-80 Raw の直後の requestDeletions も、COMPLETED の Session では ID の無い RAW_SAVED だけを見る（TEST-28: 対象が 0 件なら何もしない）")
+    func requestDeletionsOnCompletedSessionWithoutLatePart() async throws {
+        let scene = try Self.lateScene()
+        // 後から RAW_SAVED になった Part は無い（既定の Part を PENDING にした）
+        try scene.movePart(Self.pk, to: .sourceDeletePending)
+        let requested = await DeletionRequester(deps: Self.deps(scene, streaks: UndeletableStreaks()))
+            .requestDeletions(sessionKey: Self.key)
+        #expect(requested == 0)
+        #expect(scene.requests() == [])
+        #expect(try Self.part(scene).status == .sourceDeletePending)
+    }
+
+    @Test("F-80 途中で戻る評価（Session が読めない）も、その Session の連続を切る")
+    func missingSessionRestartsTheStreak() async throws {
+        let scene = try DeletionScene()
+        let streaks = UndeletableStreaks()
+        let missing = "DJIMIC3:20990101"
+        _ = streaks.record(
+            Self.pk, session: missing, connection: UndeletableStreaks.Connection(epoch: 1, deviceNode: nil),
+            now: scene.clock.now(), minIntervalSeconds: 60)
+        #expect(streaks.count == 1)
+        let requested = await DeletionRequester(deps: Self.deps(scene, streaks: streaks))
+            .requestDeletions(sessionKey: missing)
+        #expect(requested == 0)
+        #expect(streaks.count == 0)
+    }
+
+    @Test("F-80 決着の直前に Vault をもう一度確かめ、使えなくなっていれば決着を見送る（原因を raw_note と誤って書かない）")
+    func vaultIsRecheckedJustBeforeSettling() async throws {
+        let scene = try DeletionScene()
+        try scene.store.updateSession(Self.key, [.deleteAttempts(Self.backoffCount)])
+        scene.clock.advance(seconds: Self.backoffTotal)
+        let snapshot = scene.snapshot()
+        let ctx = await scene.context(snapshot: snapshot)
+        let streaks = UndeletableStreaks()
+        let requester = DeletionRequester(deps: Self.deps(scene, snapshot: snapshot, streaks: streaks))
+        let session = try Self.session(scene)
+        let parts = try scene.store.recordings(inSession: Self.key)
+        let part = try Self.part(scene)
+        // 評価の始めの観測では Vault が使えた
+        let facts = DeletionRequester.SettlingFacts(siblingsAtRest: true, vaultAvailable: true)
+        #expect(
+            requester.considerSettling(part, session: session, parts: parts, snapshot: snapshot, ctx: ctx, facts: facts)
+        )
+        // その後に Vault が外れた
+        try FileManager.default.removeItem(at: scene.vault.appendingPathComponent(".obsidian", isDirectory: true))
+        scene.clock.advance(seconds: Self.spacing)
+        #expect(
+            !requester.considerSettling(
+                part, session: session, parts: parts, snapshot: snapshot, ctx: ctx, facts: facts))
+        #expect(try Self.part(scene).status == .rawSaved)
+        #expect(!Self.settledLog(scene))
+        #expect(streaks.count == 0)
+    }
+
+    // MARK: - 要対応: mount_failed と削除が無効な間の reaper の版
+
+    @Test("F-80 unavailable の理由語 mount_failed（再マウントの mount の失敗。F-81）も deviceNeedsReplug に写す（バイト順）")
+    func mountFailedNeedsReplug() {
+        #expect(AttentionEvaluator.mountFailedReason == "mount_failed")
+        var input = AttentionInput(now: DeletionScene.now)
+        input.configPresent = true
+        input.snapshot = DeviceSnapshot(
+            generation: 1, completedAt: DeletionScene.now, connectEpoch: 1, devices: [:],
+            unavailable: [
+                "B": "mount_failed", "A": "mount_name_mismatch", "C": "not_listable", "D": "invalid_device_id",
+            ],
+            notListableErrno: [:])
+        #expect(
+            AttentionEvaluator.items(input) == [
+                .deviceNotListable("C"), .deviceNeedsReplug("A"), .deviceNeedsReplug("B"), .deviceNameInvalid("D"),
+            ])
+    }
+
+    @Test(
+        "F-80 reaperUpdateRequired は削除が有効な間だけ出す（パラメータ化: 有効・無効）",
+        arguments: [(true, [AttentionItem.reaperUpdateRequired]), (false, [])])
+    func reaperUpdateOnlyWhileDeletionIsEnabled(_ enabled: Bool, _ expected: [AttentionItem]) {
+        var input = AttentionInput(now: DeletionScene.now)
+        input.configPresent = true
+        input.reaper = .versionMismatch(found: "0.9.0")
+        input.deletionEnabled = enabled
+        #expect(AttentionEvaluator.items(input) == expected)
     }
 }

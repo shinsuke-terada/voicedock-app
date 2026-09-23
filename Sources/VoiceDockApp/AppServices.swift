@@ -114,6 +114,8 @@ struct LiveServices: AppServices {
         attention.paused = s.worker.paused
         attention.vault = s.vault
         attention.reaper = await context.locks.reaperStatus()
+        // 削除が有効な間だけ reaper の版の食い違いを要対応にする（F-80）
+        attention.deletionEnabled = config?.cleanup.deleteSourceAudio == true
         attention.snapshotMaxAgeSeconds = config?.device.snapshotMaxAgeSeconds ?? 900
         // 開けない・投げたら .empty のまま（DB が無ければ全 0。PLAN §8.12）
         if let ro = ReadOnlyStore.open(url: context.layout.database) {

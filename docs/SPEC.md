@@ -287,7 +287,7 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | ND-24 | relpath に `../` | `relpath_unsafe` | R2・R3 |
 | ND-25 | symlink 経由でボリューム外 | `path_contains_symlink` | R2・R3 |
 | ND-26 | `bin/voicedock-reaper` が無い（ロック 2-A） | 要求を書かず、何も消えない（voicedock では「要求はキューに残りタイムアウト」だった。意味を変えた） | A |
-| ND-27 | 同じ request_id を 2 回 | 2 回目は `replayed` | R1 |
+| ND-27 | 同じ request_id を 2 回 | 2 回目は `replayed`（1 回目が拒否のとき。1 回目が成功（processed.log に `<request_id> DELETED`）なら、2 回目は消し直さずに結果 DELETED を書き直す。F-80） | R1 |
 | ND-28 | `.Trashes/...` などの `.` 始まり | `relpath_unsafe` | R2・R3 |
 | ND-29 | 親フォルダ名が規則外（ボリューム直下のファイルを含む） | `folder_rule` | R2・R3 |
 | ~~ND-30~~ | ~~欠番: voicedock の「コンテナから state/ を改ざん」は Docker 固有のため廃止~~ | — | — |

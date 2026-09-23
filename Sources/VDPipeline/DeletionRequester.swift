@@ -46,6 +46,9 @@ struct DeletionRequester {
         // 4.
         for part in parts {
             do {
+                // 0. COMPLETED の Session（allowReopen が偽で再オープンされない）では、後から RAW_SAVED になった ID の無い Part だけを
+                //    対象にする（F-80。ID の無い SOURCE_DELETE_PENDING は「手動で消した分」・後追いの担当のまま。PLAN §8.9.9）
+                if session.status == .completed && !SessionDeletionStage.isLateRawSaved(part) { continue }
                 // 1.
                 guard PartStates.deletable.contains(part.status) else { continue }
                 // 2. 通常経路は COMPLETED を消しにいかない。二重に要求しない
@@ -71,7 +74,7 @@ struct DeletionRequester {
                     // 5a. 一覧に在るのに消せないまま期限を過ぎた RAW_SAVED と、ID の無い SOURCE_DELETE_PENDING は、
                     //     消さずに完了へ（F-69・F-74。PENDING で ID を持つものは手順 3 が先に飛ばす）
                     if Self.settleableStatuses.contains(part.status) {
-                        let shared = facts ?? SettlingFacts.observe(parts: parts, ctx: ctx)
+                        let shared = facts ?? settlingFacts(parts: parts, ctx: ctx, snapshot: snapshot)
                         facts = shared
                         if considerSettling(
                             part, session: session, parts: parts, snapshot: snapshot, ctx: ctx, facts: shared)
@@ -212,24 +215,56 @@ struct DeletionRequester {
         /// c. Vault が使える（VaultCheck が .available）
         let vaultAvailable: Bool
 
-        static func observe(parts: [RecordingRow], ctx: DeletionContext) -> SettlingFacts {
+        /// snapshot は requestDeletions の新鮮な snapshot（再コピー待ちの兄弟の原本が一覧に在るかを見る）。
+        /// failedFrom は FAILED の Part の戻り先（Store.failedFromPart。投げたら戻りうる側に数える）
+        static func observe(
+            parts: [RecordingRow], ctx: DeletionContext, snapshot: DeviceSnapshot?,
+            failedFrom: (RecordingRow) throws -> PartStatus?
+        ) -> SettlingFacts {
             SettlingFacts(
-                siblingsAtRest: parts.allSatisfy { DeletionRequester.partIsAtRest($0, retry: ctx.config.retry) },
-                vaultAvailable: VaultCheck.evaluate(path: ctx.config.vault.path, marker: ctx.config.vault.marker)
-                    .isAvailable)
+                siblingsAtRest: parts.allSatisfy {
+                    DeletionRequester.partIsAtRest(
+                        $0, retry: ctx.config.retry, snapshot: snapshot, failedFrom: failedFrom)
+                },
+                vaultAvailable: vaultIsAvailable(ctx))
+        }
+
+        /// VaultCheck が .available（決着の直前にも調べ直す。F-80）
+        static func vaultIsAvailable(_ ctx: DeletionContext) -> Bool {
+            VaultCheck.evaluate(path: ctx.config.vault.path, marker: ctx.config.vault.marker).isAvailable
         }
     }
 
+    /// この評価の Session で共通の観測（FAILED の戻り先は DB から引く）
+    func settlingFacts(parts: [RecordingRow], ctx: DeletionContext, snapshot: DeviceSnapshot?) -> SettlingFacts {
+        let store = deps.store
+        return SettlingFacts.observe(
+            parts: parts, ctx: ctx, snapshot: snapshot, failedFrom: { try store.failedFromPart($0.partkey) })
+    }
+
     /// 手順 5a の a（F-69・F-80）: Part が終端で、待っても自動では変わらない。FAILED は終端だが、再試行で Raw ノートを書き直しうるので、
-    /// 自動で戻りうる間は数えない（待つ）: 再コピーを待つ（needs_recopy。再コピーの完了で requeueRecopied が戻す）・工程内リトライが残る
-    /// （error_code の再試行の区分が attempts で、InProcessRetry と同じ式 RetryDelay.inProcess が次の待ちを返す）。
-    /// それ以外の FAILED（区分が none / nextPoll / nextConnect・読めないコード・工程内リトライを使い切った）は、起動・接続・再試行ボタンの
-    /// 契機でしか戻らず（戻れば処理中になり、その評価は観測できない側になる）、待っても変わらないので終端として数える（永久に待たない）
-    static func partIsAtRest(_ part: RecordingRow, retry: RetryConfig) -> Bool {
+    /// 自動で戻りうる間は数えない（待つ）:
+    /// - 再コピーを待つ（needs_recopy）のは、同じ新鮮な snapshot でその原本が一覧に在る（SourcePresence.of が .listed）あいだだけ
+    ///   （再コピーの完了で requeueRecopied が戻す。一覧に無い・観測できない原本は再コピーされず、待っても戻らない）
+    /// - 工程内リトライが残る: InProcessRetry.delay と同じ式（error_code の再試行の区分が attempts、FAILED の戻り先が
+    ///   PartStates.retryableFromFailed に在る、RetryDelay.inProcess が次の待ちを返す）。戻り先を読めなければ戻りうる側に数える
+    /// それ以外の FAILED（区分が none / nextPoll / nextConnect・読めないコード・戻り先が無い・工程内リトライを使い切った）は、起動・接続・
+    /// 再試行ボタンの契機でしか戻らず（戻れば処理中になり、その評価は観測できない側になる）、待っても変わらないので終端として数える（永久に待たない）
+    static func partIsAtRest(
+        _ part: RecordingRow, retry: RetryConfig, snapshot: DeviceSnapshot?,
+        failedFrom: (RecordingRow) throws -> PartStatus?
+    ) -> Bool {
         guard PartStates.terminal.contains(part.status) else { return false }
         guard part.status == .failed else { return true }
-        if part.needsRecopy { return false }
+        if part.needsRecopy && SourcePresence.of(part, in: snapshot) == .listed { return false }
         guard let code = part.errorCode, code.retryPolicy == .attempts else { return true }
+        let from: PartStatus?
+        do {
+            from = try failedFrom(part)
+        } catch {
+            return false
+        }
+        guard let from, PartStates.retryableFromFailed.contains(from) else { return true }
         return RetryDelay.inProcess(
             retryCount: part.retryCount, maxAttempts: retry.maxAttempts, backoff: retry.backoffSeconds) == nil
     }
@@ -246,7 +281,7 @@ struct DeletionRequester {
         _ part: RecordingRow, session: SessionRow, parts: [RecordingRow], snapshot: DeviceSnapshot,
         ctx: DeletionContext, facts: SettlingFacts? = nil
     ) -> Bool {
-        let facts = facts ?? SettlingFacts.observe(parts: parts, ctx: ctx)
+        let facts = facts ?? settlingFacts(parts: parts, ctx: ctx, snapshot: snapshot)
         guard Self.failureIsObserved(part, facts: facts, snapshot: snapshot) else {
             deps.streaks.reset(part.partkey)
             return false
@@ -258,6 +293,12 @@ struct DeletionRequester {
         guard streak >= Self.observedFailuresToSettle,
             Self.deadlineHasPassed(part, session: session, backoff: backoff, now: deps.clock.now(), zone: deps.zone)
         else { return true }
+        // 決着はまれなので、直前に Vault をもう一度確かめる（facts は評価の始めの観測。使えなくなっていれば Raw ノートの照合が
+        // 落ちて原因を raw_note と誤って書くので、観測できない評価として決着を見送り連続を切る。F-80）
+        guard SettlingFacts.vaultIsAvailable(ctx) else {
+            deps.streaks.reset(part.partkey)
+            return false
+        }
         // 調べ直して全部の検査が通った（直前の評価の一時的な失敗か、原因の語の外の条件）。原因を偽って決着させない
         guard let cause = Self.undeletableCause(part, session: session, parts: parts, ctx: ctx) else {
             deps.streaks.reset(part.partkey)
@@ -338,11 +379,15 @@ struct DeletionRequester {
         return SourcePresence.of(part, in: snapshot) != .notListed
     }
 
-    /// 1 件だけ調べるときの形（Session で共通の観測をここで調べる）
+    /// 1 件だけ調べるときの形（Session で共通の観測をここで調べる）。failedFrom は FAILED の Part の戻り先
+    /// （既定は引かない＝ nil。FAILED の兄弟が居ない Session で使う形。評価の経路は settlingFacts が DB から引く）
     static func failureIsObserved(
-        _ part: RecordingRow, parts: [RecordingRow], snapshot: DeviceSnapshot, ctx: DeletionContext
+        _ part: RecordingRow, parts: [RecordingRow], snapshot: DeviceSnapshot, ctx: DeletionContext,
+        failedFrom: (RecordingRow) throws -> PartStatus? = { _ in nil }
     ) -> Bool {
-        failureIsObserved(part, facts: SettlingFacts.observe(parts: parts, ctx: ctx), snapshot: snapshot)
+        failureIsObserved(
+            part, facts: SettlingFacts.observe(parts: parts, ctx: ctx, snapshot: snapshot, failedFrom: failedFrom),
+            snapshot: snapshot)
     }
 
     /// 決着した原因の語（F-69。状態の詳細に出す）。安い順・結果が原因を含む順に見る:

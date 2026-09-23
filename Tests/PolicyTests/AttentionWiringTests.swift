@@ -36,6 +36,8 @@ struct AttentionWiringTests {
         // 本体は read の中だけ（次の func を含まない）
         #expect(!read.contains { $0.text == "requeueManual" })
         #expect(Self.calls("countStoredItems", in: read))
+        // 削除が有効かを入れる（reaperUpdateRequired は削除が有効な間だけ。F-80）
+        #expect(read.contains { $0.kind == .identifier && $0.text == "deletionEnabled" })
         // 数え方の部品を直に呼ばない（写しを作らない。CR-06）
         for part in ["completedParts", "undeletableStillListed", "rawNoteBlockedSessions"] {
             #expect(!Self.calls(part, in: read), "\(part)")

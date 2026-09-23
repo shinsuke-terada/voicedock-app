@@ -128,6 +128,25 @@ struct ProcessedLogTests {
         #expect(Self.logged(bench, "WARN  source_delete_rejected request_id=\(Self.id) reason=replayed"))
     }
 
+    @Test("F-80 RV-04 DELETED を書き直せなければ要求を残して次へ（結果も processed.log の追記もログも無い・消し直さない）")
+    func rv04RedeliveryKeepsTheRequestWhenTheResultCannotBeWritten() throws {
+        let bench = try ReaperBench()
+        try Self.write([Self.id + " DELETED"], to: bench.layout.processedLog)
+        let name = try bench.writeRequest()
+        let resultDir = bench.layout.queueResult.path(percentEncoded: false)
+        #expect(chmod(resultDir, 0o555) == 0)
+        defer { _ = chmod(resultDir, 0o755) }
+        let run = try bench.run()
+        #expect(run.exitCode == 0)
+        #expect(bench.requests() == [name])
+        #expect(bench.results() == [])
+        #expect(bench.processedLines() == [Self.id + " DELETED"])
+        #expect(
+            !bench.logLines().contains { $0.contains(" source_delete_rejected ") || $0.contains(" source_deleted ") })
+        #expect(bench.logLines().last?.hasSuffix(" INFO  reaper_completed requests=1") == true)
+        #expect(bench.sourceExists())
+    }
+
     @Test("F-80 RV-04 DELETED の書き直しでも、同じ名前の結果が既に在れば上書きしない（要求だけ消す）")
     func rv04RedeliveryDoesNotOverwrite() throws {
         let bench = try ReaperBench()

@@ -7,6 +7,9 @@
 > (5) `deleteSourcesIfSafe` と `dueSessionKeys` は、COMPLETED で ID の無い RAW_SAVED の Part を持つ Session も評価する（`isEvaluated`・`isLateRawSaved`。Session は遷移させない。`allowReopen` が偽のとき）。
 > §6 の `notEvaluatedStatesAreIgnored` の COMPLETED は Part も COMPLETED にした形で試す。既存の `UndeletableSettlementTests`・`PendingSettlementTests` の続けた評価は、評価のたびに時計を 60 秒進める（`spacing`）。
 > テストは `DeletionRemainderTests`（本チケットの持ち物の外の新しいファイル）。
+> （F-80 のレビューの後）COMPLETED の Session を評価するときは、`requestDeletions` は ID の無い RAW_SAVED の Part だけを対象にする（同じ Session の ID の無い SOURCE_DELETE_PENDING は後追いの担当のまま。T-41）。
+> a の再コピー待ちは、同じ snapshot で兄弟の原本が一覧に在る間だけ待つ。工程内リトライが残るかは `InProcessRetry.delay` と同じ式（FAILED の戻り先 `failedFromPart` が `retryableFromFailed` に在ることを含む。`SettlingFacts.observe(parts:ctx:snapshot:failedFrom:)`）。
+> 決着の直前に Vault をもう一度確かめ、使えなければ決着を見送る（`SettlingFacts.vaultIsAvailable`）。
 
 > （F-67・issue #97、2026-09-23）走査の `lstat` が `ENOENT` 以外で失敗したら一覧は不完全（`complete = false`）になり、そのデバイスは snapshot の `devices` に載らない。以後、深さの上限の内側では一覧は完全な列挙で、F-64 の `sourceIsObservedAbsent` の「一覧は完全な列挙を保証しない」という記述は上限の外（と `maxScanDepth` を下げた場合）に限られる（PLAN §8.1・§8.9.5）。
 

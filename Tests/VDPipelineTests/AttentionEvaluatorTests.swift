@@ -201,6 +201,8 @@ struct AttentionEvaluatorTests {
     @Test("reaper の版が違えば更新を求める")
     func reaperUpdateRequired() {
         var i = Self.input()
+        // 削除が有効な間だけ（F-80）
+        i.deletionEnabled = true
         i.reaper = .versionMismatch(found: "0.9.0")
         let items = AttentionEvaluator.items(i)
         #expect(items == [.reaperUpdateRequired])
@@ -231,6 +233,7 @@ struct AttentionEvaluatorTests {
             notListableErrno: [:])
         i.violations = [Self.violation("CV-30")]
         i.reaper = .versionMismatch(found: nil)
+        i.deletionEnabled = true
         i.undeletableSources = 2
         i.rawNoteBlocked = 1
         let items = AttentionEvaluator.items(i)
