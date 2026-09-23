@@ -23,6 +23,17 @@ struct FileLockNoFollowTests {
         }
     }
 
+    @Test("F-73 長さ 0 の既存のロックファイル（symlink でない）は開いて取れ、中身は空のまま（TEST-28）")
+    func f73EmptyExistingLockIsAcquired() throws {
+        let tmp = try TempDirectory()
+        let lockURL = tmp.url.appendingPathComponent("reaper.lock")
+        try Data().write(to: lockURL)
+        let lock = FileLock.tryAcquire(url: lockURL)
+        #expect(lock != nil)
+        #expect(try Data(contentsOf: lockURL) == Data())
+        lock?.release()
+    }
+
     @Test("F-73 対照: symlink でなければ作って取れる")
     func f73PlainLockIsAcquired() throws {
         let tmp = try TempDirectory()

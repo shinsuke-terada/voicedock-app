@@ -14,13 +14,13 @@ struct RemounterNodeCheckTests {
 
     struct Fixture {
         let tmp: TempDirectory
-        /// <tmp>/Volumes/VDT0073。作ったときはその realpath（TempDirectory.url は /var/… のことがあるので realpath にしておく）
+        /// <tmp>/Volumes/<name>。作ったときはその realpath（TempDirectory.url は /var/… のことがあるので realpath にしておく）
         let path: String
 
-        init(createPath: Bool = true) throws {
+        init(createPath: Bool = true, name: String = "VDT0073") throws {
             tmp = try TempDirectory()
             let raw = tmp.url.appendingPathComponent("Volumes", isDirectory: true)
-                .appendingPathComponent("VDT0073", isDirectory: false).path(percentEncoded: false)
+                .appendingPathComponent(name, isDirectory: false).path(percentEncoded: false)
             if createPath { try FileManager.default.createDirectory(atPath: raw, withIntermediateDirectories: true) }
             path = SystemMountInspector.realPath(raw) ?? raw
         }
@@ -58,12 +58,28 @@ struct RemounterNodeCheckTests {
         #expect(await runner.recorded == [])
     }
 
-    @Test("F-73 node の違いはスカラー列で見る（/dev/disk99 と /dev/disk99s1 は別のもの）")
+    @Test("F-73 node は前方一致で見ない（/dev/disk99 と /dev/disk99s1 は別のもの）")
     func f73NodePrefixIsNotEnough() async throws {
         let f = try Fixture()
         let runner = Self.runner()
         let sut = DiskutilRemounter(
             runner: runner, inspector: f.inspector(mountFrom: "/dev/disk99s1"), useMountPoint: false)
+        #expect(await sut.remountReadOnly(path: f.path, node: Self.node) == .failed(reason: "no_device_node"))
+        #expect(await runner.recorded == [])
+    }
+
+    @Test("F-73 マウント点はスカラー列で比べる（正準等価でもスカラーが違えば diskutil を 1 回も呼ばない）")
+    func f73MountPointIsComparedByScalars() async throws {
+        // 名前に NFC の「が」（U+304C）を含むディレクトリ。statfs の f_mntonname の側にだけ、スカラーの違う形を渡す
+        let f = try Fixture(name: "VDT0073\u{304C}")
+        let nfc = f.path.precomposedStringWithCanonicalMapping
+        let nfd = f.path.decomposedStringWithCanonicalMapping
+        let other = Array(f.path.unicodeScalars) == Array(nfc.unicodeScalars) ? nfd : nfc
+        // 準備の確かめ: == では等しく、スカラー列では違う（これが成り立たなければテストが空振りする）
+        try #require(other == f.path)
+        try #require(Array(other.unicodeScalars) != Array(f.path.unicodeScalars))
+        let runner = Self.runner()
+        let sut = DiskutilRemounter(runner: runner, inspector: f.inspector(mountOn: other), useMountPoint: false)
         #expect(await sut.remountReadOnly(path: f.path, node: Self.node) == .failed(reason: "no_device_node"))
         #expect(await runner.recorded == [])
     }

@@ -155,9 +155,10 @@ struct ReaperDefenseTests {
 
     // MARK: - 走査の本体（ReaperMain.scan）
 
-    @Test("RV-01 走査は unlink の直前でロック 1 が閉じたら残りの要求に進まずに終える（lock1 は 0、conf_invalid は 2）")
+    @Test("RV-01 走査は unlink の直前でロック 1 が閉じたら残りの要求に進まずに終える（lock1 は 0、それ以外は 2）")
     func rv01ScanStopsAtAClosedLock() {
-        for (reason, code) in [("lock1", Int32(0)), ("conf_invalid", Int32(2))] {
+        // 知らない理由語は 2（0 にするのは lock1 のときだけ。fail-closed）
+        for (reason, code) in [("lock1", Int32(0)), ("conf_invalid", Int32(2)), ("unknown", Int32(2))] {
             var seen: [String] = []
             let outcomes: [String: RequestOutcome] = [
                 "a": .refused("not_a_mount_point"), "b": .stopped(reason), "c": .refused("not_a_mount_point"),

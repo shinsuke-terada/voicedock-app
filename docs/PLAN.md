@@ -1729,7 +1729,7 @@ reaper の本体は `Contents/Helpers/voicedock-reaper`（署名済み）とし�
 - 削除は `unlinkat(verifiedParentFD, name, 0)` だけ（`Unlinker.swift`）。`FileManager.removeItem` は**ディレクトリを再帰的に消す**ので使わない（PT-01）
 - 引数: `voicedock-reaper --home <HOME>` か `voicedock-reaper --version`。`--version` は **RV-00 より前に**処理し、`<VERSION>\n` を stdout に出して 0（ほかの I/O はしない）
 - 終了コード: 0 = 正常（ロック 1 が false で何もしなかった場合も 0）、2 = 引数不正か reaper.conf が無い・読めない・不正（**キューに触らない**）、3 = RV-00（置き場所不正。何も書かない）、4 = ロックが取れない（走査中。何もしない）。
-  走行中に RV-13 の直前の読み直しでロック 1 が閉じていたときも同じ（false は 0、無い・読めない・不正は 2。F-73）
+  走行中に RV-13 の直前の読み直しでロック 1 が閉じていたときも同じ（false は 0、それ以外（無い・読めない・不正）は 2。0 は false のときだけ。F-73）
 - 起動時の検査（RV-00・conf・RV-01）の後、`<HOME>/state/reaper.lock` に `flock(LOCK_EX | LOCK_NB)` を掛け、終わるまで持ち続ける（§2.1）。取れなければ（IngestService の走査中）`reaper_busy` を出して何もせず終了コード 4。
   SIGTERM を受けたら処理中の 1 件を終えてから終わる（次の要求に進まない）
 - 設定 `bin/reaper.conf`（`ReaperConf`。VDContract。アプリの有効化フローと同じ関数で読み書きする）:

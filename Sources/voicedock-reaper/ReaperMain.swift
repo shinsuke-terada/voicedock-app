@@ -70,7 +70,8 @@ enum ReaperMain {
     /// 走査の本体。names を順に process に渡す。requests はこの実行で処理した要求の数
     /// （rejected/ へ退避したものを含む。SIGTERM で止めたらそこまで）。
     /// 列挙の後に消えていた要求（`.gone`）は数えずに次へ。unlink の直前にロック 1 が閉じていた（`.stopped`。走行中の無効化）ら
-    /// 数えずに残りの要求に進まず、終了コードは起動時と同じ（lock1 は 0、conf_invalid は 2）にする（F-73）
+    /// 数えずに残りの要求に進まず、終了コードは起動時と同じ（lock1 は 0、conf_invalid は 2）にする（F-73）。
+    /// 0 にするのは lock1 のときだけ（知らない理由語は 2 に倒す。fail-closed）
     static func scan(
         _ names: [String], stopRequested: () -> Bool, process: (String) -> RequestOutcome
     ) -> (requests: Int, code: Int32) {
@@ -81,7 +82,7 @@ enum ReaperMain {
             let outcome = process(name)
             if outcome == .gone { continue }
             if case .stopped(let reason) = outcome {
-                return (count, reason == IdentityReason.confInvalid ? 2 : 0)
+                return (count, reason == IdentityReason.lock1 ? 0 : 2)
             }
             count += 1
         }
