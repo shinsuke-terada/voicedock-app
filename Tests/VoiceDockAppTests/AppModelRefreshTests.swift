@@ -204,11 +204,11 @@ struct AppModelRefreshTests {
         await model.show(.details)
         await model.requeueManual()
         await model.show(.main)
-        await model.refresh()
         #expect(fake.statusReportCount == 1)
         #expect(model.snapshot.statusReport == nil)
-        // 入り直したら入ったときに 1 回読むだけ（前の再試行の待ちは残っていない）
+        // 読み直す前に入り直しても、入ったときに 1 回読むだけ（前の再試行の待ちは出たときに下ろしている）
         await model.show(.details)
+        #expect(fake.statusReportCount == 2)
         await model.refresh()
         #expect(fake.statusReportCount == 2)
     }
