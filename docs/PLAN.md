@@ -735,8 +735,11 @@ ensureNormalized → ensureTranscribed → ensureRawNote → requestDeletions(�
 golden（voicedock とのバイト一致）と指紋を守るため、Python の振る舞いに合わせた部品を **VDCore に 1 か所だけ**置き、固定テストを付ける。Swift 標準の近いものを代わりに使わない。
 
 **時刻**
-- 絶対時刻は `struct Instant: Comparable, Hashable, Sendable { let epochMillis: Int64 }` で持つ（**Double の `Date` で加算しない**。Python の `datetime + timedelta` は整数演算で、300 秒見出し・Block の間隔・チャンクの実時間は等号の境界で決まる）
-- whisper の offsets（ミリ秒）を秒へ直した値 `round(ms / 1000, 3)` は、`Instant` に足すときミリ秒の整数 `Int64((秒 × 1000).rounded())` に戻す
+- 絶対時刻は `struct Instant: Comparable, Hashable, Sendable { let epochMillis: Int64 }` で持つ（**Double の `Date` で加算しない**。Python の `datetime + timedelta` は整数演算で、300 秒見出し・Block の間隔・チャンクの実時間は等号の境界で決まる）。
+  `adding(milliseconds:)`・`adding(seconds:)`・差（`-`）は桁あふれで落ちない: 数学的な結果（`adding(seconds:)` は `秒 × 1000` も含めて 128 ビットで厳密に計算する）が Int64 に収まればその値、収まらなければ Int64 の端（`Int64.max` / `Int64.min`）に寄せる。`init(date:)` も Int64 に収まらなければ端、NaN は 0（F-71。CR-16）
+- whisper の offsets（ミリ秒）を秒へ直した値 `round(ms / 1000, 3)` は、`Instant` に足すときミリ秒の整数 `Int64((秒 × 1000).rounded())` に戻す。
+  秒として読むのは**有限で絶対値が 1,000,000,000 秒（約 31.7 年）以下**の値だけ（`SecondsToMillis.isReadable`。§8.4 の生 JSON の読み取りと正規化 transcript の読み戻し）。
+  `fromWhisperSeconds` はそれ以外の値でも落ちない（NaN は 0、範囲外と ±∞ は ±1,000,000,000 秒に寄せる。最後の防御。F-71）
 - DB・JSON・ログの時刻文字列は **ISO 8601、秒まで（秒未満は切り捨て）、設定のタイムゾーンのオフセット付き**（`2026-08-30T07:00:12+09:00`）。`ZonedTime.iso(_:)` だけが作る
 - 表示の `HH:MM` / `HH:MM:SS` は、保存された文字列のオフセット（= 設定のタイムゾーン）での壁時計。秒未満は切り捨て
 - DB の時刻列の大小比較（`MIN(started_at)` など）は文字列で行う（全行が同じオフセットである前提。タイムゾーンを変えた場合の影響は RK-32）
@@ -896,17 +899,17 @@ Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動�
 | # | 規則 | コード | 由来 |
 |---|---|---|---|
 | CV-01 | 未知のキーが無い（全階層） | CONFIG_UNKNOWN_KEY | V-1 |
-| CV-08 | `session.blockGapSeconds >= 0` | CONFIG_INVALID_VALUE | V-8 |
+| CV-08 | `0 <= session.blockGapSeconds <= 31,536,000` | CONFIG_INVALID_VALUE | V-8 |
 | CV-09 | `retry.backoffSeconds.count >= retry.maxAttempts` | CONFIG_INVALID_VALUE | V-9 |
-| CV-10 | `llm.maxCharsPerRequest > llm.chunkOverlapChars * 2` | CONFIG_INVALID_VALUE | V-10 |
-| CV-11 | raw / wiki の `folderTemplate` が相対パス（`/` で始まらない）で、`/` で分けた要素に `..` が無い | CONFIG_INVALID_VALUE | V-11 |
+| CV-10 | `llm.maxCharsPerRequest > llm.chunkOverlapChars * 2`（2 倍が Int に収まらなければ違反） | CONFIG_INVALID_VALUE | V-10 |
+| CV-11 | raw / wiki の `folderTemplate` が相対パス（`/` で始まらない）で、`/` で分けた要素に `..` が無い（どちらも Unicode スカラー単位で見る） | CONFIG_INVALID_VALUE | V-11 |
 | CV-12 | `raw.folderTemplate != wiki.folderTemplate` | CONFIG_INVALID_VALUE | V-12 |
 | CV-13 | 4 つのテンプレート（raw.folder / raw.filename / wiki.folder / wiki.filename）の `{…}` が `{yyyymmdd}` `{date}` `{time}` だけ | CONFIG_INVALID_VALUE | V-13 |
 | CV-14 | `wiki.filenameTemplate` に `{title}` を含まない（**CV-13 より先に判定し、該当したら CV-13 はそのテンプレートについて出さない**） | CONFIG_INVALID_VALUE | V-14 |
 | CV-16 | `obsidian.maxTitleBytes` が 1〜255 | CONFIG_INVALID_VALUE | V-16 |
 | CV-17 | `analysis.order` の各要素が sections の 7 キーのどれかで、重複が無い | CONFIG_INVALID_VALUE | V-17 |
 | CV-18 | `sections.summary.enabled == true`（DN-8 の前提） | CONFIG_INVALID_VALUE | V-18 |
-| CV-19 | `order` に載る各節の `heading` が null でなく、`#` で始まり、改行（`\n` `\r`）を含まない | CONFIG_INVALID_VALUE | V-19 |
+| CV-19 | `order` に載る各節の `heading` が null でなく、`#` で始まり、改行（`\n` `\r`）を含まない（Unicode スカラー単位で見る） | CONFIG_INVALID_VALUE | V-19 |
 | CV-22 | `audio.stagingMaxBytes > audio.freeSpaceMarginBytes` | CONFIG_INVALID_VALUE | V-22 |
 | CV-29 | `audio.inboxRetain` が `normalized` か `raw_saved` | CONFIG_INVALID_VALUE | V-29 |
 | CV-30 | ロック 1 が食い違っていない: reaper.conf が読めるとき（`.valid`）、`cleanup.deleteSourceAudio == reaperConf.deleteSourceAudio`（どちら向きの食い違いも違反）。reaper.conf が無い・読めないときはこの規則を評価しない（不明は §8.9.2 が「要求を書かない」側に倒す）。違反は §6.1 の修復を先に試す | CONFIG_LOCK_MISMATCH | V-30 |
@@ -919,22 +922,27 @@ Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動�
 | CV-43 | `cleanup.deleteSkippedSource == true` なら `cleanup.deleteSourceAudio == true` | CONFIG_INVALID_VALUE | 新規 |
 | CV-44 | `transcription.whisperModelID` がカタログの whisper の ID（**ファイルの有無は検査しない**。未入手は実行時のガード） | CONFIG_INVALID_VALUE | 新規 |
 | CV-45 | `transcription.vad.enabled` なら `vad.modelID` がカタログの vad の ID（同上） | CONFIG_INVALID_VALUE | 新規 |
-| CV-46 | `device.snapshotMaxAgeSeconds > device.scanIntervalSeconds` | CONFIG_INVALID_VALUE | 新規（DH-17 相当） |
+| CV-46 | `device.snapshotMaxAgeSeconds > device.scanIntervalSeconds`、`device.snapshotMaxAgeSeconds <= 31,536,000` | CONFIG_INVALID_VALUE | 新規（DH-17 相当） |
 | CV-47 | `device.includeVolumes` と `excludeVolumes` の各要素が空文字でない | CONFIG_INVALID_VALUE | helper.conf 検査 4 |
 | CV-48 | `device.mountMode` が `ro` か `rw` | CONFIG_INVALID_VALUE | helper.conf 検査 5 |
-| CV-49 | `device.stabilityFastPathSeconds >= 1`、`stabilityIntervalSeconds >= 1`、`stabilityChecks >= 1`、`maxScanDepth >= 1` | CONFIG_INVALID_VALUE | helper.conf 検査 7 |
-| CV-50 | `device.scanIntervalSeconds >= 60` | CONFIG_INVALID_VALUE | 新規 |
-| CV-51 | `llm.contextSize >= llm.maxCharsPerRequest + llm.maxOutputTokens + 2048`（20,000 文字のチャンクが収まらないと HTTP 400 を繰り返す） | CONFIG_INVALID_VALUE | 新規 |
-| CV-52 | `cleanup.deleteEvaluationBackoffSeconds` が空でなく各要素 `>= 0`、`cleanup.deleteResultTimeoutSeconds >= 60` | CONFIG_INVALID_VALUE | 新規 |
-| CV-53 | `retry.maxAttempts >= 1`、`retry.backoffSeconds` の各要素 `>= 0` | CONFIG_INVALID_VALUE | 新規 |
+| CV-49 | `device.stabilityFastPathSeconds >= 1`、`1 <= stabilityIntervalSeconds <= 31,536,000`、`stabilityChecks >= 1`、`maxScanDepth >= 1` | CONFIG_INVALID_VALUE | helper.conf 検査 7 |
+| CV-50 | `60 <= device.scanIntervalSeconds <= 31,536,000` | CONFIG_INVALID_VALUE | 新規 |
+| CV-51 | `llm.contextSize >= llm.maxCharsPerRequest + llm.maxOutputTokens + 2048`（20,000 文字のチャンクが収まらないと HTTP 400 を繰り返す。和が Int に収まらなければ違反） | CONFIG_INVALID_VALUE | 新規 |
+| CV-52 | `cleanup.deleteEvaluationBackoffSeconds` が空でなく各要素が `0〜31,536,000`、`60 <= cleanup.deleteResultTimeoutSeconds <= 31,536,000` | CONFIG_INVALID_VALUE | 新規 |
+| CV-53 | `retry.maxAttempts >= 1`、`retry.backoffSeconds` の各要素が `0〜31,536,000` | CONFIG_INVALID_VALUE | 新規 |
 | CV-54 | `logging.level` が `DEBUG` / `INFO` / `WARNING` / `ERROR` のどれか | CONFIG_INVALID_VALUE | 新規 |
-| CV-55 | transcription の数値: `threads >= 0`、`timeoutFactor > 0`、`1 <= minTimeoutSeconds <= maxTimeoutSeconds`、`minChars >= 1`、`0 < vad.threshold < 1`、vad の 3 つの ms `>= 0`、`language` が空でない | CONFIG_INVALID_VALUE | 新規 |
-| CV-56 | llm の数値: `0 <= temperature <= 2`、`0 < topP <= 1`、`maxOutputTokens >= 1`、`requestTimeoutSeconds >= 1`、`maxSecondsPerRequest >= 1`、`chunkOverlapChars >= 0`、`repairAttempts >= 0`、各節（`maxItems` を持つ 5 つ）の `maxItems` は null か `>= 1` | CONFIG_INVALID_VALUE | 新規 |
-| CV-57 | session の数値: `idleCloseSeconds >= 1`、`maxParts >= 1`、`maxDurationSeconds >= 1` | CONFIG_INVALID_VALUE | 新規 |
-| CV-58 | audio の数値: `timeoutFactor > 0`、`minTimeoutSeconds >= 1`、`durationToleranceSeconds >= 0`、`freeSpaceMultiplier >= 1`、`freeSpaceMarginBytes >= 0`、`hashChunkBytes >= 4096` | CONFIG_INVALID_VALUE | 新規 |
-| CV-59 | obsidian の数値: `raw.timestampIntervalSeconds >= 0`（0 は「見出しを入れない」。voicedock と同じ）、`wiki.vaultIndexCacheSeconds >= 0`、`wiki.maxLinks >= 0`、`defaultTags` の各要素が空でない | CONFIG_INVALID_VALUE | 新規 |
+| CV-55 | transcription の数値: `threads >= 0`、`timeoutFactor > 0`、`1 <= minTimeoutSeconds <= maxTimeoutSeconds <= 31,536,000`、`minChars >= 1`、`0 < vad.threshold < 1`、vad の 3 つの ms `>= 0`、`language` が空でない | CONFIG_INVALID_VALUE | 新規 |
+| CV-56 | llm の数値: `0 <= temperature <= 2`、`0 < topP <= 1`、`1 <= maxOutputTokens <= 1,000,000,000`、`requestTimeoutSeconds >= 1`、`1 <= maxSecondsPerRequest <= 31,536,000`、`0 <= chunkOverlapChars <= 1,000,000,000`、`repairAttempts >= 0`、`maxCharsPerRequest <= 1,000,000,000`、`contextSize <= 1,000,000,000`、各節（`maxItems` を持つ 5 つ）の `maxItems` は null か `>= 1` | CONFIG_INVALID_VALUE | 新規 |
+| CV-57 | session の数値: `1 <= idleCloseSeconds <= 31,536,000`、`maxParts >= 1`、`maxDurationSeconds >= 1` | CONFIG_INVALID_VALUE | 新規 |
+| CV-58 | audio の数値: `timeoutFactor > 0`、`1 <= minTimeoutSeconds <= 31,536,000`、`durationToleranceSeconds >= 0`、`freeSpaceMultiplier >= 1`、`freeSpaceMarginBytes >= 0`、`4096 <= hashChunkBytes <= 67,108,864` | CONFIG_INVALID_VALUE | 新規 |
+| CV-59 | obsidian の数値: `0 <= raw.timestampIntervalSeconds <= 31,536,000`（0 は「見出しを入れない」。voicedock と同じ）、`wiki.vaultIndexCacheSeconds >= 0`、`wiki.maxLinks >= 0`、`defaultTags` の各要素が空でない | CONFIG_INVALID_VALUE | 新規 |
 
 - 各 CV にテストを 1 本以上（違反の例で落ちる・境界値で通る）。テストの表示名は `CV-nn` で始める（§10.3 の SPEC 同期が SPEC の表とテストを結ぶ）
+- **上限と桁あふれ（F-71。CR-16）**: 掛け算（`Int64(秒) × 1000` のミリ秒・`Instant.adding(seconds:)`）や待ち（`Task.sleep`）に使う秒のキーは **31,536,000（365 日）以下**、`audio.hashChunkBytes` は **67,108,864（64 MiB）以下**（読み取りのたびにこの大きさのバッファを確保する）、
+  CV-10・CV-51 の算術に入る文字数・トークン数（`maxCharsPerRequest`・`chunkOverlapChars`・`maxOutputTokens`・`contextSize`）は **1,000,000,000 以下**。上限の内側なら使う側の算術はそのままで Int64 に収まる（backoff の合計 × 1000 も要素数が 2.9 億未満なら収まる）。
+  上限を超えた値の文言は `<上限> 以下であること（<値>）`（下限の `<下限> 以上であること（<値>）` と同じ形）。**1 キーに 1 件**: 下限の違反と、CV-46・CV-55 の大小関係（`snapshotMaxAgeSeconds > scanIntervalSeconds`・`maxTimeoutSeconds >= minTimeoutSeconds`）の違反が先で、そのときは同じキーの上限を出さない。
+  検証の中の算術（CV-10 の 2 倍・CV-51 の和）は桁あふれを報告する形で行い、あふれたらその CV の違反にする（§6.1「違反してもアプリを落とさない」。文言は CV-10 `chunkOverlapChars の 2 倍より大きいこと（chunkOverlapChars の 2 倍が桁あふれ: <値>）`、CV-51 `maxCharsPerRequest + maxOutputTokens + 2048（桁あふれ）以上であること（<contextSize>）`）。
+  上限を置かない秒のキー: `stabilityFastPathSeconds`・`requestTimeoutSeconds`・`maxDurationSeconds`・`vaultIndexCacheSeconds`（Double か `Duration` でしか使わず、桁あふれしない）
 
 ---
 
@@ -1142,6 +1150,9 @@ node = statfs(path).f_mntfromname                         // 例 /dev/disk4（di
 3. 残りについて、**ちょうど `stabilityChecks`（2）回**「値を控える → `stabilityIntervalSeconds`（3）秒待つ → 一括再取得」を繰り返し、size と mtime が控えと一致した回数を数える。
    1 度でも不一致ならこの回は見送り（`file_not_stable relpath=…` は DEBUG。次の走査で再判定）
 - 待ち時間は `interval × checks` でファイル数に比例しない（DEV-14。25 件で 20 秒未満のテスト）
+- 候補は**先頭で String の等価（正準等価）で重複を除き、先に並んだものを残す**（F-71。NFC と NFD の組・FAT の同名の重複項目）。
+  重ねたまま数えると同じ鍵の一致を 1 回の待ちで 2 回数え（`checks = 2` なら 1 回の一致で「安定」）、書き込みが再開したファイルを途中まで取り込む。
+  返す鍵は残した候補の relpath のスカラー列そのまま（コピーはこの relpath で原本を開く）。一括取得の辞書も重複で落とさない（防御。CR-16）
 
 **コピー**（1 ファイルずつ。`DeviceReader` だけがデバイス上のファイルを開く）
 1. 宛先 `inbox/<device_id>/<folder>/<name>`（ボリューム直下なら `inbox/<device_id>/<name>`）。親ディレクトリを作り、`.<name>.partial` を `O_WRONLY|O_CREAT|O_TRUNC` で開く
@@ -1175,7 +1186,7 @@ public struct DeviceObservation: Sendable {
     public let mountPath: String
     public let deviceNode: String?
     public let readOnly: Bool?               // nil = 観測できなかった（「偽」と区別する）
-    public let freeBytes: Int64?             // statfs の f_bavail × f_bsize。取れなければ nil
+    public let freeBytes: Int64?             // statfs の f_bavail × f_bsize。取れない・f_bavail が Int64 に収まらない・掛け算があふれたら nil（F-71）
     public let relpaths: Set<String>         // _orig も denoised も全部（削除確認用）
 }
 public struct IngestActivity: Sendable { public let scanning: Bool; public let deviceID: String?; public let copied: Int; public let total: Int; public let lastActivityAt: Instant? }
@@ -1315,7 +1326,7 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
    - **whisper.cpp は不明な引数・読めない音声でも終了コード 0 を返すことがある**（v1.9.4 の cli.cpp。V7 調査）。成功の判定は「終了コード 0 **かつ** JSON が在って読める」
 7. 生 JSON の読み方（voicedock transcribe.py:333-389）: 全体が辞書でなければ空扱い。`language` = `result.language`（空でない文字列）、無ければ設定の language。
    `transcription` の各要素で、辞書・`offsets` が辞書・`text` が文字列でなければ飛ばす。`start = round(offsets.from / 1000, 3)`、`end = round(offsets.to / 1000, 3)`
-   （数値のみ。bool は不可。ms は float でも受ける。ASR-05）、どちらか取れなければ飛ばす。`text` を Python 互換の strip（§5.7）で整え、空なら飛ばす。
+   （数値のみ。bool は不可。ms は float でも受ける。ASR-05）、どちらか取れなければ飛ばす。秒にして読めない値（NaN・±Infinity・絶対値が 1,000,000,000 秒超。§5.7）も取れない扱い（F-71）。`text` を Python 互換の strip（§5.7）で整え、空なら飛ばす。
    全体の text = 各 segment の text を区切り無しで連結して strip
 8. 正規化 transcript を `transcripts/parts/<slug>.json` へ `AtomicFile` で書く（**無音判定より前**。根拠 B の証拠になる。ASR-09）。形は PyJSON の indent 2 ＋ 末尾改行、キーはこの順:
    `partkey, language, duration_seconds（null 可）, started_at（Part の started_at 文字列）, text, segments[{start, end, text}]`。その後 staging の `whisper.json` を削除
@@ -1324,7 +1335,7 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
    `transcription_completed recording_key=… elapsed_s=… chars=… rtf=… speech_ratio=…`（rtf = elapsed / duration を小数 3 桁、duration が無いか 0 以下なら null。
    speech_ratio = Σmax(0, end − start) / duration を小数 3 桁）→ `deleteNormalizedAfterTranscribe` なら 16 kHz 音声を削除（失敗は `disk_space_low reason=staging_unlink_failed` を WARNING）
 - 読み戻しの合格条件（冪等・削除条件 `partTranscriptIsValid` で共有）: 辞書で 6 つのキーを全部持つ、`segments` が配列で各要素が辞書・start / end が数値（bool 不可）・text が文字列、
-  `text` / `started_at` / `language` が文字列、`duration_seconds` が null か数値。1 つでも不正なら「読めない」
+  `text` / `started_at` / `language` が文字列、`duration_seconds` が null か数値。数値（start / end / duration_seconds）は秒として読める値（有限で絶対値が 1,000,000,000 秒以下。§5.7。F-71）に限る。1 つでも不正なら「読めない」
 - Metal: whisper.cpp は Metal ビルドなら既定で GPU を使う。**Phase 0 で確認していないフラグを足さない**（例: flash attention 系）
 - 診断 DR-04: `whisper-cli --help` の出力（stdout と stderr を連結）に VAD の 6 フラグ（`--vad`、`--vad-model`、`--vad-threshold`、`--vad-min-speech-duration-ms`、
   `--vad-min-silence-duration-ms`、`--vad-speech-pad-ms`）が**逐語で**在ること（**本アプリで強化**。voicedock doctor の D-7 は `--vad` の部分一致だけで、無くても notice だった）
@@ -1464,6 +1475,18 @@ quote(s) = "\"" + (s の `\` → `\\`、`"` → `\"` の後、U+0000–001F と 
 - C1 制御・U+2028 / U+2029 は残す（バイト一致のため「改善」しない）
 - 本文のエスケープ（`escapeBody`）: 文字列の先頭と各 `\n` の直後にある `---` を `\---` にする（`\r` の後は対象外）。本文にだけ適用する
 - 改行 LF、UTF-8（BOM なし）、末尾改行ちょうど 1 つ（本文の行を `\n` でつなぎ、末尾の `\n` を全部落としてから `\n` を 1 つ足す）
+
+**frontmatter の読み取り（Yams。F-71）**
+- `Frontmatter.parse` は `Yams.load` を使わない（既定の Constructor は 60 進の int（`1:0:0:0:0:0:0:0:0:0:0`・`99999999999999:0:0:0`）の構築で桁あふれして落ちる。利用者が Raw ノートに 1 行足すと削除条件の再検証で tick ごとに落ちる）。
+  `Yams.compose` の Node の最上位の mapping（タグが map。それ以外は nil）を読む。**最上位の鍵が 1 つでも str の scalar でなければ全体を nil** にする
+  （マージの鍵 `<<`・`yes` などの bool・数・null・複合鍵。str 以外の鍵は読まない。旧実装の `Yams.load` は鍵をすべて文字列化し、複合鍵では落ちていた。新しい実装は複合鍵でも落ちない）。
+  鍵を黙って落とすと `mayOverwrite` の「載っている鍵 ⊆ 所有する鍵」が通りやすくなる（上書きの判定が緩む）ので、3 つの呼び手（`recordingKeys`・`mayOverwrite`・保存検証）すべてで安全側の nil にする。
+  引用した鍵（`"yes"`・`'<<'`）は str なので読める。重複キー・YAML として読めないものは nil（従来どおり）
+- 値は `Yams.load` と同じ型で作る。scalar は解決したタグで str → String、bool → Bool、int → Int、float → Double、null → NSNull。
+  int は自前で読む（`_` を除き、符号 → `0x` `0b` `0o` `0` の基数 → 60 進 → 10 進の順。60 進は桁あふれを「作れない」にする）。作れないもの・timestamp・binary・独自のタグは元の文字列。
+  配列は 1 段だけ読み（要素の scalar は同じ規則）、配列の中の配列・辞書と、値そのものが辞書のものは中を読まない（空の配列・辞書。呼び手は読まない。別名を展開しない）。マージの鍵（`<<`）は展開せず、上のとおり全体を nil にする（読めない = 上書きしない・消さない側）
+- `recordingKeys(ofFile:)`（§8.9.1 の `frontmatterKeys`）は、読む前に lstat で通常ファイル（symlink は辿らない）かつ 67,108,864 バイト（64 MiB）以下を確かめ、
+  `O_RDONLY | O_NOFOLLOW | O_NONBLOCK` で開いて fstat でもう一度確かめてから読む。満たさなければ空（FIFO で止まらない・巨大なファイルを読み込まない）
 
 **Raw ノート**（raw.py:135-218、pipeline.py:592-623）
 - 載せる Part: `RawNoteMembership.isMember(status:transcriptReadable:)` で絞った Session の Part = Session の Part（`started_at, partkey` 順）のうち `rawNoteMembers` に在り、transcript が読めるもの（検証側も同じ関数を使う。§8.7）。segment の `at = started_at + start`、`end_at = started_at + end`（§5.7 の `Instant`）
@@ -1656,7 +1679,7 @@ func skipReasonIsBacked(...) -> Bool {
 }
 ```
 
-- `frontmatterKeys(path)`: 読めない・UTF-8 でない・frontmatter が無い・`voicedock_recording_keys` が配列でない → 空集合。要素は文字列化（notes.py:194-211）
+- `frontmatterKeys(path)`: 通常ファイルでない（symlink は辿らない）・64 MiB を超える（F-71。§8.6 の読み取り）・読めない・UTF-8 でない・frontmatter が無い・`voicedock_recording_keys` が配列でない → 空集合。要素は文字列化（notes.py:194-211）
 - 要約（Daily ノート・解析）の成否を条件にしない。1 本詰まってもその日全体を止めない。評価は Part ごと（DEL-04）
 - **式の形そのものをテストで固定する**（`||` が共通項の内側にあること、番犬の項が在ること）。振る舞いでは落とせない冗長な項は、
   ソースに項が在ることを PolicyTests で検査し、テストの doc コメントに「振る舞いでは落とせない理由」を書く（TEST-30）
@@ -3257,3 +3280,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-68 | 欠 | §4.1・§4.4・§5.4・§8.4・§8.7・§8.12・§10.3 | （2026-09-23。issue #18。利用者が任せた）SPEC 同期を広げた。PLAN に表を置き（§4.1・§4.4 の名前の正規表現、§5.4 の tick の段、§8.12 の節と画面・はじめにの項目・ui-state.json の鍵。§8.12 のアイコンの表には `IconState` の列を足した）、`tools/spec/make-spec.py` が SPEC の S10（名前の正規表現）・S11（whisper-cli の argv。§8.4 の `text` フェンスをそのまま）・S12（保存検証 RN / DN。§8.7 の表）・S13（tick の段）・S20（パネルの節と画面）・S21（アイコン）・S22（はじめに）・S23（ui-state.json）に写す。付録 B.2 の理由語は既存の S8 の列から読む。照合のテストは実装を import できる各モジュールのテストに置き（PolicyTests は TestSupport にしか依存しない。Package.swift は変えない）、`SpecDocument` の読み取り口は extension で足した（00-api-map §15）。RN / DN はテストの表示名の先頭に ` / ` で ID を並べてよい（§10.3）。S20 は F-65 の後のカード型に合わせ、T-30 の案の「チケット」の列をやめて主画面での出し方と `PanelScreen` の case を持つ。要対応（§8.11）・状態の詳細・reaper の終了コードとイベント・削除の有効化と無効化の段は、PLAN が散文か実装に列挙できる列が無いので足していない（T-32・T-37・T-40 に理由を書いた） |
 | F-69 | 誤 | §8.9.2・§8.9.5・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.4 | （2026-09-23。issue #98。F-64 のレビューで判明。利用者の決定「一定期間で消さず完了＋知らせる」、期間は約 81 分）削除が有効で元ファイルがデバイスの一覧に**在る**のに `canDeleteSource` が偽のまま変わらない RAW_SAVED の Part（原本の size / mtime の変化、Raw ノートの手の編集、transcript の欠け、`source_path` / `source_size` が無い）があると、削除段が `delete_attempts += 1` を繰り返すだけで Session が COMPLETED にならず、抜け道は削除の無効化だけだった（CR-15 に反する）→ `requestDeletions` の 5a: `canDeleteSource` が偽の RAW_SAVED で、(1) 期限（backoff を使い切った: Session の `delete_attempts ≥ backoff の段の数`、かつ Part を RAW_SAVED にしてから backoff の合計。新しい設定キーは作らない）を過ぎ、(2) 観測できた失敗（Session の Part がすべて終端、新鮮な snapshot でデバイスが接続中で列挙でき書き込み可能、Vault が使え、元ファイルが一覧に在る。`source_path` が無ければ照らせないので在る扱い）が、(3) 同じ `connectEpoch` で 2 回続いた（`UndeletableStreaks`。Worker がメモリで持つ。長く抜いた後の最初の評価の一時的な失敗で決着させない）なら、**消さずに** RAW_SAVED→COMPLETED（detail `not_deletable`、Part の `error_message` に原因の語 `source_info` / `pre_identity` / `transcript` / `raw_note`、`source_delete_skipped recording_key=… reason=not_deletable detail=<原因>`）。`source_deleted_at` は入れない。一覧に無いものは F-64。要対応に `undeletableSources(n)`（「消せなかった録音 <n> 本」、ボタン「詳細・診断を開く」＝ `AttentionAction.openDetails`。説明は原因を確かめ、直したら「過去分を削除対象にする」で再評価、手で消す前に Raw ノートと文字起こしを確かめるよう促す）を足した。数えるのは決着した Part のうち最新の snapshot で接続中かつ一覧にまだ在るものだけ（抜いている間・一覧に無い・`source_path` が無いものは出さない）。状態の詳細には決着した Part を全部、原因とデバイスでの在否を添えて出す。決着した Part は「過去分を削除対象にする」の対象に入り、原因を直せば消せる（自動では再評価しない）。辺・ログのイベント・設定キーは増やさない（A.4 の `source_delete_skipped` の理由語に `not_deletable` と原因の `detail=` を足した。`not_deletable` は後追いの対象外の語と同じ綴り） |
 | F-70 | 誤 | §2.3・§8.12 | （2026-09-23。issue #105。利用者との実機の動作確認で判明）パネルの「最終接続」を AppModel のメモリにだけ持っていたので、アプリを再起動すると「まだありません」に戻った → デバイスを最後に観測した時刻を `<HOME>/ui-state.json` の `lastConnectedAt`（epoch ミリ秒の整数。一度も観測していなければキーを書かない）に残し、起動直後の（メモリに値が無い）`read` はその値を使う（`LastConnected.resolve`）。書くのは AppModel の `refresh` で、この起動で最後に書こうとした値（無ければファイルの値）と違うときだけ（時計が戻った値も書く。差は桁あふれでトラップさせない）、接続中は観測時刻が 60 秒以上動いたときだけ、切れたら最後に見た時刻を 1 回だけ（`LastConnected.valueToSave`）。refresh が重なっても、この起動で書いた `loginItemDecided = true` と最終接続を古い read の値で戻さない（書くたびに AppModel が覚えた値と合わせる）。書けなくても表示は変えず、同じ値を書き直し続けない（「今はしない」の `uiStateSaveFailed` とは別）。`schema` は 1 のまま（足した鍵は任意で、F-70 より前の版の読み手は未知の鍵として無視する）。`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にし、`loginItemDecided` を失わない。DB の取り込みの時刻から導く案は、新しい録音が無かった接続を拾えないので採らない。表示の文言は変えない |
+| F-71 | 誤 | §5.7・§6.4・§8.1・§8.4・§8.6・§8.9.1 | （2026-09-23。issue #120。全体コードレビューのテーマ 1「トラップの一掃」）CR-16 に反して、条件がそろうとアプリが落ち、設定やファイルが残る限り再起動しても落ち続ける箇所があった（消す側に倒れるものは無い）→ (1) 設定の検証そのもの: CV-10 の `chunkOverlapChars * 2` と CV-51 の和を上限の検査より前に無条件で計算していた（`"maxCharsPerRequest": 9223372036854775807` で `config.load()` が落ちる）→ 桁あふれを報告する形で計算し、あふれたらその CV の違反にする。(2) 上限の無い設定キーを使う側の × 1000・加算・`Task.sleep` があふれる → 秒のキー（`session.blockGapSeconds`・`idleCloseSeconds`、`device.snapshotMaxAgeSeconds`・`stabilityIntervalSeconds`・`scanIntervalSeconds`、`cleanup.deleteEvaluationBackoffSeconds` の各要素・`deleteResultTimeoutSeconds`、`retry.backoffSeconds` の各要素、`transcription.maxTimeoutSeconds`（`minTimeoutSeconds` は `<= maxTimeoutSeconds` の鎖で収まる）、`llm.maxSecondsPerRequest`、`audio.minTimeoutSeconds`、`obsidian.raw.timestampIntervalSeconds`）は 31,536,000（365 日）以下、`audio.hashChunkBytes` は 67,108,864（64 MiB）以下、`llm.maxCharsPerRequest`・`chunkOverlapChars`・`maxOutputTokens`・`contextSize` は 1,000,000,000 以下を既存の CV（08・46・49・50・52・53・55・56・57・58・59）に足した。文言は `<上限> 以下であること（<値>）`。1 キーに 1 件（下限の違反と CV-46・CV-55 の大小関係の違反が先で、そのときは同じキーの上限を出さない）。既定値はすべて内側。使う側の算術は変えない。(3) CV-11・CV-19 が書記素単位で分割・探索していた（`"../́x"` が CV-11 を通り、`"## A\r\nB"` が CV-19 を通る）→ Unicode スカラー単位（§5.7。Python と同じ）。これにより `"#́ Summary"` は、旧実装では違反（先頭の書記素が `#` でない）だったが、今は通る（Python の `startswith("#")` と同じにする意図的な変更）。(4) frontmatter の読み取りの `Yams.load` は 60 進の int（`1:0:0:0:0:0:0:0:0:0:0`）の構築で桁あふれして落ち、削除条件の再検証で tick ごとに落ちる → `Yams.compose` の Node から `Yams.load` と同じ型の値を作る（int は自前で読み、作れなければ元の文字列。入れ子は中を読まない）。str 以外の鍵は読まない: 最上位の鍵にマージの鍵（`<<`）か str の scalar でない鍵（`yes`・数・null・複合鍵）があれば全体を nil にする（鍵を黙って落とすと `mayOverwrite` の「載っている鍵 ⊆ 所有する鍵」が緩むため。旧実装は鍵をすべて文字列化し、マージを展開し、複合鍵では強制アンラップで落ちていた。新しい実装は複合鍵でも落ちない）。`recordingKeys(ofFile:)` は読む前に lstat で通常ファイルかつ 64 MiB 以下を確かめる（FIFO で止まっていた）。(5) transcript の NaN・Infinity・巨大な秒で `fromWhisperSeconds` と `Instant` の加算が落ちる → 秒として読むのは有限で絶対値 1,000,000,000 秒以下だけ（`SecondsToMillis.isReadable`。正規化 transcript の読み戻しは「読めない」、whisper の生 JSON はその区間を飛ばす）。`fromWhisperSeconds` は範囲外でも落ちない（NaN は 0、±10 億秒に寄せる）。`Instant` の加算・差・`init(date:)` は、数学的な結果が Int64 に収まればその値、収まらなければ端に寄せる（`adding(seconds:)` は × 1000 も含めて 128 ビットで厳密に計算する）。(6) `statfs` の `f_bavail` が 2^63 以上で `Int64(_:)` が落ちる → `Int64(exactly:)` で nil（観測できない）。(7) 安定性判定の `Dictionary(uniqueKeysWithValues:)` が正準等価な relpath（NFC と NFD）・FAT の重複項目で落ちる → 候補を先頭で String の等価で重複排除し、先に並んだものを残す（返す鍵はその relpath のスカラー列。重ねたまま数えると 1 回の待ちで 2 回数え、書き込みが再開したファイルを安定と判定する）。新しい設定キー・遷移の辺・ログのイベントは増やさない |
