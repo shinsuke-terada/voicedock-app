@@ -70,6 +70,8 @@ public actor ModelManager {
     private let hashChunkBytes: Int
     private var downloading: [Key: ProgressBox] = [:]
     private var failures: [Key: ModelError] = [:]
+    /// 走っている取り込みの数（F-83。0 のときだけ前回の途中のファイルを消す）
+    private var importsInFlight = 0
 
     public init(
         layout: HomeLayout, catalog: ModelCatalog, downloader: ModelDownloader,
@@ -158,16 +160,23 @@ public actor ModelManager {
     }
 
     /// 利用者の .gguf を取り込む。
+    /// F-83: ほかの取り込みが走っていなければ、始める前に前回の途中で残った `.custom-import-*.gguf.part` を消す
+    /// （判定と削除の間に await を挟まない。走っている取り込みの途中のファイルは消さない）。
     public func importCustomLLM(from source: URL) async -> Result<(id: String, url: URL), ModelError> {
         let l = layout
         let c = hashChunkBytes
+        if importsInFlight == 0 {
+            ModelImporter.discardStaleParts(layout: l)
+        }
+        importsInFlight += 1
+        defer { importsInFlight -= 1 }
         return (try? await BlockingIO.run { ModelImporter.importGGUF(from: source, layout: l, chunkBytes: c) })
             ?? .failure(.io("blocking_io"))
     }
 
     /// physicalMemoryBytes >= minMemoryGB × 1024³（minMemoryGB が nil なら真）。T-22 のガードと同じ式。
+    /// F-83: 式は `ModelMemory.hasEnough` の 1 か所（CR-06。負の値・掛け算のあふれでトラップしない）。
     public nonisolated static func meetsMemory(_ e: ModelEntry, physicalMemoryBytes: UInt64) -> Bool {
-        guard let gb = e.minMemoryGB else { return true }
-        return physicalMemoryBytes >= UInt64(gb) * 1_073_741_824
+        ModelMemory.hasEnough(minMemoryGB: e.minMemoryGB, physicalMemoryBytes: physicalMemoryBytes)
     }
 }

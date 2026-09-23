@@ -6,7 +6,9 @@ import VDCore
 /// 設定の読み込み・検証・書き込みの唯一の窓口（PLAN §6.1）。
 /// PT-11: reaper.conf は注入された `observeReaperConf` で読む（このファイルにその語を書かない）。
 public actor ConfigStore {
-    static let fileKeyPath = "<file>"
+    /// F-83: 最後に読んでから config.json が変わっていたときの update の違反の文言（CV-39、keyPath は `<file>`）
+    static let changedOnDiskMessage =
+        "最後に読み込んだ後に config.json が変更されています。" + "「設定を読み直す」で読み直してから、もう一度操作してください"
 
     private let layout: HomeLayout
     private let catalog: ModelCatalog
@@ -18,6 +20,8 @@ public actor ConfigStore {
     private var lastViolations: [ConfigViolation] = []
     private var created = false
     private var reconciler: (@Sendable () async -> Bool)?
+    /// F-83: 最後に読んだ（または書いた）config.json の内容の SHA-256。update は書く前に今の内容と照らし、違えば書かない
+    private var lastSeenDigest: String?
 
     /// 00-api-map §11 の `init(layout:catalog:log:observeReaperConf:)` はこの 4 つ。
     /// `defaultTimeZone:` は**既定値つきのテストの口**（本番の Bootstrap は渡さない。T-30 §4.2 の 7）。
@@ -68,6 +72,9 @@ public actor ConfigStore {
     /// reaperConfObservation が nil なら今の値（observeReaperConf()）で検証する。
     /// actor の再入: 観測を**先に**取り、`config` の読み出しから書き込みまでは await を挟まない
     /// （並行した 2 つの update が同じ古い値から始めて片方の変更を失わないため）。
+    /// F-83: 書く前に config.json の今の内容を最後に読んだ（書いた）内容と照らし、違えば（手で編集された・消された・読めない）
+    /// 書かずに違反（CV-39、`<file>`、`changedOnDiskMessage`）を返す。読み直していない手編集をメモリの古い値で黙って上書きしない
+    /// （手で false にした `deleteSkippedSource` が、パネルでモデルを選ぶと true に戻った）。符号化できなければ書かずに違反を返す。
     public func update(
         _ mutate: @Sendable (inout AppConfig) -> Void,
         reaperConfObservation: ReaperConfObservation? = nil
@@ -84,11 +91,21 @@ public actor ConfigStore {
         mutate(&c)
         let v = ConfigValidator.validate(c, catalog: catalog, reaperConfObservation: observation)
         if !v.isEmpty { return .failure(v) }
+        guard let onDisk = try? Data(contentsOf: layout.configFile), FileHasher.sha256(onDisk) == lastSeenDigest else {
+            return .failure([violation(ConfigStore.changedOnDiskMessage)])
+        }
+        let data: Data
         do {
-            try AtomicFile.write(ConfigLoader.encode(c), to: layout.configFile, permissions: 0o644)
+            data = try ConfigLoader.encode(c)
+        } catch {
+            return .failure([violation("符号化できません: " + ErrorText.describe(error))])
+        }
+        do {
+            try AtomicFile.write(data, to: layout.configFile, permissions: 0o644)
         } catch {
             return .failure([violation("書けません: " + ErrorText.describe(error))])
         }
+        lastSeenDigest = FileHasher.sha256(data)
         config = c
         return .success(c)
     }
@@ -113,7 +130,7 @@ public actor ConfigStore {
             c.cleanup.deleteSkippedSource = false
             c.device.mountMode = "ro"
             do {
-                try AtomicFile.write(ConfigLoader.encode(c), to: url, permissions: 0o644)
+                try AtomicFile.write(try ConfigLoader.encode(c), to: url, permissions: 0o644)
             } catch {
                 return readSync(url, observation: after, writeDefaults: false)
             }
@@ -130,7 +147,7 @@ public actor ConfigStore {
         if writeDefaults && lstat(url.path(percentEncoded: false), &info) != 0 && errno == ENOENT {
             let d = AppConfig.defaults(timeZone: defaultTimeZone())
             do {
-                try AtomicFile.write(ConfigLoader.encode(d), to: url, permissions: 0o644)
+                try AtomicFile.write(try ConfigLoader.encode(d), to: url, permissions: 0o644)
             } catch {
                 return .invalid([violation("既定の設定を書けません: " + ErrorText.describe(error))])
             }
@@ -140,13 +157,16 @@ public actor ConfigStore {
         do {
             data = try Data(contentsOf: url)
         } catch {
+            lastSeenDigest = nil
             return .invalid([violation("読めません: " + ErrorText.describe(error))])
         }
+        // F-83: update が書く前に照らす内容（検証に通らなくても覚える。そのとき update は設定エラーで書かない）
+        lastSeenDigest = FileHasher.sha256(data)
         return ConfigLoader.load(data: data, catalog: catalog, reaperConfObservation: observation)
     }
 
     private func violation(_ message: String) -> ConfigViolation {
-        ConfigViolation(rule: "CV-39", code: .configInvalidValue, keyPath: ConfigStore.fileKeyPath, message: message)
+        ConfigViolation(rule: "CV-39", code: .configInvalidValue, keyPath: ConfigLoader.fileKeyPath, message: message)
     }
 }
 

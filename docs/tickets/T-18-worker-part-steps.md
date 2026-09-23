@@ -2,6 +2,9 @@
 
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）Worker の `.coexistenceBlocked` による保留と `coexistenceBlockedDoesNothing` は外した。start が取り込みの `state()` を見なくなったので、`concurrentStartWaitsForTheFirst` の門は設定の actor（観測を渡した `ConfigStore.update` の mutate の中で待つ）へ移した。以下の本文の共存ガードの記述は記録として残す。
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）`ConfigStore.update` は、最後に読んだ・書いた `config.json` の内容の SHA-256 と今の内容が違えば（手で編集された・消された・読めない）書かずに CV-39（`<file>`、`changedOnDiskMessage`）を返す。
+> 符号化できない値（`ConfigLoader.encode` が投げる）も書かずに CV-39（「符号化できません: …」）。PLAN §6.1。テストは `ConfigStoreConflictTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-18 |

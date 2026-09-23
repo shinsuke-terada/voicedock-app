@@ -2,6 +2,9 @@
 
 > （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`LogEvent.coexistenceBlocked`（`coexistence_blocked`）は消し、イベントは 47 個になった。以下の本文の共存ガードの記述は記録として残す。
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）`LogFile` の回転の rename に失敗したとき大きさを 0 に戻さない（開き直した `st_size` を使う。PLAN §8.15）。`FileHasher.sha256(of:chunkBytes:)` の読みを 1 回ずつ `autoreleasepool` で包む。
+> `LogLevel` に `configValue`（CV-54 の 4 語。internal）を足し、`init?(configValue:)` はそれで照らす。テストは `LogFileRotationFailureTests.swift`・`FileHasherChunkTests.swift`・`ConfigValidatorScalarTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | Phase | 2（記録の土台） |

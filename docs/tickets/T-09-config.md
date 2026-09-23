@@ -1,5 +1,9 @@
 # T-09 VDCore: AppConfig・ConfigLoader（CV-01〜59）・ConfigMigrator・既定値・ModelCatalog
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）この本文より PLAN §6.4 が優先する。CV-13 の `{…}` の走査・CV-14 の `{title}`・CV-41 の `/`・`.`・`..` をスカラー単位で見る（書記素単位だと結合文字が続くと見逃した）。
+> CV-52・CV-53 の backoff の配列は 64 個以下（`ConfigValidator.maxBackoffCount`。超えたら `要素は 64 個以下であること（<個数>）` の 1 件だけ）。CV-54 の 4 語は `LogLevel.configValue` の 1 か所。
+> `ConfigLoader.encode` は符号化できなければ投げる（`throws`。空の Data を返さない）。`"<file>"` は `ConfigLoader.fileKeyPath`。テストは `ConfigValidatorScalarTests.swift`・`ConfigLoaderEncodeTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | Phase | 2（記録の土台） |

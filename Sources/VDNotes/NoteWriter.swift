@@ -4,12 +4,16 @@ import VDContract
 import VDCore
 
 public enum NoteWriter {
+    /// F-83: ノートは F_FULLFSYNC で書き出す（`AtomicFile.fullFsync`）。Raw ノートは原本の削除の根拠（§8.9.1）で、
+    /// macOS の `fsync` はドライブのキャッシュまでは流さない（電源断で「検証済み」のノートが消えうる）。
+    static let fullSync = true
+
     /// content を UTF-8 で書き、書いた内容の SHA-256（小文字 16 進）を返す。
     /// tmp は同じディレクトリの `.<ファイル名>.tmp`。失敗したら tmp を消して元のエラーを投げる（NOTE-14）。
     public static func write(_ content: String, to url: URL) throws(AtomicFileError) -> String {
         let data = Data(content.utf8)
         let sha = FileHasher.sha256(data)
-        try AtomicFile.write(data, to: url, permissions: 0o644, verifyReadBack: true)
+        try AtomicFile.write(data, to: url, permissions: 0o644, verifyReadBack: true, fullSync: fullSync)
         return sha
     }
 }
@@ -26,9 +30,10 @@ public enum NoteFolder {
         }
         // 1 段ずつ作る（withIntermediateDirectories: false）。確認の後に Vault のルートが消えていても、
         // ルートやその上の階層を作り直さない（最初の段が ENOENT で失敗する）。T-29 のレビューで判明
+        // F-83: `/` で分けるのはスカラー単位（書記素単位だと `a/\u{301}b` の `/` を見落とし、中間を作らずに ENOENT で落ちる。F-73 と同じ）
         var dir = vault
-        for component in relative.split(separator: "/") {
-            dir = dir.appendingPathComponent(String(component), isDirectory: true)
+        for component in relative.unicodeScalars.split(separator: "/") {
+            dir = dir.appendingPathComponent(ScalarText.string(Array(component)), isDirectory: true)
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: dir.path(percentEncoded: false), isDirectory: &isDirectory),
                 isDirectory.boolValue

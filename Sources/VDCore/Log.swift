@@ -69,15 +69,22 @@ public enum LogLevel: Int, Comparable, Sendable, CaseIterable {
         }
     }
 
-    /// config.json の `logging.level`（大文字。CV-54）から。それ以外は nil。
-    public init?(configValue: String) {
-        switch configValue {
-        case "DEBUG": self = .debug
-        case "INFO": self = .info
-        case "WARNING": self = .warning
-        case "ERROR": self = .error
-        default: return nil
+    /// config.json の `logging.level` の語（大文字。CV-54）。F-83: 4 語はここだけに書く（CR-06。ConfigValidator もこれを使う）
+    var configValue: String {
+        switch self {
+        case .debug: "DEBUG"
+        case .info: "INFO"
+        case .warning: "WARNING"
+        case .error: "ERROR"
         }
+    }
+
+    /// config.json の `logging.level`（大文字。CV-54）から。それ以外は nil（比較はスカラー列）。
+    public init?(configValue: String) {
+        guard let level = LogLevel.allCases.first(where: { PyText.scalarsEqual($0.configValue, configValue) }) else {
+            return nil
+        }
+        self = level
     }
 
     public static func < (a: LogLevel, b: LogLevel) -> Bool { a.rawValue < b.rawValue }

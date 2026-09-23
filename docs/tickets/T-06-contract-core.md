@@ -4,6 +4,9 @@
 > `ReaperConf.observe` の open に `O_NONBLOCK`（FIFO で止まらない）、`FileLock.tryAcquire` の open に `O_NOFOLLOW`（symlink を辿らない）を足した。以下の本文の手順・フラグは記録として残す。
 > テストは `RelPathScalarTests`・`FileLockNoFollowTests`（reaper.conf の FIFO は `ReaperDefenseTests`）。
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）`AtomicFile.write` に `fullSync: Bool = false` を足し、真なら tmp と親ディレクトリを `AtomicFile.fullFsync(_:)`（`fcntl(F_FULLFSYNC)`。対応しなければ `fsync`。失敗は errno）で書き出す。
+> 既定は今までどおり（reaper の書き込みは変わらない）。使うのは `NoteWriter`（T-28）と VDModels（T-23）。テストは `AtomicFileFullSyncTests.swift`（PLAN §4.7・§8.7）。
+
 > （F-76・issue #116。2026-09-23。マージ後の追記）`HomeLayout` に `appLock`（`state/app.lock`。アプリの単一起動のロック。reaper.lock とは別）を足した（§4.16 の表と `HomeLayoutTests` の「全プロパティ」の表）。
 
 | 項目 | 値 |

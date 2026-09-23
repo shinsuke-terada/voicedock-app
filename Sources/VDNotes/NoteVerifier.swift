@@ -61,8 +61,10 @@ public enum NoteVerifier {
             return NoteVerification(results: results)
         }
 
-        // 規則 3（読めなければ安全側で打ち切る）
-        guard let data = try? Data(contentsOf: url) else {
+        // 規則 3（読めなければ安全側で打ち切る）。F-83: 読むのは `Frontmatter.readNote`（lstat で通常ファイルかつ 64 MiB 以下 →
+        // O_NOFOLLOW | O_NONBLOCK で開いて fstat で確かめ直す。F-71）。規則 1 の後に FIFO・symlink・巨大なファイルに
+        // 差し替えられても止まらず、上限なしに読み込まない（読めなければ偽）
+        guard let data = Frontmatter.readNote(url) else {
             add(3, false)
             return NoteVerification(results: results)
         }

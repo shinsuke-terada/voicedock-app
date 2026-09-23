@@ -1,5 +1,8 @@
 # T-26 VDNotes: sanitize・テンプレート・frontmatter・Raw ノート
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）`Frontmatter.quote` は YAML の読み手が拒む U+0080–0084・U+0086–009F・U+FFFE・U+FFFF を `\uXXXX`（大文字 16 進 4 桁）で書く（PLAN §8.6・X-39。値は読み戻せる。
+> U+0085・U+2028・U+2029 とそれ以外の入力の出力は変わらない）。テストは `FrontmatterYAMLEscapeTests.swift`。
+
 | 項目 | 内容 |
 |---|---|
 | ID | T-26 |

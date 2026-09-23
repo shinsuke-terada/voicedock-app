@@ -1,5 +1,9 @@
 # T-23 VDModels: モデルのダウンロード・取り込み・状態
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）使える `.resume` は読んだ後も結末まで残す（成功・HTTP の誤り・照合の失敗・新しい再開データの無い失敗で消す）。`ModelDownloader.stopAllKeepingResumeData()` を足した（終了の後始末の口。配線は VoiceDockApp 側の残り）。
+> 照合した `.part` は rename の前に F_FULLFSYNC、後に親ディレクトリも書き出す（`ModelFileSync.swift`）。取り込みはほかの取り込みが走っていなければ、始める前に `models/llm/.custom-import-<16 hex>.gguf.part` の残りを消し、
+> 読みを `autoreleasepool` で包み、書き出しの失敗を `.io("fsync")` で返す。`meetsMemory` は `ModelMemory.hasEnough` を使う。PLAN §8.10。テストは `ModelDownloaderResumeTests.swift`・`ModelImporterStalePartsTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-23 |

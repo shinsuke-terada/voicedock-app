@@ -38,7 +38,14 @@ public actor ModelDownloader {
     private let factory: any DownloadSessionFactory
     private let log: AppLog
     private let hashChunkBytes: Int
-    private var running: [String: URLSessionDownloadTask] = [:]
+    private var running: [String: RunningDownload] = [:]
+
+    /// 実行中の 1 件（止めて再開データを得るのに要るもの。F-83）
+    struct RunningDownload {
+        let entry: ModelEntry
+        let task: URLSessionDownloadTask
+        let delegate: ModelDownloadDelegate
+    }
 
     public init(layout: HomeLayout, factory: any DownloadSessionFactory, log: AppLog, hashChunkBytes: Int) {
         self.layout = layout
@@ -62,16 +69,21 @@ public actor ModelDownloader {
         guard running[e.id] == nil else { return .failure(.io(ModelDownloader.alreadyRunningMessage)) }
         // 照合と rename が終わるまで同じ ID の 2 本目を通さない（戻る直前に 1 か所で消す）。
         defer { running[e.id] = nil }
+        // F-83: 使える `.resume` は読んだ後も残す（このダウンロードの途中で終了・クラッシュしても、次はそこから再開できる）。
+        // 消すのは、落とし終えたとき・HTTP の誤り・新しい再開データが得られずに失敗したとき（saveResume）。
+        // 使えない（短い・読めない）`.resume` はここで捨てる
         let resume = ResumeStore.load(e, layout: layout)
-        ResumeStore.discard(e, layout: layout)
-        if resume == nil { removePart(part) }
+        if resume == nil {
+            ResumeStore.discard(e, layout: layout)
+            removePart(part)
+        }
         let delegate = ModelDownloadDelegate(
             partURL: part, layout: layout, expectedBytes: e.bytes, progress: progress)
         let session = URLSession(configuration: factory.configuration(), delegate: delegate, delegateQueue: nil)
         let task =
             resume.map { session.downloadTask(withResumeData: $0) }
             ?? session.downloadTask(with: URLRequest(url: remote))
-        running[e.id] = task
+        running[e.id] = RunningDownload(entry: e, task: task, delegate: delegate)
         task.resume()
         let outcome = await delegate.wait()
         session.finishTasksAndInvalidate()
@@ -87,7 +99,8 @@ public actor ModelDownloader {
             saveResume(delegate, e)
             return fail(e, err)
         case .finished:
-            break
+            // F-83: 全体が .part に移った。再開データはもう要らない（.part が照合の前に落ちても、次は最初から落とす）
+            ResumeStore.discard(e, layout: layout)
         }
         let size = FileProbeSize.of(part)
         guard size == e.bytes else {
@@ -107,18 +120,34 @@ public actor ModelDownloader {
             ResumeStore.discard(e, layout: layout)
             return fail(e, .sha256Mismatch)
         }
+        // F-83: 照合した .part をドライブまで書き出してから rename し、親ディレクトリも書き出す（電源断で壊れたモデルが「在る」にならない）
+        guard ModelFileSync.syncFile(part) == nil else {
+            return fail(e, .io(ModelFileSync.fsyncFailure))
+        }
         guard Darwin.rename(part.path(percentEncoded: false), final.path(percentEncoded: false)) == 0 else {
             return fail(e, .io(IOText.errno(errno)))
         }
-        ResumeStore.discard(e, layout: layout)
+        ModelFileSync.syncParent(of: final)
         log.info(.modelDownloaded, [(.id, .string(e.id))])
         return .success(final)
     }
 
     /// 実行中なら止める（再開データが得られれば models/.<file>.resume に残る）。
     public func cancel(id: String) {
-        guard let task = running[id] else { return }
-        task.cancel(byProducingResumeData: { _ in })
+        guard let job = running[id] else { return }
+        job.task.cancel(byProducingResumeData: { _ in })
+    }
+
+    /// F-83: 実行中のダウンロードをすべて止め、得られた再開データを `models/.<file>.resume` に書き終えてから戻る
+    /// （アプリの終了の後始末から呼ぶ。次の起動のダウンロードはそこから再開する）。止めた `download` は `.cancelled` を返す。
+    /// 再開データが得られなければここでは何も書かない（`.resume` は download の失敗の経路と同じく捨てられる）
+    public func stopAllKeepingResumeData() async {
+        for (_, job) in running {
+            guard let data = await job.task.cancelByProducingResumeData() else { continue }
+            // download の側の saveResume が先に走っても後に走っても、この再開データを捨てない
+            job.delegate.offerResume(data)
+            ResumeStore.save(data, for: job.entry, layout: layout)
+        }
     }
 
     /// 再開データが在れば残し、無ければ古いものを捨てる。
@@ -267,6 +296,13 @@ final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendabl
     /// 得られた再開データ（無ければ nil）。
     func resumeData() -> Data? {
         state.withLock { $0.resume }
+    }
+
+    /// F-83: `cancelByProducingResumeData` で得た再開データを渡す（まだ無いときだけ入れる）。
+    func offerResume(_ data: Data) {
+        state.withLock { s in
+            if s.resume == nil { s.resume = data }
+        }
     }
 
     func urlSession(
