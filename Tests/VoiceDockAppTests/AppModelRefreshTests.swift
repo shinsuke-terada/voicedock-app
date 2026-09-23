@@ -207,6 +207,10 @@ struct AppModelRefreshTests {
         await model.refresh()
         #expect(fake.statusReportCount == 1)
         #expect(model.snapshot.statusReport == nil)
+        // 入り直したら入ったときに 1 回読むだけ（前の再試行の待ちは残っていない）
+        await model.show(.details)
+        await model.refresh()
+        #expect(fake.statusReportCount == 2)
     }
 
     @Test("F-84 「詳細・診断」の画面で設定を読み直したら状態の詳細を読み直す")
