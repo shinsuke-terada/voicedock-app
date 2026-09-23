@@ -593,6 +593,9 @@ func insertSession(_ row: NewSession) throws         // status = OPEN 固定
 - **文字数の数え方（全体の規則。CR-23）:** 「N 文字」は **Unicode スカラー数**で数え、切り詰めも Unicode スカラー単位で行う（Python の `len` と同じ）。
   `String.count`（書記素数）は使わない。200 文字の切り詰めは「スカラー数 ≤ 200 ならそのまま、超えたら先頭 199 スカラー + `…`」
 - PT-05: `status` を書く SQL（`UPDATE … SET … status`）と `INSERT INTO recordings / sessions` は `Transitions.swift` の中にしか無い
+- **分組の 1 件（F-82）**: `func groupPart(_ partkey: String, into session: NewSession) throws -> SessionStatus` も `Transitions.swift` に置く。
+  Session の作成（無ければ。events に NULL→OPEN）・Part の `session_key`・集計列の数え直し・Session が OPEN なら `OPEN→OPEN`（detail = partkey）を **1 トランザクション**で行い、分組した時点の Session の状態を返す（§5.6）。
+  遷移と行の作成の SQL は上の 2 つと同じもの（同じトランザクションの中で呼ぶ）で、辺の検査も同じ
 
 ### 5.3 クラッシュ復旧（起動時に 1 回。voicedock §9.4 と同じ順）
 
@@ -609,6 +612,9 @@ Session（sessionRecovery。この順）: MERGING→READY, ANALYZING→MERGED, W
     対象は DB の `raw_output_path` / `output_path` があればそのファイル名の `.<ファイル名>.tmp`（例 `.2026-08-29 raw.md.tmp`。**`.md` を含む**。voicedock notes.py:248 と同じ）、無ければ §8.8 の候補名（基本名と ` (2)`〜` (99)`）それぞれの `.<基本名>.md.tmp` の**名前が完全一致するものだけ**
 - SOURCE_DELETING→SOURCE_DELETE_PENDING では `delete_request_id` を**外さない**（結果が届けば回収できる。§8.9.6）
 - 続けて: `closeIdleSessions`（無通信が `idleCloseSeconds` を過ぎた OPEN を READY、detail `idle`。日付が過去の OPEN も同じ規則で、夜の間止まっていたアプリは起動時にここで閉じる。v1.1 までの `closeStaleOpenSessions`（日付が過去の OPEN を `stale_day` で閉じる）は F-66 で廃止）→ **inbox の孤児**（DB に行の無い `_orig.wav` と、すべての `.partial`）を削除（`inbox_orphans_removed count=<n>`）→ 起動契機の再評価（§5.4）
+  - 孤児の partkey の relpath は、device_id のディレクトリを列挙した**相対位置**（`FileManager` の列挙子の `producesRelativePathURLs`）から作る（F-82）。
+    列挙子は symlink を解決した絶対パスの URL を返す（`/var` → `/private/var`。<HOME> の途中に symlink があっても同じ）ので、パスの要素数の差で作ると partkey がずれ、DB に行のある `_orig.wav` を孤児として消しうる。
+    相対位置の読めない URL は数えない（消さない側。取り残しの集計（§8.12）も同じ走査を使う）
 - 復旧は IngestService が最初の走査を始める**前に**終える（アプリの起動手順: DB を開く → Worker.start() → IngestService.start()）。
   設定エラーなどで start が遅れた場合（§5.4 の `pendingStart`）は、IngestService が既に走っていてコピー中のファイルと孤児を見分けられないので、**inbox の孤児の削除だけを飛ばす**（復旧と閉じる処理と requeue は行う）
 - 各工程の入口は進行中の状態も受け付ける（`normalizable = {DISCOVERED, NORMALIZING}` など）。進行中から入っても遷移を記録しない（SM-08）
@@ -681,7 +687,10 @@ tick の段（SPEC S13。「段」の列は `TickStage` の case で、宣言順
   2. デバイス接続の立ち上がり（`connectEpoch` が増えた。§8.1。起動後の最初の接続も含む）
   3. パネルの「再試行」ボタン（`requeueFailed(.manual)`）
   4. **再コピーの完了（v1.1 で追加）**: `requeueRecopied` が、FAILED で error_code が `SOURCE_HASH_MISMATCH` か `NORMALIZED_MISSING` かつ `needs_recopy = 0` の Part だけを戻す
-     （これらのコードは失敗時に必ず `needs_recopy = 1` を立てるので、0 に戻っていれば再コピーが済んでいる）。`FAILED→<戻り先>`（detail `recopied`、`resetRetry: true`）、1 件以上なら `recovery_completed requeued=<n>`
+     （これらのコードは失敗時に必ず `needs_recopy = 1` を立てるので、0 に戻っていれば再コピーが済んでいる）。`FAILED→<戻り先>`（detail `recopied`、`resetRetry: true`）、1 件以上なら `recovery_completed requeued=<n>`。
+     入力のヘッダが実データより短い `NORMALIZE_VERIFY_FAILED`（§8.3 手順 6。F-82）も `needs_recopy = 1` を立てるが、**契機 4 の対象にしない**
+     （取り直しても機器がヘッダを直していなければ同じ不合格になり、接続している間 走査（300 秒）ごとに取り直し → 変換 → 不合格を繰り返すため）。
+     取り直した原本は次の契機 1〜3 で変換し直す。変換し直すたびに取り直しは高々 1 回で、契機 1〜3 の無いまま繰り返さない
 - `requeueFailed`: Part → Session の順に、FAILED の行を `ORDER BY updated_at, <key>` で全部 `FAILED→<戻り先>`（detail `requeue`、`resetRetry: true`）。
   **`needs_recopy = 1` の Part は除く**（再コピーより先に戻すと、inbox が無いので SOURCE_MISSING の SKIPPED（終端）に落ちる）。1 件以上戻したら `recovery_completed requeued=<n>`
 - **ガード（遷移せずに待つ。失敗ではない）:** 次の条件では工程に入らず、行を動かさず、パネルの「要対応」に理由を出す（SM-18 と同じ扱い）。条件が解消すれば次の tick で自然に再開する
@@ -715,6 +724,11 @@ ensureNormalized → ensureTranscribed → ensureRawNote → requestDeletions(�
 - Session が無ければ `insertSession`（OPEN。events に NULL→OPEN）。Part に session_key を書き（`updateRecording`）、集計列を数え直す:
   `SELECT COUNT(*), MIN(started_at), MAX(ended_at), SUM(duration_seconds), SUM(CASE WHEN status IN (?, ?) THEN 1 ELSE 0 END) FROM recordings WHERE session_key = ?`（`IN` には FAILED と SKIPPED の rawValue を束縛する。SQL に状態名を書かない。PT-06）
   → `part_count / started_at / ended_at / recorded_seconds / failed_part_count`（SUM は全部 NULL なら NULL）。Session が OPEN なら `OPEN→OPEN`（detail = partkey。新規作成の直後も書く）。閉じた Session への追加は events を書かない
+  - **1 件の分組は 1 トランザクション（F-82）**: Session の作成・`session_key`・集計・`OPEN→OPEN` を `Store.groupPart`（§5.2）で一度に書く。
+    v1.1 までは 3〜4 回の別トランザクションで、間で落ちると `session_key` だけ入って集計も `OPEN→OPEN` も無い Part が残った（無通信の判定と Daily の件数がずれる）
+  - **分組より先に終端になった Part（F-82）**: 取り込みは tick の途中でも Part を足すので、分組（段 2）の前に処理（段 5）が FAILED / SKIPPED にした Part がある。
+    その時点では `session_key` が無く再オープンを呼べないので、分組した Part が既に `partTerminal` で、Session が `reopenable` なら、既存の再オープン（下記。辺は増やさない）を行う。
+    行わないと SAVED / COMPLETED の日の Daily に除外の警告行（NOTE-05）が載らないまま残る。処理待ち（DISCOVERED など）の Part は従来どおり契機にしない（SM-11 / SM-12）
 - OPEN を閉じる（`closeIdleSessions`、`ORDER BY session_key`）: `updated_at <= now − idleClose(1800 秒)` なら `OPEN→READY`（detail `idle`。読めない `updated_at` は古い側）。**日付では閉じない**（日付が過去の OPEN も同じ規則。無通信は最後の活動＝`updated_at` から測る）。
   パネルの「今すぐ要約」は OPEN を日付を問わず detail `summarize_now` で閉じる（§5.4）。
   **本計画の差分（F-66。X-37）**: voicedock は `day_date != today(tz)` の OPEN も `stale_day` で閉じていた（0:00 の自動要約）。利用者の決定で廃止した。日付をまたいだ録音は、分組の規則（開始時刻の日付）どおり新しい日の Session に入る
@@ -1227,6 +1241,7 @@ public struct ProcessResult: Sendable {
     public let termination: Termination
     public let stdoutTail: Data      // 末尾 64 KiB（--help の検査用）
     public let stderrTail: Data      // 末尾 4 KiB
+    public let stoppedByTerminateAll: Bool   // 実行中に terminateAll が SIGTERM を送った（F-82。初期化子の既定は false）
 }
 /// 完了まで待つ（whisper-cli・diskutil・reaper・--help 検査）
 func run(_ spec: ProcessSpec, timeout: Duration) async -> ProcessResult
@@ -1244,13 +1259,15 @@ public final class RunningProcess: Sendable {
   - アプリ終了時は実行中の全グループに同じ手順を行う（`ProcessRunner.terminateAll(grace:)`）。**terminateAll はまず閉じる**（以後の `run` は起動せずに
     `.spawnFailed(errno: ECANCELED)`、`spawn` は起動せずに `SpawnError.spawnFailed(errno: ECANCELED)` を投げる。開き直さない。閉じることと実行中の子の写しを取ることの間に await を挟まない）。
     SIGTERM の後は全部が終われば grace を待たずに戻り、grace を過ぎた（か呼び手が取り消した）ら残りに SIGKILL（F-76。終了の後に起動された子が残らないように）。
-    閉じた後の拒否は呼び手には起動の失敗に見える（whisper なら `WHISPER_EXEC_MISSING`「spawn: errno 89」）。アプリは終了するので、次回起動の再評価（§5.4 の契機 1）で戻る。
+    閉じた後の拒否は呼び手には起動の失敗に見える。アプリは終了するので、次回起動の再評価（§5.4 の契機 1）で戻る。
+    **実行中に terminateAll が止めた子**（SIGTERM を送った子）の `run` の結果は `stoppedByTerminateAll` が真（`termination` は実際の終わり方のまま。多くは `.signaled(SIGTERM)`。F-82）。
+    whisper はこの 2 つ（止めた・閉じた後の拒否）を失敗として記録せず、行を動かさない（§8.4 手順 6。F-82 までは「シグナル 15」の `WHISPER_FAILED` で retry_count が増え、拒否は `WHISPER_EXEC_MISSING`「spawn: errno 89」で FAILED になった）。
     ただし **reaper の `--version` の拒否は「版を観測できなかった」**として扱い、版の不一致にしない（キャッシュせず `reaper_failed` も出さず、readiness は `.unconfirmed`。§8.9.2。
     版の不一致にすると、停止要求の後も進む今の Session の削除段が RAW_SAVED→COMPLETED を永続化してしまう）。見分けは `ProcessRunner.closedErrno`（ECANCELED）で行う
 - 環境変数は呼び手が明示する（`ProcessSpec.environment` だけを子に渡す。親の環境を引き継がない）。既定の組は `ProcessEnvironment.standard` = `PATH=/usr/bin:/bin:/usr/sbin:/sbin`、`LANG=en_US.UTF-8`、
   diskutil は `ProcessEnvironment.cLocale` = 同じ PATH と `LC_ALL=C`
 - stderr は最後の 4 KiB だけメモリに持ち、失敗時の `error_message` に使う（200 文字に切り詰まる）。whisper の失敗文言は voicedock と同じく stderr の末尾 1000 文字（§8.4）
-- `spawnFailed` は `posix_spawn` の戻り値（errno）。実行ファイルが無い・実行権が無いときにこれになる
+- `spawnFailed` は `posix_spawn` の戻り値（errno）。実行ファイルが無い・実行権が無いときにこれになる。パイプが作れない（EMFILE・ENFILE）・プロセスを作れない（EAGAIN・ENOMEM）など一時的な失敗もこれになる（whisper の写し方は §8.4 手順 6。F-82）
 
 ### 8.3 VDAudio（16 kHz 変換）
 
@@ -1267,9 +1284,16 @@ public final class RunningProcess: Sendable {
 4. `normalize(…)`（下記）を呼ぶ。`claimedBy` = `normalized_path` がこの Part の出力パスである行の partkey、`duplicateOf` = 同じ sha256 を持つ行の partkey を返す関数
 5. 結果が DUPLICATE_CONTENT: `updateRecording(duplicate_of = 相手)` を**先に**書き、`NORMALIZING→SKIPPED`（「同じ内容の Part が既にあります: <相手>」）で偽。**`sha256` は書かない**（部分 UNIQUE）
 6. 結果が失敗: `NORMALIZING→FAILED`（コード、無ければ `IMPORT_FAILED`）、`normalize_failed recording_key=… error_code=…`。`SOURCE_HASH_MISMATCH` なら**遷移の前に** `updateRecordingIfStatus`（status が変わっていなければ列だけ更新）で `needs_recopy = 1` を書く（Store に遷移と列更新を 1 トランザクションで行う API は無い。先に列を書けば、途中で落ちても「再コピーが要る」印だけが残り安全側）。偽
-7. 成功: `updateRecording(sha256, normalized_path, staging_dir, error_code = NULL, error_message = NULL)` → `NORMALIZING→NORMALIZED` →
+   - **入力のヘッダの長さと実データの量が合わない `NORMALIZE_VERIFY_FAILED`**（下の normalize の手順 6 の後半。F-77）も同じく遷移の前に `needs_recopy = 1` を書く（利用者の決定 2026-09-23。F-82）。
+     機器がヘッダを直していれば、次の接続で取り直した原本は合格しうる。直っていなければまた不合格になるだけで、inbox の原本も元の録音も消さない（FAILED は削除の対象にならない）。
+     見分けは error_message が「入力のヘッダの長さと実データの量が合いません」で始まること（`PartSteps.needsRecopy`。VDAudio の文言と揃っていることは本物の変換のテストで固定する）。
+     出力側の検証の失敗・「入力の WAV の構造を読めません」は立てない（取り直しで直らず、立てると契機 1〜3 の requeue から外れて再試行ボタンも効かなくなる）。
+     取り直しの後は契機 4 で戻さず、次の契機 1〜3 で変換し直す（§5.4。接続している間 取り直しを繰り返さない）。
+     **既知の残り**: 取り込みの再コピー（§8.1 の `registerCopied`）は `duration_seconds` を測り直さないので、ヘッダが直った原本を取り直しても、登録時の短い長さと出力の長さが食い違い「長さが入力と <gap> 秒ずれています」で不合格のまま残る（F-82 で確かめた）。自動で直るには再コピーで長さ（と `ended_at`・Session の集計）を測り直す変更が要る（利用者に確認中）
+7. 成功: `updateRecording(sha256, normalized_path, staging_dir, error_code = NULL, error_message = NULL, needs_recopy = 0)` → `NORMALIZING→NORMALIZED` →
    `normalize_completed recording_key=… in_bytes=… out_bytes=… elapsed_s=<小数 1 桁>` → **その後で** `inboxRetain == normalized` なら inbox の原本を削除（CONC-08: 消すのは DB 更新の後。失敗は無視）。
    `inboxRetain == raw_saved` のときは、Part が `RAW_WRITING→RAW_SAVED` になった直後に同じ規則で消す（voicedock は raw_saved の経路を持たなかった。受理して効かない設定を作らないため実装する。ConfigEffectTests で固定）
+   - `needs_recopy = 0`（F-82）: 立ったままだと、後で FAILED になったときに契機 1〜3 の requeue から外れ、済んだ Part を取り直す（`SOURCE_HASH_MISMATCH` の工程内リトライが同じ inbox で通ったときなど）
 
 **`normalize(input:partkey:duration:sha256Helper:claimedBy:duplicateOf:)` の順序（voicedock audio.py:379-500 と同じ）**
 1. `claimedBy != nil && claimedBy != partkey` → `IMPORT_FAILED`「staging の slug が衝突しています（<slug> は <claimedBy> が使用中）」（CONC-13）
@@ -1341,9 +1365,11 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
 **呼び手の手順（`ensureTranscribed`）**
 0. `status ∈ transcribedOrBeyond` → 真。`status ∉ transcribable` か `normalized_path == nil` → 偽
 1. ガード（§5.4）: `Transcriber.missingPrerequisites()`（whisper-cli・Whisper モデル・（VAD 有効なら）VAD モデル）が空でなければ遷移せず偽。Transcriber も起動の直前に同じ確認をし、欠けていれば `.prerequisiteMissing` を返す（呼び手はガードとして扱い、行に書かない）
-2. 入力（16 kHz 音声）が「通常ファイルで size > 0」でなければ（ASR-04 / SM-17。`renormalizeOrFail`）: `→NORMALIZING`（NORMALIZED か TRANSCRIBING から）。
-   inbox の原本があれば偽（次の周回で変換し直す。ログ無し）。無ければ `NORMALIZING→FAILED`（`NORMALIZED_MISSING`、
-   「16 kHz 音声も inbox の原本もありません（<normalized_path>）。デバイスから採り直す必要があります」、`normalize_failed … reason=input`）。`needs_recopy = 1` は**遷移の前に** `updateRecordingIfStatus` で書く
+2. 入力（16 kHz 音声）が「通常ファイルで size > 0」でなければ（ASR-04 / SM-17。`renormalizeOrFail`）: **先に inbox の原本を確かめる**（F-82）。
+   無ければ**今の状態のまま**（NORMALIZED か TRANSCRIBING）`updateRecordingIfStatus` で `needs_recopy = 1` を書き（書けなければ何もせず偽）、それから `→NORMALIZING` → `NORMALIZING→FAILED`（`NORMALIZED_MISSING`、
+   「16 kHz 音声も inbox の原本もありません（<normalized_path>）。デバイスから採り直す必要があります」、`normalize_failed … reason=input`）。
+   inbox の原本があれば `→NORMALIZING` だけで偽（次の周回で変換し直す。ログ無し。`needs_recopy` は書かない）。
+   F-82 までは `→NORMALIZING` を先に確定していたので、間で落ちると `needs_recopy = 0` の NORMALIZING が残り、復旧（→DISCOVERED）の後に SOURCE_MISSING の SKIPPED（終端）になって再コピーされなかった
 3. NORMALIZED なら `NORMALIZED→TRANSCRIBING`
 4. 冪等: 既存の正規化 transcript が読めて（下記の形）text のスカラー数が `minChars` 以上なら whisper を起動しない
 5. whisper を実行（タイムアウト `Int(min(max(duration × timeoutFactor(3.0), minTimeoutSeconds(600)), maxTimeoutSeconds(21600)))`、duration 不明なら maxTimeout。ASR-08）。
@@ -1352,7 +1378,9 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
 
 | 事象 | コード | error_message |
 |---|---|---|
-| 起動失敗（`spawnFailed`） | WHISPER_EXEC_MISSING | `spawn: errno <n>` |
+| 起動失敗（`spawnFailed`）のうち実行ファイル（か起動の指定）の問題: ENOENT・EACCES・EPERM・ENOEXEC・ENOTDIR・ELOOP・ENAMETOOLONG・EINVAL・EBADARCH・EBADEXEC・EBADMACHO（F-82） | WHISPER_EXEC_MISSING | `spawn: errno <n>` |
+| それ以外の起動失敗（EAGAIN・EMFILE・ENFILE・ENOMEM・ETXTBSY など一時的なもの。F-82） | WHISPER_FAILED | `spawn: errno <n>` |
+| アプリの終了で止めた（`stoppedByTerminateAll` が真で終了 0 でない）・閉じた後の起動の拒否（`.spawnFailed(errno: ECANCELED)`）（F-82） | —（`.stopped`。行を動かさず TRANSCRIBING のまま。次回起動の復旧が NORMALIZED に戻す。§8.15） | — |
 | タイムアウト（プロセスグループごと kill） | WHISPER_TIMEOUT | `<秒> 秒を超えました` |
 | 終了コード ≠ 0 | WHISPER_FAILED | `終了コード <n>: <stderr の末尾 1000 スカラー>` |
 | シグナルで終了（`signaled`） | WHISPER_FAILED | `シグナル <n>: <stderr の末尾 1000 スカラー>` |
@@ -1366,6 +1394,10 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
    `transcription` の各要素で、辞書・`offsets` が辞書・`text` が文字列でなければ飛ばす。`start = round(offsets.from / 1000, 3)`、`end = round(offsets.to / 1000, 3)`
    （数値のみ。bool は不可。ms は float でも受ける。ASR-05）、どちらか取れなければ飛ばす。秒にして読めない値（NaN・±Infinity・絶対値が 1,000,000,000 秒超。§5.7）も取れない扱い（F-71）。`text` を Python 互換の strip（§5.7）で整え、空なら飛ばす。
    全体の text = 各 segment の text を区切り無しで連結して strip
+   - **読む前の手前処理（whisper の生 JSON に限る。利用者の決定 2026-09-23「寛容に読む」。F-82。X-39）**: whisper.cpp の `-oj` は文字列の中の `"` と `\` しかエスケープしないので、
+     区間の境目で割れた多バイト文字（不正な UTF-8）や生の制御文字（U+0000〜U+001F）が 1 つあると全体が読めず、Part が毎回 `WHISPER_FAILED` になる（voicedock も同じ）。
+     (a) 不正な UTF-8 は U+FFFD に置き換える（`String(decoding:as:)`）、(b) **文字列の中の**生の制御文字だけを `\u00XX`（小文字の 16 進）にする（引用符の中かどうかと、`\` の直後の 1 文字を追う小さな状態機械。
+     文字列の外と `\` の直後の 1 文字は触らない）。その後は従来どおり `PyJSON.decode`（VDCore は変えない）。正常な JSON は 1 バイトも変えない（`WhisperOutputParser.lenientText`）
 8. 正規化 transcript を `transcripts/parts/<slug>.json` へ `AtomicFile` で書く（**無音判定より前**。根拠 B の証拠になる。ASR-09）。形は PyJSON の indent 2 ＋ 末尾改行、キーはこの順:
    `partkey, language, duration_seconds（null 可）, started_at（Part の started_at 文字列）, text, segments[{start, end, text}]`。その後 staging の `whisper.json` を削除
 9. 無音: `updateRecording(transcript_path)` を**先に**書き、`TRANSCRIBING→SKIPPED`（`NO_SPEECH_DETECTED`）で偽
@@ -2391,6 +2423,7 @@ T-11・T-14 で実装済みの `imported_keys` の表と IngestService の除外
 ### 8.14 課金の差し込み口（v1 では実装しない）
 
 - `LicenseGate` プロトコル（`func allowsProcessing() -> Bool`）を VDPipeline に置き、v1 は常に true を返す実装（`AlwaysAllowLicenseGate`）だけを入れる。Worker は tick の先頭で見る
+  - 偽なら段を回さず `pipeline_paused reason=license`。待っているパネルの仕事（DR-09・今すぐ要約・後追い）には、実行せずに失敗で返事をしてから戻る（設定エラーの tick と同じく返事は必ず 1 回。文言は `StatusTexts.pauseWord(.license)` =「ライセンス」。F-82。v1 は常に真なので潜在）
 - 将来の実装はオフラインで検証できる署名付きキーにする（**認証サーバとの通信を足さない**。「音声もテキストも外に出ない」を守る）
 
 ### 8.15 ライフサイクル・電源・ログ
@@ -2402,7 +2435,7 @@ T-11・T-14 で実装済みの `imported_keys` の表と IngestService の除外
 - **起動に失敗したとき**（`<HOME>` を作れない・DB を開けない）: `NSAlert` を 1 枚出して終了する（メニューバーに出さない。パネルからは直せないため）
 - **終了**: 「終了」→ 新しい工程を始めない → `ProcessRunner` を閉じて（以後の起動を拒む）実行中の子プロセスをプロセスグループごと止める（全部が終われば 5 秒を待たない。§8.2）→ 取り込みを止める →
   llama-server の後始末（起動の途中なら中止させる。§8.5）→ Worker の終わりを待つ。**この後始末全体を最大 10 秒で打ち切って終了する**（`applicationShouldTerminate` で `.terminateLater`。
-  10 秒を超えたら残りを待たない。子を止める段を、時間の掛かりうる段より前に置く。F-76）。中途の状態は次回起動時の復旧（§5.3）が戻す。`service_stopping`
+  10 秒を超えたら残りを待たない。子を止める段を、時間の掛かりうる段より前に置く。F-76）。中途の状態は次回起動時の復旧（§5.3）が戻す（終了で止めた whisper・閉じた後に拒まれた起動は失敗として記録せず、TRANSCRIBING のまま復旧に任せる。§8.4 手順 6。F-82）。`service_stopping`
   - **2 度目の終了要求**（F-76）: 後始末の最中に `applicationShouldTerminate` がもう一度呼ばれたら取り消さずに `.terminateLater` を返し、1 度目の後始末の終わりの reply で終わる（ログアウト・システムの終了を中断させない）。
     なお AppKit は、`.terminateLater` の応答待ちの間の 2 度目の `terminate` ではデリゲートを呼ばずに**直ちに終了する**（`applicationWillTerminate` だけが呼ばれる。macOS 26 で確かめた）。
     そのため `applicationWillTerminate` で ProcessRunner を閉じ、残った子のプロセスグループに SIGTERM → 直ちに SIGKILL を送る（別のタスクで行い、最大 1 秒待つ）。後始末が 10 秒で打ち切られたときも同じ。
@@ -3036,11 +3069,11 @@ RetryPolicy: `none`（再評価の契機まで待たない。FAILED なら reque
 | 12 | `DISK_SPACE_LOW` | nextPoll | ガード | 行には書かない（変換中の再確認で失敗したときだけ FAILED） |
 | 13 | `AUDIO_PROBE_FAILED` | attempts | 続行（ログのみ） | |
 | 14 | `IMPORT_FAILED` | attempts | FAILED | 変換の失敗・時間超過・slug の衝突 |
-| 15 | `NORMALIZE_VERIFY_FAILED` | attempts | FAILED | 出力の検証の失敗に加え、入力のヘッダの長さと実データの量が合わない・入力の WAV の構造を読めないとき（§8.3 手順 6。F-77）。inbox の原本は消さない |
+| 15 | `NORMALIZE_VERIFY_FAILED` | attempts | FAILED | 出力の検証の失敗に加え、入力のヘッダの長さと実データの量が合わない・入力の WAV の構造を読めないとき（§8.3 手順 6。F-77）。inbox の原本は消さない。ヘッダの長さと実データの量が合わないときは `needs_recopy = 1`（契機 4 では戻さない。F-82） |
 | 16 | `NORMALIZED_MISSING` | nextConnect | FAILED | `needs_recopy = 1` |
-| 17 | `WHISPER_EXEC_MISSING` | none | FAILED | 起動に失敗したときだけ。**実行ファイルが無いことは工程に入る前のガード**（§5.4） |
+| 17 | `WHISPER_EXEC_MISSING` | none | FAILED | 実行ファイル（か起動の指定）の問題で起動できないときだけ（ENOENT・EACCES・EPERM・ENOEXEC など。§8.4 手順 6。F-82）。**実行ファイルが無いことは工程に入る前のガード**（§5.4） |
 | 18 | `WHISPER_MODEL_MISSING` | none | — | **ガードの理由（要対応の表示）にだけ使い、行には書かない**（voicedock では設定検証のコード） |
-| 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない、起動の前に前回の生 JSON を消せない（F-76） |
+| 19 | `WHISPER_FAILED` | attempts | FAILED | 終了コード ≠ 0、または生 JSON が無い・読めない、起動の前に前回の生 JSON を消せない（F-76）、一時的な起動の失敗（EAGAIN・EMFILE・ENOMEM など。F-82）。アプリの終了で止めたものは書かない（F-82） |
 | 20 | `WHISPER_TIMEOUT` | attempts | FAILED | |
 | 21 | `NO_SPEECH_DETECTED` | none | SKIPPED | |
 | 22 | `OBSIDIAN_RAW_WRITE_FAILED` | attempts | Part FAILED | 99 を超えた同名ファイルも。トリガが Raw に載らない・書き直しで RAW_SAVED 以降の Part の本文が消えるときも書かずにこれ（F-75。§8.6） |
@@ -3385,6 +3418,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | X-36 | 解析を再利用するとき `analysis_path` を書かない | 再利用でも書く | 書いた後・DB 更新の前に落ちた Session が ANALYZED で永久に止まる（潜在バグの修正） |
 | X-37 | 日付が過去の OPEN を `stale_day` で閉じる（0:00 の自動要約） | 閉じる契機は無通信の `idle` とパネルの今すぐ要約（`summarize_now`）だけ | 利用者の決定（2026-09-23。F-66） |
 | X-38 | Raw の書き直しで transcript が読めない Part を黙って外す（原本を消した Part の本文もノートから消える）。トリガが載っていなくても RAW_SAVED にし、載せる Part が無ければ遷移せずに偽を返し続ける（pipeline.py:467-547, 592-623） | トリガが載らなければ `RAW_WRITING→FAILED`。書き直しで RAW_SAVED 以降の Part の鍵が既存のノートから抜けるなら書かずにトリガを FAILED（どちらも `OBSIDIAN_RAW_WRITE_FAILED`。§8.6） | Raw ノートは原本を消した後に本文が残る唯一の写しで、削除の根拠でもある（F-75） |
+| X-39 | whisper の生 JSON を `json.loads(path.read_text(encoding="utf-8"))` で読む（transcribe.py:447-452）。生の制御文字（U+0000〜U+001F）や区間の境目で割れた多バイト文字（不正な UTF-8）が 1 つあると全体が読めず、Part が毎回 `WHISPER_FAILED` | whisper の生 JSON に限り、読む前に不正な UTF-8 を U+FFFD に置き換え、文字列の中の生の制御文字を `\u00XX` にする（文字列の外は触らない。正常な JSON は 1 バイトも変えない。§8.4 手順 7）。`PyJSON.decode` は変えない | 利用者の決定（2026-09-23。寛容に読む。F-82）。1 区間の不良で Part の全文を失わない |
 
 **意図して変えないもの**（voicedock の実装どおりにする。SPEC の記述と違っても）: frontmatter の文字列を常に引用、Timeline の区切り（Map-Reduce はチャンク単位）、
 Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を確かめない、`recorded` は除外 Part を含む、重複除去は Reduce 経路だけ、
@@ -3496,3 +3530,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-76 | 誤 | §2.1・§2.3・§8.2・§8.4・§8.5・§8.11・§8.15・付録 A.3・付録 A.4 | （2026-09-23。issue #116。全体コードレビューのテーマ 5「終了と子プロセス」）(1) `LlamaServerSupervisor.stop()` は起動の途中（最大 3 回 × 300 秒）の終わりを待ち、起動には取り消しが伝わらなかったので、18 GB の読み込み中に「終了」を押すと読み込みが終わるまで終わらず、300 秒を超えると終了要求の後に 2・3 回目を起動した → 起動中のプロセスを actor に持ち、`stop()` は中止の印を立ててそれを直ちに止め、起動は await の後ごとに印を見て次の試行・次の待ちに進まずに `server_start_failed: cancelled`（既存の理由語）で終える。停止の途中に来た `ensureRunning` は停止の終わりを待ってから起動する（停止中は起動しない。停止が終われば起動してよい）。(2) `ProcessRunner.terminateAll` は実行中の子の写しを 1 回取るだけで、その後の `run` / `spawn` を拒まず、Worker は停止要求を Part・Session の区切りでしか見ないので、変換中に終了すると後から whisper-cli が起動されアプリだけが終わった → `terminateAll` はまず閉じる（以後の `run` は `.spawnFailed(errno: ECANCELED)`、`spawn` は `SpawnError.spawnFailed(errno: ECANCELED)`。開き直さない。公開 API は増やさない）。SIGTERM の後は全部が終われば grace を待たずに戻る。アプリの終了は「停止要求 → terminateAll → 取り込みの停止 → llama の停止 → Worker の終わりの待ち」を順に行い、**全体**を §8.15 の最大 10 秒で打ち切る（これまでは Worker の待ちだけに掛かっていた。`AppDelegate.shutDown(within:_:)`）。(3) DR-09 は llama-server を止めず、`pendingJobs` の段（tick の最後）で起動したサーバが次の tick の `processReadySessions` の終わりまで残り、その前の Part 工程（whisper）と重なった（§2.1・LLM-15 に反する。T-32 はこの残り方を許していた） → `LLMProbeCheck.run` は `ensureRunning` を呼んだら、応答の後（成功でも失敗でも）`llama.stop()` を呼ぶ。(4) 単一起動の仕組みが無く、`open -n` や dist/ と /Applications の両方の起動で、2 つ目の起動の復旧が 1 つ目の処理中の行を戻しうる → 起動の最初（ディレクトリを作った後、設定・DB・復旧・Worker より前）に `<HOME>/state/app.lock`（`HomeLayout.appLock`。reaper.lock とは別）を `FileLock.tryAcquire` で取り、生きている間持つ。取れなければ `service_stopping reason=already_running` を 1 行出して、何も表示せずに終了する（`BootFailure.alreadyRunning`。警告の本文は nil）。(5) `Transcriber` は起動の前に前回の `whisper.json` を消さなかったので、落ちた前回の残りがあると、JSON を書かずに 0 で終わった whisper の結果を前回の JSON で成功にした（RK-34 の根拠が崩れる）→ 起動の前に `SafeUnlink.remove(…, under: .staging, missingOK: true)` で消し、消せなければ起動せずに `WHISPER_FAILED`「前回の生 JSON を消せません: <HOME からの相対パス>」。新しい設定キー・遷移の辺・ログのイベントは増やさない（A.4 の `service_stopping` に理由語 `already_running` を足した）。消す側に倒れる変更は無い（閉じた後は reaper も起動しない）。レビューで足した: 閉じた後の reaper の `--version` の拒否（ECANCELED。`ProcessRunner.closedErrno`）は版の不一致にせず「観測できなかった」とし、キャッシュせず `reaper_failed` も出さず、readiness を新しい値 `.unconfirmed`（要求も削除せずの完了もしない）にした（版の不一致として決着させると、停止要求の後も進む Session の削除段が RAW_SAVED→COMPLETED を永続化した）。2 度目の終了要求は取り消さずに `.terminateLater`、AppKit が後始末を飛ばして終わるときに備えて `applicationWillTerminate` で残った子を止める。再マウントの途中の終了は既知の制限として §8.15 に書いた |
 | F-77 | 誤 | §8.3・付録 A.3・付録 C | （2026-09-23。issue #117。全体コードレビューの C2。利用者の決定で実機の確認（P0-05）より先に入れた）16 kHz 変換は `AVAudioFile.length`（WAV の data チャンクの宣言したサイズ）で読むのを止め、入力の長さ（§8.1 の `AudioProbe`）も同じ値から測り、出力の検証は両者の差しか見なかったので、ヘッダの data のサイズが実データより小さい録音（電池切れなどでヘッダが古いまま残ったもの）は後半を欠いた出力のまま NORMALIZED になり、既定の `inboxRetain = normalized` で inbox の原本が消え、削除の条件を満たせばデバイスの原本も消えうる（Core Audio で実測: 2 秒の data を 1 秒と宣言すると `length` は 1 秒分、0 と宣言すると 0。RIFF の `0xFFFFFFFF` とファイルより長い宣言はファイルの終わりまで読む）→ 手順 6 の出力の検証の後に `InputExtentCheck`（VDAudio の internal。公開 API は増やさない）を足した。RIFF / RF64 のチャンクを辿って data の開始位置と宣言したサイズ（RF64 は `ds64`）を読み、実データの量（宣言したサイズの後ろがチャンクの並びとしてファイルの終わりで閉じる正常なファイルは宣言どおり、それ以外は data の開始位置からファイルの終わりまで）を 1 フレームのバイト数で割った値が、ヘッダの長さ（`min(length, 宣言したサイズ ÷ 1 フレームのバイト数)`）より 1 フレーム以上多ければ（data のサイズ 0 を含む）「入力のヘッダの長さと実データの量が合いません（ヘッダ <h> フレーム、実データ <a> フレーム）」、WAVE の構造を読めなければ「入力の WAV の構造を読めません（<理由>）」で、どちらも既存の `NORMALIZE_VERIFY_FAILED`（出力を消し、inbox の原本は消さない。Part は FAILED なので削除の対象にならない）。手順 2 の再利用もこの照合を通ったときだけ（通らなければ変換し直して手順 6 で落ちる）。変換の前でなく手順 6 に置いたのは、コピーの壊れ（手順 5 の `SOURCE_HASH_MISMATCH`。再コピーの契機）を先に判定するためと、後始末を既存の検証の失敗と同じにするため。1 フレームに満たない余り・宣言がファイルより長い（末尾が欠けた）ものは落とさない（後者はファイルの終わりまで変換されるので失うものは無い）。`AudioProbe` は変えない（ヘッダが短い録音の短い duration は手順 6 で落ちるので後段に流れない）。エラーコード・設定キー・辺・ログのイベントは増やさない。DJI Mic 3 がそういうファイルを残すか・data の後ろにチャンクや詰め物を置くかは未確認（P0-05 のついでに確かめる。P0 §7） |
 | F-78 | 誤 | §8.9.2・§8.9.5・§8.9.6・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.4 | （2026-09-23。issue #124。F-74（#114）のレビューで残った 2 点。利用者の決定「今回の流れで直す」。CR-15。どちらも消さない側に倒れていたが、Part や Session が完了しないまま残った）(1) 手で原本を消した後などで、ID の無い SOURCE_DELETE_PENDING の元ファイルがデバイスの一覧に無くなると、利用者が「手動で消した分を完了にする」を押すまで Part も Session も完了せず、要対応にも出なかった → `requestDeletions` の手順 4a（F-64）を ID の無い SOURCE_DELETE_PENDING にも広げ、同じ観測の条件（新鮮な snapshot・デバイスが接続中で列挙でき `unavailable` に無い・snapshot が PENDING にした時刻（updated_at）より確かに後に完了・relpath が一覧に無い）を満たしたら、**辺を足さず**「手動で消した分を完了にする」と同じ 2 遷移 `SOURCE_DELETE_PENDING→SOURCE_DELETING`（detail `resolve_absent`）→`SOURCE_DELETING→COMPLETED`（detail `already_absent`）、この Part の要求・結果の取り下げ、ID を外す、`source_delete_skipped recording_key=… reason=already_absent` で自動で完了させる。`source_deleted_at` は入れない（DELETED を観測していない）。未接続・列挙できない・snapshot が古い・`source_path` が無いときは完了させない。これで F-74 の `failureIsObserved` の (d) は RAW_SAVED にも PENDING にも防御になった。「手動で消した分を完了にする」は ID を持つ PENDING・COMPLETED の Session の PENDING のために残す。(2) アプリの `canDeleteSource` は真なのに reaper の独立した検証（RV-03〜13）だけが偽になる Part は、評価のたびに要求 → 拒否（回収の pend で ID の無い SOURCE_DELETE_PENDING）→ 再要求を繰り返し、Session は完了しなかった（`canDeleteSource` が真なので F-69 の 5a の対象にならず、要求を書いた評価では `delete_attempts` も増えない）→ 手順 5b: `canDeleteSource` が真の ID の無い SOURCE_DELETE_PENDING について、DB の events を新しい順に見て回収の pend（`SOURCE_DELETING→SOURCE_DELETE_PENDING`、`error_code` が `SOURCE_IDENTITY_MISMATCH`）を数え（間の要求の遷移 `RAW_SAVED` / `SOURCE_DELETE_PENDING` →`SOURCE_DELETING` で detail の無いものは読み飛ばし、それ以外の遷移で止める。`reaperRejectionStreak`）、定数 `reaperRejectionsToSettle = 3` 回続いていたら要求を書かずに、5a の PENDING と同じ 2 遷移（両方 detail `not_deletable`、2 つ目で `error_message` に原因の語）と `source_delete_skipped … reason=not_deletable detail=<原因>` で消さずに決着する。原因の語は最後の拒否の reaper の理由語（付録 B.2。5a の `source_info` / `pre_identity` / `transcript` / `raw_note` はアプリの検査のどれが落ちたか、5b の理由語はアプリの検査が全部通った後に reaper の検証のどれが落ちたかで、綴りは重ならない）。数え方は DB の履歴なので再起動で 0 に戻らず、拒否でない結果（DELETED・`still_in_inventory`・`no_result`）・起動時の復旧・決着・手動で消した分・後追いの要求の遷移で数え直す。要求を書かなかった評価は数えも切りもせず、要求を残す reaper の理由（`device_absent`・`mount_readonly`）は結果が来ないので数えない。挿し直しでは数え直さない（挿し直しで変わる食い違いはアプリの事前確認が同じ `TargetIdentity` で先に偽になる）。メモリの記録（`UndeletableStreaks` のような）で数える案は、再起動で 0 に戻り Worker の配線も要るので採らない。最後の遷移が detail `not_deletable` の COMPLETED なので、要対応 `undeletableSources`・状態の詳細・後追いの数え方は F-69 のまま（状態の詳細は reaper の理由語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す）。(3) 決着した Part（5a / 5b）を後追いで要求して reaper がまた拒否すると、pend で COMPLETED の Session に ID の無い PENDING が残り、自動では評価されず「消せなかった録音」からも状態の詳細の一覧からも外れて、解決したように見えて見えなくなった → 回収で、events の最後が後追いの ③（`COMPLETED→SOURCE_DELETING`、detail 無し）でその前が detail `not_deletable` の →COMPLETED のときだけ、pend せずに既存の `SOURCE_DELETING→COMPLETED`（detail `not_deletable`、`error_message` に理由語）で決着し直して ID を外す（§8.9.6）。後追いから外す案は後追い（T-41）の判定を変え、原因を直した 5a の Part の再評価も妨げるので採らない。(4) 要対応 `undeletableSources` の説明は 5b に合わなかった（直すものが無いのに後追いを勧めていた）→ 「消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください」に直した（§8.11）。既知の残り: reaper が要求を残す理由（`device_absent`・`mount_readonly`）では結果が来ず、期限切れで連続が切れて再要求が期限ごとに続く（アプリの事前確認が先に偽になるのでまず起きない）。決着していない Part の後追いの拒否・期限切れ・復旧の後の拒否は、従来どおり COMPLETED の Session に PENDING を残す（§8.9.9）。設定キー・遷移の辺・ログのイベントは増やさない（A.2 の注記と、A.4 の `source_delete_skipped` の `detail=` に `<RV の理由語>` を足した） |
+| F-82 | 誤 | §5.2・§5.3・§5.4・§5.6・§8.2・§8.3・§8.4・§8.14・§8.15・付録 A.3・付録 D | （2026-09-23。issue #119。全体コードレビューの残りのうちパイプラインの中核。デバイスの元の録音を消す経路は無かったが、Part が再コピーされずに終わる・記録が誤る・DB に行のある inbox の原本を孤児として消しうる経路があった）(1) `renormalizeOrFail`（§8.4 手順 2）は `→NORMALIZING` を先に確定してから inbox を確かめ `needs_recopy = 1` を書いたので、間で落ちると `needs_recopy = 0` の NORMALIZING が残り、復旧（→DISCOVERED）の後に SOURCE_MISSING の SKIPPED（終端）になって再コピーされなかった → inbox を先に確かめ、無ければ今の状態のまま `needs_recopy = 1` を書いてから（書けなければ何もせず偽）遷移する。(2) 変換の成功で `needs_recopy` を下ろさなかったので、立ったまま後で FAILED になると契機 1〜3 の requeue から外れた → 手順 7 の `updateRecording` に `needs_recopy = 0` を足した。(3) 利用者の決定（2026-09-23）: F-77 の「入力のヘッダの長さと実データの量が合いません」の `NORMALIZE_VERIFY_FAILED` も遷移の前に `needs_recopy = 1` を書き、次の接続で元のファイルを取り直す（機器がヘッダを直していれば直りうる。直っていなければまた不合格になるだけで消さない）。見分けは error_message の先頭（`PartSteps.needsRecopy`。出力側の検証の失敗と「入力の WAV の構造を読めません」は立てない）。取り直しの後は契機 4 で戻さず次の契機 1〜3 で変換し直すので、接続している間 走査ごとに取り直しを繰り返さない（変換し直すたびに高々 1 回）。既知の残り: 再コピーは `duration_seconds` を測り直さないので、ヘッダが直った原本も「長さが入力と <gap> 秒ずれています」で不合格のまま（テストで確かめた。直すには取り込みの再コピーで長さ・`ended_at`・Session の集計を測り直す変更が要る。利用者に確認中）。(4) 分組（§5.6）は Session の作成・`session_key`・集計・`OPEN→OPEN` が別々のトランザクションで、間で落ちると集計も events も無い分組が残った → `Store.groupPart(_:into:) -> SessionStatus`（`Transitions.swift`。PT-05）で 1 トランザクションにした。(5) 分組より先に FAILED / SKIPPED になった Part（取り込みが tick の途中で Part を足すと、段 2 の分組より先に段 5 が処理する）は `session_key` が無く再オープンを呼べず、SAVED / COMPLETED の日の Daily に除外の警告行（NOTE-05）が載らなかった → 分組した Part が既に `partTerminal` なら既存の再オープン（辺は増やさない。`allowReopen` と `reopenable` はそのまま。処理待ちの Part は従来どおり契機にしない。SM-11 / SM-12）。(6) ライセンスで止めた tick（§8.14）は待っているパネルの仕事に返事をしなかった（v1 は常に許可なので潜在）→ 設定エラーの tick と同じく失敗で返事をしてから戻る（文言「ライセンス」= `StatusTexts.pauseWord(.license)`）。(7) inbox の孤児（§5.3）の relpath を「列挙した URL の要素数 − device_id のディレクトリの要素数」で作っていたが、列挙子は symlink を解決した絶対パスを返す（`/var` → `/private/var` を実測）ので、<HOME> の途中に symlink があると partkey がずれ、DB に行のある `_orig.wav` を孤児として消しえた → 列挙子の相対位置（`producesRelativePathURLs`）から作り、相対でない URL は数えない（消さない側）。(8) アプリの終了で `terminateAll` が止めた whisper が「シグナル 15」の `WHISPER_FAILED`（retry_count が増える）、閉じた後の起動の拒否（ECANCELED）が `WHISPER_EXEC_MISSING`（再試行しない）で FAILED になり、EAGAIN・EMFILE・ENOMEM など一時的な起動の失敗も `WHISPER_EXEC_MISSING` だった → `ProcessResult.stoppedByTerminateAll`（実行中に terminateAll が SIGTERM を送った。初期化子の既定は false。`termination` の case は増やさない）を足し、`Transcriber` は止めた（終了 0 でないもの）・拒否（`ProcessRunner.closedErrno`）を新しい `TranscribeOutcome.stopped` で返し、呼び手は行を動かさない（TRANSCRIBING のまま。次回起動の復旧が戻す。§8.15）。`WHISPER_EXEC_MISSING` は ENOENT・EACCES・EPERM・ENOEXEC・ENOTDIR・ELOOP・ENAMETOOLONG・EINVAL・EBADARCH・EBADEXEC・EBADMACHO に限り、ほかの起動の失敗は `WHISPER_FAILED`（attempts。文言は同じ `spawn: errno <n>`）。LLM の側（`llama.stop()` による `server_start_failed: cancelled`・通信の失敗が `LLM_UNAVAILABLE` で Session を FAILED にする）も同じ種類だが、持ち物の外（`SessionSteps+Analysis`・`LlamaServerSupervisor`）なので残した（利用者に報告）。(9) 利用者の決定（2026-09-23。寛容に読む）: whisper の生 JSON の生の制御文字・割れた多バイト文字で Part 全体が毎回失敗した（voicedock も同じ。X-39）→ whisper の生 JSON に限り、読む前に不正な UTF-8 を U+FFFD にし、文字列の中の生の制御文字を `\u00XX` にする（`WhisperOutputParser.lenientText`。`PyJSON.decode` は変えない。正常な JSON は 1 バイトも変えない）。設定キー・遷移の辺・ログのイベント・エラーコードは増やさない。公開 API は `Store.groupPart`・`ProcessResult.stoppedByTerminateAll`・`TranscribeOutcome.stopped` の 3 つ（00-api-map） |

@@ -4,10 +4,11 @@ import VDCore
 
 public enum WhisperOutputParser {
     /// JSON として読めない（またはトップレベルが null）なら nil。それ以外は壊れた要素を飛ばして必ず結果を返す。
+    /// 読む前に `lenientText` で手前処理をする（whisper の生 JSON に限る寛容な読み方。F-82・X-39）。
     public static func parse(
         _ data: Data, fallbackLanguage: String
     ) -> (language: String, text: String, segments: [TranscriptSegment])? {
-        guard let document = PyJSON.decode(data), document != .null else { return nil }
+        guard let document = PyJSON.decode(lenientText(data)), document != .null else { return nil }
         let body: [(String, PyJSONValue)]
         if case .object(let o) = document { body = o } else { body = [] }
 
@@ -34,6 +35,46 @@ public enum WhisperOutputParser {
         let text = PyText.strip(segments.map(\.text).joined())
         return (language, text, segments)
     }
+
+    /// whisper.cpp の `-oj` は文字列の中の `"` と `\` しかエスケープしないので、区間の境目で割れた多バイト文字（不正な UTF-8）や
+    /// 生の制御文字（U+0000〜U+001F）が 1 つあるだけで全体が読めず、Part が毎回失敗する（voicedock も同じ。X-39）。F-82 の手前処理:
+    /// (a) 不正な UTF-8 は U+FFFD に置き換える、(b) 文字列の中の生の制御文字だけを `\u00XX`（小文字の 16 進）にする。
+    /// 文字列の外と、`\` の直後の 1 文字（エスケープの続き）は触らない。正常な JSON は 1 バイトも変えない。
+    /// 引用符・逆斜線・制御文字はどれも ASCII なので、UTF-8 のバイト列のまま判定してよい（多バイト文字のバイトは 0x80 以上）。
+    static func lenientText(_ data: Data) -> String {
+        let text = String(decoding: data, as: UTF8.self)
+        var out: [UInt8] = []
+        out.reserveCapacity(text.utf8.count)
+        var inString = false
+        var escaping = false
+        for byte in text.utf8 {
+            if inString {
+                if escaping {
+                    escaping = false
+                } else if byte == backslash {
+                    escaping = true
+                } else if byte == quote {
+                    inString = false
+                } else if byte < firstNonControl {
+                    out.append(contentsOf: [backslash, lowerU, zero, zero])
+                    out.append(contentsOf: [hexDigits[Int(byte >> 4)], hexDigits[Int(byte & 0x0F)]])
+                    continue
+                }
+            } else if byte == quote {
+                inString = true
+            }
+            out.append(byte)
+        }
+        return String(decoding: out, as: UTF8.self)
+    }
+
+    static let quote = UInt8(ascii: "\"")
+    static let backslash = UInt8(ascii: "\\")
+    static let lowerU = UInt8(ascii: "u")
+    static let zero = UInt8(ascii: "0")
+    /// JSON が文字列の中にそのまま書くことを許さない最後の文字（U+001F）の次
+    static let firstNonControl: UInt8 = 0x20
+    static let hexDigits = Array("0123456789abcdef".utf8)
 
     /// キーはスカラー列で比べる（重複キーは `decode` が後勝ちで 1 つにしている）。
     static func member(_ o: [(String, PyJSONValue)], _ key: String) -> PyJSONValue? {

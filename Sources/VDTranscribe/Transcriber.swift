@@ -45,6 +45,9 @@ public enum TranscribeOutcome: Equatable, Sendable {
     case noSpeech(PartTranscript, message: String)
     case prerequisiteMissing(TranscribePrerequisite)  // 遷移せずに待つ（ガード。PLAN §5.4）
     case failure(StageFailure)
+    /// アプリの終了（`ProcessRunner.terminateAll`）が whisper を止めた、または閉じた後なので起動しなかった（F-82）。
+    /// 失敗ではない。呼び手は行を動かさない（中途の状態は次回起動時の復旧が戻す。PLAN §8.15）
+    case stopped
 }
 
 public struct Transcriber: Sendable {
@@ -123,10 +126,14 @@ public struct Transcriber: Sendable {
         let elapsed = Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
 
         // 8. 結果の写し方。
+        // アプリの終了で止めた・閉じた後で起動しなかったものは失敗として記録しない（F-82）。止める前に 0 で終わっていれば読む
+        if Self.wasStopped(result) { return .stopped }
         let tail = Transcriber.stderrTail(result.stderrTail)
         switch result.termination {
         case .spawnFailed(let n):
-            return .failure(StageFailure(.whisperExecMissing, "spawn: errno \(n)"))
+            // 実行ファイルの問題だけが WHISPER_EXEC_MISSING。一時的な失敗（EAGAIN・EMFILE・ENOMEM など）は WHISPER_FAILED（F-82）
+            let code: ErrorCode = Self.executableProblemErrnos.contains(n) ? .whisperExecMissing : .whisperFailed
+            return .failure(StageFailure(code, "spawn: errno \(n)"))
         case .timedOut:
             return .failure(StageFailure(.whisperTimeout, "\(timeout) 秒を超えました"))
         case .exited(let n) where n != 0:
@@ -165,6 +172,18 @@ public struct Transcriber: Sendable {
 
         // 13. 成功。
         return .transcribed(t, metrics: metrics(t, elapsed: elapsed, duration: req.durationSeconds))
+    }
+
+    /// 起動の失敗（posix_spawn の errno）のうち、実行ファイル（か起動の指定）の問題で、起動し直しても変わらないもの（F-82）。
+    /// これだけを WHISPER_EXEC_MISSING（再試行 none）にし、ほか（EAGAIN・EMFILE・ENFILE・ENOMEM・ETXTBSY など）は WHISPER_FAILED
+    static let executableProblemErrnos: Set<Int32> = [
+        ENOENT, EACCES, EPERM, ENOEXEC, ENOTDIR, ELOOP, ENAMETOOLONG, EINVAL, EBADARCH, EBADEXEC, EBADMACHO,
+    ]
+
+    /// アプリの終了で止めた（terminateAll が SIGTERM を送り、0 で終わらなかった）か、閉じた後なので起動しなかった（ECANCELED。F-76）
+    static func wasStopped(_ result: ProcessResult) -> Bool {
+        if result.termination == .spawnFailed(errno: ProcessRunner.closedErrno) { return true }
+        return result.stoppedByTerminateAll && result.termination != .exited(0)
     }
 
     /// Int(min(max(duration × timeoutFactor, minTimeoutSeconds), maxTimeoutSeconds))。duration 不明なら maxTimeoutSeconds（ASR-08）。

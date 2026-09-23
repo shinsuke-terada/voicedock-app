@@ -1,5 +1,7 @@
 # T-17 VDTranscribe: whisper-cli の起動・出力の正規化・無音判定
 
+> （F-82・issue #119。2026-09-23）(1) アプリの終了で止めた whisper（`stoppedByTerminateAll` が真で終了 0 でない）と閉じた後の起動の拒否（ECANCELED）は失敗にせず、新しい `TranscribeOutcome.stopped` を返す（呼び手は行を動かさない）。(2) 起動の失敗は実行ファイルの問題（ENOENT・EACCES・EPERM・ENOEXEC・ENOTDIR・ELOOP・ENAMETOOLONG・EINVAL・EBADARCH・EBADEXEC・EBADMACHO）だけを `WHISPER_EXEC_MISSING`、ほかは `WHISPER_FAILED`（文言は同じ `spawn: errno <n>`）。(3) 利用者の決定「寛容に読む」: `WhisperOutputParser.parse` は読む前に `lenientText`（不正な UTF-8 を U+FFFD、文字列の中の生の制御文字を `\u00XX`。正常な JSON は 1 バイトも変えない。X-39）を通す。PLAN §8.4 手順 6・7。テストは `TranscriberStoppedTests.swift`・`WhisperOutputParserLenientTests.swift`。
+
 > （F-76・issue #116。2026-09-23）`transcribe` は whisper を起動する前に staging の前回の `whisper.json` を `SafeUnlink.remove(…, under: .staging, missingOK: true)` で消す（落ちた前回の残りを成功として読まない。RK-34）。消せなければ起動せずに `WHISPER_FAILED`「前回の生 JSON を消せません: <HOME からの相対パス>」。テストは `Tests/VDTranscribeTests/TranscriberStaleJSONTests.swift`。
 
 | 項目 | 値 |

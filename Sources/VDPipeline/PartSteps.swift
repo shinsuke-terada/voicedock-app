@@ -36,6 +36,7 @@ struct PartSteps {
     func reload(_ pk: String) -> RecordingRow? { (try? store.recording(pk)) ?? nil }
 
     /// → SKIPPED（error_code・error_message）→ part_skipped → その Part の Session の再オープン。
+    /// まだ分組されていない Part（session_key が NULL）の再オープンは、分組の時に `groupNewParts` が行う（F-82）。
     func skip(_ row: RecordingRow, from: PartStatus, code: ErrorCode, message: String) throws {
         try store.recordPartTransition(
             partkey: row.partkey, from: from, to: .skipped, errorCode: code, errorMessage: message)
@@ -45,7 +46,7 @@ struct PartSteps {
         if let key = row.sessionKey { _ = sessions.reopenSession(key) }
     }
 
-    /// → FAILED → <event>（ERROR）→ その Part の Session の再オープン。
+    /// → FAILED → <event>（ERROR）→ その Part の Session の再オープン（分組の前なら `groupNewParts` が行う。F-82）。
     func fail(
         _ row: RecordingRow, from: PartStatus, code: ErrorCode, message: String, event: LogEvent,
         reason: String? = nil

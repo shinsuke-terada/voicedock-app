@@ -14,11 +14,16 @@ public struct ProcessResult: Sendable, Equatable {
     public let termination: Termination
     public let stdoutTail: Data  // 末尾 stdoutTailLimit バイト
     public let stderrTail: Data  // 末尾 stderrTailLimit バイト
+    /// 実行中に `ProcessRunner.terminateAll`（アプリの終了）がこの子のグループに SIGTERM を送った（F-82）。
+    /// `termination` は実際の終わり方のまま（多くは `.signaled(SIGTERM)`。止める前に終わっていれば `.exited` のこともある）。
+    /// 閉じた後で起動しなかった実行は偽のまま（`.spawnFailed(errno: ProcessRunner.closedErrno)` で見分ける。F-76）
+    public let stoppedByTerminateAll: Bool
 
-    public init(termination: Termination, stdoutTail: Data, stderrTail: Data) {
+    public init(termination: Termination, stdoutTail: Data, stderrTail: Data, stoppedByTerminateAll: Bool = false) {
         self.termination = termination
         self.stdoutTail = stdoutTail
         self.stderrTail = stderrTail
+        self.stoppedByTerminateAll = stoppedByTerminateAll
     }
 
     /// UTF-8 として読む（途中で切れた多バイト文字は U+FFFD になる）

@@ -120,6 +120,16 @@ public actor Worker {
         requeueFailed(.startup, ctx)
     }
 
+    /// ガードで止めた tick（ライセンス）の仕事に、実行せずに失敗で返事をする。文言はガードの理由の語（F-82。今すぐ要約の
+    /// 「当たった理由の pauseWord」と同じ。PLAN §5.4）
+    static func replyPaused(_ job: WorkerJob, _ message: String) {
+        switch job {
+        case .llmProbe(let reply): reply(LLMProbeCheck.fail(message))
+        case .backlog(let action), .resolveAbsent(let action): replyFailure(action, message)
+        case .summarizeNow(let reply): reply(.failure(SummarizeNowFailure(message: message)))
+        }
+    }
+
     /// DB の例外で常駐を止めない（1 件の失敗で残りを止めない。DEL-14）。TickContext.warnStore と同じ 1 行。
     func warnStore(_ e: any Error, rule: String = "store") {
         deps.log.warning(.configWarning, [(.rule, .string(rule)), (.message, .string(ErrorText.describe(e)))])
@@ -142,6 +152,10 @@ public actor Worker {
         }
         guard deps.license.allowsProcessing() else {
             pauses.trip(.license)
+            // 段を回さないので、待っている仕事には失敗で返事をしてから戻る（設定エラーの経路と同じ。返事は必ず返す。F-82）
+            let jobs = pendingJobs
+            pendingJobs = []
+            for job in jobs { Self.replyPaused(job, StatusTexts.pauseWord(.license)) }
             pauses.finishTick()
             return
         }
