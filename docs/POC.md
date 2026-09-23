@@ -970,7 +970,7 @@ gh: Upgrade to GitHub Pro or make this repository public to enable this feature.
 
 ## 15. LLM 受け入れ試験（PLAN §10.6）
 
-⬜ 未実施（T-24 で試験のコードと fixture を用意した。カタログの再確認と試験の実行は【利用者が行う】）
+一部実施（2026-09-24。Qwen3 4B（`qwen3-4b-instruct-2507-q4_k_m` と sha256 が一致する取り込み済みのファイル）は **✗ FAIL**。30B は未実施。カタログの再確認（15.1）も未実施）
 
 手順（**利用者が行う**。15.1 はネットワークに出る。15.2 はモデル（30B は約 18.6 GB）が `~/Library/Application Support/VoiceDock/models/llm/` に要る）:
 
@@ -986,4 +986,45 @@ gh: Upgrade to GitHub Pro or make this repository public to enable this feature.
 
 ### 15.2 受け入れ試験
 
-⬜ 未実施
+測定日 **2026-09-24**（利用者が実行。テスト全体の所要は 2586.9 秒）。対象は Qwen3 4B（取り込み済みの `custom-3605803b982cb64a.gguf`。カタログの `qwen3-4b-instruct-2507-q4_k_m` と sha256 が全桁一致）。**最初の実行は `MODEL=custom-3605803b982cb64a`（ID の書き方の誤り。ID は `custom:<sha256 の全 64 桁>`）で「モデルが見つかりません」となり、試験に入らなかった。下は 2 回目（正しい ID）の報告。**
+
+| 項目 | 値 |
+|---|---|
+| モデル | `custom:3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597` |
+| ファイル | `custom-3605803b982cb64a.gguf` |
+| sha256 | `3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597`（`FileHasher.sha256(of:chunkBytes: 1_048_576)` の実測） |
+| 機種 / メモリ | `Apple M4 Pro` / `68719476736` |
+| llama.cpp | `b11033`（`Vendor/versions.env`） |
+| コマンド | `make llm-acceptance MODEL=custom:3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597` |
+
+| fixture | 文字数 | 結果 | 本体の要求 | 修復の入った要求 | 所要 |
+|---|---|---|---|---|---|
+| s01-standup | 4,560 | success | 1 | 0 | 20.1 s |
+| s02-design-review | 7,217 | success | 1 | 0 | 24.5 s |
+| s03-oneonone | 10,730 | success | 1 | 0 | 34.5 s |
+| s04-support-call | 14,282 | success | 1 | 0 | 34.1 s |
+| s05-planning | 19,861 | success | 3 | 0 | 113.3 s |
+| s06-retrospective | 23,569 | success | 3 | 0 | 140.1 s |
+| s07-field-note | 28,371 | success | 3 | 0 | 144.4 s |
+| s08-workshop | 36,402 | success | 3 | 0 | 167.5 s |
+| s09-allhands | 56,048 | success | 4 | 1 | 323.5 s |
+| L01-longday | 350,001 | failure（LLM_INVALID_JSON） | 30 | 1 | 1583.3 s |
+
+| 判定 | 基準 | 実測 | 結果 |
+|---|---|---|---|
+| J1 ANALYZED | 10 / 10 | 9 | ✗ |
+| J2 修復なしの割合 | ≥ 90% | 96.0% | ✅ |
+| J2 修復込みの割合 | 100% | 98.0% | ✗ |
+| J3 `[[` と due | 0 件 | 4 件 | ✗ |
+| J4 350,000 文字 | ≤ 30 分 | 26.4 分 | ✅ |
+
+判定: ✗ FAIL → `Resources/ModelCatalog.json` の `custom:3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597` は `verified: false` のまま
+
+**読み取れること**（`llm-acceptance-<id>.md` に fixture ごとの生の応答は残らない。原因の切り分けはしていない）:
+
+- J1: 落ちたのは長文（L01-longday）の 1 本だけで、30 回の本体の要求のうち 1 回が `LLM_INVALID_JSON`（応答から JSON を抽出できない）。9 本の会話はすべて解析できた
+- J2: 修復なしの割合は 96.0% で基準（90%）を満たす。修復込みは 98.0% で、100% に届かない（長文の落ちた 1 回が修復でも直らなかった）
+- J3: `[[` は 0 件。`due` が不正（`YYYY-MM-DD` でない、または `maxTasksWithDue` を超える）だったのは s01・s03・s04・s09 の 4 本
+- J4: 長文は 26.4 分で 30 分以内。ただし 4B でこの所要なので、余裕は小さい
+
+**判定: ✗ FAIL。** 4B は `verified: false` のまま（カタログは変えない）。合格したモデルが無いと、利用者が LLM を選べない（`ModelCatalog.listedLLMs` は `verified: false` を出さない）。v1.0（T-44）の前に、1 つ以上のモデルを合格させる必要がある
