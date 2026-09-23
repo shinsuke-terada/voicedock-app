@@ -236,6 +236,10 @@ enum Bootstrap {
         let models = ModelManager(
             layout: layout, catalog: catalog, downloader: downloader,
             cache: verificationCache, log: log.withCategory("models"), hashChunkBytes: hashChunkBytes)
+        // 14 の後. 前回の取り込みが途中で終わって残った models/llm/.custom-import-*.gguf.part を消す（F-83。PLAN §8.10）。
+        // 単一起動のロック（4 の後）を取った後なので、ほかのインスタンスの取り込みの途中のファイルは消さない。
+        // Worker と取り込みを始める（15）より前。消した数を出す既存のログのイベントは無いので出さない
+        await models.discardStaleImports()
         // 15. Worker.start()（復旧）を終えてから Worker のループと IngestService.start()（走査）を始める（PLAN §8.15）
         let ctx = AppContext(
             layout: layout, paths: paths, clock: clock, log: log, catalog: catalog, config: config, store: store,

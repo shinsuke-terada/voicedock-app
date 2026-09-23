@@ -1,6 +1,7 @@
 // アプリのライフサイクル（PLAN §8.15）。起動・パネルの生成・終了。
 import AppKit
 import VDCore
+import VDModels
 import VDPipeline
 import VDProcess
 
@@ -91,6 +92,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let terminateChildren: @Sendable () async -> Void
         /// 取り込みを止める（走査の中の diskutil は terminateChildren で止めた）
         let stopIngest: @Sendable () async -> Void
+        /// モデルのダウンロードを止め、再開データを `models/.<file>.resume` に書き終える
+        /// （`ModelDownloader.stopAllKeepingResumeData`。次の起動のダウンロードはそこから再開する。F-83）
+        let keepDownloadResumeData: @Sendable () async -> Void
         /// llama-server の後始末（起動の途中なら中止させる。鍵ファイルを消す。PLAN §8.5）
         let stopLLM: @Sendable () async -> Void
         /// Worker のループの終わりを待つ（停止要求は Part・Session の区切りで見る）
@@ -99,8 +103,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// 終了の後始末の順（PLAN §8.15・F-76）。子プロセスを閉じて止める段を、終わるまでに時間の掛かりうる段
     /// （llama-server の停止・Worker の終わりの待ち）より前に置く（打ち切られても子を残さない）。
+    /// ダウンロードの再開データを残す段（F-83）は取り込みを止めた後・llama-server の後始末より前（PLAN §8.15 の終了の順）
     nonisolated static func shutdownSteps(_ parts: ShutdownParts) -> [@Sendable () async -> Void] {
-        [parts.requestStop, parts.terminateChildren, parts.stopIngest, parts.stopLLM, parts.awaitWorker]
+        [
+            parts.requestStop, parts.terminateChildren, parts.stopIngest, parts.keepDownloadResumeData, parts.stopLLM,
+            parts.awaitWorker,
+        ]
     }
 
     /// 本番の段の中身。
@@ -108,6 +116,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let worker = ctx.worker
         let runner = ctx.runner
         let ingest = ctx.ingest
+        let downloader = ctx.downloader
         let llama = ctx.llama
         let workerTask = ctx.workerTask
         let killGrace = terminateKillGrace
@@ -115,6 +124,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             requestStop: { await worker.requestStop() },
             terminateChildren: { await runner.terminateAll(grace: killGrace) },
             stopIngest: { await ingest.stop() },
+            keepDownloadResumeData: { await downloader.stopAllKeepingResumeData() },
             stopLLM: { await llama.stop() },
             awaitWorker: { _ = await workerTask?.value })
     }
