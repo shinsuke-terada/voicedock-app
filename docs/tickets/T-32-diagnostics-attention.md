@@ -540,7 +540,7 @@ public enum AttentionAction: Equatable, Sendable {
     case openModels            // モデルの節を開く
     case openDeletionFlow      // 有効化フローを開く
     case runDiagnostics        // 「詳細」を開いて診断を実行する（PLAN §8.11 の toolMissing の操作）
-    case openDetails           // 「詳細・診断」を開く（F-69 の undeletableSources の操作）
+    case openDetails           // 「詳細・診断」を開く（F-69 の undeletableSources・F-75 の rawNoteBlocked の操作）
 }
 
 /// PLAN §8.11 の表の 1 行。宣言順 = 表示順。
@@ -612,6 +612,7 @@ public enum AttentionEvaluator {
 | `ingestSilent` / `diskSpaceLow` / `lockMismatch` | `[]` |
 | `reaperUpdateRequired` | `[.openDeletionFlow]` |
 | `undeletableSources` | `[.openDetails]`（F-69） |
+| `rawNoteBlocked` | `[.openDetails]`（F-75） |
 
 **`items(_:)`**（この順に判定し、当たったものを並べる）:
 
@@ -635,10 +636,12 @@ public enum AttentionEvaluator {
 | 16 | `lockMismatch` | `input.violations` に `rule == "CV-30"` か `"CV-33"` が在る |
 | 17 | `reaperUpdateRequired` | `if case .versionMismatch = input.reaper` |
 | 18 | `undeletableSources(n)` | `input.undeletableSources > 0`（F-69） |
+| 19 | `rawNoteBlocked(n)` | `input.rawNoteBlocked > 0`（F-75） |
 
 - **ガードの判定を書き直さない**（2〜10・15 は `PauseReason`（Worker の `PauseBook`）をそのまま読む。§9.1 原則 2 / CR-06）。
   `PauseReason.license` は要対応にしない（v1 は常に許可。PLAN §8.14）
-- **要対応にしないもの**（PLAN §8.11 の最後）: FAILED の Part / Session（状態の詳細に出す）、ログイン項目（「はじめに」で選んだ後は出さない）
+- **要対応にしないもの**（PLAN §8.11 の最後）: FAILED の Part / Session（状態の詳細に出す）、ログイン項目（「はじめに」で選んだ後は出さない）。
+  例外は F-75 の `rawNoteBlocked`（再評価しても利用者が直すまで同じ失敗を繰り返す。FAILED の Part そのものではなく Session の数だけを受ける）
 
 **`isIngestSilent(_:)`**（PLAN §8.11 の `ingestSilent` の逐語。#117）:
 ```swift
@@ -871,6 +874,7 @@ s.attention = AttentionEvaluator.items(attention)
 | `lockMismatch` | `削除の設定が食い違っています` | `アプリと reaper.conf の設定が合いません。「元音声の削除」を開いて無効化し直してください` |
 | `reaperUpdateRequired` | `削除モジュールの更新が必要です` | `「元音声の削除」を開いて有効化をやり直してください` |
 | `undeletableSources(n)` | `消せなかった録音 <n> 本` | `消せない状態が続いたので、元の録音を消さずに完了にしました。原因は「詳細・診断」の状態の詳細で確かめられます。Raw ノート・文字起こし・元のファイルの問題なら、直してから「過去分を削除対象にする」で再評価できます。削除モジュールの検証で拒否され続けたものは、再評価しても同じ結果になります。手で消す前に、Raw ノートと文字起こしが残っていることを確かめてください`（F-69） |
+| `rawNoteBlocked(n)` | `書き直せない Raw ノート <n> 件` | `文字起こしを読めなくなった録音があり、Raw ノートを書き直すとその本文が消えるので、書き直さずに止めています（その後の録音はまだ Raw ノートに載っていません）。文字起こしのファイルをバックアップから戻すか、Obsidian でその Raw ノートの名前を変えてから（新しい Raw ノートが書かれ、古い本文は名前を変えたノートにそのまま残ります）、「詳細・診断」の「再試行」を押してください`（F-75） |
 
 ボタンの文言（`AttentionTexts.button(_:)`）: `.revealConfig` → `設定ファイルを Finder で表示`、`.reloadConfig` → `設定を読み直す`、
 `.chooseVault` → `Vault を選び直す`、`.openSystemSettings` → `システム設定を開く`、`.openModels` → `モデルの節を開く`、`.openDeletionFlow` → `有効化フローを開く`、`.runDiagnostics` → `診断を実行`（`Strings.buttonRunDiagnostics` をそのまま使う）、`.openDetails` → `詳細・診断を開く`（F-69。`AppModel.perform` は `show(.details)` だけ）。
@@ -1163,8 +1167,8 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 | `noLockMismatchForOtherRules` | `rule: "CV-01"` | 含まない |
 | `reaperUpdateRequired` | `reaper = .versionMismatch(found: "0.9.0")` | 含む、`actions == [.openDeletionFlow]` |
 | `reaperValidIsQuiet` | `.valid(version: "1.0.0")` | 含まない |
-| `orderFollowsTheSpecTable` / 「並びは §8.11 の表の順」 | 全部の条件を同時に立てる（F-69 で `undeletableSources = 2` も） | 18 件、`map(\.order)` が昇順で、`configInvalid` が先頭・`undeletableSources(2)` が末尾 |
-| `failedPartsAreNotAttention` / 「FAILED は要対応にしない」 | FAILED の Part が在る DB（`AttentionInput` に FAILED の情報を渡す口が無いことを型で確かめる） | `AttentionItem` に FAILED を表す case が無い（コンパイル時に保証。テストは `allCases` 相当の列挙で件数 15 を固定。F-61 で `coexistenceBlocked` を外し、F-69 で `undeletableSources` を足した） |
+| `orderFollowsTheSpecTable` / 「並びは §8.11 の表の順」 | 全部の条件を同時に立てる（F-69 で `undeletableSources = 2`、F-75 で `rawNoteBlocked = 1` も） | 19 件、`map(\.order)` が昇順で、`configInvalid` が先頭・`rawNoteBlocked(1)` が末尾 |
+| `failedPartsAreNotAttention` / 「FAILED は要対応にしない（F-75 の本文を守って止めた Session の数だけは別の項目）」 | FAILED の Part が在る DB（`AttentionInput` に FAILED の Part を渡す口が無いことを型で確かめる。F-75 の `rawNoteBlocked` は Session の数だけを受ける） | `AttentionItem` に FAILED を表す case が無い（コンパイル時に保証。テストは `allCases` 相当の列挙で件数 16 を固定。F-61 で `coexistenceBlocked` を外し、F-69 で `undeletableSources`、F-75 で `rawNoteBlocked` を足した） |
 
 ### 5.7 `StatusReporterTests.swift`（`@Suite("StatusReporter")`）
 
@@ -1208,8 +1212,8 @@ T-30 の `StatusTexts`（VDPipeline）に 1 つ足す。T-30 の時点では `De
 
 ### 5.9 `AttentionTextsTests.swift` / `AppModelDiagnosticsTests.swift`
 
-`AttentionTextsTests`: 14 の項目すべてについて `title` と `detail` が §4.10 の表と逐語で一致すること、`button(_:)` が 7 つの `AttentionAction` それぞれで逐語一致すること（`.runDiagnostics` → `診断を実行`）、
-`AttentionItem` の全ケースに `title` が在ること（`switch` の網羅で保証。表の件数 14 を 1 本のテストで固定（F-61 で coexistenceBlocked を外した））。
+`AttentionTextsTests`: 16 の項目すべてについて `title` と `detail` が §4.10 の表と逐語で一致すること、`button(_:)` が 8 つの `AttentionAction` それぞれで逐語一致すること（`.runDiagnostics` → `診断を実行`、`.openDetails` → `詳細・診断を開く`）、
+`AttentionItem` の全ケースに `title` が在ること（`switch` の網羅で保証。表の件数 16 を 1 本のテストで固定（F-61 で coexistenceBlocked を外し、F-69 で undeletableSources、F-75 で rawNoteBlocked を足した））。
 
 `AppModelDiagnosticsTests`:
 
