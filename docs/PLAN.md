@@ -405,11 +405,14 @@ public struct ParsedFile: Sendable, Equatable {
 
 ### 4.3 relpath の健全性（RV-08 と、アプリ側の事前確認で共有）
 
-生の文字列を `/` で分割する（空の部分列を省かない）。偽になる条件（どれか 1 つで偽）: 空文字 / `/` で始まる / 空要素（`//`・末尾の `/`）/ 要素が `.` か `..` / 要素が `.` で始まる /
+生の文字列を Unicode スカラーの `/`（UTF-8 の 0x2F）で分割する（空の部分列を省かない）。偽になる条件（どれか 1 つで偽）: 空文字 / `/` で始まる / 空要素（`//`・末尾の `/`）/ 要素が `.` か `..` / 要素が `.` で始まる /
 制御文字（U+0000–U+001F, U+007F）/ `\` を含む / UTF-8 で 1024 バイト超。
 
+- **分割も「`/` で始まる」「`.` で始まる」もスカラーで見る（F-73）。** Swift の `split(separator: "/")`・`hasPrefix` は書記素（Character）単位なので、`/` の直後に結合文字（U+0301 など）・ZWJ が来たり、`/` の前に Prepend の文字（U+0600 など）があると区切りと見なさない。
+  そのまま 1 つの要素として `openat` に渡すと、カーネルは 0x2F で区切るので途中の symlink を辿り、先頭なら絶対パスになってボリュームの fd が無視される
 - **voicedock より厳しい（意図的）:** voicedock の Python は `PurePosixPath` の正規化で `./a.wav` と `a//b.wav` を真にしていた。本アプリは両方偽
-- 固定例: `TX_MIC001_…/TX01_…_orig.wav`・`a.wav` → 真。`/TX01/a.wav`・`""`・`../a.wav`・`TX01/../a.wav`・`.Trashes/a.wav`・`TX01/.fseventsd`・`TX01/a\nb.wav`・`TX01/a\u{7f}b.wav`・`./a.wav`・`a//b.wav`・`a\b.wav`・`a/` → 偽
+- 固定例: `TX_MIC001_…/TX01_…_orig.wav`・`a.wav` → 真。`/TX01/a.wav`・`""`・`../a.wav`・`TX01/../a.wav`・`.Trashes/a.wav`・`TX01/.fseventsd`・`TX01/a\nb.wav`・`TX01/a\u{7f}b.wav`・`./a.wav`・`a//b.wav`・`a\b.wav`・`a/`・`/\u{301}x/a.wav`・`.\u{301}x/a.wav` → 偽。
+  `x/\u{301}y/a.wav` は `x`・`\u{301}y`・`a.wav` の 3 要素に分かれる（ほかに当たらなければ真。各要素は §4.6 の openat 連鎖で 1 つずつ開く）
 
 ### 4.4 削除要求と結果（JSON、`schema: 1`）
 
@@ -500,7 +503,7 @@ public struct IdentityMismatch: Error, Equatable, Sendable { public let reason: 
 実装は **`openat` の連鎖**で行う（voicedock の `realpath` 比較より強い。TOCTOU で symlink に差し替えられる窓が無い）:
 
 1. relpath を `RelPath.isSafe` で確かめる（偽 → `relpath_unsafe`。RV-08）
-2. 中間要素ごとに `openat(dirfd, comp, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)`。`ELOOP` / `ENOTDIR` → `path_contains_symlink`、`ENOENT` → `target_missing`、その他の errno → `target_missing`
+2. 中間要素ごとに `openat(dirfd, comp, O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY)`（F-73。名前のどの要素の symlink も辿らない。要素に `/` が紛れても途中の symlink を辿らない二重の守り。`O_NOFOLLOW` と併せると EINVAL になるので併せない）。`ELOOP`（symlink）/ `ENOTDIR`（通常ファイル・FIFO）→ `path_contains_symlink`、`ENOENT` → `target_missing`、その他の errno → `target_missing`
 3. 最後の要素を `fstatat(parentfd, name, AT_SYMLINK_NOFOLLOW)`。`ENOENT` → `target_missing`、symlink → `target_is_symlink`、通常ファイルでない → `not_regular_file`
 4. ファイル名が `_orig` 付きの規則に一致（`filename_rule`）、親フォルダ名が規則に一致（`folder_rule`。relpath が 1 要素＝ボリューム直下のファイルは常に `folder_rule`）
 5. `st_size == expectedSize`（`size_mismatch`）、`abs((Double(st_mtimespec.tv_sec) + Double(st_mtimespec.tv_nsec) / 1e9) - expectedMtime) < 2.0`（`mtime_mismatch`）
@@ -1105,8 +1108,10 @@ CREATE TABLE imported_keys (
 **読み取り専用の確保（ロック 2-B の実施側）** — `mountMode == ro` のとき、各デバイスで（`Remounter` プロトコル経由。単体テストでは差し替える）:
 
 ```text
-statfs(path).f_flags & MNT_RDONLY != 0 → 何もしない（既に ro。毎回 unmount し直さない: DEL-31）
-node = statfs(path).f_mntfromname                         // 例 /dev/disk4（diskutil info の解析は不要）。/dev/ で始まらなければ reason=no_device_node
+info = statfs(path)                                       // 再マウントの時点で 1 回だけ。取れなければ reason=no_device_node
+info.f_flags & MNT_RDONLY != 0 → 何もしない（既に ro。毎回 unmount し直さない: DEL-31）
+node = 判定のときの statfs(path).f_mntfromname              // 例 /dev/disk4（diskutil info の解析は不要）。/dev/ で始まらなければ reason=no_device_node
+info.f_mntfromname == node かつ info.f_mntonname == realpath(path)   // F-73。スカラー列で比べる。違えば diskutil を呼ばずに reason=no_device_node
 /usr/sbin/diskutil unmount <path>                         // ProcessRunner、argv 配列、LC_ALL=C、タイムアウト 60 秒。失敗 → reason=unmount_failed
 /usr/sbin/diskutil mount readOnly <node>                  // 同上。失敗 → reason=mount_failed
 マウント一覧（getmntinfo）から f_mntfromname == node の項目を探し直し、そのパスで規則 8 を再判定（一致しなければ mount_name_mismatch）
@@ -1114,6 +1119,8 @@ node = statfs(path).f_mntfromname                         // 例 /dev/disk4（di
 ```
 
 - 失敗しても取り込みは続行する（記録の保護が優先）。理由語は `no_device_node` / `unmount_failed` / `mount_failed` / `still_writable` の固定語で、`remount_failed name=… reason=…`（WARNING）。diskutil の出力文言は使わない
+- **node は判定（走査の始め）のときの観測で、2 台目以降の再マウントは前のデバイスのコピー（1 台で約 11 分かかることがある）の後に回ってくる**。その間に挿し直されて disk 番号が変わる・外れて `path` に親の FS が見えている、のどちらでも別のディスクを unmount / mount しないよう、
+  再マウントの時点の statfs の `f_mntfromname` と `f_mntonname` を照らし、合わなければ diskutil を呼ばずに `no_device_node`（F-73。新しい理由語は足さない。次の走査の判定で取り直した node で再マウントする）
 - **snapshot に書く `readOnly` は必ず statfs の観測値**。試行の成否から推論しない（DEL-31）。`mountMode == rw` でも観測する。観測できなければ nil
 - `diskutil mount readOnly -mountPoint <元のパス> <node>` でパスが保たれるかは P0-02 で確かめ、保たれるならそちらを使う（その場合も探し直しと規則 8 の再判定は残す）
 - `rw` へ戻すのは挿し直し（アプリは rw への再マウントをしない。有効化フローも「挿し直してください」と表示するだけ）
@@ -1721,7 +1728,8 @@ reaper の本体は `Contents/Helpers/voicedock-reaper`（署名済み）とし�
 - 依存は VDContract・Foundation・Darwin だけ。**子プロセスを起動しない（diskutil も呼ばない。PR-19）、ネットワークを使わない、ディレクトリを再帰削除しない**
 - 削除は `unlinkat(verifiedParentFD, name, 0)` だけ（`Unlinker.swift`）。`FileManager.removeItem` は**ディレクトリを再帰的に消す**ので使わない（PT-01）
 - 引数: `voicedock-reaper --home <HOME>` か `voicedock-reaper --version`。`--version` は **RV-00 より前に**処理し、`<VERSION>\n` を stdout に出して 0（ほかの I/O はしない）
-- 終了コード: 0 = 正常（ロック 1 が false で何もしなかった場合も 0）、2 = 引数不正か reaper.conf が無い・読めない・不正（**キューに触らない**）、3 = RV-00（置き場所不正。何も書かない）、4 = ロックが取れない（走査中。何もしない）
+- 終了コード: 0 = 正常（ロック 1 が false で何もしなかった場合も 0）、2 = 引数不正か reaper.conf が無い・読めない・不正（**キューに触らない**）、3 = RV-00（置き場所不正。何も書かない）、4 = ロックが取れない（走査中。何もしない）。
+  走行中に RV-13 の直前の読み直しでロック 1 が閉じていたときも同じ（false は 0、無い・読めない・不正は 2。F-73）
 - 起動時の検査（RV-00・conf・RV-01）の後、`<HOME>/state/reaper.lock` に `flock(LOCK_EX | LOCK_NB)` を掛け、終わるまで持ち続ける（§2.1）。取れなければ（IngestService の走査中）`reaper_busy` を出して何もせず終了コード 4。
   SIGTERM を受けたら処理中の 1 件を終えてから終わる（次の要求に進まない）
 - 設定 `bin/reaper.conf`（`ReaperConf`。VDContract。アプリの有効化フローと同じ関数で読み書きする）:
@@ -1730,14 +1738,17 @@ reaper の本体は `Contents/Helpers/voicedock-reaper`（署名済み）とし�
   DELETE_SOURCE_AUDIO=true
   VOLUMES_ROOT=/Volumes
   ```
-  - `open(O_RDONLY | O_NOFOLLOW)`、通常ファイル、64 KiB 以下。行は `\n` 区切り。空行と `#` で始まる行は無視。それ以外の行は `^[A-Z_]+=[^[:space:]]*$` に完全一致しなければ不正
+  - `open(O_RDONLY | O_NOFOLLOW | O_NONBLOCK)`（`O_NONBLOCK` は FIFO を置かれても開くところで止まらないため。通常ファイルの読み取りには影響しない。F-73）、通常ファイル（`fstat` で確かめる）、64 KiB 以下。行は `\n` 区切り。空行と `#` で始まる行は無視。それ以外の行は `^[A-Z_]+=[^[:space:]]*$` に完全一致しなければ不正
   - 必須: `SCHEMA`（`1` のみ）、`DELETE_SOURCE_AUDIO`（`true` / `false` のみ）。任意: `VOLUMES_ROOT`（`/` で始まる絶対パス。既定 `/Volumes`。テスト用）
   - **未知のキー・重複・不正な値・必須の欠落はすべて「不正」**（fail-closed。exit 2、`reaper_disabled reason=conf_invalid`）
   - アプリが書くときの内容は上の 3 行（`DELETE_SOURCE_AUDIO` の値だけ変える）＋ 末尾改行。`AtomicFile`、パーミッション 0644
+  - **起動時に加えて、各要求の unlink（RV-13）の直前にも読み直す**（F-73。無効化（§8.9.8）は走行中の reaper を止めないので、起動時だけでは「止める」を押した後も残りの要求を消し続ける）。`DELETE_SOURCE_AUDIO=true` で正しく読めなければ（false・無い・読めない・不正）その要求は unlink せずに残し（processed.log にも結果にも書かない）、`reaper_disabled reason=lock1|conf_invalid` を出して走査を終える（下の表の RV-13）
 - ログ `logs/reaper.log`（5 MiB を超えたら `.1` へ rename して 1 世代）。行は `<ts> <LEVEL を 5 桁左寄せ> <event> k=v …`（値の書式は §8.15 と同じ）、`ts` はシステムのローカル時刻で `yyyy-MM-dd'T'HH:mm:ssxxxxx`。
   イベントは固定: `reaper_started`、`reaper_busy`、`reaper_disabled reason=lock1|conf_invalid`、`request_rejected file=<name> reason=malformed_request_id`、`source_delete_rejected request_id=… reason=<理由語>`、
-  `device_absent request_id=… device=…`、`mount_readonly request_id=… device=…`、`source_deleted request_id=… partkey=…`、`reaper_completed requests=<N>`
-- `state/processed.log`: 1 行 1 request_id。`O_APPEND` で書いて `fsync`。照合は行の完全一致
+  `device_absent request_id=… device=…`、`mount_readonly request_id=… device=…`、`source_deleted request_id=… partkey=…`、`reaper_completed requests=<N>`。
+  作成・追記の open は `O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_NONBLOCK`（symlink を辿った先に書かない・FIFO で止まらない。F-73）
+- `state/processed.log`: 1 行 1 request_id。`O_APPEND` で書いて `fsync`。照合は行の完全一致。
+  読みは `open(O_RDONLY | O_NOFOLLOW | O_NONBLOCK)` で通常ファイル（`fstat`）だけを読む（それ以外・`ENOENT` 以外の失敗は読めない扱い＝ fail-closed で、どの要求も RV-04 の `replayed`）。追記は `O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK`（F-73）
 
 **処理の順序（RV。1 つでも偽なら削除しない。理由語は付録 B.2）**
 
@@ -1748,21 +1759,21 @@ reaper の本体は `Contents/Helpers/voicedock-reaper`（署名済み）とし�
 | | RV-01 ロック 1: `DELETE_SOURCE_AUDIO=true` | `reaper_disabled reason=lock1`、終了コード 0（**要求に触らない**） |
 | 走査 | `queue/delete` を列挙。`.` で始まる名前は無視。名前の**バイト順昇順**で 1 件ずつ | — |
 | 要求ごと | RV-02a ファイル名が `^<request_id の正規表現の本体>\.json$` に完全一致 | `queue/rejected/<name>` へ rename（同名は上書き）。**結果も processed.log も書かない**（信用できない値をファイル名に使わない）。`request_rejected` |
-| | 読み取り: `openat(O_RDONLY \| O_NOFOLLOW)`、通常ファイル、64 KiB 以下、UTF-8 の JSON オブジェクト | 拒否 `malformed_request`（request_id はファイル名の stem。RV-02a を通過済みなので安全） |
+| | 読み取り: `openat(O_RDONLY \| O_NOFOLLOW \| O_NONBLOCK)`、通常ファイル、64 KiB 以下、UTF-8 の JSON オブジェクト | 拒否 `malformed_request`（request_id はファイル名の stem。RV-02a を通過済みなので安全）。**`openat` が `ENOENT`（列挙の後にアプリが取り下げた。§8.9.8）なら何も書かずに次へ**（partkey の無い結果を書かない。ログも出さない。F-73） |
 | | RV-02b JSON の `request_id` が文字列でファイル名の stem と一致 | RV-02a と同じく `rejected/` へ |
 | | RV-03 形: キー集合がちょうど `{schema, request_id, created_at, device_id, partkey, session_key, targets}`、`schema` は整数 1（bool 不可）、文字列 5 つが文字列、`targets` がちょうど 1 要素でキー集合 `{relpath, size, mtime}`、`size` は 0 以上の整数（bool 不可）、`mtime` は有限の数（bool 不可） | 拒否 `malformed_request` |
-| | RV-04 リプレイ: request_id が `state/processed.log` に無い | 拒否 `replayed`（processed.log に再追記しない）。**同じ名前の結果ファイルが既に在れば結果は書かず、要求だけ消す**（結果を書いた後・要求を消す前に落ちた場合に、DELETED を MISMATCH で上書きしない） |
+| | RV-04 リプレイ: request_id が `state/processed.log` に無い | 拒否 `replayed`（processed.log に再追記しない）。**同じ名前の結果ファイルが既に在れば結果は書かず、要求だけ消す**（結果を書いた後・要求を消す前に落ちた場合に、DELETED を MISMATCH で上書きしない）。結果を書けなければ要求を残して次へ（`source_delete_rejected` も出さない。下の「書き込みに失敗したとき」と同じ。F-73） |
 | | RV-05 `device_id + "/" + relpath == partkey` | 拒否 `partkey_mismatch` |
 | | RV-06 `TargetIdentity.openVolume(VOLUMES_ROOT, device_id)`（§4.6。`DeviceID.isValid`、symlink でない、マウント点、`msdos`） | `.absent` → `device_absent`（**要求を残し processed にも書かない**）。それ以外 → 拒否 `not_a_mount_point` / `unexpected_fs` |
 | | RV-07 ロック 2-B の観測: 同じ fd の `fstatfs` で `MNT_RDONLY` が立っていない | `mount_readonly`（**要求を残す**） |
 | | RV-08〜RV-12 `TargetIdentity.withVerifiedTarget`（§4.6: relpath の健全性・openat 連鎖・symlink 拒否・通常ファイル・`_orig` 付きファイル名・親フォルダ名・size 一致・mtime 差 < 2.0） | 拒否（各理由語） |
-| | RV-13 検証済みの親 fd に `unlinkat` → 続けて同じ fd に `fstatat(AT_SYMLINK_NOFOLLOW)` が `ENOENT` | 拒否 `unlink_failed` / `still_present` |
+| | RV-13 直前に reaper.conf を読み直してロック 1 が開いている（F-73）→ 検証済みの親 fd に `unlinkat` → 続けて同じ fd に `fstatat(AT_SYMLINK_NOFOLLOW)` が `ENOENT` | ロック 1 が閉じていれば unlink せず**要求を残し**（何も書かない）、`reaper_disabled reason=lock1\|conf_invalid` を出して走査を終える（終了コードは起動時と同じ）。unlink の失敗は拒否 `unlink_failed` / `still_present` |
 
 - 「拒否」= processed.log に追記（`fsync`）→ 結果 `SOURCE_IDENTITY_MISMATCH`（detail = 理由語）を `AtomicFile` で書く → 要求を unlink → `source_delete_rejected`
 - **書き込みに失敗したとき**: processed.log の追記の失敗は無視して続ける（リプレイの防止が弱まるだけで、消しすぎには向かわない）。結果を書けなければ**要求を残して次の要求へ**（拒否なら `source_delete_rejected` も出さない。成功していれば `source_deleted` は出す）。要求の unlink の失敗は無視する（次回は RV-04 の `replayed` で止まる）
 - 要求ファイルの unlink も `Unlinker.swift`（`removeRequest(named:)`。`queue/delete` 直下の `.json` に限る）が行う。デバイス上の unlink（`unlinkTarget(_:)`）と同じファイルに置く（PT-01）
 - 成功 = unlink（RV-13）→ processed.log に追記（`fsync`）→ 結果 `DELETED`（detail = relpath）→ 要求を unlink → `source_deleted`
-- 走査の終わりに `reaper_completed requests=<N>` を必ず出す（0 件でも出す）
+- 走査の終わりに `reaper_completed requests=<N>` を必ず出す（0 件でも、RV-13 の直前でロック 1 が閉じて終えたときも出す）。N は処理した要求の数（列挙の後に消えていた要求と、ロック 1 が閉じて残した要求は数えない。F-73）
 - 「残す」= 何も書かず次回に回す（アプリ側の期限切れで取り下げられる）
 - **voicedock の reaper から直した穴**（付録 C-DEL の最後）:
   - ロック 2-B の**観測値側**（heartbeat の `mount_readonly`）の確認が macOS の BSD sed で常に素通りしていた（設定値側の `MOUNT_MODE` の比較は効いていた）→ statfs で直接観測する
@@ -1943,7 +1954,7 @@ expireDeleteRequests:   // 毎 tick
 **根拠 B（無音・重複も消す）**は別の操作（`enableSkippedDeletion(confirmation:)`）。削除が有効なときだけ出し、同じく赤いボタンの 3 秒長押し（`confirmation` は定数 `"ENABLE"`）で `cleanup.deleteSkippedSource = true` にする。
 
 **無効化**（`DeletionEnabler.disable()`）: **確認を求めない**（止めたいときに止められること）。この順で（**消す能力に近いものから先に止める**）、途中で失敗しても残りを続ける:
-reaper.conf を false（reaper 側のロック 1 を先に掛ける）→ `bin/voicedock-reaper` を削除 → config を `ConfigStore.update(_, reaperConfObservation: false)` で `deleteSourceAudio = false`・`deleteSkippedSource = false`・`mountMode = ro` に →
+reaper.conf を false（reaper 側のロック 1 を先に掛ける。走行中の reaper も次の unlink の直前に読み直して止まる。§8.9.4・F-73）→ `bin/voicedock-reaper` を削除 → config を `ConfigStore.update(_, reaperConfObservation: false)` で `deleteSourceAudio = false`・`deleteSkippedSource = false`・`mountMode = ro` に →
 `queue/delete` の要求を全部取り下げる → 接続中のデバイスを直ちに読み取り専用へ再マウント（`ingest.scanNow()`。再マウントできたかは §8.9.2 と同じ `statfs` の `MNT_RDONLY` の観測で確かめる。実機の試験では `/sbin/mount` の出力を貼る）。`deletion_disabled`。失敗した段の名前を返し、パネルに出す
 
 **ロック 1 の修復**（`DeletionEnabler.reconcileLock1()`。§6.1）: **reaper.conf を false にするだけ**（reaper の削除・要求の取り下げ・config の書き換えはしない）。`config_warning rule=CV-30`。
@@ -2936,7 +2947,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | # | 検証 | 理由語 | 要求の扱い | voicedock の検証 |
 |---|---|---|---|---|
 | RV-00 | 自分の置き場所が `<HOME>/bin/voicedock-reaper`（通常ファイル、`.app/Contents/` を含まない） | （終了コード 3） | 触らない | （無し） |
-| RV-01 | reaper.conf が正しく読め `DELETE_SOURCE_AUDIO=true` | `lock1`（false）/ `conf_invalid`（不正。終了コード 2） | 触らない | 1 |
+| RV-01 | reaper.conf が正しく読め `DELETE_SOURCE_AUDIO=true`（起動時と、各要求の unlink（RV-13）の直前に読む。F-73） | `lock1`（false）/ `conf_invalid`（不正。終了コード 2） | 触らない（RV-13 の直前なら残して走査を終える） | 1 |
 | RV-02 | ファイル名が `<request_id>.json` の形（02a）、JSON の request_id がファイル名と一致（02b） | `malformed_request_id` | `rejected/` へ | （無し。d419397 で後から追加） |
 | RV-03 | JSON の形（キー集合・型・targets がちょうど 1） | `malformed_request` | 拒否 | （無し） |
 | RV-04 | リプレイでない | `replayed` | 拒否 | 11 |
@@ -3257,3 +3268,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-68 | 欠 | §4.1・§4.4・§5.4・§8.4・§8.7・§8.12・§10.3 | （2026-09-23。issue #18。利用者が任せた）SPEC 同期を広げた。PLAN に表を置き（§4.1・§4.4 の名前の正規表現、§5.4 の tick の段、§8.12 の節と画面・はじめにの項目・ui-state.json の鍵。§8.12 のアイコンの表には `IconState` の列を足した）、`tools/spec/make-spec.py` が SPEC の S10（名前の正規表現）・S11（whisper-cli の argv。§8.4 の `text` フェンスをそのまま）・S12（保存検証 RN / DN。§8.7 の表）・S13（tick の段）・S20（パネルの節と画面）・S21（アイコン）・S22（はじめに）・S23（ui-state.json）に写す。付録 B.2 の理由語は既存の S8 の列から読む。照合のテストは実装を import できる各モジュールのテストに置き（PolicyTests は TestSupport にしか依存しない。Package.swift は変えない）、`SpecDocument` の読み取り口は extension で足した（00-api-map §15）。RN / DN はテストの表示名の先頭に ` / ` で ID を並べてよい（§10.3）。S20 は F-65 の後のカード型に合わせ、T-30 の案の「チケット」の列をやめて主画面での出し方と `PanelScreen` の case を持つ。要対応（§8.11）・状態の詳細・reaper の終了コードとイベント・削除の有効化と無効化の段は、PLAN が散文か実装に列挙できる列が無いので足していない（T-32・T-37・T-40 に理由を書いた） |
 | F-69 | 誤 | §8.9.2・§8.9.5・§8.9.9・§8.11・§8.12・付録 A.2・付録 A.4 | （2026-09-23。issue #98。F-64 のレビューで判明。利用者の決定「一定期間で消さず完了＋知らせる」、期間は約 81 分）削除が有効で元ファイルがデバイスの一覧に**在る**のに `canDeleteSource` が偽のまま変わらない RAW_SAVED の Part（原本の size / mtime の変化、Raw ノートの手の編集、transcript の欠け、`source_path` / `source_size` が無い）があると、削除段が `delete_attempts += 1` を繰り返すだけで Session が COMPLETED にならず、抜け道は削除の無効化だけだった（CR-15 に反する）→ `requestDeletions` の 5a: `canDeleteSource` が偽の RAW_SAVED で、(1) 期限（backoff を使い切った: Session の `delete_attempts ≥ backoff の段の数`、かつ Part を RAW_SAVED にしてから backoff の合計。新しい設定キーは作らない）を過ぎ、(2) 観測できた失敗（Session の Part がすべて終端、新鮮な snapshot でデバイスが接続中で列挙でき書き込み可能、Vault が使え、元ファイルが一覧に在る。`source_path` が無ければ照らせないので在る扱い）が、(3) 同じ `connectEpoch` で 2 回続いた（`UndeletableStreaks`。Worker がメモリで持つ。長く抜いた後の最初の評価の一時的な失敗で決着させない）なら、**消さずに** RAW_SAVED→COMPLETED（detail `not_deletable`、Part の `error_message` に原因の語 `source_info` / `pre_identity` / `transcript` / `raw_note`、`source_delete_skipped recording_key=… reason=not_deletable detail=<原因>`）。`source_deleted_at` は入れない。一覧に無いものは F-64。要対応に `undeletableSources(n)`（「消せなかった録音 <n> 本」、ボタン「詳細・診断を開く」＝ `AttentionAction.openDetails`。説明は原因を確かめ、直したら「過去分を削除対象にする」で再評価、手で消す前に Raw ノートと文字起こしを確かめるよう促す）を足した。数えるのは決着した Part のうち最新の snapshot で接続中かつ一覧にまだ在るものだけ（抜いている間・一覧に無い・`source_path` が無いものは出さない）。状態の詳細には決着した Part を全部、原因とデバイスでの在否を添えて出す。決着した Part は「過去分を削除対象にする」の対象に入り、原因を直せば消せる（自動では再評価しない）。辺・ログのイベント・設定キーは増やさない（A.4 の `source_delete_skipped` の理由語に `not_deletable` と原因の `detail=` を足した。`not_deletable` は後追いの対象外の語と同じ綴り） |
 | F-70 | 誤 | §2.3・§8.12 | （2026-09-23。issue #105。利用者との実機の動作確認で判明）パネルの「最終接続」を AppModel のメモリにだけ持っていたので、アプリを再起動すると「まだありません」に戻った → デバイスを最後に観測した時刻を `<HOME>/ui-state.json` の `lastConnectedAt`（epoch ミリ秒の整数。一度も観測していなければキーを書かない）に残し、起動直後の（メモリに値が無い）`read` はその値を使う（`LastConnected.resolve`）。書くのは AppModel の `refresh` で、この起動で最後に書こうとした値（無ければファイルの値）と違うときだけ（時計が戻った値も書く。差は桁あふれでトラップさせない）、接続中は観測時刻が 60 秒以上動いたときだけ、切れたら最後に見た時刻を 1 回だけ（`LastConnected.valueToSave`）。refresh が重なっても、この起動で書いた `loginItemDecided = true` と最終接続を古い read の値で戻さない（書くたびに AppModel が覚えた値と合わせる）。書けなくても表示は変えず、同じ値を書き直し続けない（「今はしない」の `uiStateSaveFailed` とは別）。`schema` は 1 のまま（足した鍵は任意で、F-70 より前の版の読み手は未知の鍵として無視する）。`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にし、`loginItemDecided` を失わない。DB の取り込みの時刻から導く案は、新しい録音が無かった接続を拾えないので採らない。表示の文言は変えない |
+| F-73 | 誤 | §4.3・§4.6・§8.1・§8.9.4・§8.9.8・付録 B.2 | （2026-09-23。issue #113。全体コードレビューのテーマ 2）デバイスに触れる 2 か所（reaper の unlink と diskutil の再マウント）の防御を固めた（二重の要求・再実行で別の録音を消す経路は見つかっていない）。(1) `RelPath` は Swift の `split(separator: "/")`・`hasPrefix` で書記素単位に見ていたので、`/` の直後の結合文字（U+0301 など）・ZWJ や `/` の前の Prepend の文字（U+0600 など）で区切りを見落とし、`x/\u{301}y` が 1 要素のまま `openat` に渡って途中の symlink を辿り、`/\u{301}x/…` は先頭の `/` の検査を抜けて絶対パスになった（ボリュームの fd が無視される）→ 分割・先頭の `/`・`.` 始まりをスカラー（UTF-8 の 0x2F）で見る（ASCII の入力の結果は 1 文字も変わらない）。openat 連鎖の 1 段は `O_NOFOLLOW` を `O_NOFOLLOW_ANY` に替えた（名前に `/` が紛れても途中の symlink を辿らない二重の守り。`O_NOFOLLOW` と併せると EINVAL になるので替える。symlink は ELOOP、通常ファイルは ENOTDIR で、理由語 `path_contains_symlink` は変わらない）。(2) reaper は起動時にしか reaper.conf を読まず、無効化（§8.9.8）は走行中の reaper を止めないので、「止める」の後も残りの要求を消し続けた → 各要求の unlink（RV-13）の直前に読み直し、ロック 1 が閉じていれば（false・無い・読めない・不正）その要求は unlink せずに残し（processed.log にも結果にも書かない）、`reaper_disabled reason=lock1\|conf_invalid` を出して走査を終える（終了コードは起動時と同じ 0 / 2。`reaper_completed` は出す）。(3) 無効化の取り下げと reaper の実行が重なると、列挙済みの要求の `openat` が `ENOENT` になり、partkey が空の `malformed_request` の結果が書かれてアプリが片付けられなかった → `ENOENT` は何も書かずに（processed.log・結果・ログのどれも）次へ（`ENOENT` 以外の読めない要求はこれまでどおり拒否）。(4) RV-04 の `replayed` は結果を書けなくても要求を消し拒否のログを出していた → 結果を書けたときだけ要求を消してログを出す（既に結果が在れば書かずに要求を消すのは変えない）。(5) reaper.conf・processed.log・要求の読みの open に `O_NONBLOCK` を足し、`fstat` で通常ファイルを確かめてから読む（FIFO を置かれて flock を持ったまま止まらない。processed.log は通常ファイルでなければ読めない扱い＝どの要求も `replayed`）。processed.log の追記と reaper.log の作成・追記は `O_NOFOLLOW \| O_NONBLOCK`、`FileLock` は `O_NOFOLLOW`（symlink を辿った先に書かない・作らない。書き手の `O_NONBLOCK` は読み手の無い FIFO で ENXIO になり、開くところで止まらない）。(6) `DiskutilRemounter` は判定（走査の始め）のときの node を、再マウントの時点の statfs と照らさずに diskutil に渡していた（2 台目以降の再マウントは前のデバイスのコピーの後なので、その間の挿し直しで別のディスクを unmount / mount しうる）→ 再マウントの時点の statfs の `f_mntfromname == node` と `f_mntonname == realpath(path)` をスカラー列で確かめ、違えば diskutil を呼ばずに `no_device_node`（次の走査の判定で取り直す）。新しい理由語・ログのイベント・設定キー・遷移の辺は足さない。`reaper_completed requests=<N>` の N には、列挙の後に消えていた要求と RV-13 の直前で残した要求を数えない |

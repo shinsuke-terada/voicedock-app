@@ -65,8 +65,10 @@ public struct ReaperConf: Equatable, Sendable {
     }
 
     /// symlink を辿らずに開き、通常ファイルで 64 KiB 以下のときだけ、fd を閉じてから parse する。どの経路でも fd を閉じる。
+    /// `O_NONBLOCK` は FIFO を置かれても開くところで止まらないため（fstat で通常ファイルでないと分かる。
+    /// 通常ファイルの読み取りには影響しない。F-73）
     public static func observe(at url: URL) -> ReaperConfObservation {
-        let fd = open(url.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let fd = open(url.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         if fd < 0 {
             let code = errno
             if code == ENOENT { return .missing }

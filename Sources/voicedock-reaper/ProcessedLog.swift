@@ -12,15 +12,21 @@ struct ProcessedLog: Sendable {
     static let maxBytes = 64 * 1024 * 1024
 
     /// 読めるうちに 1 度だけ全部読んで持つ（1 回の実行の間は reaper だけが書く）。
-    /// 読めない（ENOENT 以外の失敗）→ true を返し続ける（fail-closed。RV-04 で `replayed` になり、何も消えない）
+    /// 読めない（ENOENT 以外の失敗・通常ファイルでない）→ true を返し続ける（fail-closed。RV-04 で `replayed` になり、何も消えない）。
+    /// `O_NONBLOCK` は FIFO を置かれても開くところで止まらないため（通常ファイルの読み取りには影響しない。F-73）
     init(url: URL) {
         self.url = url
-        let fd = open(url.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_CLOEXEC)
+        let fd = open(url.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC)
         if fd < 0 {
             unreadable = errno != ENOENT
             return
         }
         defer { close(fd) }
+        var st = stat()
+        guard fstat(fd, &st) == 0, (st.st_mode & S_IFMT) == S_IFREG else {
+            unreadable = true
+            return
+        }
         guard let data = ReaperIO.readAll(fd: fd, limit: Self.maxBytes) else {
             unreadable = true
             return
@@ -35,9 +41,11 @@ struct ProcessedLog: Sendable {
         return lines.contains(Array(requestID.utf8))
     }
 
-    /// `O_WRONLY | O_APPEND | O_CREAT` で 1 行追記し `fsync`。成功で true（失敗は呼び手が無視する）
+    /// `O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK` で 1 行追記し `fsync`。成功で true（失敗は呼び手が無視する）。
+    /// symlink は辿らない（ELOOP で失敗）。FIFO は読み手が無ければ ENXIO で失敗し、開くところで止まらない（F-73）
     @discardableResult mutating func append(_ requestID: String) -> Bool {
-        let fd = open(url.path(percentEncoded: false), O_WRONLY | O_APPEND | O_CREAT | O_CLOEXEC, 0o644)
+        let fd = open(
+            url.path(percentEncoded: false), O_WRONLY | O_APPEND | O_CREAT | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o644)
         guard fd >= 0 else { return false }
         guard ReaperIO.writeAll(fd: fd, Data((requestID + "\n").utf8)) else {
             close(fd)

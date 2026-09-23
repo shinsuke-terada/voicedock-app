@@ -1,5 +1,9 @@
 # T-37 voicedock-reaper（削除を実行する唯一の実行ファイル）
 
+> （F-73・issue #113。2026-09-23）reaper は各要求の unlink（RV-13）の直前に reaper.conf を読み直し、ロック 1 が閉じていればその要求を残して `reaper_disabled` を出し、走査を終える（`RequestOutcome.stopped`・`RequestProcessor.unlinkIfLock1Open`・`ReaperMain.scan`）。
+> `QueueFiles.readRequest` は `RequestRead`（`.read` / `.gone` / `.unreadable`）を返し、`ENOENT`（`.gone`）は何も書かずに次へ（`RequestOutcome.gone`。数えない）。RV-04 の `replayed` は結果を書けたときだけ要求を消してログを出す。
+> reaper.conf・processed.log・要求の読みは `O_NONBLOCK` ＋ `fstat` で通常ファイル、processed.log の追記と reaper.log の作成・追記は `O_NOFOLLOW | O_NONBLOCK`。以下の本文は記録として残す。テストは `ReaperDefenseTests`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-37 |

@@ -307,7 +307,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | # | 検証 | 理由語 | 要求の扱い | voicedock の検証 |
 |---|---|---|---|---|
 | RV-00 | 自分の置き場所が `<HOME>/bin/voicedock-reaper`（通常ファイル、`.app/Contents/` を含まない） | （終了コード 3） | 触らない | （無し） |
-| RV-01 | reaper.conf が正しく読め `DELETE_SOURCE_AUDIO=true` | `lock1`（false）/ `conf_invalid`（不正。終了コード 2） | 触らない | 1 |
+| RV-01 | reaper.conf が正しく読め `DELETE_SOURCE_AUDIO=true`（起動時と、各要求の unlink（RV-13）の直前に読む。F-73） | `lock1`（false）/ `conf_invalid`（不正。終了コード 2） | 触らない（RV-13 の直前なら残して走査を終える） | 1 |
 | RV-02 | ファイル名が `<request_id>.json` の形（02a）、JSON の request_id がファイル名と一致（02b） | `malformed_request_id` | `rejected/` へ | （無し。d419397 で後から追加） |
 | RV-03 | JSON の形（キー集合・型・targets がちょうど 1） | `malformed_request` | 拒否 | （無し） |
 | RV-04 | リプレイでない | `replayed` | 拒否 | 11 |

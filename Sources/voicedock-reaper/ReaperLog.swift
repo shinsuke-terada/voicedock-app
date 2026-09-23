@@ -126,9 +126,10 @@ final class ReaperLog: Sendable {
         }
     }
 
-    /// 開いて fstat で大きさを取る。失敗なら何もしない（ログの失敗はログに書けない）
+    /// 開いて fstat で大きさを取る。失敗なら何もしない（ログの失敗はログに書けない）。
+    /// symlink は辿らない（ELOOP で失敗）。FIFO は読み手が無ければ ENXIO で失敗し、開くところで止まらない（F-73）
     private static func openLog(_ path: String, into s: inout State) -> Bool {
-        let fd = Darwin.open(path, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC, 0o644)
+        let fd = Darwin.open(path, O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0o644)
         guard fd >= 0 else { return false }
         var st = stat()
         s.fd = fd
