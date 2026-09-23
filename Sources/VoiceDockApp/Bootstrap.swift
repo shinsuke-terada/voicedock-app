@@ -84,8 +84,11 @@ enum BootFailure: Error, Equatable {
     case catalog(String)
     /// Store(url:clock:zone:) が投げた
     case database(String)
-    /// 単一起動のロック（`state/app.lock`）が取れない = 別のインスタンスが動いている（F-76）。知らせずに終わる
+    /// 単一起動のロック（`state/app.lock`）をほかが持っている = 別のインスタンスが動いている（F-76）。知らせずに終わる
     case alreadyRunning
+    /// 単一起動のロックを開けない・flock が EWOULDBLOCK 以外で失敗した（F-84。別のインスタンスが動いているとは限らない）。
+    /// 値は `<relpath>` と `<段>: errno <n> (<strerror>)`
+    case instanceLock(path: String, reason: String)
 
     /// 警告の本文。nil なら何も出さずに終わる（alreadyRunning。パネルは先に起動したほうにある。D-7）
     var message: String? {
@@ -94,6 +97,7 @@ enum BootFailure: Error, Equatable {
         case .catalog(let e): Strings.bootFailureCatalog(e)
         case .database(let e): Strings.bootFailureDatabase(e)
         case .alreadyRunning: nil
+        case .instanceLock(let path, let reason): Strings.bootFailureInstanceLock(path: path, reason: reason)
         }
     }
 }
@@ -127,12 +131,19 @@ enum Bootstrap {
         let bootZone = ZonedTime(timeZone: TimeZone.current)
         let sink = TeeSink([OSLogSink(subsystem: logSubsystem), LogFile(url: layout.appLog)])
         var log = AppLog(sink: sink, level: .info, unsafeContent: false, zone: bootZone, clock: clock, category: "app")
-        // 4 の後. 単一起動（F-76）。設定・DB・復旧・Worker より前に <HOME>/state/app.lock を取る。取れなければ別のインスタンスが
-        // 動いている（2 つ目の復旧が 1 つ目の処理中の行を戻さないように）。ログの 1 行のほかは何もせずに終わる
-        guard let instanceLock = acquireInstanceLock(layout: layout) else {
-            log.info(
-                .serviceStopping, [(.version, .string(AppVersion.string)), (.reason, .string(alreadyRunningReason))])
-            return .failure(.alreadyRunning)
+        // 4 の後. 単一起動（F-76）。設定・DB・復旧・Worker より前に <HOME>/state/app.lock を取る。ほかが持っていれば別の
+        // インスタンスが動いている（2 つ目の復旧が 1 つ目の処理中の行を戻さないように）。ログの 1 行のほかは何もせずに終わる。
+        // 開けない（EACCES・EISDIR・ENOSPC・ELOOP など）ときは黙って終わらず、起動の失敗として NSAlert を出す（F-84）
+        let instanceLock: FileLock
+        switch acquireInstanceLock(layout: layout) {
+        case .success(let lock): instanceLock = lock
+        case .failure(let failure):
+            if failure == .alreadyRunning {
+                log.info(
+                    .serviceStopping,
+                    [(.version, .string(AppVersion.string)), (.reason, .string(alreadyRunningReason))])
+            }
+            return .failure(failure)
         }
         // 5. 子プロセス
         let runner = ProcessRunner()
@@ -234,11 +245,23 @@ enum Bootstrap {
     /// 2 つ目の起動が出す `service_stopping` の reason（付録 A.4。F-76）
     static let alreadyRunningReason = "already_running"
 
-    /// 単一起動のロック（F-76）。`<HOME>/state/app.lock`（reaper.lock とは別）を `FileLock.tryAcquire` で取る（待たない）。
-    /// 取れなければ nil（別のインスタンスが持っている。開けないときも同じ）。state/ は先に作っておくこと（手順 2）。
+    /// 単一起動のロック（F-76）。`<HOME>/state/app.lock`（reaper.lock とは別）を `FileLock.tryAcquireResult` で取る（待たない）。
+    /// ほかが持っていれば（EWOULDBLOCK）`.alreadyRunning`。開けない・flock がほかの理由で失敗したら `.instanceLock`
+    /// （F-84。別のインスタンスが動いているとは限らないので、黙って終わらずに知らせる）。state/ は先に作っておくこと（手順 2）。
     /// fd は O_CLOEXEC なので子プロセス（whisper-cli・llama-server・reaper）はロックを受け継がない（アプリが落ちれば外れる）
-    static func acquireInstanceLock(layout: HomeLayout) -> FileLock? {
-        FileLock.tryAcquire(url: layout.appLock)
+    static func acquireInstanceLock(layout: HomeLayout) -> Result<FileLock, BootFailure> {
+        let path = layout.relativePath(of: layout.appLock) ?? layout.appLock.path(percentEncoded: false)
+        switch FileLock.tryAcquireResult(url: layout.appLock) {
+        case .success(let lock): return .success(lock)
+        case .failure(.held): return .failure(.alreadyRunning)
+        case .failure(.openFailed(let e)): return .failure(.instanceLock(path: path, reason: errnoText("open", e)))
+        case .failure(.lockFailed(let e)): return .failure(.instanceLock(path: path, reason: errnoText("flock", e)))
+        }
+    }
+
+    /// `<段>: errno <n> (<strerror>)`（F-84。起動の失敗の警告に出す）
+    static func errnoText(_ stage: String, _ e: Int32) -> String {
+        stage + ": errno " + String(e) + " (" + String(cString: strerror(e)) + ")"
     }
 
     /// 起動の順（PLAN §8.15）: 復旧（`Worker.start()`）を**待ってから** Worker のループを作り、最後に走査を始める。

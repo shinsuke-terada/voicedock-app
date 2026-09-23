@@ -1,5 +1,7 @@
 # T-40 VDPipeline: 削除の有効化・無効化・ロック 1 の修復と常時表示
 
+> （F-84・issue #119。2026-09-23。マージ後の追記）(1) 削除が有効（`DeletionPanelState.showsSkippedToggle`＝アプリの設定が有効）で要対応に `reaperUpdateRequired` がある間は、「元音声の削除」の画面に赤いボタンの 3 秒長押し「更新する」（`Strings.buttonUpdateReaper`・`holdToUpdateHint`）を出し、完了で `AppModel.enableDeletion()`（有効化フローをもう一度通す。PLAN §8.9.3 の 5）を呼ぶ（`AppModel.showsReaperUpdate`）。reaper.conf だけが有効な中途の状態では出さない。(2) 無効化の実行中は `AppModel.deletionDisabling` を立て、「無効にする」の下に進行の印と「読み取り専用へ戻しています…」（`Strings.disablingDeletion`）を出す（最後の再マウントの観測を待つ間）。(3) `enableError` はパネルを閉じたら戻す（T-30 の `panelDidClose`。`disableFailedStages` は戻さない）
+
 > （F-65 で有効化の UI を長押しに変えた。2026-09-23、利用者の決定）「`ENABLE` の入力欄」をやめ、赤いボタンを 3 秒長押しさせる（`HoldToConfirmButton`。§4.7b）。
 > `DeletionEnabler.enable(confirmation:)` と完全一致の判定はそのまま残し、UI は長押しの完了で定数 `DeletionStrings.confirmationWord` を渡す（`AppModel.enableDeletion()`・`enableSkippedDeletion()` は引数を持たない。§4.5）。
 > `.notConfirmed` の文言は「赤いボタンを 3 秒長押ししてください」。「元音声の削除」は主画面の行から開く別の画面になった（T-30 §4.13）。以下の本文は F-65 に合わせて直した。

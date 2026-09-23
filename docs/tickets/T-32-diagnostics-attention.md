@@ -1,5 +1,7 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-84・issue #119。2026-09-23。マージ後の追記）(1) 状態の詳細は「詳細・診断」の画面に入ったときに加えて、同じ画面での「再試行」「設定を読み直す」と後追いの実行の返事の後に読み直す（`AppModel.reloadStatusReport()`。画面にいなければ読まない。読み込みは `statusReportGeneration` の世代を持ち、後から始まった読み込みの結果を残す）。(2) `reaperUpdateRequired` の説明を「「元音声の削除」を開いて、赤いボタンの長押しで有効化をやり直してください」に直した（§4.10 の表の行は記録として残す。PLAN §8.11 に逐語で置いた）。(3) `perform(.openDeletionFlow)` の `deletionHighlighted` は「元音声の削除」の画面の長押しのカードに橙の枠を付ける（`View.attentionHighlight(_:)`。`modelsHighlighted` と同じ枠）。どちらも `panelDidClose` で戻す
+
 > （F-78・issue #124、2026-09-23。マージ後の追記）reaper の拒否が 3 回続いて打ち切った Part（T-38 §4.5 の手順 5b）も最後の遷移が detail `not_deletable` の COMPLETED なので、`undeletableSources` と「消せなかった録音」に同じ数え方で入る。原因の語は reaper の理由語（付録 B.2）なので、
 > `StatusReporter.causeText(_:)`（internal）を足し、`causeTexts` に無く `IdentityReason.all` に在る語を「削除モジュールの検証で拒否され続けた（<理由語>）」と出す（`UndeletablePart.detail` はこれを使う。型は変えない。テストは T-38 の `ReaperRejectionSettlementTests`）。
 > 要対応 `undeletableSources` の説明を、5a（直せば再評価できる）と 5b（削除モジュールの拒否。再評価しても同じ）の両方に合う文言に直した（下の表・`AttentionTextsTests`。PLAN §8.11）。

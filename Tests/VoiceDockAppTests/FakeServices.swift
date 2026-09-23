@@ -62,6 +62,10 @@ final class FakeServices: AppServices {
         var disableCount = 0
         var holdDisable = false
         var disableGates: [AsyncStream<Void>.Continuation] = []
+        // F-84
+        /// 0 より大きければ、次の statusReport をその数だけ止める（返す値は止める前に決まる。重なりのテスト）
+        var holdReports = 0
+        var reportGates: [AsyncStream<Void>.Continuation] = []
     }
 
     private let state: Mutex<State>
@@ -302,9 +306,34 @@ final class FakeServices: AppServices {
     func enqueue(_ job: WorkerJob) async { state.withLock { $0.jobs.append(job) } }
 
     func statusReport() async -> StatusReport {
-        state.withLock {
-            $0.statusReportCount += 1
-            return $0.report ?? Self.emptyReport
+        let (report, hold) = state.withLock { s -> (StatusReport, Bool) in
+            s.statusReportCount += 1
+            let hold = s.holdReports > 0
+            if hold { s.holdReports -= 1 }
+            return (s.report ?? Self.emptyReport, hold)
+        }
+        if hold {
+            let (gate, continuation) = AsyncStream.makeStream(of: Void.self)
+            state.withLock { $0.reportGates.append(continuation) }
+            var it = gate.makeAsyncIterator()
+            _ = await it.next()
+        }
+        return report
+    }
+
+    /// 次の n 回の statusReport を止める（F-84）
+    func holdNextStatusReports(_ n: Int) { state.withLock { $0.holdReports = n } }
+    /// 止まっている statusReport の数
+    var heldStatusReportCount: Int { state.withLock { $0.reportGates.count } }
+    /// 止まっている statusReport をすべて返す
+    func releaseStatusReports() {
+        let gates = state.withLock { s -> [AsyncStream<Void>.Continuation] in
+            defer { s.reportGates = [] }
+            return s.reportGates
+        }
+        for g in gates {
+            g.yield(())
+            g.finish()
         }
     }
 

@@ -58,11 +58,13 @@ final class AppModel {
     @ObservationIgnored var probeGeneration = 0
     /// 「詳細」を開いているか（開いている間だけ状態の詳細を読む）
     var detailsExpanded = false
+    /// 状態の詳細の読み込みの世代（読み始めるたびに 1 増やす）。開始時と世代が違う結果は捨てる（F-84。書くのは AppModel+Diagnostics だけ）
+    @ObservationIgnored var statusReportGeneration = 0
     /// パネルの中の今の画面（F-65。書くのは AppModel+Navigation の show と panelDidClose だけ）
     var screen: PanelScreen = .main
-    /// 要対応の「モデルの節を開く」（主画面に戻してモデルのカードを目立たせる。F-65）
+    /// 要対応の「モデルの節を開く」（主画面に戻してモデルのカードを目立たせる。F-65）。閉じたら戻す（F-84）
     var modelsHighlighted = false
-    /// 要対応の「有効化フローを開く」（「元音声の削除」の画面へ移す。F-65）
+    /// 要対応の「有効化フローを開く」（「元音声の削除」の画面へ移し、長押しのカードを目立たせる。F-65・F-84）。閉じたら戻す
     var deletionHighlighted = false
     // T-40（書くのは下の extension だけ）
     /// 有効化が成功した後に出す案内（PLAN §8.9.8 の 5）
@@ -73,6 +75,8 @@ final class AppModel {
     private(set) var enableError: EnableError?
     /// 削除の操作の実行中（ボタンを押せなくする。二度押し対策）
     private(set) var deletionBusy = false
+    /// 無効化の実行中（最後の再マウントの完了を待つ間に「読み取り専用へ戻しています…」を出す。F-84）
+    private(set) var deletionDisabling = false
     // T-41（書くのは下の extension だけ）
     /// 後追いの 2 つのボタンの状態（PLAN §8.9.9。画面にだけ在る値）
     private(set) var backlogState: BacklogPanelState = .idle
@@ -109,6 +113,11 @@ final class AppModel {
     /// 周期の眠りを途中で起こす（パネルを開いたら 30 秒の眠りを待たずに 1 秒周期へ。Worker.run と同じ形）
     @ObservationIgnored private var wakeContinuation: AsyncStream<Void>.Continuation?
     @ObservationIgnored private var iconContinuation: AsyncStream<Void>.Continuation?
+    @ObservationIgnored private var statusLineContinuation: AsyncStream<Void>.Continuation?
+    /// refresh の世代（F-84）。始めるたびに 1 増やす。refresh は周期・走査の通知・各操作から並行に呼ばれる
+    @ObservationIgnored private var refreshStarted = 0
+    /// snapshot に入れた最後の refresh の世代。これより前に始まった refresh の結果は入れない（古い観測で新しい状態を戻さない）
+    @ObservationIgnored private var refreshApplied = 0
 
     init(
         services: any AppServices, openFinder: any FinderOpening, layout: HomeLayout, catalog: ModelCatalog,
@@ -147,6 +156,14 @@ final class AppModel {
         let (stream, continuation) = AsyncStream.makeStream(of: Void.self)
         iconContinuation?.finish()
         iconContinuation = continuation
+        return stream
+    }
+    /// 状態の 1 行（メニューバーのツールチップ）の書き直しの通知（F-84。アイコンが同じでも、コピーの進み具合などで変わる）。
+    /// StatusItemController が待つ。受け手は 1 つ（取り直すと前のストリームは終わる）
+    var statusLineChanges: AsyncStream<Void> {
+        let (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+        statusLineContinuation?.finish()
+        statusLineContinuation = continuation
         return stream
     }
 
@@ -193,19 +210,41 @@ final class AppModel {
         wakeContinuation?.finish()
         wakeContinuation = nil
         iconContinuation?.finish()
+        statusLineContinuation?.finish()
     }
 
     func refresh() async {
+        refreshStarted += 1
+        let generation = refreshStarted
         var next = await services.read(lastConnectedAt: snapshot.lastConnectedAt)
+        // 後から始まった refresh の結果を先に入れていたら、この古い結果で戻さない（F-84。無効化の直後に、その前に始まった
+        // 周期の読み込みが後から終わって「有効」に戻して見せない）。最終接続の観測だけは引き継ぐ（F-70）
+        guard generation > refreshApplied else {
+            carryLastConnected(from: next)
+            return
+        }
+        refreshApplied = generation
         // 状態の詳細は「詳細」を開いたときだけ作る（read は作らない。開いている間は持ち越す。T-32）
         next.statusReport = detailsExpanded ? snapshot.statusReport : nil
         let before = (iconState, showsTrash)
+        let lineBefore = statusLine
         if next != snapshot { snapshot = next }
         let attention = !snapshot.attention.isEmpty
         if attention != hasAttention { hasAttention = attention }
         if (iconState, showsTrash) != before { iconContinuation?.yield(()) }
+        if statusLine != lineBefore { statusLineContinuation?.yield(()) }
         // 挿し直しの案内は、読み書きできるデバイスを観測したら消す（PLAN §8.9.8 の 5）
         if deletionNotice != nil, Self.observesWritableDevice(snapshot.device) { deletionNotice = nil }
+        persistLastConnected()
+    }
+
+    /// 捨てる古い refresh の結果から、最終接続だけを引き継ぐ（F-84・F-70）。古い読み込みがデバイスを観測した後に抜かれると、
+    /// 先に入れた新しい結果はデバイスを観測しておらず最終接続を知らない。新しい結果がデバイスを観測していない間だけ、
+    /// 古い結果の時刻が無いか後なら入れて ui-state.json に残す（接続中は新しい結果の時刻が正しい）
+    private func carryLastConnected(from stale: AppSnapshot) {
+        guard let at = stale.lastConnectedAt, snapshot.device?.devices.isEmpty != false else { return }
+        if let current = snapshot.lastConnectedAt, current >= at { return }
+        snapshot.lastConnectedAt = at
         persistLastConnected()
     }
 
@@ -264,6 +303,11 @@ final class AppModel {
         diagnosticsGeneration += 1
         // 後追いのプレビュー・結果も捨てる（古いプレビューと実行ボタンを残さない。閉じた後に届いた返事も捨てる。F-72）
         dismissBacklog()
+        // 要対応で付けた枠と、有効化・根拠 B の失敗の表示も戻す（何日も前の枠と「有効にできませんでした」を残さない。F-84）。
+        // 無効化に失敗した段（disableFailedStages）は戻さない（消す能力が残っているかもしれない間は「無効にする」を出し続ける）
+        modelsHighlighted = false
+        deletionHighlighted = false
+        enableError = nil
         // 次に開いたときは主画面から（F-65）。「詳細・診断」を出たので状態の詳細も捨てる
         screen = .main
         if detailsExpanded {
@@ -275,6 +319,8 @@ final class AppModel {
     func requeueManual() async {
         await services.requeueManual()
         await refresh()
+        // 「詳細・診断」の画面の「再試行」なら、FAILED の一覧を読み直す（F-84）
+        await reloadStatusReport()
     }
 
     func reloadConfig() async {
@@ -283,6 +329,8 @@ final class AppModel {
         case .invalid(let v): reloadResult = .invalid(v)
         }
         await refresh()
+        // 状態の詳細は設定（上限・時刻帯）からも作るので読み直す（F-84）
+        await reloadStatusReport()
     }
 
     func revealConfigInFinder() { openFinder.reveal(layout.configFile) }
@@ -319,6 +367,14 @@ extension AppModel {
     /// 「無効にする」を出すか: 消える可能性がある間（trash と同じ）と、前回の無効化に失敗した段がある間
     var showsDisableButton: Bool { showsTrash || !disableFailedStages.isEmpty }
 
+    /// 削除が有効な間に削除モジュールの版が違う（要対応 `reaperUpdateRequired`）なら、長押しの「更新する」を出す（F-84）。
+    /// 更新は有効化フローをもう一度通す（PLAN §8.9.3 の 5。`enableDeletion`）。「削除が有効」は根拠 B を出す条件と同じ
+    /// （アプリの設定が有効。片方だけ有効な中途の状態では出さない。無効なら「有効にする」が出ている）
+    var showsReaperUpdate: Bool {
+        guard let deletion, deletion.showsSkippedToggle else { return false }
+        return snapshot.attention.contains(.reaperUpdateRequired)
+    }
+
     /// 「元音声の削除を有効にする」。赤いボタンの 3 秒の長押しが完了したときだけ呼ぶ（HoldToConfirmButton。F-65）。
     /// 確認語は定数 `DeletionStrings.confirmationWord` を渡し、完全一致の判定は DeletionEnabler が行う（安全の二重化）
     func enableDeletion() async -> Result<Void, EnableError> {
@@ -350,10 +406,15 @@ extension AppModel {
         return r
     }
 
-    /// 「削除を無効にする」（確認なし）。失敗した段の名前をパネルに出す
+    /// 「削除を無効にする」（確認なし）。失敗した段の名前をパネルに出す。
+    /// 最後の再マウントの完了（scanNow）を待つ間は deletionDisabling を立てる（コピー中は数分かかる。F-84）
     func disableDeletion() async -> [String] {
         deletionBusy = true
-        defer { deletionBusy = false }
+        deletionDisabling = true
+        defer {
+            deletionBusy = false
+            deletionDisabling = false
+        }
         let failed = await services.disableDeletion()
         disableFailedStages = failed
         deletionNotice = nil
@@ -412,6 +473,8 @@ extension AppModel {
                 Task { @MainActor in
                     guard let self, self.backlogGeneration == generation else { return }
                     self.receive(kind, result)
+                    // 実行で DB が変わるので、「詳細・診断」の画面の状態の詳細を読み直す（F-84）
+                    await self.reloadStatusReport()
                 }
             })
         enqueueBacklog(kind, action)

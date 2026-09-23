@@ -15,6 +15,10 @@ enum Strings {
     static func bootFailureDirectories(_ e: String) -> String { "作業フォルダを作れません: " + e }
     static func bootFailureCatalog(_ e: String) -> String { "モデルの一覧を読めません: " + e }
     static func bootFailureDatabase(_ e: String) -> String { "データベースを開けません: " + e }
+    /// F-84: 単一起動のロックを開けない（別のインスタンスが動いているのではない）
+    static func bootFailureInstanceLock(path: String, reason: String) -> String {
+        "単一起動のロック（" + path + "）を開けません: " + reason
+    }
 
     // 状態の 1 行
     static let statusIdle = "待機中"
@@ -159,6 +163,13 @@ enum Strings {
     static let holdToEnableHint = "赤いボタンを " + holdSeconds + " 秒長押しすると有効になります。途中で離すと取り消します"
     static let holdKeepPressing = "そのまま押し続けてください…"
     static let deletionUnavailable = "設定を読み込めていないため、いまは操作できません"
+
+    // F-84: 削除モジュールの更新（PLAN §8.9.3 の 5「更新は有効化フローをもう一度通す」）と、無効化の待ち（PLAN §8.9.8）
+    static let buttonUpdateReaper = "更新する"
+    static let holdToUpdateHint =
+        "削除モジュールの版がアプリと違うため、削除を止めています。赤いボタンを " + holdSeconds
+        + " 秒長押しすると、有効化をもう一度通して入れ直します。途中で離すと取り消します"
+    static let disablingDeletion = "読み取り専用へ戻しています…"
 
     // F-65: カード型のパネルと、popover の中の画面（PLAN §8.12）
     static let buttonBack = "戻る"

@@ -14,6 +14,12 @@ struct BootstrapInstanceLockTests {
 
     static func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) }
 
+    /// 取れなかった理由（取れたら nil。F-84 で acquireInstanceLock が Result を返すようになった）
+    static func failure(_ r: Result<FileLock, BootFailure>) -> BootFailure? {
+        if case .failure(let f) = r { return f }
+        return nil
+    }
+
     @Test("F-76 単一起動のロックは state/app.lock（reaper.lock とは別のファイル）")
     func lockPathIsSeparateFromReaperLock() {
         let layout = HomeLayout(root: URL(fileURLWithPath: "/tmp/VoiceDockInstanceLockTests", isDirectory: true))
@@ -28,14 +34,14 @@ struct BootstrapInstanceLockTests {
         let layout = Self.home(tmp)
         try layout.createDirectories()
         do {
-            let first = try #require(Bootstrap.acquireInstanceLock(layout: layout))
+            let first = try Bootstrap.acquireInstanceLock(layout: layout).get()
             withExtendedLifetime(first) {
-                #expect(Bootstrap.acquireInstanceLock(layout: layout) == nil)
+                #expect(Self.failure(Bootstrap.acquireInstanceLock(layout: layout)) == .alreadyRunning)
             }
             #expect(Self.exists(layout.appLock))
         }
         // 先の起動が終わる（fd が閉じる）と、次の起動は取れる
-        #expect(Bootstrap.acquireInstanceLock(layout: layout) != nil)
+        #expect(Self.failure(Bootstrap.acquireInstanceLock(layout: layout)) == nil)
     }
 
     @Test("F-76 reaper が reaper.lock を持っていても起動できる（削除の実行と起動の判定が混ざらない）")
@@ -45,7 +51,7 @@ struct BootstrapInstanceLockTests {
         let layout = Self.home(tmp)
         try layout.createDirectories()
         let reaper = try #require(FileLock.tryAcquire(url: layout.reaperLock))
-        let app = try #require(Bootstrap.acquireInstanceLock(layout: layout))
+        let app = try Bootstrap.acquireInstanceLock(layout: layout).get()
         withExtendedLifetime((reaper, app)) {
             // アプリのロックを持ったままでも、reaper は reaper.lock を取れる（次の reaper を真似て、手放してから取り直す）
             reaper.release()
@@ -58,7 +64,10 @@ struct BootstrapInstanceLockTests {
         let tmp = try TempDirectory()
         defer { tmp.remove() }
         let layout = Self.home(tmp)
-        #expect(Bootstrap.acquireInstanceLock(layout: layout) == nil)
+        // F-84: 別のインスタンスではないので、黙って終わらずに起動の失敗として知らせる
+        #expect(
+            Self.failure(Bootstrap.acquireInstanceLock(layout: layout))
+                == .instanceLock(path: "state/app.lock", reason: "open: errno 2 (No such file or directory)"))
         #expect(!Self.exists(layout.root))
     }
 
