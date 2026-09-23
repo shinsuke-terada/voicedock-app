@@ -53,10 +53,15 @@ public struct StabilityChecker: Sendable {
     }
 
     /// 全候補の FileStat を BlockingIO.run で一括取得する（取れないものは nil）
+    /// F-71: String は正準等価で比べるので、NFC と NFD の組や FAT の重複項目は同じ鍵になる。
+    /// 落とさず、先に並んだ候補の観測を残す（決定的。後の候補の stat は捨てる）
     private func sample(
         _ candidates: [String], stat: @escaping @Sendable (String) -> FileStat?
     ) async -> [String: FileStat?] {
-        await (try? BlockingIO.run { Dictionary(uniqueKeysWithValues: candidates.map { ($0, stat($0)) }) }) ?? [:]
+        let samples = try? await BlockingIO.run {
+            Dictionary(candidates.map { ($0, stat($0)) }, uniquingKeysWith: { first, _ in first })
+        }
+        return samples ?? [:]
     }
 
     /// accepted を満たし、最新の観測が nil でないものを最後に観測した値と一緒に返す

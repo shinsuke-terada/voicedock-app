@@ -9,6 +9,12 @@ public enum ConfigValidator {
     static let allowedLevels: Set<String> = ["DEBUG", "INFO", "WARNING", "ERROR"]
     /// CV-56 で `maxItems` を見る節（F-54。`SectionName.all` の順のうち `maxItems` を持つ 5 つ）。
     static let sectionsWithMaxItems: [String] = ["key_points", "tasks", "decisions", "ideas", "tags"]
+    /// F-71: 掛け算・待ちに使う秒のキーの上限（365 日）。× 1000 のミリ秒と `Task.sleep` を桁あふれさせない（CR-16）。
+    static let maxSeconds = 31_536_000
+    /// F-71: `audio.hashChunkBytes` の上限（64 MiB。読み取りのたびにこの大きさのバッファを確保する）。
+    static let maxHashChunkBytes = 67_108_864
+    /// F-71: CV-10・CV-51 の算術に入る文字数・トークン数の上限（10 億）。
+    static let maxCharsOrTokens = 1_000_000_000
 
     /// PLAN §6.4 の CV-08〜59 を表の順に全部評価する（CV-14 だけ CV-13 より先）。1 つ目で止めない。
     public static func validate(_ c: AppConfig, catalog: ModelCatalog, reaperConfObservation: ReaperConfObservation)
@@ -34,18 +40,22 @@ public enum ConfigValidator {
 
     /// 順 1〜8: CV-08・09・10・11・12・14・13・16。
     private static func checkNotesAndSession(_ c: AppConfig, _ out: inout Collector) {
-        if !(c.session.blockGapSeconds >= 0) {
-            out.add("CV-08", "session.blockGapSeconds", "0 以上であること（\(c.session.blockGapSeconds)）")
-        }
+        within("CV-08", 0, maxSeconds, prefix: "session.", [("blockGapSeconds", c.session.blockGapSeconds)], &out)
         if !(c.retry.backoffSeconds.count >= c.retry.maxAttempts) {
             out.add(
                 "CV-09", "retry.backoffSeconds",
                 "maxAttempts と同数以上の要素が必要（\(c.retry.backoffSeconds.count) < \(c.retry.maxAttempts)）")
         }
-        if !(c.llm.maxCharsPerRequest > c.llm.chunkOverlapChars * 2) {
+        // F-71: 2 倍が Int に収まらなければ違反（検証そのものを落とさない。§6.1）
+        let (twice, twiceOverflows) = c.llm.chunkOverlapChars.multipliedReportingOverflow(by: 2)
+        if twiceOverflows {
             out.add(
                 "CV-10", "llm.maxCharsPerRequest",
-                "chunkOverlapChars の 2 倍より大きいこと（\(c.llm.maxCharsPerRequest) <= \(c.llm.chunkOverlapChars * 2)）")
+                "chunkOverlapChars の 2 倍より大きいこと（chunkOverlapChars の 2 倍が桁あふれ: \(c.llm.chunkOverlapChars)）")
+        } else if !(c.llm.maxCharsPerRequest > twice) {
+            out.add(
+                "CV-10", "llm.maxCharsPerRequest",
+                "chunkOverlapChars の 2 倍より大きいこと（\(c.llm.maxCharsPerRequest) <= \(twice)）")
         }
         let raw = c.obsidian.raw
         let wiki = c.obsidian.wiki
@@ -77,10 +87,14 @@ public enum ConfigValidator {
     }
 
     /// CV-11: `/` で始まらず、かつ（前が真のときだけ）`/` で分けた要素（空要素は除く）に `..` が無い。
+    /// F-71: スカラー単位で見る（書記素単位だと `"/\u{301}x"` の先頭の `/` や `"../\u{301}x"` の `..` を見逃す。§5.7）。
     private static func checkFolderTemplate(_ template: String, keyPath: String, _ out: inout Collector) {
-        if template.hasPrefix("/") {
+        let slash: Unicode.Scalar = "/"
+        let parent: [Unicode.Scalar] = [".", "."]
+        let scalars = template.unicodeScalars
+        if scalars.first == slash {
             out.add("CV-11", keyPath, "相対パスであること（\(template)）")
-        } else if template.split(separator: "/").contains("..") {
+        } else if scalars.split(separator: slash).contains(where: { $0.elementsEqual(parent) }) {
             out.add("CV-11", keyPath, "'..' を含んではならない（\(template)）")
         }
     }
@@ -130,7 +144,9 @@ public enum ConfigValidator {
                 out.add("CV-19", keyPath, "order に載っている項目は heading を持つこと")
                 continue
             }
-            if !(heading.hasPrefix("#") && !heading.contains("\n") && !heading.contains("\r")) {
+            // F-71: スカラー単位で見る（書記素単位だと "\r\n" が 1 文字になり、\n も \r も見つからない。§5.7）
+            let scalars = heading.unicodeScalars
+            if !(scalars.first == "#" && !scalars.contains("\n") && !scalars.contains("\r")) {
                 out.add("CV-19", keyPath, "'#' で始まる 1 行であること")
             }
         }
@@ -199,6 +215,7 @@ public enum ConfigValidator {
                 "CV-46", "device.snapshotMaxAgeSeconds",
                 "scanIntervalSeconds より大きいこと（\(d.snapshotMaxAgeSeconds) <= \(d.scanIntervalSeconds)）")
         }
+        atMost("CV-46", maxSeconds, prefix: "device.", [("snapshotMaxAgeSeconds", d.snapshotMaxAgeSeconds)], &out)
         for (i, name) in d.includeVolumes.enumerated() where name.isEmpty {
             out.add("CV-47", "device.includeVolumes.\(i)", "空文字にできない")
         }
@@ -208,21 +225,26 @@ public enum ConfigValidator {
         if DeviceConfig.MountMode(rawValue: d.mountMode) == nil {
             out.add("CV-48", "device.mountMode", "ro か rw であること（\(d.mountMode)）")
         }
+        atLeast("CV-49", 1, prefix: "device.", [("stabilityFastPathSeconds", d.stabilityFastPathSeconds)], &out)
+        within(
+            "CV-49", 1, maxSeconds, prefix: "device.", [("stabilityIntervalSeconds", d.stabilityIntervalSeconds)], &out)
         atLeast(
-            "CV-49", 1, prefix: "device.",
-            [
-                ("stabilityFastPathSeconds", d.stabilityFastPathSeconds),
-                ("stabilityIntervalSeconds", d.stabilityIntervalSeconds), ("stabilityChecks", d.stabilityChecks),
-                ("maxScanDepth", d.maxScanDepth),
-            ], &out)
-        atLeast("CV-50", 60, prefix: "device.", [("scanIntervalSeconds", d.scanIntervalSeconds)], &out)
+            "CV-49", 1, prefix: "device.", [("stabilityChecks", d.stabilityChecks), ("maxScanDepth", d.maxScanDepth)],
+            &out)
+        within("CV-50", 60, maxSeconds, prefix: "device.", [("scanIntervalSeconds", d.scanIntervalSeconds)], &out)
     }
 
     /// 順 28〜36: CV-51〜59。
     private static func checkNumbers(_ c: AppConfig, _ out: inout Collector) {
         let llm = c.llm
-        let sum = llm.maxCharsPerRequest + llm.maxOutputTokens + 2048
-        if !(llm.contextSize >= sum) {
+        // F-71: 和が Int に収まらなければ違反（検証そのものを落とさない。§6.1）
+        let (partial, partialOverflows) = llm.maxCharsPerRequest.addingReportingOverflow(llm.maxOutputTokens)
+        let (sum, sumOverflows) = partial.addingReportingOverflow(2048)
+        if partialOverflows || sumOverflows {
+            out.add(
+                "CV-51", "llm.contextSize",
+                "maxCharsPerRequest + maxOutputTokens + 2048（桁あふれ）以上であること（\(llm.contextSize)）")
+        } else if !(llm.contextSize >= sum) {
             out.add(
                 "CV-51", "llm.contextSize",
                 "maxCharsPerRequest + maxOutputTokens + 2048（\(sum)）以上であること（\(llm.contextSize)）")
@@ -231,30 +253,29 @@ public enum ConfigValidator {
         if cleanup.deleteEvaluationBackoffSeconds.isEmpty {
             out.add("CV-52", "cleanup.deleteEvaluationBackoffSeconds", "空にできない")
         }
-        atLeast(
-            "CV-52", 0, prefix: "cleanup.deleteEvaluationBackoffSeconds.",
+        within(
+            "CV-52", 0, maxSeconds, prefix: "cleanup.deleteEvaluationBackoffSeconds.",
             indexed(cleanup.deleteEvaluationBackoffSeconds), &out)
-        atLeast(
-            "CV-52", 60, prefix: "cleanup.", [("deleteResultTimeoutSeconds", cleanup.deleteResultTimeoutSeconds)], &out)
+        within(
+            "CV-52", 60, maxSeconds, prefix: "cleanup.",
+            [("deleteResultTimeoutSeconds", cleanup.deleteResultTimeoutSeconds)], &out)
         atLeast("CV-53", 1, prefix: "retry.", [("maxAttempts", c.retry.maxAttempts)], &out)
-        atLeast("CV-53", 0, prefix: "retry.backoffSeconds.", indexed(c.retry.backoffSeconds), &out)
+        within("CV-53", 0, maxSeconds, prefix: "retry.backoffSeconds.", indexed(c.retry.backoffSeconds), &out)
         if !allowedLevels.contains(c.logging.level) {
             out.add("CV-54", "logging.level", "DEBUG / INFO / WARNING / ERROR のどれかであること（\(c.logging.level)）")
         }
         checkTranscription(c.transcription, &out)
         checkLLMNumbers(llm, &out)
         let s = c.session
+        within("CV-57", 1, maxSeconds, prefix: "session.", [("idleCloseSeconds", s.idleCloseSeconds)], &out)
         atLeast(
-            "CV-57", 1, prefix: "session.",
-            [
-                ("idleCloseSeconds", s.idleCloseSeconds), ("maxParts", s.maxParts),
-                ("maxDurationSeconds", s.maxDurationSeconds),
-            ],
+            "CV-57", 1, prefix: "session.", [("maxParts", s.maxParts), ("maxDurationSeconds", s.maxDurationSeconds)],
             &out)
         checkAudioNumbers(c.audio, &out)
         let o = c.obsidian
-        atLeast(
-            "CV-59", 0, prefix: "obsidian.raw.", [("timestampIntervalSeconds", o.raw.timestampIntervalSeconds)], &out)
+        within(
+            "CV-59", 0, maxSeconds, prefix: "obsidian.raw.",
+            [("timestampIntervalSeconds", o.raw.timestampIntervalSeconds)], &out)
         atLeast(
             "CV-59", 0, prefix: "obsidian.wiki.",
             [("vaultIndexCacheSeconds", o.wiki.vaultIndexCacheSeconds), ("maxLinks", o.wiki.maxLinks)], &out)
@@ -275,6 +296,7 @@ public enum ConfigValidator {
                 "CV-55", "transcription.maxTimeoutSeconds",
                 "minTimeoutSeconds 以上であること（\(t.maxTimeoutSeconds) < \(t.minTimeoutSeconds)）")
         }
+        atMost("CV-55", maxSeconds, prefix: "transcription.", [("maxTimeoutSeconds", t.maxTimeoutSeconds)], &out)
         atLeast("CV-55", 1, prefix: "transcription.", [("minChars", t.minChars)], &out)
         if !(0 < t.vad.threshold && t.vad.threshold < 1) {
             out.add("CV-55", "transcription.vad.threshold", "0 より大きく 1 より小さいこと（\(t.vad.threshold)）")
@@ -298,15 +320,14 @@ public enum ConfigValidator {
         if !(0 < llm.topP && llm.topP <= 1) {
             out.add("CV-56", "llm.topP", "0 より大きく 1 以下であること（\(llm.topP)）")
         }
-        atLeast(
-            "CV-56", 1, prefix: "llm.",
-            [
-                ("maxOutputTokens", llm.maxOutputTokens), ("requestTimeoutSeconds", llm.requestTimeoutSeconds),
-                ("maxSecondsPerRequest", llm.maxSecondsPerRequest),
-            ], &out)
-        atLeast(
-            "CV-56", 0, prefix: "llm.",
-            [("chunkOverlapChars", llm.chunkOverlapChars), ("repairAttempts", llm.repairAttempts)], &out)
+        within("CV-56", 1, maxCharsOrTokens, prefix: "llm.", [("maxOutputTokens", llm.maxOutputTokens)], &out)
+        atLeast("CV-56", 1, prefix: "llm.", [("requestTimeoutSeconds", llm.requestTimeoutSeconds)], &out)
+        within("CV-56", 1, maxSeconds, prefix: "llm.", [("maxSecondsPerRequest", llm.maxSecondsPerRequest)], &out)
+        within("CV-56", 0, maxCharsOrTokens, prefix: "llm.", [("chunkOverlapChars", llm.chunkOverlapChars)], &out)
+        atLeast("CV-56", 0, prefix: "llm.", [("repairAttempts", llm.repairAttempts)], &out)
+        atMost(
+            "CV-56", maxCharsOrTokens, prefix: "llm.",
+            [("maxCharsPerRequest", llm.maxCharsPerRequest), ("contextSize", llm.contextSize)], &out)
         for name in sectionsWithMaxItems {
             guard let maxItems = llm.analysis.sections.section(named: name)?.maxItems, !(maxItems >= 1) else {
                 continue
@@ -320,7 +341,7 @@ public enum ConfigValidator {
         if !(a.timeoutFactor > 0) {
             out.add("CV-58", "audio.timeoutFactor", "0 より大きいこと（\(a.timeoutFactor)）")
         }
-        atLeast("CV-58", 1, prefix: "audio.", [("minTimeoutSeconds", a.minTimeoutSeconds)], &out)
+        within("CV-58", 1, maxSeconds, prefix: "audio.", [("minTimeoutSeconds", a.minTimeoutSeconds)], &out)
         if !(a.durationToleranceSeconds >= 0) {
             out.add("CV-58", "audio.durationToleranceSeconds", "0 以上であること（\(a.durationToleranceSeconds)）")
         }
@@ -328,7 +349,7 @@ public enum ConfigValidator {
             out.add("CV-58", "audio.freeSpaceMultiplier", "1 以上であること（\(a.freeSpaceMultiplier)）")
         }
         atLeast("CV-58", 0, prefix: "audio.", [("freeSpaceMarginBytes", a.freeSpaceMarginBytes)], &out)
-        atLeast("CV-58", 4096, prefix: "audio.", [("hashChunkBytes", a.hashChunkBytes)], &out)
+        within("CV-58", 4096, maxHashChunkBytes, prefix: "audio.", [("hashChunkBytes", a.hashChunkBytes)], &out)
     }
 
     /// 整数の下限の検査。違反するキーごとに `<n> 以上であること（<v>）` を 1 件ずつ、並びの順に出す。
@@ -337,6 +358,29 @@ public enum ConfigValidator {
     ) {
         for (name, value) in values where !(value >= minimum) {
             out.add(rule, prefix + name, "\(minimum) 以上であること（\(value)）")
+        }
+    }
+
+    /// 整数の上限の検査（F-71）。違反するキーごとに `<n> 以下であること（<v>）` を 1 件ずつ、並びの順に出す。
+    private static func atMost(
+        _ rule: String, _ maximum: Int, prefix: String, _ values: [(String, Int)], _ out: inout Collector
+    ) {
+        for (name, value) in values where !(value <= maximum) {
+            out.add(rule, prefix + name, "\(maximum) 以下であること（\(value)）")
+        }
+    }
+
+    /// 整数の範囲の検査（F-71）。キーごとに、下限を割れば `atLeast`、上限を超えれば `atMost` と同じ文言を 1 件だけ出す。
+    private static func within(
+        _ rule: String, _ minimum: Int, _ maximum: Int, prefix: String, _ values: [(String, Int)],
+        _ out: inout Collector
+    ) {
+        for pair in values {
+            if !(pair.1 >= minimum) {
+                atLeast(rule, minimum, prefix: prefix, [pair], &out)
+            } else {
+                atMost(rule, maximum, prefix: prefix, [pair], &out)
+            }
         }
     }
 
