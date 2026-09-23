@@ -143,8 +143,9 @@ struct OutputPathResolverTests {
     @Test("99 を超えたら書かない（Daily）")
     func tooManyDaily() throws {
         let temp = try TempDirectory()
+        // F-75: 種類（type）でなく鍵の所有で弾かれるよう、Daily の他人のノート（voice-daily）を置く
         for n in 1...99 {
-            try putForeign(candidate(temp.url, n))
+            try put(candidate(temp.url, n), buildNote(keys: [keyV]))
         }
         let result = resolve(temp.url, kind: .daily)
         guard case .failure(let failure) = result else {

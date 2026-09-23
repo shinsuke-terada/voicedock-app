@@ -110,7 +110,7 @@ extension PartSteps {
    `existing = session.rawOutputPath.map { VaultPaths.url($0, vault: vault) }`、
    `OutputPathResolver.resolve(folder: folder, baseName: RawNote.baseName(config: cfg.obsidian, day: day), existing: existing, sessionKey: key, ownedPartkeys: owned, kind: .raw)`。
    `.failure(f)`（99 超え）→ `fail(row, from: .rawWriting, code: f.code, message: f.message, event: .rawNoteFailed, reason: "write")` → false
-9a. （F-75）`OutputPathResolver.keysLostByOverwrite(target, protectedKeys: <rawSavedOrBeyond の Part の鍵>, newKeys: <parts の鍵>)` が nil か空でなければ、書かずに
+9a. （F-75）`OutputPathResolver.keysLostByOverwrite(target, protectedKeys: <rawSavedOrBeyond の Part の鍵の配列>, newKeys: <parts の鍵の配列>)` が nil か空でなければ、書かずに
     `fail(… .obsidianRawWriteFailed, …, reason: "write")` → false（文言は PLAN §8.6）
 10. `sha = try NoteWriter.write(content, to: target)`。投げたら `fail(… .obsidianRawWriteFailed, NoteErrorText.describe(e), reason: "write")` → false
 11. `v = NoteVerifier.verify(url: target, kind: .raw, sessionKey: key, expectedSHA256: sha, expectedKeys: Set(parts.map(\.partkey)), summaryHeading: DailyNote.summaryHeading(config: cfg))`。
@@ -503,7 +503,7 @@ tags:
 | ensureRawNote のガードを消す | `missingMarkerIsAGuard`・`missingVaultPausesThenResumes`・`vaultNotConfiguredIsAGuard`・`stoppedWhenRawFails` |
 | Raw の遷移の後の再確認を消す | `vaultLostAfterTransitionFails`（6.1） |
 | Daily の遷移の後の再確認を消す | `vaultLostAfterTransitionFails`（6.2） |
-| rawParts で transcript の読めない Part も載せる | `membersUseTheSharedFunction`・`noMembersStaysTranscribed` |
+| rawParts で transcript の読めない Part も載せる | `membersUseTheSharedFunction`・`noMembersStaysTranscribed`（F-75 で取り下げ） |
 | NoteVerifier に渡す期待 SHA を `""` にする | `writesVerifiedRawNote` ほか Raw を保存する 11 本 |
 | Raw の失敗でほかの TRANSCRIBED の Part も FAILED にする | `onlyTheTriggerFails` |
 | raw_saved の inbox の削除を消す | `ceAudioInboxRetainRawSavedReleases` |

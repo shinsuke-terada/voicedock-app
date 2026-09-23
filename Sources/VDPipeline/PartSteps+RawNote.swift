@@ -99,10 +99,11 @@ extension PartSteps {
             target = url
         }
         // 9a. F-75: 書き直すと RAW_SAVED 以降の Part（原本を消したかもしれない）の本文が消えるなら書かない
-        let protectedKeys = Set(members.filter { PartStates.rawSavedOrBeyond.contains($0.status) }.map(\.partkey))
+        // 鍵は Set<String> にしない（正準等価な 2 本がまとまる。照合はスカラー列で keysLostByOverwrite が行う）
+        let protectedKeys = members.filter { PartStates.rawSavedOrBeyond.contains($0.status) }.map(\.partkey)
         guard
             let lost = OutputPathResolver.keysLostByOverwrite(
-                target, protectedKeys: protectedKeys, newKeys: Set(parts.map(\.partkey)))
+                target, protectedKeys: protectedKeys, newKeys: parts.map(\.partkey))
         else {
             try fail(
                 row, from: .rawWriting, code: .obsidianRawWriteFailed,

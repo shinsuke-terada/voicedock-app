@@ -188,8 +188,9 @@ public enum OutputPathResolver {
                                ownedPartkeys: Set<String>, kind: NoteKind) -> Result<URL, StageFailure>
     /// 上書きしてよいか（§8.8）
     public static func mayOverwrite(_ url: URL, sessionKey: String, ownedPartkeys: Set<String>, kind: NoteKind) -> Bool
-    /// F-75: 書き直しで消える鍵（§8.6・§8.8）。ファイルが無ければ空、在るのに読めなければ nil
-    public static func keysLostByOverwrite(_ url: URL, protectedKeys: Set<String>, newKeys: Set<String>) -> [String]?
+    /// F-75: 書き直しで消える鍵（§8.6・§8.8）。ファイルが無ければ空、在るのに読めない・鍵の列が配列でなければ nil。
+    /// 鍵は Set<String> で受けない（正準等価な 2 本がまとまる）
+    public static func keysLostByOverwrite(_ url: URL, protectedKeys: [String], newKeys: [String]) -> [String]?
 }
 ```
 
@@ -211,6 +212,7 @@ public enum OutputPathResolver {
 3a. （F-75）`(doc[Frontmatter.keyType] as? String).map { PyText.scalarsEqual($0, kind == .raw ? RawNote.noteType : DailyNote.noteType) } ?? false` が偽 → 偽
 4. `(doc[Frontmatter.keySessionKey] as? String).map { PyText.scalarsEqual($0, sessionKey) } ?? false` が偽 → 偽
 5. `keys = stringList(doc, Frontmatter.keyRecordingKeys)`。Daily なら `+ stringList(doc, Frontmatter.keyFailedParts) + stringList(doc, Frontmatter.keySkippedParts)`
+   （F-75: `voicedock_recording_keys` が無い・配列でない、または Daily の failed / skipped が在るのに配列でなければ偽）
 6. `keys` の全要素が `ownedPartkeys` に含まれれば真、1 つでも含まれなければ偽（`keys` が空なら真）。スカラー列で照合する（`NoteVerifier.scalarSet(keys).isSubset(of: NoteVerifier.scalarSet(ownedPartkeys))`。00-api-map §0）
 
 - 読めないノート・voicedock が書いたノート（鍵がアプリの DB に無い）・利用者が作ったノートは上書きしない

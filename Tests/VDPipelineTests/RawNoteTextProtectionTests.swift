@@ -134,6 +134,29 @@ struct RawNoteTextProtectionTests {
         #expect(try w.part(pk).status == status)
     }
 
+    @Test("F-75 本文が消える Part が 2 本なら文言は（2 本）で、最初の Part はノートの順")
+    func twoLostPartsAreCounted() async throws {
+        let (w, pk) = try await Step.world()
+        let b = try w.addPart(PipelineFixtures.partB, status: .transcribed)
+        #expect(try await Step.ensure(w, pk))
+        #expect(try await Step.ensure(w, b))
+        let noteBefore = try w.noteText(Self.rawRel)
+        #expect(noteBefore.contains("parts: 2\n"))
+        for key in [pk, b] {
+            try w.forcePart(key, status: .completed, sessionKey: Self.key)
+            try Self.removeTranscript(w, key)
+        }
+        let c = try w.addPart(PipelineFixtures.partC, status: .transcribed)
+        #expect(try await Step.ensure(w, c) == false)
+        let row = try w.part(c)
+        #expect(row.status == .failed)
+        #expect(row.errorCode == .obsidianRawWriteFailed)
+        #expect(
+            row.errorMessage
+                == "書き直すと Raw ノートから本文が消える Part があります（2 本）: " + Step.partkeyA + "。" + Self.unreadableA)
+        #expect(try w.noteText(Self.rawRel) == noteBefore)
+    }
+
     @Test("F-75 RAW_SAVED より前の Part の鍵は書き直しで外れてもよい（原本は消えていない）")
     func unsavedPartMayDrop() async throws {
         let (w, pk) = try await Step.world()

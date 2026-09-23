@@ -189,5 +189,66 @@ struct OutputPathResolverOverwriteTests {
         // 守る鍵が分解形だけ → ノートの合成形は守る鍵ではない
         #expect(
             OutputPathResolver.keysLostByOverwrite(base(temp), protectedKeys: [Self.keyDecomposed], newKeys: []) == [])
+        // 合成形と分解形の 2 本とも守る鍵で、新しい内容には合成形だけ → 分解形の喪失を見逃さない（Set<String> ではまとまる）
+        try put(base(temp), note(type: "voice-raw", keys: [Self.keyComposed, Self.keyDecomposed]))
+        #expect(
+            OutputPathResolver.keysLostByOverwrite(
+                base(temp), protectedKeys: [Self.keyComposed, Self.keyDecomposed], newKeys: [Self.keyComposed])
+                == [Self.keyDecomposed])
+    }
+
+    // MARK: - 鍵の列が配列でないノート
+
+    /// frontmatter の type と session_key の後に fields を並べたノート
+    func note(type: String, fields: [(String, FrontmatterValue)]) -> String {
+        Frontmatter.render(
+            [(Frontmatter.keyType, .string(type)), (Frontmatter.keySessionKey, .string(NotesFixtures.sessionKey))]
+                + fields) + defaultNoteBody
+    }
+
+    @Test("F-75 voicedock_recording_keys が無い・配列でないノートは nil（書かない側）")
+    func nonArrayRecordingKeysIsNil() throws {
+        let temp = try TempDirectory()
+        try put(base(temp), note(type: "voice-raw", fields: [(Frontmatter.keyRecordingKeys, .string(keyA))]))
+        #expect(OutputPathResolver.keysLostByOverwrite(base(temp), protectedKeys: [], newKeys: []) == nil)
+        try put(base(temp), note(type: "voice-raw", fields: [("date", .string("2026-08-29"))]))
+        #expect(OutputPathResolver.keysLostByOverwrite(base(temp), protectedKeys: [], newKeys: []) == nil)
+    }
+
+    @Test("F-75 voicedock_recording_keys が無い・配列でないノートは上書きしない")
+    func nonArrayRecordingKeysIsNotOverwritten() throws {
+        let temp = try TempDirectory()
+        let second = temp.url.path(percentEncoded: false) + "2026-08-29 raw (2).md"
+        try put(base(temp), note(type: "voice-raw", fields: [(Frontmatter.keyRecordingKeys, .string(keyA))]))
+        #expect(try resolved(temp.url, kind: .raw) == second)
+        try put(base(temp), note(type: "voice-raw", fields: [(Frontmatter.keyRecordingKeys, .null)]))
+        #expect(try resolved(temp.url, kind: .raw) == second)
+        try put(base(temp), note(type: "voice-raw", fields: []))
+        #expect(try resolved(temp.url, kind: .raw) == second)
+        try put(base(temp), note(type: "voice-daily", fields: [(Frontmatter.keyRecordingKeys, .string(keyA))]))
+        #expect(try resolved(temp.url, kind: .daily) == second)
+    }
+
+    @Test("F-75 Daily の failed / skipped は在るのに配列でなければ上書きしない（無ければ空とみなす）")
+    func dailyExcludedKeysMustBeArrays() throws {
+        let temp = try TempDirectory()
+        let first = temp.url.path(percentEncoded: false) + "2026-08-29 raw.md"
+        let second = temp.url.path(percentEncoded: false) + "2026-08-29 raw (2).md"
+        for name in [Frontmatter.keyFailedParts, Frontmatter.keySkippedParts] {
+            try put(
+                base(temp),
+                note(
+                    type: "voice-daily",
+                    fields: [(Frontmatter.keyRecordingKeys, .array([keyA])), (name, .string(keyB))]))
+            #expect(try resolved(temp.url, kind: .daily) == second)
+            try put(
+                base(temp),
+                note(
+                    type: "voice-daily",
+                    fields: [(Frontmatter.keyRecordingKeys, .array([keyA])), (name, .array([keyB]))]))
+            #expect(try resolved(temp.url, kind: .daily) == first)
+        }
+        try put(base(temp), note(type: "voice-daily", fields: [(Frontmatter.keyRecordingKeys, .array([keyA]))]))
+        #expect(try resolved(temp.url, kind: .daily) == first)
     }
 }
