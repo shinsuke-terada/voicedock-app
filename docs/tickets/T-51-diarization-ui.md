@@ -41,9 +41,10 @@
     var diarizationMissing: [String] = []
 ```
 
-`AppServices` のスナップショットを作るところ（設定が読めている分岐。`s.vadEntry` などを埋める所）で、
+`AppServices` のスナップショットを作るところ（`LiveServices.read` の設定が読めている分岐。`s.vadEntry` などを埋める所）で、
 `s.diarizationEnabled = c.transcription.diarization.enabled`、オンなら
-`s.diarizationMissing = Diarizer(runner: runner, paths: paths, layout: layout, maxTimeoutSeconds: 1).missingParts()`（起動はしない。stat だけ）。
+`s.diarizationMissing = Diarizer(runner: context.runner, paths: context.paths, layout: layout, maxTimeoutSeconds: 1).missingParts()`（起動はしない。stat だけ）。
+`runner` と `paths` は `LiveServices` には無く `AppContext` が持つので `context.` を付ける（`layout` はその分岐の `let layout = context.layout`）。`AppServices.swift` に `import VDTranscribe` を足す。
 
 ### 4.2 `AppModel+Diarization.swift`
 
@@ -81,10 +82,18 @@ extension AppModel {
             Text(Strings.diarizationNote).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if model.snapshot.diarizationEnabled && !model.snapshot.diarizationMissing.isEmpty {
-                Text(Strings.diarizationMissing(model.snapshot.diarizationMissing)).font(.caption).foregroundStyle(.orange)
+                Text(Strings.diarizationMissing(model.snapshot.diarizationMissing))
+                    .font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // 書けなかったときの modelError は主画面ではモデルの節が出す。⚙ の画面にはモデルの節が無いのでここで出す
+            if model.screen == .settings, let error = model.modelError {
+                Text(error).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
 ```
+
+`modelError` を出すのは主画面の `ModelsSection` だけで、⚙ の「設定」の画面（`PanelView` の `.settings`）にはモデルの節が無い。
+そのままでは ⚙ の画面でトグルが弾かれても何も出ないので、`GeneralSection` が ⚙ の画面の間だけ `modelError` を出す（主画面では二重に出さない）。
 
 ### 4.4 `Strings`（逐語）
 
@@ -98,7 +107,10 @@ extension AppModel {
 
 ## 5. テスト
 
-`Tests/VoiceDockAppTests/AppModelDiarizationTests.swift`（既存の `AppModel` のテストと同じ偽の services）:
+`Tests/VoiceDockAppTests/AppModelDiarizationTests.swift`（既存の `AppModel` のテストと同じ services）。
+`FakeServices` は `config.json` を書かず、`read` も設定から snapshot を作らないので、書く・読むの 4 本（`turnOnWritesConfig`・`turnOffWritesConfig`・`missingPartsShown`・`offHasNoMissing`）は
+`AppModelTests.liveServices(tmp)`（一時ディレクトリの `LiveServices`。helpers と resources は空の一時ディレクトリ）に `layout.createDirectories()` と `config.load()` で既定の設定を書かせて使う。
+`rejectedShowsError` だけ `FakeServices.setUpdateViolations` を使う:
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
