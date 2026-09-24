@@ -86,7 +86,7 @@ struct LoopbackHTTPTests {
         #expect(messages == [["role": "system", "content": "システム"], ["role": "user", "content": "本文"]])
         #expect(body["temperature"] as? Double == 0.1)
         #expect(body["top_p"] as? Double == 0.9)
-        #expect(body["max_tokens"] as? Int == 4096)
+        #expect(body["max_tokens"] as? Int == 8192)
         #expect(body["response_format"] as? [String: String] == ["type": "json_object"])
     }
 
@@ -126,7 +126,7 @@ struct LoopbackHTTPTests {
         var config = Self.defaultConfig()
         config.maxOutputTokens = 256
         #expect(try await Self.sentBody(config: config)["max_tokens"] as? Int == 256)
-        #expect(try await Self.sentBody(config: Self.defaultConfig())["max_tokens"] as? Int == 4096)
+        #expect(try await Self.sentBody(config: Self.defaultConfig())["max_tokens"] as? Int == 8192)
     }
 
     @Test("content を取り出す")

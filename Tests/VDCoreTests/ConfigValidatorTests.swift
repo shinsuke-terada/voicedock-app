@@ -435,14 +435,14 @@ struct ConfigValidatorTests {
     @Test("CV-51 contextSize が足りなければ違反")
     func cv51Violation() {
         #expect(
-            Self.check { $0.llm.contextSize = 26_143 }
+            Self.check { $0.llm.contextSize = 30_239 }
                 == Self.one(
-                    "CV-51", "llm.contextSize", "maxCharsPerRequest + maxOutputTokens + 2048（26144）以上であること（26143）"))
+                    "CV-51", "llm.contextSize", "maxCharsPerRequest + maxOutputTokens + 2048（30240）以上であること（30239）"))
     }
 
-    @Test("CV-51 ちょうど 26144 は通る")
+    @Test("CV-51 ちょうど 30240 は通る")
     func cv51Boundary() {
-        #expect(Self.check { $0.llm.contextSize = 26_144 }.isEmpty)
+        #expect(Self.check { $0.llm.contextSize = 30_240 }.isEmpty)
     }
 
     @Test("CV-52 削除評価の backoff と結果の待ち時間の違反")

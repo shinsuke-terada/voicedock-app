@@ -192,7 +192,7 @@ struct ConfigValidatorBoundsTests {
         #expect(d.retry.backoffSeconds == [3, 10, 30])
         #expect(d.transcription.maxTimeoutSeconds == 21_600)
         #expect(d.llm.maxSecondsPerRequest == 3600)
-        #expect(d.llm.maxOutputTokens == 4096)
+        #expect(d.llm.maxOutputTokens == 8192)
         #expect(d.llm.chunkOverlapChars == 500)
         #expect(d.llm.maxCharsPerRequest == 20_000)
         #expect(d.llm.contextSize == 32_768)

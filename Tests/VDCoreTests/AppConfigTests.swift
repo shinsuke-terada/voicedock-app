@@ -34,7 +34,7 @@ struct AppConfigTests {
                      "minSpeechDurationMs": 250, "minSilenceDurationMs": 1000, "speechPadMs": 200 }
           },
           "llm": {
-            "modelID": null, "contextSize": 32768, "temperature": 0.1, "topP": 0.9, "maxOutputTokens": 4096,
+            "modelID": null, "contextSize": 32768, "temperature": 0.1, "topP": 0.9, "maxOutputTokens": 8192,
             "requestTimeoutSeconds": 1800, "maxCharsPerRequest": 20000, "maxSecondsPerRequest": 3600,
             "chunkOverlapChars": 500, "repairAttempts": 1,
             "analysis": {
