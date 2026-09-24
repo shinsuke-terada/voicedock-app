@@ -1489,13 +1489,13 @@ Raw が 1 枚・Daily が 1 枚（その日の分）。`FAILED` が 0 件（あ�
 |---|---|---|---|---|
 | R-01 | E2E-01 | Raw ノートの検証を通った直後に要求を書き、元音声が消える（Daily の保存を待たない）。`RAW_SAVED` → `SOURCE_DELETING` → `COMPLETED` | ✅ PASS | §6.1 |
 | R-02 | E2E-02 | コピー中に抜いても 1 本も消えない。再接続後の再コピー分も、Raw の検証を経てから消える。[C-7] の差分が「Raw の検証を通った分」と完全に一致 | ⬜ 未実施 | §6.2 |
-| R-03 | E2E-03 | 文字起こし中に抜くと、デバイスが未接続なので削除せずに待つ（`sessions.delete_attempts` が増える）。挿し直すと消える。未接続を「書き込み可能」と誤認しない | ⬜ 未実施 | §6.3 |
+| R-03 | E2E-03 | 文字起こし中に抜くと、デバイスが未接続なので削除せずに待つ（`sessions.delete_attempts` が増える）。挿し直すと消える。未接続を「書き込み可能」と誤認しない | ✅ PASS | §6.3 |
 | R-04 | E2E-04 | Vault が使えない間は 1 本も消えない（Raw ノートが書けない ＝ 根拠 A が成立しない）。戻したら消える | ✅ PASS | §6.4 |
 | R-05 | E2E-05 | 抜き挿し 6 回で要求が二重に書かれない（`request_id` が重複しない。`reaper.log` に `reason=replayed` が出ない） | ✅ PASS | §6.5 |
 | R-06 | E2E-06 | 1 日分でも要求の回収が追いつく（`queue/result` が溜まらない）。空き容量が録音 1 日分ぶん戻る | ⬜ 未実施 | §6.6 |
-| R-07 | E2E-07 | 無音の Part は消えない（根拠 B は既定 false）。根拠 B を有効にすると消える。有効にしたら必ず元に戻す | ⬜ 未実施 | §6.7 |
-| R-08 | E2E-08 | `WHISPER_FAILED` の Part は消えない。他の Part は消える。再コピー → 完走の後に消える | ⬜ 未実施 | §6.8 |
-| R-09 | E2E-09 | 再オープンしても、すでに消えた Part を消し直さない（`source_deleted_at` が在る Part に要求を書かない） | ⬜ 未実施 | §6.9 |
+| R-07 | E2E-07 | 無音の Part は消えない（根拠 B は既定 false）。根拠 B を有効にすると消える。有効にしたら必ず元に戻す | ✅ PASS | §6.7 |
+| R-08 | E2E-08 | `WHISPER_FAILED` の Part は消えない。他の Part は消える。再コピー → 完走の後に消える | ✅ PASS | §6.8 |
+| R-09 | E2E-09 | 再オープンしても、すでに消えた Part を消し直さない（`source_deleted_at` が在る Part に要求を書かない） | ✅ PASS | §6.9 |
 
 ### 6.1 R-01 — 1 本を通しで（削除 ON）
 
@@ -1615,11 +1615,43 @@ $ [C-14](該当行)
 #### 記録
 §3.3 の記録に加えて、挿し直す前の 2 回の `delete_attempts`、[C-7] の前後、[C-13]、[C-14]、抜く直前の [C-6]、`comm -23` の出力。
 
+実施: 2026-09-25 未明。削除 ON（E2E-10 で有効化済み）。約 3〜5 分の新しい録音（`TX00_MIC025_20260925_011825_orig.wav`、52985896 bytes）を含む状態で挿し、「文字起こし中」の表示を見てから、Finder で取り出さずにそのまま実機を抜いた。
+
 ```text
+$ 抜く直前（[C-6]）
+queue/delete・queue/result・queue/rejected とも空
+
+$ 挿し直す前の delete_attempts（1回目。抜いた直後）
+DJIMIC3:20260925  ANALYZING  0
+（対象Part: RAW_SAVED）
+
+$ 挿し直す前の delete_attempts（2回目。数分後）
+DJIMIC3:20260925  SAVED  1
+（対象Part: RAW_SAVED のまま。COMPLETED にならず、delete_attempts が 0→1 に増加）
+source_delete_skipped の直近5件はすべて別セッション（2026-09-24）の記録で、今回の DJIMIC3:20260925 に reason=device_readonly は出ていない
+
+$ イベント履歴（[C-4]。TX00_MIC025_20260925_011825_orig.wav）
+01:25:55 DISCOVERED -> NORMALIZING（copy_completed bytes=52985896 recopy=false。ここで抜いたが、コピー済みinboxから処理は継続）
+01:25:56 NORMALIZING -> NORMALIZED -> TRANSCRIBING
+01:26:15 TRANSCRIBING -> TRANSCRIBED -> RAW_WRITING -> RAW_SAVED（未接続のまま。ここで待機に入る）
+01:28:01 RAW_SAVED -> SOURCE_DELETING -> COMPLETED（挿し直した直後。delete_requested -> reaper_run exit=0 -> source_deleted が同時刻に一括で進む）
+
+$ [C-13]
+TX00_MIC025_20260925_011825_orig.wav  COMPLETED  source_deleted_at=2026-09-25T01:28:01+09:00
+
+$ comm -23（device-all-before-r03.txt と device-all-after-r03.txt。WAV以外は Spotlight の索引ファイルの mtime 差分のみ）
+grep '011825' で個別に確認: before に1件、after に0件（今回の1本だけが消えた。他の .wav は前後で変化なし）
+
+$ 最終確認
+[C-1] recordings COMPLETED|45 SKIPPED|5
+[C-6] queue/delete・queue/result とも空
+[C-7] TX00_MIC024_20260924_233455_orig.wav（削除対象外）のみ
 ```
 
+期待どおり、未接続の間は`RAW_SAVED`のまま待機し（`delete_attempts`が増加し、`device_readonly`という誤った理由も出ない）、挿し直した直後に一気に`COMPLETED`まで進んで元音声が消えた。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 6.4 R-04 — Vault を利用不可にする（削除 ON）
 
@@ -1812,11 +1844,77 @@ $ reason=replayed の件数
 #### 記録
 §3.7 の記録に加えて、2 の一覧と利用者が確かめたこと、1 と 4 の [C-7]・[C-13]・[C-14]、5 の [C-11]。
 
+実施: 2026-09-25 未明。削除 ON（E2E-10 で有効化済み）。無音だけの録音 1 本（`TX00_MIC025_20260925_004437_orig.wav`）＋普通の録音 1 本（`TX00_MIC026_20260925_004602_orig.wav`）を録って挿した。
+
 ```text
+$ 1（前後。普通の1本だけが消え、無音の1本は残る）
+[C-1]: recordings COMPLETED|33 SKIPPED|5
+
+[イベント抜粋]
+00:48:26 TX00_MIC025_20260925_004437_orig.wav NORMALIZED
+00:48:27 TX00_MIC025_20260925_004437_orig.wav TRANSCRIBING -> SKIPPED (NO_SPEECH_DETECTED)
+00:48:29 TX00_MIC026_20260925_004602_orig.wav delete_requested
+00:48:35 TX00_MIC026_20260925_004602_orig.wav reaper_run exit=0 -> source_deleted
+
+[C-7]（普通の1本だけデバイスから消えている。無音の1本と既存の無音3本は残る）
+11754376 ... TX00_MIC025_20260925_004437_orig.wav（今回・無音・残る）
+4927336  ... TX00_MIC011_20260924_214841_orig.wav（既存無音）
+5370856  ... TX00_MIC010_20260924_214759_orig.wav（既存無音）
+7762696  ... TX00_MIC023_20260924_231615_orig.wav（既存無音）
+84317416 ... TX00_MIC024_20260924_233455_orig.wav（削除対象外）
+（TX00_MIC026_20260925_004602_orig.wav は無い ＝ 消えた）
+
+[C-13]（TX00_MIC026 のみ source_deleted_at が入り、TX00_MIC025_004437 は空）
+TX00_MIC026_20260925_004602_orig.wav  COMPLETED  source_deleted_at=2026-09-25T00:48:35+09:00
+
+$ 2（押す前。消える範囲の確認。全部消えてよい過去の無音と今回の無音）
+sqlite3 ... WHERE status='SKIPPED' AND source_deleted_at IS NULL
+DJIMIC3/.../TX00_MIC010_20260924_214759_orig.wav  NO_SPEECH_DETECTED
+DJIMIC3/.../TX00_MIC011_20260924_214841_orig.wav  NO_SPEECH_DETECTED
+DJIMIC3/.../TX00_MIC023_20260924_231615_orig.wav  NO_SPEECH_DETECTED
+DJIMIC3/.../TX00_MIC025_20260925_004437_orig.wav  NO_SPEECH_DETECTED
+（4件。利用者が全部消えてよいことを確認した）
+
+$ 3（赤い「無音・重複も消す」を3秒長押し）
+
+$ 4（2分後。[C-7]・[C-13]・[C-14]）
+[C-14]
+00:50:26 deletion_enabled reason=skipped_source
+00:50:33 delete_requested recording_key=.../TX00_MIC010_20260924_214759_orig.wav
+00:50:33 delete_requested recording_key=.../TX00_MIC011_20260924_214841_orig.wav
+00:50:33 delete_requested recording_key=.../TX00_MIC023_20260924_231615_orig.wav
+00:50:33 delete_requested recording_key=.../TX00_MIC025_20260925_004437_orig.wav
+00:50:33 reaper_run exit=0
+00:50:34 source_deleted recording_key=.../TX00_MIC010_20260924_214759_orig.wav
+00:50:34 source_deleted recording_key=.../TX00_MIC025_20260925_004437_orig.wav
+00:50:34 source_deleted recording_key=.../TX00_MIC011_20260924_214841_orig.wav
+00:50:34 source_deleted recording_key=.../TX00_MIC023_20260924_231615_orig.wav
+
+[C-13]（4件とも SKIPPED のまま source_deleted_at=2026-09-25T00:50:34 が入る）
+DJIMIC3/.../TX00_MIC010_20260924_214759_orig.wav  SKIPPED  source_deleted_at=2026-09-25T00:50:34+09:00
+DJIMIC3/.../TX00_MIC011_20260924_214841_orig.wav  SKIPPED  source_deleted_at=2026-09-25T00:50:34+09:00
+DJIMIC3/.../TX00_MIC023_20260924_231615_orig.wav  SKIPPED  source_deleted_at=2026-09-25T00:50:34+09:00
+DJIMIC3/.../TX00_MIC025_20260925_004437_orig.wav  SKIPPED  source_deleted_at=2026-09-25T00:50:34+09:00
+
+[C-7]（後。4件消え、削除対象外の TX00_MIC024 だけが残る）
+84317416 ... TX00_MIC024_20260924_233455_orig.wav
+
+$ 5（元に戻す。「無効にする」→ E2E-10 手順2 と同じ3秒長押しで再度有効化 → Finder で取り出して挿し直す）
+[C-11]
+有効
+ロック 1  : アプリ=有効, reaper.conf=有効
+ロック 2-A: 削除モジュール=導入済み（署名 OK, 版 0.1.0）
+ロック 2-B: 設定=rw, DJIMIC3=読み書き可能（観測）
+赤いボタンを3秒長押しすると有効になります。途中で離すと取り消します
+  無音・重複も消す
+  無効にする
+（赤い「無音・重複も消す」が再び出ている。E2E-10 の 3 と同じ3行の形）
 ```
 
+[C-7] の前後の差 = `TX00_MIC010`・`TX00_MIC011`・`TX00_MIC023`・`TX00_MIC025_20260925_004437` の4件（2の一覧と完全一致）。どれも `error_code=NO_SPEECH_DETECTED`。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 6.8 R-08 — 1 本だけ文字起こしを失敗させる（削除 ON）
 
@@ -1833,11 +1931,59 @@ $ reason=replayed の件数
 #### 記録
 §3.8 の記録に加えて、3 回分の [C-7]・[C-13]・[C-14]。
 
+実施: 2026-09-25 未明。削除 ON（E2E-10 で有効化済み）。短い録音 1 本（`TX00_MIC025_20260925_010102_orig.wav`、slug `f13769269bde9445`）を録り、`audio16k.wav` が NORMALIZED 直後にできた瞬間を自動検知して `printf 'broken' > ...` で上書きするワンライナー（zsh、`setopt null_glob` を先頭に置いた 50ms ポーリング）で壊した。
+
 ```text
+$ 1（前。挿す前の状態。デバイスには削除対象外の TX00_MIC024 のみ）
+[C-7]
+84317416 ... TX00_MIC024_20260924_233455_orig.wav
+
+$ 5の後（壊した Part が WHISPER_FAILED、他の Part の元音声は消える）
+[対象Partの状態]
+TX00_MIC025_20260925_010102_orig.wav  FAILED  WHISPER_FAILED  msglen=52
+
+[C-7]（後。壊した1本と削除対象外の TX00_MIC024 だけが残る）
+5735176  ... TX00_MIC025_20260925_010102_orig.wav（今回・壊した1本・残る）
+84317416 ... TX00_MIC024_20260924_233455_orig.wav（削除対象外）
+
+$ 6〜7（16kHz音声を rm → Finder で取り出してから抜く → 挿し直す）
+rm "$VD_HOME/staging/f13769269bde9445/audio16k.wav"
+
+$ 8（[C-4]。挿し直した接続の立ち上がりで再評価される）
+702  FAILED        TRANSCRIBING                requeue    2026-09-25T01:04:00
+703  TRANSCRIBING  NORMALIZING                             2026-09-25T01:04:00
+704  NORMALIZING   FAILED        NORMALIZED_MISSING        2026-09-25T01:04:00
+[C-14] recovery_completed requeued=1（01:04:00）
+       normalize_failed recording_key=...010102_orig.wav error_code=NORMALIZED_MISSING reason=input（01:04:00）
+
+$ 9〜10（挿したまま待つ。次の走査で再コピー → 完走）
+[C-14]
+01:02:25 copy_completed recording_key=...010102_orig.wav bytes=5735176 recopy=false（最初のコピー）
+01:06:11 copy_completed recording_key=...010102_orig.wav bytes=5735176 recopy=true（再コピー）
+01:06:13 delete_requested request_id=...-f13769269bde9445-62268c recording_key=...010102_orig.wav
+01:06:19 source_deleted recording_key=...010102_orig.wav request_id=...-f13769269bde9445-62268c
+
+[C-4]
+712  FAILED           NORMALIZING                recopied   2026-09-25T01:06:11
+713  NORMALIZING      NORMALIZED                            2026-09-25T01:06:11
+714  NORMALIZED       TRANSCRIBING                          2026-09-25T01:06:11
+715  TRANSCRIBING      TRANSCRIBED                          2026-09-25T01:06:13
+716  TRANSCRIBED      RAW_WRITING                           2026-09-25T01:06:13
+717  RAW_WRITING      RAW_SAVED                              2026-09-25T01:06:13
+719  RAW_SAVED        SOURCE_DELETING                        2026-09-25T01:06:13
+726  SOURCE_DELETING  COMPLETED                              2026-09-25T01:06:19
+
+[C-13]
+TX00_MIC025_20260925_010102_orig.wav  COMPLETED  source_deleted_at=2026-09-25T01:06:19+09:00
+
+[C-7]（後。壊した1本も消え、削除対象外の TX00_MIC024 だけが残る）
+84317416 ... TX00_MIC024_20260924_233455_orig.wav
 ```
 
+10 の後、残っていた壊した 1 本も再コピー（`recopy=true`）→ `FAILED→NORMALIZING`（`recopied`）→ 変換し直して `COMPLETED`、その後 Raw 検証を経て `delete_requested`→`source_deleted`。`[C-7]` の最終状態は削除対象外の `TX00_MIC024` のみで、期待どおり。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 6.9 R-09 — 保存後に同じ日の Part を追加（削除 ON）
 
@@ -1855,8 +2001,43 @@ $ reason=replayed の件数
 #### 記録
 §3.9 の記録に加えて、4 回分の [C-7] の前後、[C-13]、[C-14]、最後のコマンドの出力。
 
+実施: 2026-09-25 未明。削除 ON（E2E-10 で有効化済み）。既に保存済みの 2026-09-25 の Session（R-08 の作業で複数回保存済み）に、「抜く→同じ日に短い録音1本→挿す→完走を待つ」を4回繰り返した。
+
 ```text
+$ 0（前。既存の 2026-09-25 のノート）
+[C-9] 2026-09-25 Voice.md = 2531 bytes, 2026-09-25raw.md = 2705 bytes（各1ファイル）
+[C-7] TX00_MIC024_20260924_233455_orig.wav（削除対象外）のみ
+
+$ 1回目（TX00_MIC025_20260925_011002）
+session_reopened regenerated_count=11
+obsidian_saved bytes=2531 -> 3756（同じ1ファイル）
+delete_requested/source_deleted: 今回分のみ（01:10:35 / 01:10:53）
+[C-7] 後: TX00_MIC024 のみ（今回分は消えた）
+
+$ 2回目（TX00_MIC025_20260925_011149）
+session_reopened regenerated_count=12
+obsidian_saved bytes=3756 -> 3603（同じ1ファイル）
+delete_requested/source_deleted: 今回分のみ（01:12:13 / 01:12:30）
+[C-7] 後: TX00_MIC024 のみ
+
+$ 3回目（TX00_MIC025_20260925_011257）
+session_reopened regenerated_count=13
+obsidian_saved bytes=3603 -> 4545（同じ1ファイル）
+delete_requested/source_deleted: 今回分のみ（01:13:26 / 01:13:48）
+[C-7] 後: TX00_MIC024 のみ
+
+$ 4回目（TX00_MIC025_20260925_011431）
+session_reopened regenerated_count=14
+obsidian_saved bytes=4545 -> 5454（同じ1ファイル）
+delete_requested/source_deleted: 今回分のみ（01:14:56 / 01:15:22）
+[C-7] 後: TX00_MIC024 のみ
+
+$ 最後のコマンド
+grep -c 'reason=target_missing' "$VD_HOME/logs/reaper.log"
+0
 ```
 
+4回とも、Dailyノートは`Daily/Voice/Wiki/20260925/2026-09-25 Voice.md`・Rawノートは`Daily/Voice/Raw/20260925/2026-09-25raw.md`の同じ1ファイルのまま（別名は生えていない）。`session_reopened`のたびに`llm_completed`が出てやり直している（`regenerated_count`が11→12→13→14と1ずつ増える）。`[C-7]`の差は毎回その回に足した1本だけで、既に`source_deleted_at`が入っているPartへの`delete_requested`は一度も出ていない。
+
 #### 判定
-⬜ 未実施
+✅ PASS
