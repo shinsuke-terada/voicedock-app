@@ -36,9 +36,18 @@ public enum ConfigLoader {
         if !keyViolations.isEmpty {
             return .invalid(keyViolations)
         }
-        // v1 では移行で値を変えないので元の data を渡す。
+        // 今の版なら移行は値を変えないので元の data を、1 → 2 の移行（F-89）で値を足したときは移行後の値を復号する。
+        // 移行した値はメモリの上だけで、ファイルは書き換えない（PLAN §6.1）。
+        let source: Data
+        if (dict["schemaVersion"] as? NSNumber)?.intValue == ConfigMigrator.currentVersion {
+            source = data
+        } else if let migratedData = try? JSONSerialization.data(withJSONObject: migrated) {
+            source = migratedData
+        } else {
+            return .invalid([fileViolation("読めません")])
+        }
         do {
-            return .valid(try JSONDecoder().decode(AppConfig.self, from: data))
+            return .valid(try JSONDecoder().decode(AppConfig.self, from: source))
         } catch let error as DecodingError {
             return .invalid([decodingViolation(error, object: migrated)])
         } catch {

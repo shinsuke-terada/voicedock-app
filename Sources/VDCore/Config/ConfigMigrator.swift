@@ -1,10 +1,10 @@
-// config.json の schemaVersion の移行（PLAN §6.1）。v1 は「1 ならそのまま」だけ。
+// config.json の schemaVersion の移行（PLAN §6.1）。2 はそのまま、1 は diarization を足して 2 にする（F-89）。
 import Foundation
 
 public enum ConfigMigrator {
-    public static let currentVersion = 1
+    public static let currentVersion = 2
 
-    /// v1 は「1 ならそのまま」だけ（PLAN §6.1）。
+    /// 2 はそのまま、1 は `transcription.diarization` を足して 2 にする（PLAN §6.1。F-89）。ファイルは書き換えない。
     public static func migrate(_ object: [String: Any]) -> Result<[String: Any], ConfigViolation> {
         guard let value = object["schemaVersion"] else {
             return .failure(violation("キーがありません"))
@@ -16,6 +16,16 @@ public enum ConfigMigrator {
         }
         let version = number.intValue
         if version == currentVersion {
+            return .success(object)
+        }
+        if version == 1 {
+            var object = object
+            // transcription が辞書で diarization を持たなければ既定（無効）を入れる。辞書でなければ CV-39 に任せる
+            if var transcription = object["transcription"] as? [String: Any], transcription["diarization"] == nil {
+                transcription["diarization"] = ["enabled": false]
+                object["transcription"] = transcription
+            }
+            object["schemaVersion"] = currentVersion
             return .success(object)
         }
         if version > currentVersion {

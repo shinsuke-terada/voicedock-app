@@ -17,7 +17,7 @@ public enum ConfigKeys {
         "transcription.timeoutFactor", "transcription.minTimeoutSeconds", "transcription.maxTimeoutSeconds",
         "transcription.minChars", "transcription.vad.enabled", "transcription.vad.modelID",
         "transcription.vad.threshold", "transcription.vad.minSpeechDurationMs",
-        "transcription.vad.minSilenceDurationMs", "transcription.vad.speechPadMs",
+        "transcription.vad.minSilenceDurationMs", "transcription.vad.speechPadMs", "transcription.diarization.enabled",
         "llm.modelID", "llm.contextSize", "llm.temperature", "llm.topP", "llm.maxOutputTokens",
         "llm.requestTimeoutSeconds", "llm.maxCharsPerRequest", "llm.maxSecondsPerRequest", "llm.chunkOverlapChars",
         "llm.repairAttempts",

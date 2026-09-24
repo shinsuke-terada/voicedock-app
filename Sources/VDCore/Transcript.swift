@@ -5,11 +5,14 @@ public struct TranscriptSegment: Equatable, Sendable {
     public let start: Double
     public let end: Double
     public let text: String
+    /// 話者のラベル（`SpeakerLabel`。PLAN §8.4.1。F-89）。話者分離をしていない区間は nil。
+    public let speaker: String?
 
-    public init(start: Double, end: Double, text: String) {
+    public init(start: Double, end: Double, text: String, speaker: String? = nil) {
         self.start = start
         self.end = end
         self.text = text
+        self.speaker = speaker
     }
 }
 
@@ -41,22 +44,25 @@ public enum PartTranscriptCodec {
 
     /// transcripts/parts/<slug>.json の中身（PLAN §8.4）: PyJSON の indent 2 ＋ 末尾改行。
     /// キーの順は partkey, language, duration_seconds, started_at, text, segments（各要素 start, end, text）。
+    /// 区間の speaker は非 nil のときだけ text の後に書く（F-89。nil なら F-89 の前とバイト単位で同じ）。
     public static func encode(_ t: PartTranscript) -> Data {
         PyJSON.fileData(
             .object([
                 ("partkey", .string(t.partkey)), ("language", .string(t.language)),
                 ("duration_seconds", t.durationSeconds.map { .double($0) } ?? .null),
                 ("started_at", .string(t.startedAt)), ("text", .string(t.text)),
-                (
-                    "segments",
-                    .array(
-                        t.segments.map {
-                            .object([
-                                ("start", .double($0.start)), ("end", .double($0.end)), ("text", .string($0.text)),
-                            ])
-                        })
-                ),
+                ("segments", .array(t.segments.map(segmentObject))),
             ]))
+    }
+
+    private static func segmentObject(_ segment: TranscriptSegment) -> PyJSONValue {
+        var pairs: [(String, PyJSONValue)] = [
+            ("start", .double(segment.start)), ("end", .double(segment.end)), ("text", .string(segment.text)),
+        ]
+        if let speaker = segment.speaker {
+            pairs.append(("speaker", .string(speaker)))
+        }
+        return .object(pairs)
     }
 
     /// 読み戻し。合格条件（PLAN §8.4）を 1 つでも満たさなければ nil（例外にしない）。
@@ -71,7 +77,15 @@ public enum PartTranscriptCodec {
             guard let item = entry as? [String: Any], let start = number(item["start"]), let end = number(item["end"]),
                 let text = item["text"] as? String
             else { return nil }
-            segments.append(TranscriptSegment(start: start, end: end, text: text))
+            // speaker は在れば文字列であること（F-89）。無ければ nil
+            let speaker: String?
+            if let value = item["speaker"] {
+                guard let label = value as? String else { return nil }
+                speaker = label
+            } else {
+                speaker = nil
+            }
+            segments.append(TranscriptSegment(start: start, end: end, text: text, speaker: speaker))
         }
         guard let text = document["text"] as? String, let startedAt = document["started_at"] as? String,
             let language = document["language"] as? String, let partkey = document["partkey"] as? String

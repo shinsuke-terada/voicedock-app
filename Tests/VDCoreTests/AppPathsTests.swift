@@ -19,4 +19,13 @@ struct AppPathsTests {
         #expect(paths.llamaServer.path(percentEncoded: false) == "/App/Contents/Helpers/llama-server")
         #expect(paths.bundledReaperURL.path(percentEncoded: false) == "/App/Contents/Helpers/voicedock-reaper")
     }
+
+    @Test("話者分離の argmax-cli とモデルのパス（F-89）")
+    func diarizationPaths() {
+        let paths = AppPaths(
+            resources: URL(fileURLWithPath: "/App/Contents/Resources", isDirectory: true),
+            helpers: URL(fileURLWithPath: "/App/Contents/Helpers", isDirectory: true))
+        #expect(paths.argmaxCLI.path(percentEncoded: false) == "/App/Contents/Helpers/argmax-cli")
+        #expect(paths.speakerModels.path(percentEncoded: false) == "/App/Contents/Resources/SpeakerModels/")
+    }
 }

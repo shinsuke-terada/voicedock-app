@@ -28,6 +28,7 @@
 | `Sources/VDCore/Config/AppConfig.swift`（変更） | `DiarizationConfig`、`TranscriptionConfig.diarization`、既定値、`schemaVersion: 2` |
 | `Sources/VDCore/Config/ConfigKeys.swift`（変更） | `transcription.diarization.enabled` |
 | `Sources/VDCore/Config/ConfigMigrator.swift`（変更） | 1 → 2 |
+| `Sources/VDCore/Config/ConfigLoader.swift`（変更） | `decodeStructure`: 版が今の版でなければ移行後の辞書を復号する（§4.5） |
 | `Sources/VDCore/AppPaths.swift`（変更） | `argmaxCLI`・`speakerModels` |
 | `Sources/VDCore/Log.swift`（変更） | `LogEvent.diarizationCompleted`・`.diarizationFailed`、`LogKey.speakers` |
 | `docs/PLAN.md`（変更） | 付録 A.4 のイベントの列とフィールド（PLAN §8.4.1 の「ログのイベントと診断」の値をそのまま写す。SPEC 同期と `SpecMatchesPlanTests` のため、コード・SPEC と同じ PR で直す） |
@@ -37,6 +38,7 @@
 | `Tests/VDCoreTests/TranscriptSpeakerCodecTests.swift` | |
 | `Tests/VDCoreTests/SessionTranscriptSpeakerTests.swift` | |
 | `Tests/VDCoreTests/ConfigMigratorV2Tests.swift` | |
+| `Tests/VDCoreTests/LogTests.swift`（変更） | イベントの数と列を 49 個に |
 
 既存のテストで `schemaVersion` 1 を前提にしたもの（`AppConfigTests`・`ConfigLoaderTests`・golden の設定など）は 2 に直す。1 の JSON を読む既存のテストは「移行して読める」に意味が変わるので、期待を 2 に直す。
 
@@ -53,9 +55,11 @@ public enum SpeakerLabel {
     public static let prefix = "話者"
 
     /// 0→"A" … 25→"Z"、26 以上→"S<index+1>"（27 人目は "S27"）。負は "A"。
+    /// Int.max でも落ちない（F-71 の方針。index + 1 があふれたら Int.max のまま）。
     public static func label(index: Int) -> String {
         if index < 26 { return String(UnicodeScalar(UInt8(65 + max(0, index)))) }
-        return "S\(index + 1)"
+        let (next, overflow) = index.addingReportingOverflow(1)
+        return "S\(overflow ? index : next)"
     }
 
     /// `話者` + label
@@ -106,6 +110,8 @@ public static let currentVersion = 2
 
 ファイルは書き換えない（PLAN §6.1）。
 
+`ConfigLoader.decodeStructure` は、元の `schemaVersion` が `ConfigMigrator.currentVersion` なら今までどおり元の data を復号し、そうでなければ（1 → 2 の移行で値を足したとき）移行後の辞書を `JSONSerialization.data(withJSONObject:)` で Data にして復号する（移行した値はメモリの上だけ。PLAN §6.1）。Data にできなければ CV-39（`<file>`、「読めません」）。
+
 ### 4.6 `AppPaths.swift`
 
 ```swift
@@ -129,6 +135,7 @@ public static let currentVersion = 2
 | `firstLabels` | 0〜25 は A〜Z | index 0, 1, 25 | `"A"`・`"B"`・`"Z"` |
 | `beyondZ` | 27 人目からは S27 | index 26, 27 | `"S27"`・`"S28"` |
 | `negativeIsA` | 負の index は A | -1 | `"A"` |
+| `intMaxDoesNotTrap` | Int.max でも落ちない（F-71） | `Int.max` | `"S\(Int.max)"` |
 | `display` | 表示は 話者 + ラベル | `"A"`・`""` | `"話者A"`・`"話者"` |
 
 `Tests/VDCoreTests/TranscriptSpeakerCodecTests.swift`:
