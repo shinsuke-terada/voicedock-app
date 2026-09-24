@@ -143,7 +143,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-06 | 1 日分を 1 セッションに | OFF | ⬜ 未実施 | §3.6 |
 | E2E-07 | 無音の Part を混ぜる | OFF | ✅ PASS | §3.7 |
 | E2E-08 | 1 本だけ文字起こしを失敗させる | OFF | ⬜ 未実施 | §3.8 |
-| E2E-09 | 保存後に同じ日の Part を追加 | OFF | ⬜ 未実施 | §3.9 |
+| E2E-09 | 保存後に同じ日の Part を追加 | OFF | ✅ PASS | §3.9 |
 | E2E-10 | 削除 ON で通し | ON | ⬜ 未実施 | §3.10 |
 | E2E-11 | 過去分の削除・手動で消した分の完了 | ON | ⬜ 未実施 | §3.11 |
 | E2E-12 | 文字起こし中に強制終了 | OFF | ⬜ 未実施 | §3.12 |
@@ -631,13 +631,25 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 `session_reopened` が毎回出て、`llm_completed` も毎回出る（**再オープンで解析をやり直す**。voicedock #108 はやり直していなかった）。Raw ノートも同じ 1 ファイル。
 
 #### 記録
-[C-9] の前後（4 回分のファイル数）、`cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c session_reopened`、同じく `grep -c llm_completed`（1 回目の前と 4 回目の後。§1「ログの数え方」）。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。既に保存済みの 2026-09-24 の Session に、「抜く→同じ日に短い録音 1 本→挿す→完走を待つ」を 4 回繰り返した。
+
+| | 前 | 後 | 差分 |
+|---|---|---|---|
+| Daily/Voice の `.md` ファイル数 | 6 | 6 | 0（`(2)` などの別名は生えていない） |
+| `session_reopened`（全期間の累計） | 5 | 9 | **+4**（4 回ちょうど） |
+| `llm_completed`（全期間の累計） | 6 | 10 | **+4**（4 回ちょうど。毎回やり直している） |
+
+4 回目の後のフォルダの中身（同じ 1 ファイルのまま）:
 ```text
+$ find "$VAULT/Daily/Voice/Wiki/20260924" -type f
+/Users/terada/VoiceDockTestVault/Daily/Voice/Wiki/20260924/2026-09-24 Voice.md
+$ find "$VAULT/Daily/Voice/Raw/20260924" -type f
+/Users/terada/VoiceDockTestVault/Daily/Voice/Raw/20260924/2026-09-24 raw.md
 ```
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.10 E2E-10 — 削除 ON で通し
 
