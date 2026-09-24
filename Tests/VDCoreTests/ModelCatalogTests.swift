@@ -73,7 +73,10 @@ struct ModelCatalogTests {
 
     @Test("verified が false の LLM は一覧に出ない")
     func listedLLMsExcludeUnverified() throws {
-        #expect(try Self.bundled().listedLLMs.isEmpty)
+        let ids = try Self.bundled().listedLLMs.map(\.id)
+        // 2026-09-24（X-43・X-44 の修正の後）: qwen3-30b は受け入れ試験に合格して verified: true、
+        // qwen3-4b は未再試験のまま verified: false（docs/POC.md §15.2.2）。
+        #expect(ids == ["qwen3-30b-a3b-instruct-2507-q4_k_m"])
     }
 
     @Test("空のカタログは項目 0 件で読める")

@@ -10,7 +10,7 @@
                "file": "Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
                "url": "https://huggingface.co/unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF/resolve/eea7b2be5805a5f151f8847ede8e5f9a9284bf77/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf",
                "sha256": "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0", "bytes": 18556686752,
-               "minMemoryGB": 32, "license": "Apache-2.0", "verified": false},
+               "minMemoryGB": 32, "license": "Apache-2.0", "verified": true},
               {"id": "qwen3-4b-instruct-2507-q4_k_m", "displayName": "Qwen3 4B（16 GB の Mac 向け）",
                "file": "Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
                "url": "https://huggingface.co/unsloth/Qwen3-4B-Instruct-2507-GGUF/resolve/a06e946bb6b655725eafa393f4a9745d460374c9/Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
