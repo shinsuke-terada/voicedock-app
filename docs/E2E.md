@@ -137,7 +137,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 |---|---|---|---|---|
 | E2E-01 | 1 本を通しで | OFF | ✅ PASS | §3.1 |
 | E2E-02 | コピー中に抜く | OFF | ⬜ 未実施 | §3.2 |
-| E2E-03 | 文字起こし中に抜く | OFF | ⬜ 未実施 | §3.3 |
+| E2E-03 | 文字起こし中に抜く | OFF | ✅ PASS | §3.3 |
 | E2E-04 | Vault を利用不可にする | OFF | ✅ PASS | §3.4 |
 | E2E-05 | 抜き挿しを 6 回以上 | OFF | ✅ PASS | §3.5 |
 | E2E-06 | 1 日分を 1 セッションに | OFF | ⬜ 未実施 | §3.6 |
@@ -315,13 +315,45 @@ Daily ノート `## Timeline` の見出し（単一チャンクの代替経路�
 元音声が残る（[C-7] の前後が一致）。
 
 #### 記録
-[C-1]（後）、[C-4] の当該 Part の遷移、`source_delete_skipped` の行（`grep source_delete_skipped "$VD_HOME/logs/app.log"`）、[C-6]、[C-7] の前後の `diff`。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。約 5.4 分の新しい録音（TX00_MIC009_20260924_213754_orig.wav。duration_s=325.49）を含む状態で挿し、文字起こし中に実機を抜いた（利用者が確認）。
+
+[C-7]（前後の `diff`。抜く前の挿入時 → 完走後に挿し直して確認）:
 ```text
+$ diff /tmp/e2e03-device-before.txt /tmp/e2e03-device-after.txt
+（差分なし）
+```
+挿した直後の一覧は 8 本。抜いて文字起こし中断→再挿入の後でも、8 本すべてサイズ・mtime が変わっていない。
+
+`part_discovered`〜`source_delete_skipped`（今回の 2 本。MIC008 は 81 秒で窓が短く、MIC009（5.4 分）で実際に抜いた）:
+```text
+2026-09-24T21:36:09+09:00 INFO  part_discovered recording_key=…TX00_MIC008_20260924_213248_orig.wav duration_s=81.29
+2026-09-24T21:36:13+09:00 INFO  transcription_completed recording_key=…TX00_MIC008… elapsed_s=3.1 chars=381
+2026-09-24T21:36:13+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=4 bytes=8197
+2026-09-24T21:36:26+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260924 reason=delete_source_audio_disabled
+2026-09-24T21:44:08+09:00 INFO  part_discovered recording_key=…TX00_MIC009_20260924_213754_orig.wav duration_s=325.49
+2026-09-24T21:44:24+09:00 INFO  transcription_completed recording_key=…TX00_MIC009… elapsed_s=14.8 chars=1896
+2026-09-24T21:44:24+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=5 bytes=14055
+2026-09-24T21:44:42+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260924 reason=delete_source_audio_disabled
+```
+
+[C-4]（partkey・status・error_code。当該日の全件）:
+```text
+DJIMIC3/…/TX00_MIC005_20260924_205130_orig.wav|COMPLETED|
+DJIMIC3/…/TX00_MIC006_20260924_211229_orig.wav|COMPLETED|
+DJIMIC3/…/TX00_MIC007_20260924_212537_orig.wav|COMPLETED|
+DJIMIC3/…/TX00_MIC008_20260924_213248_orig.wav|COMPLETED|
+DJIMIC3/…/TX00_MIC009_20260924_213754_orig.wav|COMPLETED|
+```
+抜いた対象（MIC009）を含め、すべて `COMPLETED`・`error_code` なし。`SOURCE_DELETE_PENDING` にはならなかった。
+
+[C-6]:
+```text
+$VD_HOME/queue/delete と queue/result はどちらも空（. と .. のみ）。要求のファイルは書かれていない。
 ```
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.4 E2E-04 — Vault を利用不可にする
 
