@@ -37,7 +37,7 @@ protocol AppServices: Sendable {
     /// 「今はしない」などの記録。
     func saveUIState(_ state: UIState) -> Bool
     // T-32
-    /// 「診断を実行」（PLAN §8.11。DR-09 を除く 15 件。何も書かない）
+    /// 「診断を実行」（PLAN §8.11。DR-09 を除く 16 件。何も書かない）
     func runDiagnostics() async -> [DiagnosticResult]
     /// Worker の直列ループに仕事を入れる（DR-09 など）
     func enqueue(_ job: WorkerJob) async
