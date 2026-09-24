@@ -159,6 +159,7 @@ struct ReadmeTests {
         "## 保守",
         "## 開発",
         "## 状態",
+        "## 出典",
     ]
 
     static func currentPaths() -> [String] { Readme.referencedPaths(Readme.loadedText()).sorted() }

@@ -1,4 +1,4 @@
-// DR-01〜17 のうち 15 件の本体（PLAN §8.11。DR-09 は LLMProbeCheck、DR-13 は取り下げ（PLAN F-61））。すべて読むだけ。
+// DR-01〜18 のうち 16 件の本体（PLAN §8.11。DR-09 は LLMProbeCheck、DR-13 は取り下げ（PLAN F-61））。すべて読むだけ。
 import Darwin
 import Foundation
 import VDAudio
@@ -11,7 +11,7 @@ import VDProcess
 import VDStore
 import VDTranscribe
 
-/// 15 件の検査の本体（voicedock doctor.py:115-586 に当たる）。何も書き換えない（PT-17・OPS-14）。
+/// 16 件の検査の本体（voicedock doctor.py:115-586 に当たる）。何も書き換えない（PT-17・OPS-14）。
 enum DiagnosticChecks {
     /// `--help` の時間の上限
     static let helpTimeout: Duration = .seconds(20)
@@ -139,6 +139,33 @@ enum DiagnosticChecks {
         guard c.transcription.vad.enabled else { return result(id, .notice, [DiagnosticTexts.vadDisabled]) }
         let entry = ctx.deps.catalog.entry(kind: .vad, id: c.transcription.vad.modelID)
         return await modelCheck(id, kind: .vad, entry: entry, config: c, ctx: ctx)
+    }
+
+    /// DR-18 話者分離（オフなら skip。部品が欠けても notice。文字起こしは話者なしで進む。PLAN §8.4.1。F-89）
+    @Sendable static func dr18(_ ctx: DiagnosticsContext) async -> DiagnosticResult {
+        let id = DiagnosticID.diarization
+        guard ctx.config?.transcription.diarization.enabled == true else {
+            return result(id, .skip, [DiagnosticTexts.diarizationOff])
+        }
+        let paths = ctx.deps.paths
+        let d = Diarizer(runner: ctx.deps.runner, paths: paths, layout: ctx.deps.layout, maxTimeoutSeconds: 1)
+        var missing = d.missingParts()
+        if !missing.contains("argmax-cli") {
+            let r = await ctx.deps.runner.run(
+                ProcessSpec(
+                    executable: paths.argmaxCLI, arguments: ["diarize", "--help"],
+                    environment: ProcessEnvironment.cLocale),
+                timeout: helpTimeout)
+            if r.termination == .exited(0) {
+                missing += DiarizeArgs.missingFlags(helpOutput: r.stdoutText + r.stderrText)
+            } else {
+                missing.append("argmax-cli diarize --help")
+            }
+        }
+        if missing.isEmpty {
+            return result(id, .ok, [DiagnosticTexts.diarizationOK])
+        }
+        return result(id, .notice, [DiagnosticTexts.diarizationMissing(missing)])
     }
 
     /// DR-07 llama-server（使うフラグがすべて --help に在る）

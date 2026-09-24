@@ -32,10 +32,12 @@ Session の統合と Raw ノートの Part に `speaker` を運ぶ。診断に D
 | `docs/SPEC.md`（変更） | S6 に DR-18 |
 | `README.md`（変更） | 診断の件数（17 件）、話者分離の説明と出典 |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | `transcription.diarization.enabled` を消す |
+| `Tests/PolicyTests/ReadmeTests.swift`（変更） | `expectedHeadings` の末尾に `"## 出典"`（§4.4 で README に足す見出し） |
 | `Tests/VDPipelineTests/PartStepsDiarizationTests.swift` | |
 | `Tests/VDPipelineTests/SessionMergeSpeakerTests.swift` | |
 | `Tests/VDPipelineTests/DiagnosticDR18Tests.swift` | |
 | `Tests/VDPipelineTests/DiagnosticsRunTests.swift`（変更） | 16 件・順 |
+| `Tests/VDPipelineTests/DiagnosticsNoWriteTests.swift`（変更） | `diagnosticsChangeNothingInHome` の件数を 16 に |
 
 ## 4. 仕様
 
@@ -113,7 +115,7 @@ case nil:
 | `missingFlagIsNotice` | DR-18 --help にフラグが無ければ notice | FakeArgmax の help から `--rttm-path` を消す | `.notice`、詳細に `--rttm-path` |
 | `emptyHelpIsNotice` | DR-18 空の help（TEST-28） | help が空 | `.notice`、4 つのフラグ |
 
-`DiagnosticsRunTests`（変更）: 順は `…"DR-06", "DR-18", "DR-07"…`、件数は 16（表示名も「16 件が…」「DR-09 を除いて 16 件」に直す）。
+`DiagnosticsRunTests`（変更）: 順は `…"DR-06", "DR-18", "DR-07"…`、件数は 16（表示名も「16 件が…」「DR-09 を除いて 16 件」に、関数名 `countIs15` も `countIs16` に直す）。
 
 ## 6. 破壊による証明
 

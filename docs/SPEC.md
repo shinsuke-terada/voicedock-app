@@ -256,6 +256,7 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | DR-04 | 5 | whisper-cli が在り、`--help` に VAD の 6 フラグが逐語で在る（VAD 無効なら無くても notice） | fail |  |
 | DR-05 | 6 | Whisper モデルが在り SHA-256 が一致 | fail |  |
 | DR-06 | 7 | VAD モデルが在り SHA-256 が一致。VAD 無効なら notice「無音から幻覚が生成され、13 倍以上遅くなります」（ASR-02） | fail / notice |  |
+| DR-18 | 7.5 | 話者分離（§8.4.1。F-89）: 設定がオフなら skip。オンなら argmax-cli が在り実行でき、argmax-cli diarize --help に `--audio-path`・`--model-path`・`--rttm-path`・`--use-exclusive-reconciliation` が逐語で在り、`SpeakerModels` がディレクトリである。欠ければ notice「話者分離の部品がありません（<欠けたもの>）。話者なしで文字起こしします」（失敗しても文字起こしは止まらないので fail にしない） | notice |  |
 | DR-07 | 8 | llama-server が在り、使うフラグがすべて `--help` に在る | fail |  |
 | DR-08 | 9 | LLM モデルが選ばれて在り SHA-256 が一致（custom は ID の SHA と一致するかだけ）、メモリが足りる（custom はメモリの目安が無いので `.ok` とし、詳細に「動作保証外のモデルです」と出す） | fail |  |
 | DR-10 | 10 | Vault: `VaultCheck` が `.available`（`.notReadable(EPERM)` は許可の案内）かつ `access(W_OK)`。**ファイルもフォルダも作らない**（NOTE-16）。「書けない」と「Vault でない」を別の文言で出す | fail |  |

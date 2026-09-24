@@ -26,6 +26,7 @@ enum DiagnosticTexts {
         case DiagnosticID.leftovers: "inbox の取り残し"
         case DiagnosticID.timeZone: "タイムゾーン"
         case DiagnosticID.signature: "アプリの署名"
+        case DiagnosticID.diarization: "話者分離"
         default: id
         }
     }
@@ -59,6 +60,12 @@ enum DiagnosticTexts {
         "VAD のフラグがありません: " + flags.joined(separator: " ")
     }
     static let vadDisabled = "無音から幻覚が生成され、13 倍以上遅くなります"
+    /// DR-18（PLAN §8.4.1。F-89）
+    static let diarizationOff = "オフです"
+    static let diarizationOK = "argmax-cli とモデルが揃っています"
+    static func diarizationMissing(_ missing: [String]) -> String {
+        "話者分離の部品がありません（" + missing.joined(separator: "、") + "）。話者なしで文字起こしします"
+    }
     static func llamaFlagsOK(_ n: Int) -> String { "使うフラグ " + String(n) + " 個が在ります" }
     static func llamaFlagsMissing(_ flags: [String]) -> String {
         "使えないフラグがあります: " + flags.joined(separator: " ")

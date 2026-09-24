@@ -24,7 +24,7 @@ extension SessionSteps {
                     AbsoluteSegment(
                         at: started.adding(milliseconds: SecondsToMillis.fromWhisperSeconds(seg.start)),
                         endAt: started.adding(milliseconds: SecondsToMillis.fromWhisperSeconds(seg.end)),
-                        text: text))
+                        text: text, speaker: seg.speaker))
             }
         }
         // 4.

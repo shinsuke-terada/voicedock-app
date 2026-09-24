@@ -2504,6 +2504,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | DR-04 | 5 | whisper-cli が在り、`--help` に VAD の 6 フラグが逐語で在る（VAD 無効なら無くても notice） | fail |  |
 | DR-05 | 6 | Whisper モデルが在り SHA-256 が一致 | fail |  |
 | DR-06 | 7 | VAD モデルが在り SHA-256 が一致。VAD 無効なら notice「無音から幻覚が生成され、13 倍以上遅くなります」（ASR-02） | fail / notice |  |
+| DR-18 | 7.5 | 話者分離（§8.4.1。F-89）: 設定がオフなら skip。オンなら argmax-cli が在り実行でき、argmax-cli diarize --help に `--audio-path`・`--model-path`・`--rttm-path`・`--use-exclusive-reconciliation` が逐語で在り、`SpeakerModels` がディレクトリである。欠ければ notice「話者分離の部品がありません（<欠けたもの>）。話者なしで文字起こしします」（失敗しても文字起こしは止まらないので fail にしない） | notice |  |
 | DR-07 | 8 | llama-server が在り、使うフラグがすべて `--help` に在る | fail |  |
 | DR-08 | 9 | LLM モデルが選ばれて在り SHA-256 が一致（custom は ID の SHA と一致するかだけ）、メモリが足りる（custom はメモリの目安が無いので `.ok` とし、詳細に「動作保証外のモデルです」と出す） | fail |  |
 | DR-10 | 10 | Vault: `VaultCheck` が `.available`（`.notReadable(EPERM)` は許可の案内）かつ `access(W_OK)`。**ファイルもフォルダも作らない**（NOTE-16）。「書けない」と「Vault でない」を別の文言で出す | fail |  |
@@ -2514,7 +2515,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 | DR-14 | 15 | 三重ロックを個別に表示（§8.9.8 の表示。`LockEvaluator` を使い、式を書き直さない）。常に notice | notice | （必ず最後） |
 | DR-09 | 別 | LLM に実リクエスト（別のボタン。Worker の直列ループに 1 件の仕事として入れ、`LlamaServerSupervisor` の単一インスタンスを使う。数十秒かかる。起動したら応答の後（成功でも失敗でも）止める。F-76）。結果「<model>（<秒 小数 1 桁>s）」 | fail |  |
 
-- 件数（15 + DR-09 = 16。取り下げた DR-13 は数えない。F-61）は SPEC の表から数え、README と文書テストで突き合わせる（§10.3）
+- 件数（16 + DR-09 = 17。取り下げた DR-13 は数えない。F-61）は SPEC の表から数え、README と文書テストで突き合わせる（§10.3）
 - **既知の残り**（F-81）: DR-11 の fail は、errno の無い `not_listable`（走査の途中の失敗（F-67）・列挙の後の確かめ直し（F-81）で載るもの）にも TCC の案内を付ける（§8.1 規則 5 の「`EPERM` のときだけ」になっていない）
 
 **要対応（沈黙の検出を含む。`AttentionItem`）**（無人稼働で最も起きやすい故障は「何も起きない」。SM-24 / RK-23）— パネル上部と、アイコンの「要対応」表示に出す。

@@ -3,7 +3,5 @@
 
 /// まだ ConfigEffect のテストが無いキー → 書く予定のチケット。空になったら網羅完了（T-43 の受け入れ条件）。
 enum ConfigEffectPending {
-    static let owners: [String: String] = [
-        "transcription.diarization.enabled": "T-49"
-    ]
+    static let owners: [String: String] = [:]
 }
