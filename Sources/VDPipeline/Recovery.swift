@@ -55,6 +55,8 @@ struct Recovery {
         case .transcribing:
             discard(layout.transcript(slug: slug), under: .transcripts)
             discard(layout.whisperJSON(slug: slug), under: .staging)
+            // 話者分離の途中で落ちた RTTM（PLAN §8.4.1。F-90）
+            discard(layout.diarizationRTTM(slug: slug), under: .staging)
         case .rawWriting:
             discardVaultTmp(part: row)
         default:

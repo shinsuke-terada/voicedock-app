@@ -52,7 +52,7 @@
 `HomeLayout` のプロパティ（すべて `URL`。§2.3 と一対一）:
 `configFile`（config.json）、`database`（voicedock.sqlite）、`inbox`、`staging`、`transcriptsParts`（transcripts/parts）、`analysis`、`queueDelete`、`queueResult`、`queueRejected`、`stateDirectory`、`processedLog`、`reaperLock`、`appLock`（state/app.lock。アプリの単一起動のロック。F-76）、
 `runDirectory`、`llamaAPIKeyFile`（run/llama-api-key）、`binDirectory`、`reaperExecutable`、`reaperConf`、`modelsDirectory`、`logsDirectory`、`appLog`、`reaperLog`、`uiState`（ui-state.json）。
-関数: `stagingDirectory(slug:)`、`normalizedAudio(slug:)`（audio16k.wav）、`normalizedAudioTmp(slug:)`（audio16k.wav.tmp）、`whisperOutputBase(slug:)`（staging/<slug>/whisper）、`whisperJSON(slug:)`、
+関数: `stagingDirectory(slug:)`、`normalizedAudio(slug:)`（audio16k.wav）、`normalizedAudioTmp(slug:)`（audio16k.wav.tmp）、`whisperOutputBase(slug:)`（staging/<slug>/whisper）、`whisperJSON(slug:)`、`diarizationRTTM(slug:)`（staging/<slug>/diarization.rttm。F-90）、
 `transcript(slug:)`、`analysisJSON(sessionSlug:)`、`timelineJSON(sessionSlug:)`、`sourceJSON(sessionSlug:)`、`inboxFile(deviceID:relpath:)`、`inboxPartial(deviceID:relpath:)`、
 `models(kind: String) -> URL`（models/<kind>）、`modelFile(kind: String, file: String)`、`modelPart(kind: String, file: String)`（models/<kind>/.<file>.part）、`modelResume(file: String)`（models/.<file>.resume）、
 `relativePath(of url: URL) -> String?`（root からの相対 POSIX。配下でなければ nil）、`url(relative: String) -> URL`。
@@ -183,7 +183,7 @@
 | `DiarizeArgs.swift`（F-89・T-48） | `public enum DiarizeArgs { static let requiredFlags: [String] /* --audio-path --model-path --rttm-path --use-exclusive-reconciliation */; static func build(input: URL, models: URL, rttm: URL) -> [String] /* argv[0] を含まない。先頭は "diarize" */; static func missingFlags(helpOutput: String) -> [String] /* DR-18 */ }` |
 | `RTTMParser.swift`（F-89・T-48） | `public struct SpeakerTurn: Equatable, Sendable { start: Double; end: Double; speaker: String; public init(…) }`、`public enum RTTMParser { static func parse(_ text: String) -> [SpeakerTurn]? /* 1 行でも不正なら nil。0 行は [] */ }` |
 | `SpeakerAssigner.swift`（F-89・T-48） | `public enum SpeakerAssigner { static let nearestToleranceSeconds = 1.0; static func assign(_ segments: [TranscriptSegment], turns: [SpeakerTurn]) -> [TranscriptSegment] /* 話者を付け、SpeakerLabel.label で A… に付け替える */ }` |
-| `Diarizer.swift`（F-89・T-48） | `public struct Diarizer: Sendable { init(runner: any ProcessRunning, paths: AppPaths, layout: HomeLayout, maxTimeoutSeconds: Int); func missingParts() -> [String] /* "argmax-cli" / "SpeakerModels"。空 = 揃っている */; func diarize(input: URL, slug: String, durationSeconds: Double?) async -> DiarizeOutcome }`、`public enum DiarizeOutcome: Equatable, Sendable { case diarized([SpeakerTurn]), failed(reason: String), stopped }`、`public enum DiarizationReport: Equatable, Sendable { case completed(speakers: Int, elapsedSeconds: Double), failed(reason: String) }` |
+| `Diarizer.swift`（F-89・T-48） | `public struct Diarizer: Sendable { init(runner: any ProcessRunning, paths: AppPaths, layout: HomeLayout, maxTimeoutSeconds: Int); func missingParts() -> [String] /* "argmax-cli" / "SpeakerModels"。空 = 揃っている */; static func missingParts(paths: AppPaths) -> [String] /* F-90。診断とパネルはこちら */; func diarize(input: URL, slug: String, durationSeconds: Double?) async -> DiarizeOutcome }`、`public enum DiarizeOutcome: Equatable, Sendable { case diarized([SpeakerTurn]), failed(reason: String), stopped }`、`public enum DiarizationReport: Equatable, Sendable { case completed(speakers: Int, elapsedSeconds: Double), failed(reason: String) }` |
 
 ---
 

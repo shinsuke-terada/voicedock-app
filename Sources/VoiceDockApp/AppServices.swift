@@ -93,9 +93,7 @@ struct LiveServices: AppServices {
             // T-51（F-89）: オンのときだけ部品を見る（起動はしない。stat だけ）
             s.diarizationEnabled = c.transcription.diarization.enabled
             if s.diarizationEnabled {
-                s.diarizationMissing = Diarizer(
-                    runner: context.runner, paths: context.paths, layout: layout, maxTimeoutSeconds: 1
-                ).missingParts()
+                s.diarizationMissing = Diarizer.missingParts(paths: context.paths)
             }
         }
         s.ingestState = await context.ingest.state()

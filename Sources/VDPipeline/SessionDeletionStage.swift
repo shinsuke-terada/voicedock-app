@@ -98,7 +98,7 @@ struct SessionDeletionStage {
             let slug = KeySlug.of(p.partkey)
             for url in [
                 layout.normalizedAudio(slug: slug), layout.normalizedAudioTmp(slug: slug),
-                layout.whisperJSON(slug: slug),
+                layout.whisperJSON(slug: slug), layout.diarizationRTTM(slug: slug),
             ] {
                 // 無いものは missingOK
                 do { try SafeUnlink.remove(url, under: .staging, layout: layout) } catch { failed = true }

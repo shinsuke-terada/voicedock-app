@@ -40,14 +40,14 @@ struct SessionDeletionStageTests {
         scene.logLines.contains { $0.contains(" source_delete_skipped ") }
     }
 
-    /// staging/<slug>/ に audio16k.wav・audio16k.wav.tmp・whisper.json を置く
+    /// staging/<slug>/ に audio16k.wav・audio16k.wav.tmp・whisper.json・diarization.rttm を置く
     static func placeStaging(_ scene: DeletionScene, _ pk: String) throws {
         let slug = KeySlug.of(pk)
         try FileManager.default.createDirectory(
             at: scene.layout.stagingDirectory(slug: slug), withIntermediateDirectories: true)
         for url in [
             scene.layout.normalizedAudio(slug: slug), scene.layout.normalizedAudioTmp(slug: slug),
-            scene.layout.whisperJSON(slug: slug),
+            scene.layout.whisperJSON(slug: slug), scene.layout.diarizationRTTM(slug: slug),
         ] {
             try Data("x".utf8).write(to: url)
         }

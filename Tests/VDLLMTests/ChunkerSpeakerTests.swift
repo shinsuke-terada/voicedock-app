@@ -44,20 +44,30 @@ struct ChunkerSpeakerTests {
         #expect(chunks.map { Array($0.text.utf8) } == expectedTexts.map { Array($0.utf8) })
     }
 
-    @Test("切り方は text の文字数だけで決まる")
-    func countsOnlyText() {
-        // maxChars 4 に text がちょうど 4 スカラー（"aa" + "bb"）。前置き "話者A: " を数えると超えるが、数えないので 1 チャンク。
-        // 次の "c" で 5 > 4 になり、そこで切れる（重なり 0）。
+    @Test("切り方は話者の前置きを含めた行の文字数で決まる（F-90）")
+    func countsSpeakerPrefix() {
+        // 行は "話者A: aa"（7 スカラー）・"話者B: bb"（7）・"話者A: c"（6）。maxChars 14 なら 2 行で 14、3 行目で 20 > 14 で切れる。
+        // text だけを数えると 2 + 2 + 1 = 5 で 1 チャンクになってしまう（F-89 の最初の実装。LLM に送る量を少なく見積もった）
         let chunks = Chunker.chunk(
-            [seg("aa", 0, "A"), seg("bb", 10, "B"), seg("c", 20, "A")], maxChars: 4, maxSeconds: 3600,
+            [seg("aa", 0, "A"), seg("bb", 10, "B"), seg("c", 20, "A")], maxChars: 14, maxSeconds: 3600,
             overlapChars: 0)
         #expect(chunks.map { $0.segments.map(\.text) } == [["aa", "bb"], ["c"]])
         #expect(chunks.map(\.text) == ["話者A: aa\n話者B: bb", "話者A: c"])
-        // 同じ入力を話者なしにしても同じ位置で切れる（期待は同じ手書きの値）
+        // 同じ入力を話者なしにすると行は text と同じ（5 スカラー）なので 1 チャンク（voicedock と同じ数え方）
         let plain = Chunker.chunk(
-            [seg("aa", 0, nil), seg("bb", 10, nil), seg("c", 20, nil)], maxChars: 4, maxSeconds: 3600,
+            [seg("aa", 0, nil), seg("bb", 10, nil), seg("c", 20, nil)], maxChars: 14, maxSeconds: 3600,
             overlapChars: 0)
-        #expect(plain.map { $0.segments.map(\.text) } == [["aa", "bb"], ["c"]])
+        #expect(plain.map { $0.segments.map(\.text) } == [["aa", "bb", "c"]])
+    }
+
+    @Test("重なりも話者の前置きを含めた行の文字数で数える（F-90）")
+    func overlapCountsSpeakerPrefix() {
+        // 行は 7・7・7・6 スカラー。maxChars 21 で 3 行、4 行目で切れる。重なりの上限 7 には "話者A: cc"（7）だけが入る。
+        // text だけを数えると 2 + 2 + 2 ≤ 7 で全部が入り、先頭を落として bb と cc が重なってしまう
+        let chunks = Chunker.chunk(
+            [seg("aa", 0, "A"), seg("bb", 10, "B"), seg("cc", 20, "A"), seg("d", 30, "B")], maxChars: 21,
+            maxSeconds: 3600, overlapChars: 7)
+        #expect(chunks.map { $0.segments.map(\.text) } == [["aa", "bb", "cc"], ["cc", "d"]])
     }
 
     @Test("区間 0 はチャンク 0（TEST-28）")

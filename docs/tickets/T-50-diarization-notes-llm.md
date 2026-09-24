@@ -1,5 +1,7 @@
 # T-50 VDNotes / VDLLM: Raw の話者の行とチャンクの前置き
 
+> （F-90、2026-09-24。コードレビューを受けた利用者の決定）チャンクの切り方と重なりは、LLM に送る行（`話者A: ` の前置きを含む。`Chunker.line`）の文字数で数えるように変えた。下の §4.2 の「文字数の計算と重なりは変えない（text だけを数える）」と §5・§6 の `countsOnlyText` は、`countsSpeakerPrefix`・`overlapCountsSpeakerPrefix`（ChunkerSpeakerTests）に置き換えた。話者なしの出力は変わらない。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-50 |

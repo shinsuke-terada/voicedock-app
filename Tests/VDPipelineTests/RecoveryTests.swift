@@ -99,9 +99,11 @@ struct RecoveryTests {
         let slug = KeySlug.of(pk)
         try Self.put(w.layout.transcript(slug: slug))
         try Self.put(w.layout.whisperJSON(slug: slug))
+        try Self.put(w.layout.diarizationRTTM(slug: slug))
         _ = try await Self.recovery(w).run()
         #expect(!PipelineFixtures.exists(w.layout.transcript(slug: slug)))
         #expect(!PipelineFixtures.exists(w.layout.whisperJSON(slug: slug)))
+        #expect(!PipelineFixtures.exists(w.layout.diarizationRTTM(slug: slug)))
     }
 
     @Test("SOURCE_DELETING→PENDING で delete_request_id を外さない")

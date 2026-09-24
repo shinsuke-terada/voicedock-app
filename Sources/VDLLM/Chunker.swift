@@ -22,8 +22,9 @@ public enum Chunker {
                 current = [seg]
                 continue
             }
-            // 区切りの "\n" は数えない。文字数は Unicode スカラー数。
-            let chars = current.reduce(0) { $0 + TextLimit.scalarCount($1.text) } + TextLimit.scalarCount(seg.text)
+            // 区切りの "\n" は数えない。文字数は Unicode スカラー数。LLM に送る行（話者の前置きを含む）で数える（F-90）。
+            // 話者なしの行は text と同じなので、voicedock と同じ境界になる
+            let chars = current.reduce(0) { $0 + TextLimit.scalarCount(line($1)) } + TextLimit.scalarCount(line(seg))
             let overChars = chars > maxChars
             // ミリ秒の整数で比べる。
             let overTime = (seg.endAt - first.at) > Int64(maxSeconds) * 1000
@@ -50,7 +51,7 @@ public enum Chunker {
         var taken: [AbsoluteSegment] = []
         var total = 0
         for seg in current.reversed() {
-            let count = TextLimit.scalarCount(seg.text)
+            let count = TextLimit.scalarCount(line(seg))
             if total + count > limit && !taken.isEmpty {
                 break
             }
