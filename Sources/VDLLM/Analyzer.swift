@@ -13,6 +13,9 @@ public enum AnalyzeOutcome: Equatable, Sendable {
 public struct Analyzer: Sendable {
     /// voicedock REDUCE_MAX_DEPTH。
     public static let reduceMaxDepth = 3
+    /// X-43。voicedock には無い上限。本文の文字数だけで単一パス Reduce にすると、束ねる中間結果が多いときに
+    /// 最終の出力が maxOutputTokens に収まらず切れることがある（2026-09-24、4B・30B の受け入れ試験で実測）。
+    public static let reduceMaxItems = 4
 
     private let config: LLMConfig
     private let finalSchema: AnalysisSchema
@@ -64,7 +67,10 @@ public struct Analyzer: Sendable {
     /// Reduce（必要なら多段）。原文 transcript を再送しない（user は中間結果の JSON 配列だけ）。
     func reduce(_ items: [AnalysisResult], depth: Int) async -> Result<(AnalysisResult, [String]), StageFailure> {
         let body = ReduceBundling.asJSON(items, schema: partialSchema)
-        if TextLimit.scalarCount(body) <= config.maxCharsPerRequest || items.count <= 1 {
+        // X-43: 件数も見る。文字数だけで単一パスにすると、束ねる中間結果が多いときに最終の出力が切れることがある。
+        if (TextLimit.scalarCount(body) <= config.maxCharsPerRequest && items.count <= Self.reduceMaxItems)
+            || items.count <= 1
+        {
             // 最終形で検証する。
             switch await call.run(kind: .reduce, schema: finalSchema, body: body) {
             case .failure(let failure): return .failure(failure)
@@ -76,7 +82,9 @@ public struct Analyzer: Sendable {
         }
         var folded: [AnalysisResult] = []
         var notes: [String] = []
-        for bundle in ReduceBundling.bundles(items, schema: partialSchema, limit: config.maxCharsPerRequest) {
+        for bundle in ReduceBundling.bundles(
+            items, schema: partialSchema, limit: config.maxCharsPerRequest, itemLimit: Self.reduceMaxItems)
+        {
             // 中間段の出力は中間形。
             let bundleBody = ReduceBundling.asJSON(bundle, schema: partialSchema)
             switch await call.run(kind: .map, schema: partialSchema, body: bundleBody) {

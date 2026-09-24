@@ -51,13 +51,14 @@ struct ReduceBundlingTests {
         #expect(TextLimit.scalarCount(ReduceBundling.asJSON(Array(Self.five.prefix(1)), schema: schema)) == 71)
         #expect(TextLimit.scalarCount(ReduceBundling.asJSON(Array(Self.five.prefix(2)), schema: schema)) == 141)
         #expect(TextLimit.scalarCount(ReduceBundling.asJSON(Array(Self.five.prefix(3)), schema: schema)) == 211)
-        let bundles = ReduceBundling.bundles(Self.five, schema: schema, limit: limit)
+        let bundles = ReduceBundling.bundles(Self.five, schema: schema, limit: limit, itemLimit: nil)
         #expect(bundles.map { $0.map { $0.summary ?? "" } } == expected)
     }
 
     @Test("並べ替えない")
     func bundlesKeepOrder() {
-        let bundles = ReduceBundling.bundles(Self.five, schema: LLMFixtures.schema(.partial), limit: 141)
+        let bundles = ReduceBundling.bundles(
+            Self.five, schema: LLMFixtures.schema(.partial), limit: 141, itemLimit: nil)
         #expect(bundles.count > 1)
         #expect(bundles.flatMap { $0 }.map { $0.summary ?? "" } == ["s0", "s1", "s2", "s3", "s4"])
     }
@@ -65,8 +66,15 @@ struct ReduceBundlingTests {
     @Test("1 個で超える要素は単独")
     func oversizedItemIsItsOwnBundle() {
         let three = Array(Self.five.prefix(3))
-        let bundles = ReduceBundling.bundles(three, schema: LLMFixtures.schema(.partial), limit: 10)
+        let bundles = ReduceBundling.bundles(three, schema: LLMFixtures.schema(.partial), limit: 10, itemLimit: nil)
         #expect(bundles.map { $0.map { $0.summary ?? "" } } == [["s0"], ["s1"], ["s2"]])
+    }
+
+    @Test("itemLimit を渡すと文字数の余裕があっても件数で区切る（X-43）")
+    func bundlesRespectItemLimit() {
+        let bundles = ReduceBundling.bundles(
+            Self.five, schema: LLMFixtures.schema(.partial), limit: 1_000_000, itemLimit: 2)
+        #expect(bundles.map { $0.map { $0.summary ?? "" } } == [["s0", "s1"], ["s2", "s3"], ["s4"]])
     }
 
     /// golden の partials を中間形で検証する（すべて成功すること）。
@@ -97,7 +105,7 @@ struct ReduceBundlingTests {
     @Test("golden llm_bundles", arguments: try Golden.cases("llm_bundles"))
     func goldenBundles(item: GoldenCase) throws {
         let (partials, schema) = try Self.goldenPartials(item)
-        let bundles = ReduceBundling.bundles(partials, schema: schema, limit: try item.int("limit"))
+        let bundles = ReduceBundling.bundles(partials, schema: schema, limit: try item.int("limit"), itemLimit: nil)
         var next: Int64 = 0
         var indices: [GoldenJSON] = []
         for bundle in bundles {

@@ -116,8 +116,9 @@ public enum Dedupe {
 enum ReduceBundling {
     /// 中間形のスキーマで各結果を pyJSON にし、PyJSON のコンパクト形式（区切り "," ":"、非 ASCII はそのまま、sortKeys なし）で配列にした文字列。
     static func asJSON(_ partials: [AnalysisResult], schema: AnalysisSchema) -> String
-    /// 時刻順のまま貪欲に詰める。current が空でなく asJSON(current + [item]) のスカラー数が limit を超えるなら current を確定し [item] から始める。
-    static func bundles(_ partials: [AnalysisResult], schema: AnalysisSchema, limit: Int) -> [[AnalysisResult]]
+    /// 時刻順のまま貪欲に詰める。current が空でなく（asJSON(current + [item]) のスカラー数が limit を超える、または current.count が itemLimit 以上）なら current を確定し [item] から始める。
+    /// itemLimit が nil なら件数では区切らない（X-43）。
+    static func bundles(_ partials: [AnalysisResult], schema: AnalysisSchema, limit: Int, itemLimit: Int?) -> [[AnalysisResult]]
 }
 ```
 
@@ -128,6 +129,7 @@ enum ReduceBundling {
 - 束ね方の実測（既定の中間形、summary `"s0"`〜`"s4"`、他は空。1 個・2 個・3 個の asJSON はそれぞれ 71・141・211 スカラー）:
   limit 70 → `[[s0],[s1],[s2],[s3],[s4]]`、141 → `[[s0,s1],[s2,s3],[s4]]`、142 → 同じ、212 → `[[s0,s1,s2],[s3,s4]]`
 - 1 個で上限を超える要素も単独の束にする（空の current には必ず入れる）
+- **X-43**: `itemLimit` を渡すと、文字数の上限に達していなくても `current.count >= itemLimit` で区切る（束ねる中間結果の個数を絞り、最終 Reduce の出力が `maxOutputTokens` を超えて切れるのを防ぐ）。`Analyzer.reduce` は `itemLimit: Analyzer.reduceMaxItems`（4）で呼ぶ。golden の `goldenBundles`（既存 3 ケース）は `itemLimit: nil` のまま呼び、挙動を変えない
 
 ### 4.4 `Analyzer.swift`（「// Session の解析: 単一パスか Map → Reduce（voicedock llm.py:821-1011）。例外を投げない。」）
 
@@ -142,6 +144,7 @@ public enum AnalyzeOutcome: Equatable, Sendable {
 
 public struct Analyzer: Sendable {
     public static let reduceMaxDepth = 3            // voicedock REDUCE_MAX_DEPTH
+    public static let reduceMaxItems = 4             // X-43。voicedock には無い（本アプリだけの上限）
     public init(transport: any ChatTransport, prompts: Prompts, config: LLMConfig)
     public func analyze(_ t: SessionTranscript) async -> AnalyzeOutcome
 }
@@ -171,13 +174,13 @@ chunks が 1 個（単一パス）:
 
 reduce(items, depth) -> Result<(AnalysisResult, [String]), StageFailure>:     // internal func reduce(_ items: [AnalysisResult], depth: Int) async（テストから直接呼ぶ）
    body = ReduceBundling.asJSON(items, schema: partialSchema)
-   scalarCount(body) <= config.maxCharsPerRequest か items.count <= 1:
+   (scalarCount(body) <= config.maxCharsPerRequest かつ items.count <= Analyzer.reduceMaxItems) か items.count <= 1:   // X-43: 件数も見る
       r = await call.run(kind: .reduce, schema: finalSchema, body: body)                  // 最終形で検証
       失敗 → .failure(f)
       成功 → .success((Dedupe.apply(r.result), r.trimmed を各 "reduce: " + note に))
    depth >= Analyzer.reduceMaxDepth → .failure(StageFailure(.llmInvalidJSON, "多段 Reduce が上限 3 段に達しました"))
    folded = []; notes = []
-   for bundle in ReduceBundling.bundles(items, schema: partialSchema, limit: config.maxCharsPerRequest):
+   for bundle in ReduceBundling.bundles(items, schema: partialSchema, limit: config.maxCharsPerRequest, itemLimit: Analyzer.reduceMaxItems):   // X-43
       r = await call.run(kind: .map, schema: partialSchema, body: ReduceBundling.asJSON(bundle, schema: partialSchema))   // 中間段の出力は中間形
       失敗 → return .failure(f)
       notes += r.trimmed を各 "reduce\(depth): " + note に                               // 例 "reduce1: key_points: 25 -> 20"
@@ -210,7 +213,7 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 | `llm_chunks`（9） | `.json` `[{texts, startMs, endMs, text}]` | `zone = ZonedTime(timeZone: TimeZone(identifier: item.string("timeZone"))!)`、`base = zone.parseISO(item.string("base"))!`、`segments` の各 `{atMs, endMs, text}` を `AbsoluteSegment(at: base.adding(milliseconds: atMs), endAt: base.adding(milliseconds: endMs), text:)` にし、`Chunker.chunk(_, maxChars: config.llm.maxCharsPerRequest, maxSeconds: config.llm.maxSecondsPerRequest, overlapChars: config.llm.chunkOverlapChars)` の各チャンクを `{"texts": segments の text, "startMs": startAt − base, "endMs": endAt − base, "text": text}` にした配列 | `goldenChunks(item:)` / 「golden llm_chunks」（ChunkerTests） |
 | `llm_dedupe`（4） | `.json` | `kind` が `key` → `inputs` の各要素の `Dedupe.key`、`values` → `Dedupe.strings(inputs)`、`result` → `AnalysisValidator.validate(item.orderedObject("payload"), schema: finalSchema)` の成功の結果に `Dedupe.apply` をかけた `pyJSON(schema: finalSchema)` | `goldenDedupe(item:)` / 「golden llm_dedupe」（DedupeTests） |
 | `llm_as_json`（3） | `.out` | `item.orderedList("partials")` の各要素を `partialSchema` で `validate` した結果（すべて成功すること）の `ReduceBundling.asJSON(_, schema: partialSchema)` | `goldenAsJSON(item:)` / 「golden llm_as_json」（ReduceBundlingTests） |
-| `llm_bundles`（3） | `.json`（束ごとの partial の添字の配列） | 上と同じ partials を `ReduceBundling.bundles(_, schema: partialSchema, limit: item.int("limit"))` で束ね、束の大きさから入力の添字（0 から連番）の配列の配列にしたもの | `goldenBundles(item:)` / 「golden llm_bundles」（ReduceBundlingTests） |
+| `llm_bundles`（3） | `.json`（束ごとの partial の添字の配列） | 上と同じ partials を `ReduceBundling.bundles(_, schema: partialSchema, limit: item.int("limit"), itemLimit: nil)` で束ね、束の大きさから入力の添字（0 から連番）の配列の配列にしたもの | `goldenBundles(item:)` / 「golden llm_bundles」（ReduceBundlingTests） |
 
 - `GoldenCase.orderedList(_ key: String) throws -> [[(String, PyJSONValue)]]`（`Tests/VDLLMTests/GoldenCase+List.swift`。internal。T-45 の `GoldenCase.orderedObject` と同じ読み方（入力を `PyJSON.decode` で読み直す）で、値が `.array` で各要素が `.object` のもの。違えば `GoldenError.typeMismatch(group:name:key:expected: "array of object")`）。
   （実装で修正: T-19 は自前の `GoldenPayload` を作らず T-45 の `orderedObject` を使った（T-19 §8 の 7）ので、`GoldenPayload` は存在しない）
@@ -269,6 +272,7 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 | `bundlesMeasured(limit:expected:)` / 「束ね方が voicedock と一致」 | §4.3 の 4 例、asJSON の長さ 71・141・211 |
 | `bundlesKeepOrder` / 「並べ替えない」 | 束をつなぎ直すと入力と同じ順 |
 | `oversizedItemIsItsOwnBundle` / 「1 個で超える要素は単独」 | limit 10 で 3 個 → 3 束 |
+| `bundlesRespectItemLimit` / 「itemLimit を渡すと文字数の余裕があっても件数で区切る（X-43）」 | `Self.five` を `limit: 1_000_000`（束ねない大きさ）・`itemLimit: 2` で束ね `[[s0,s1],[s2,s3],[s4]]` |
 | `goldenAsJSON(item:)` / 「golden llm_as_json」 | §5.0 の表（`GoldenAssert.matches`） |
 | `goldenBundles(item:)` / 「golden llm_bundles」 | §5.0 の表 |
 | `goldenBundlingGroupsHaveCases` / 「golden llm_as_json・llm_bundles のケースが在る」 | 空でない |
@@ -295,6 +299,7 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 | `foldTrimmedNotesArePrefixed` / 「束の Map の切り詰めは reduce1: を前置する」 | maxChars 400・overlap 0、300 スカラーの segment 3 本、Map の応答は summary 150 スカラーの PARTIAL（1 個で 219、2 個で 437 > 400 なので 3 束）、束の Map の応答は 1 つ目が `PARTIAL("f1", kp: ["k"]×25)`、2・3 つ目が `PARTIAL("f2")`・`("f3")`（切り詰め後の 3 個の asJSON は 290 ≤ 400）、最後に FINAL | 呼び出し 7 回、trimmed `["reduce1: key_points: 25 -> 20"]` |
 | `depthLimitStopsRecursion` / 「段数の上限で LLM_INVALID_JSON」 | maxChars 50・overlap 0、40 スカラーの segment 3 本、すべての Map の応答が summary 60 スカラーの PARTIAL | `.failure(StageFailure(.llmInvalidJSON, "多段 Reduce が上限 3 段に達しました"))`、呼び出し 9 回（3 + 3 + 3）、reduce の要求 0 回 |
 | `transportFailureInReduceIsReturned` / 「Reduce の接続失敗はそのまま」 | Reduce が `.failure(unavailable)` | その failure |
+| `manyItemsFoldEvenWhenBodyIsSmall` / 「reduceMaxItems（4）を超える件数は本文が小さくても束ねる（X-43）」 | 5 チャンク（時間で 5 分割）、Map の応答は `PARTIAL("s0")`〜`("s4")`（5 個の asJSON は `maxCharsPerRequest`（既定 20000）以下）、束の Map の応答は `PARTIAL("f1")`・`PARTIAL("f2")`、最後に FINAL | 呼び出し 8 回（map×5 → 束の map×2（束は `[s0,s1,s2,s3]` と `[s4]`）→ reduce）、reduce の user は 2 個の中間結果の配列（件数が `reduceMaxItems` 以下になってから単一パスへ進む） |
 | `ceMaxCharsPerRequest` / 「CE llm.maxCharsPerRequest を小さくすると Map → Reduce になる」 | 100 スカラーの segment 2 本（時刻は近い。1 本目は `a`、2 本目は `b` の繰り返し）を、既定（20000）と `maxCharsPerRequest = 150` で。Map の応答は `PARTIAL("朝")`・`PARTIAL("夜")` | 既定は呼び出し 1 回（analyze）、150 では 2 チャンク（200 > 150）になり呼び出し 3 回（map・map・reduce）。Reduce の user は `multipleChunksRunMapThenReduce` と同じ配列（139 スカラー ≤ 150 なので束ねない） |
 | `ceMaxSecondsPerRequest` / 「CE llm.maxSecondsPerRequest を小さくすると時間で割れる」 | 短い segment を 0 秒と 1800 秒に置き、既定（3600）と `maxSecondsPerRequest = 600` で | 既定は呼び出し 1 回、600 では 3 回（map・map・reduce） |
 | `ceChunkOverlapChars` / 「CE llm.chunkOverlapChars が次のチャンクの重なりを決める」 | `maxCharsPerRequest = 10`、`aaaa@0`・`bb@10`・`cccccc@20`、`chunkOverlapChars = 3` と `0` | 3 では 2 つ目の map の user が `bb\ncccccc`、0 では `cccccc`（§5.1 の D・C と同じ境界） |
@@ -320,6 +325,8 @@ T-25 のグループを使う（名前と中身は T-25 §4.4・§4.5・§4.9 �
 | 束の Map を最終形のスキーマで検証する | `oversizedReduceInputFoldsFirst` |
 | `reduceMaxDepth` の比較を `>` にする | `depthLimitStopsRecursion` |
 | `asJSON` で `due: null` を省く | `asJSONMatchesVoicedock`、`goldenAsJSON` |
+| `reduce` の単一パス判定から件数の条件を外す（X-43） | `manyItemsFoldEvenWhenBodyIsSmall` |
+| `ReduceBundling.bundles` の `itemLimit` の判定を消す | `bundlesRespectItemLimit` |
 
 ## 7. 受け入れ条件
 
