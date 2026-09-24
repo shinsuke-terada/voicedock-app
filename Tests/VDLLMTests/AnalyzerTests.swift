@@ -325,6 +325,30 @@ struct AnalyzerTests {
         #expect(!harness.kinds(calls).contains(.reduce))
     }
 
+    @Test("reduceMaxItems（4）を超える件数は本文が小さくても束ねる（X-43）")
+    func manyItemsFoldEvenWhenBodyIsSmall() async throws {
+        let harness = try AnalyzerHarness()
+        let segs = (0..<5).map { ChunkFixtures.seg("m\($0)", $0 * 5000) }
+        let (outcome, calls) = await harness.run(segs) { kind, user in
+            switch kind {
+            case .map where user.hasPrefix("["):
+                return user.contains("\"s0\"") ? AnalyzerHarness.partial("f1") : AnalyzerHarness.partial("f2")
+            case .map:
+                guard let n = ["m0", "m1", "m2", "m3", "m4"].firstIndex(where: { user.hasPrefix($0) }) else {
+                    return AnalyzerHarness.unexpected
+                }
+                return AnalyzerHarness.partial("s\(n)")
+            case .reduce: return AnalyzerHarness.final()
+            default: return AnalyzerHarness.unexpected
+            }
+        }
+        #expect(harness.kinds(calls) == Array(repeating: AnalyzerHarness.Kind.map, count: 7) + [.reduce])
+        try #require(calls.count == 8)
+        let empty = #""key_points":[],"tasks":[],"decisions":[],"ideas":[]}"#
+        #expect(calls[7].user == #"[{"summary":"f1","# + empty + #",{"summary":"f2","# + empty + "]")
+        #expect(AnalyzerHarness.success(outcome)?.partials.map(\.summary) == ["s0", "s1", "s2", "s3", "s4"])
+    }
+
     @Test("Reduce の接続失敗はそのまま")
     func transportFailureInReduceIsReturned() async throws {
         let harness = try AnalyzerHarness()
