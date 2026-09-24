@@ -1092,3 +1092,69 @@ L01-longday の 26 回の要求の内訳（設計どおり）: 18 個のチャ�
 **判定: ✅ PASS。** `Resources/ModelCatalog.json` の `qwen3-30b-a3b-instruct-2507-q4_k_m` を `verified: true` にした（本 PR）。v1.0 で選べる LLM が 1 つ以上になった。
 
 4B（`custom:3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597`）は未再試験のまま `verified: false`。再試験するかは任意（v1.0 の前提は満たした）。
+
+## 16. P0-13 話者分離（argmax-cli。issue #104）
+
+実施: 2026-09-24（エージェント。実機には触れていない。音声はすべて `~/VoiceDockPoC/diarize` の合成音声）。
+機種 / OS: `Apple M4 Pro` / `68719476736` / macOS `26.6.2`。Swift `6.4`（Xcode 27.0）。
+
+### 16.1 ビルド
+
+| 項目 | 値 |
+|---|---|
+| ソース | `https://github.com/argmaxinc/argmax-oss-swift.git` タグ `v1.1.0`、コミット `1e2a163736dfa5a198e637ae44c114e1c6d5cc2d`（MIT） |
+| コマンド | `swift build -c release --product argmax-cli --arch arm64` |
+| 所要 | 25 秒（`Build complete! (24.93秒)`） |
+| 成果物 | `.build/out/Products/Release/argmax-cli`（6,684,872 バイト） |
+| `otool -L` | `/System/Library/Frameworks/*`（Foundation・AVFoundation・AVFAudio・Accelerate・AudioToolbox・CoreAudio・CoreFoundation・CoreGraphics・CoreML・CoreMedia・CoreVideo・CryptoKit・NaturalLanguage）と `/usr/lib/*`（libobjc・libSystem・libc++・`/usr/lib/swift/libswift*`）だけ。`Vendor/check-linkage.sh` の規則に合う |
+
+`argmax-cli diarize --help`（抜粋）:
+
+```text
+USAGE: argmax-cli diarize --audio-path <audio-path> [--rttm-path <rttm-path>] [--model-path <model-path>] [--model-repo <model-repo>] [--model-token <model-token>] [--download-model-path <download-model-path>] [--num-speakers <num-speakers>] [--cluster-distance-threshold <cluster-distance-threshold>] [--use-exclusive-reconciliation] [--disable-full-redundancy] [--verbose]
+  --model-path <model-path>
+                          Path of local model files (skips download)
+```
+
+### 16.2 モデル
+
+`argmaxinc/speakerkit-coreml`（CC-BY-4.0、ゲートなし）のコミット `556fc52a13327837688f02289457cded017802e9` から、既定の 3 つ（`speaker_segmenter/pyannote-v3/W8A16`・`speaker_embedder/pyannote-v3/W8A16`・`speaker_clusterer/pyannote-v4/W32A32`）の README.txt 以外の 20 ファイル（合計 13 MB）を `resolve/<SHA>/<path>` で取得した。sha256 は `Vendor/speaker-models.sha256`（T-46）に写す。
+
+### 16.3 オフライン・速度
+
+ネットワークを `sandbox-exec`（`(deny network*)`）で断って実行した:
+
+```text
+$ /usr/bin/time -l sandbox-exec -f nonet.sb argmax-cli diarize --audio-path synth/conv16k.wav --model-path models --rttm-path synth/out.rttm --use-exclusive-reconciliation
+exit=0
+        4.65 real         4.25 user         0.14 sys
+           621002752  maximum resident set size
+SPEAKER conv16k 1 0.000 2.224 <NA> <NA> A <NA> <NA>
+SPEAKER conv16k 1 2.326 11.205 <NA> <NA> A <NA> <NA>
+```
+
+- **✅ `--model-path` を渡せばネットワークに出ない**（RTTM が書け、終了 0）
+- **✅ 速度**: 321.7 秒の音声が 4.65 秒（モデルの読み込み込み。約 69 倍速）。最大常駐 621 MB。30 分の Part で 30 秒前後の見込み
+- 出力の RTTM は 1 行 1 区間: `SPEAKER <file> 1 <開始秒> <長さ秒> <NA> <NA> <話者> <NA> <NA>`。話者名は `A`・`B`…
+
+### 16.4 精度（合成音声。参考）
+
+macOS の `say` の日本語の声 3 つ（Kyoko・Reed・Shelley）で 12 発話 × 3 回の会話（321.7 秒、発話の間 0.6 秒）を作り、10 ms のフレームで採点した（重なりの最適な対応付け、カラーなし）:
+
+| 実装 | 条件 | DER | 見逃し | 誤検出 | 話者の取り違え | 推定人数 |
+|---|---|---|---|---|---|---|
+| SpeakerKit（argmax-cli） | 既定（exclusive） | 55.1% | 3.8% | 0.9% | 50.4% | 5 |
+| SpeakerKit | `--num-speakers 3` | 56.6% | 3.8% | 0.9% | 52.0% | 3 |
+| SpeakerKit | 閾値 0.4 / 0.8 | 61.5% / 60.3% | 4.1% / 3.8% | 0.9% | 56.5% / 55.6% | 6 / 4 |
+| FluidAudio v0.17.1（同じ community-1 の移植） | offline 既定 | 60.3% | 3.9% | 0.8% | 55.6% | 4 |
+
+- 発話の区切り（境界）は正解と 0.1 秒以内で合う。落ちているのは「誰か」の振り分け（クラスタリング）
+- **同じモデルの別実装も同じように落ちる**ので、合成の声（同じ系統の声）が見分けにくいためで、実装の問題ではないと判断した。人の声での精度は測っていない
+- **利用者の決定（2026-09-24）**: 話者分離はパネルでオン／オフでき既定はオフなので、実際の録音での精度を測ってから決めることはせず最後まで実装し、使うかどうかは利用者が決める
+
+### 16.5 whisper の区間との対応
+
+同じ音声を `whisper-cli`（v1.9.4、large-v3-turbo-q5_0、VAD あり。本番と同じ argv）にかけた:
+
+- **✅ VAD ありでも区間の時刻は元の音声の時刻**（例: 正解 150.1–154.4 秒の発話が 150.13–154.29）
+- whisper の区間は発話の切れ目で分かれないことがある（29 区間のうち 9 区間が 2 人以上にまたがった。発話の間が 0.6 秒の合成音声）。`-ml 30` で区間を短くしても 41 区間のうち 9 区間で変わらなかったので、**`-ml` は使わない**。区間には重なりの最も長い話者を 1 人付ける（PLAN §8.4.1）。区間の中で話者が替わると、その区間は多い側の話者になる（既知の制約）

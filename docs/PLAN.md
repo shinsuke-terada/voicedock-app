@@ -121,10 +121,11 @@ voicedock は 1,500 本超のテストと 56 版の仕様改訂で、多くの�
 - 元音声の削除（三重ロック。既定はすべて掛かった状態）
 - モデル管理（Whisper / VAD / LLM の選択・ダウンロード・SHA-256 検証・ローカルファイル取り込み）
 - 診断（パネルの「診断を実行」）
+- 話者分離（pyannote community-1 の CoreML 版 `argmax-cli` を子プロセスで起動。パネルでオン／オフ、**既定はオフ**。§8.4.1。F-89）
 
 ### 1.3 v1 に含めない（非目標）
 
-課金・ライセンス認証、自動アップデート、通知センター、話者識別、送信機 2 台の実機保証（コードは複数台を扱う）、
+課金・ライセンス認証、自動アップデート、通知センター、話者識別（声から人の名前を当てること。話者を A・B… に分ける話者分離は §1.2 に含める。F-89）、送信機 2 台の実機保証（コードは複数台を扱う）、
 受信機側ストレージ、Mac App Store 配布（サンドボックス下で 2-B が成立するか未検証）、Intel Mac、voicedock からの乗り換え（§8.13。F-60）、voicedock との同時稼働（F-61）。
 
 ### 1.4 判断が割れたときの優先順位（voicedock §1.3 を継承）
@@ -312,6 +313,8 @@ Makefile のターゲット（CI と手元で同じコマンドを使う）:
 | 言語モード | Swift 6（`swiftLanguageModes: [.v6]`）、strict concurrency complete。警告はエラー（自分のターゲットに `.treatAllWarnings(as: .error)`。依存には掛けない） |
 | デプロイ対象 | `.macOS("15.0")`、arm64 のみ |
 | サードパーティ依存 | **2 つだけ**: `GRDB.swift`（SQLite。`exact: "7.11.1"`）、`Yams`（frontmatter の**読み取り**だけ。書き出しは自前。`exact: "6.2.2"`）。T-01 で最新の版を確かめて `exact:` で固定する |
+| argmax-oss-swift（話者分離の `argmax-cli`。F-89） | タグ `v1.1.0`、コミット `1e2a163736dfa5a198e637ae44c114e1c6d5cc2d`（MIT）。**アプリの SwiftPM の依存にはしない**（上の 2 つのまま）。whisper-cli と同じく `Vendor/build-argmax.sh` がソースからビルドした実行ファイルを `Contents/Helpers/` に置く（§11.2） |
+| 話者分離のモデル | Hugging Face `argmaxinc/speakerkit-coreml` のコミット `556fc52a13327837688f02289457cded017802e9`（CC-BY-4.0）の 20 ファイル（13 MB）。`Vendor/speaker-models.sha256` の sha256 で照合し、`Contents/Resources/SpeakerModels/` に**同梱**する（ダウンロードしない。§11.2） |
 | 整形・lint | ツールチェーン同梱の `swift format`（`swift format lint --strict --recursive Sources Tests`。**存在しないパスを渡しても 0 で終わる**ので Makefile は先に両ディレクトリの存在を確かめる） |
 | whisper.cpp | **`v1.9.4`**（voicedock と同じ。コミット `927cfce34f31707e17f2bff35c349632fb9e2c3a`。voicedock が記録した `7d75b149…` は注釈付きタグのオブジェクトの SHA）。偽 whisper の JSON 形がこの版に合わせてある |
 | llama.cpp | T-03 時点のリリースタグ 1 つ（`b<番号>`。2026-09-18 時点の最新は `b11033`、コミット `8ed1a55efcd7424d2c592f6cbc9f97756db1d74d`）。`Vendor/versions.env` に記録 |
@@ -813,7 +816,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 ### 6.1 方針
 
 - `AppConfig`（`Codable, Equatable, Sendable` の入れ子の struct）。JSON で `<HOME>/config.json`。**アプリが書く**（利用者が手で書く前提ではない）
-- 先頭に `"schemaVersion": 1`。版が上がるときは `ConfigMigrator` が旧版から移行する（キーを足す PR で再起動ループに落ちた教訓 CFG-01 の置き換え）。v1 の移行器は「1 ならそのまま」だけを持つ
+- 先頭に `"schemaVersion": 2`。版が上がるときは `ConfigMigrator` が旧版から移行する（キーを足す PR で再起動ループに落ちた教訓 CFG-01 の置き換え）。移行器は「2 ならそのまま」と「1 → 2」（F-89）を持つ。1 → 2: `transcription` が辞書で `diarization` を持たなければ `"diarization": {"enabled": false}` を足し、`schemaVersion` を 2 にする（`transcription` が辞書でないときは足さずに版だけ上げ、手順 2 の CV-39 に任せる）。移行した値はメモリの上だけで、ファイルは次に `ConfigStore.update` が書くときに 2 になる（読むだけでは書き換えない）
 - **既定値は `AppConfig.defaults(timeZone:)` の 1 か所だけ**に書く。デコード時の欠落を既定値で埋めない（欠落は CV-39 違反）。例外は移行処理が明示的に足す場合だけ
 - 読み込みの手順（`ConfigLoader.load(data:catalog:reaperConfObservation:) -> ConfigLoadResult`）:
   1. `JSONSerialization` で辞書にする（失敗 → CV-39）
@@ -849,7 +852,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 
 ```json
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "timeZone": "<初回起動時の TimeZone.current.identifier>",
   "vault": { "path": null, "marker": ".obsidian" },
   "device": {
@@ -869,7 +872,8 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
     "whisperModelID": "large-v3-turbo-q5_0", "language": "ja", "threads": 0,
     "timeoutFactor": 3.0, "minTimeoutSeconds": 600, "maxTimeoutSeconds": 21600, "minChars": 1,
     "vad": { "enabled": true, "modelID": "silero-v5.1.2", "threshold": 0.5,
-             "minSpeechDurationMs": 250, "minSilenceDurationMs": 1000, "speechPadMs": 200 }
+             "minSpeechDurationMs": 250, "minSilenceDurationMs": 1000, "speechPadMs": 200 },
+    "diarization": { "enabled": false }
   },
   "llm": {
     "modelID": null, "contextSize": 32768, "temperature": 0.1, "topP": 0.9, "maxOutputTokens": 8192,
@@ -940,9 +944,9 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
   `llm.endpoint_env` / `model_env`、`llm.prompts.*`（プロンプトはバンドルの固定資源）、`cleanup.queue_root`、`cleanup.retain_transcript_days`（常に無期限）、`database.*`（busy_timeout は 10000 固定）、`logging.format`
 - 「受理されるのに効かない設定」を作らない（NOTE-01 / NOTE-02 / CFG-02）。**全キーに「そのキーを変えると振る舞いが変わる」テストを 1 本以上置く**（`ConfigEffectTests`。キーの一覧は `AppConfig` の定義から機械的に作り、テストの無いキーがあれば落ちる）
 
-### 6.3 GUI に出すのは 4 つだけ
+### 6.3 GUI に出すのは 5 つだけ
 
-Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動（SMAppService の状態であって `config.json` には持たない）。
+Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動（SMAppService の状態であって `config.json` には持たない）、話者分離（`transcription.diarization.enabled`。§8.4.1。F-89）。
 削除関連は有効化フロー経由でしか変えられない。それ以外は `config.json` を Finder で開くボタン（詳細）と「設定を読み直す」ボタンだけ。
 手で編集された場合は次回読み込みで検証し、違反なら設定エラー状態（6.1）。
 
@@ -969,7 +973,7 @@ Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動�
 | CV-30 | ロック 1 が食い違っていない: reaper.conf が読めるとき（`.valid`）、`cleanup.deleteSourceAudio == reaperConf.deleteSourceAudio`（どちら向きの食い違いも違反）。reaper.conf が無い・読めないときはこの規則を評価しない（不明は §8.9.2 が「要求を書かない」側に倒す）。違反は §6.1 の修復を先に試す | CONFIG_LOCK_MISMATCH | V-30 |
 | CV-32 | `TimeZone(identifier: timeZone) != nil` | CONFIG_INVALID_VALUE | V-32 |
 | CV-33 | `!(cleanup.deleteSourceAudio == true && device.mountMode == "ro")` | CONFIG_LOCK_MISMATCH | V-33 |
-| CV-39 | JSON として読め、全階層で必要なキーがすべて在り、型が合う（`schemaVersion` が 1 であることを含む） | CONFIG_INVALID_VALUE | voicedock の規則 ID `-` |
+| CV-39 | JSON として読め、全階層で必要なキーがすべて在り、型が合う（`schemaVersion` が 2 であること（1 は §6.1 の移行で 2 にする）を含む） | CONFIG_INVALID_VALUE | voicedock の規則 ID `-` |
 | CV-40 | `vault.path` が null か、`/` で始まる絶対パスの文字列（**存在は検査しない**。未接続の外付けは実行時のガード。§8.7） | CONFIG_INVALID_VALUE | 新規 |
 | CV-41 | `vault.marker` が空でなく、`/` を含まず、`.` でも `..` でもない（Unicode スカラー単位で見る） | CONFIG_INVALID_VALUE | 新規（X-18） |
 | CV-42 | `llm.modelID` が null か、カタログの LLM の ID か、`custom:<64 桁の小文字 16 進>` | CONFIG_INVALID_VALUE | 新規 |
@@ -1479,6 +1483,51 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
 - 診断 DR-04: `whisper-cli --help` の出力（stdout と stderr を連結）に VAD の 6 フラグ（`--vad`、`--vad-model`、`--vad-threshold`、`--vad-min-speech-duration-ms`、
   `--vad-min-silence-duration-ms`、`--vad-speech-pad-ms`）が**逐語で**在ること（**本アプリで強化**。voicedock doctor の D-7 は `--vad` の部分一致だけで、無くても notice だった）
 
+### 8.4.1 話者分離（任意。既定オフ。F-89・X-45）
+
+利用者の依頼（issue #104。2026-09-24 の決定: v1.0 に含める・パネルでオン／オフ・既定オフ・単語単位の時刻は使わない・表示は行頭の `**話者A**: `）。PoC は docs/POC.md の 16 章（P0-13）。
+
+- **方式**: pyannote community-1（セグメンテーション + WeSpeaker の埋め込み + VBx クラスタリング）を CoreML に移した Argmax SpeakerKit の CLI `argmax-cli`（§3.3・§11.2）を**子プロセスで起動**し、出力の RTTM（話者の区間）を whisper の区間（§8.4 の segments）に時刻で重ねて、区間ごとに話者を 1 人付ける。pyannote の本家は Python なので使わない（§3.3 の依存と「Python を持ち込まない」）。whisper.cpp の `-tdrz` は英語の専用モデルだけ、`-di` はステレオの左右で分ける方式で、DJI Mic 3 の原本はモノラル・16 kHz も 1ch なのでどちらも使えない
+- **設定**: `transcription.diarization.enabled`（既定 `false`。§6.2）。パネルの「一般」のトグル（§8.12 の 6）が `ConfigStore.update` で書く。**オンにした後に文字起こしする Part から効く**（済んだ Part の transcript と Raw は書き直さない）
+- **起動する場所**: `Transcriber.transcribe`（§8.4 の呼び手の手順 5〜8）の中。生 JSON を読み（§8.4 の 7）、F-82 の「直した transcript」の判定を通った後、正規化 transcript を書く（§8.4 の 8）**前**。
+  呼び手（`ensureTranscribed`）は設定がオンのときだけ `Diarizer` を `Transcriber` に渡す。起動するのは `Diarizer` が渡され、text のスカラー数が `minChars` 以上で、segments が 1 つ以上のときだけ（無音の Part には起動しない）。冪等（§8.4 の 4）で whisper を起動しなかったときも起動しない
+- **argv**（先頭の語は実行ファイルで argv に含めない。環境変数は `ProcessEnvironment.standard`。起動は `ProcessRunner.run`）:
+
+```text
+<bundle>/Contents/Helpers/argmax-cli diarize --audio-path <HOME>/staging/<slug>/audio16k.wav
+  --model-path <bundle>/Contents/Resources/SpeakerModels --rttm-path <HOME>/staging/<slug>/diarization.rttm
+  --use-exclusive-reconciliation
+```
+
+  - `--model-path` を渡すと SpeakerKit はダウンロードしない（ネットワークを断っても動くことを P0-13 で確かめた）。`--use-exclusive-reconciliation` は同時に話す区間を 1 人に絞る（区間への割り当てを単純にする）。`--num-speakers` は渡さない（人数は自動で推定する）
+  - タイムアウト: `Int(min(max(duration × 0.5, 120), transcription.maxTimeoutSeconds))`。duration 不明なら `maxTimeoutSeconds`（P0-13 では約 69 倍速。30 分で 30 秒前後）
+  - 起動の前に前回の `diarization.rttm` を `SafeUnlink`（`.staging`、無ければそのまま）で消し、消せなければ起動しない（`reason=rttm_unreadable`）。どの経路でも最後に消す
+- **結果の写し方（失敗しても Part を失敗させない**。話者なしの transcript を書いて先へ進む。削除の根拠（Raw の本文・transcript の text）は話者の有無で変わらない）:
+
+| 事象 | 扱い | ログ（`recording_key` を付ける） |
+|---|---|---|
+| 設定がオフ | 起動しない | なし |
+| `argmax-cli` が通常ファイルで実行できない、または `SpeakerModels` がディレクトリでない | 起動しない。話者なし | `diarization_failed reason=helper_missing`（WARNING） |
+| 起動の失敗（`spawnFailed`。ECANCELED を除く） | 話者なし | `diarization_failed reason=spawn_failed` |
+| タイムアウト（プロセスグループごと kill） | 話者なし | `diarization_failed reason=timeout` |
+| 終了コード ≠ 0 / シグナル | 話者なし | `diarization_failed reason=exit_<n>` / `reason=signal_<n>` |
+| アプリの終了で止めた・閉じた後の拒否（§8.4 の F-82 と同じ判定） | `TranscribeOutcome.stopped`（transcript を書かない。行を動かさない） | なし |
+| 終了 0 だが RTTM が無い・読めない、前回の RTTM を消せない | 話者なし | `diarization_failed reason=rttm_unreadable` |
+| 成功 | 話者つきの transcript | `diarization_completed speakers=<n> elapsed_s=<x>`（INFO。`elapsed_s` は小数 1 桁） |
+
+  ログは呼び手が `transcription_completed` の**後**に出す（`TranscribeMetrics.diarization`）。無音（NO_SPEECH_DETECTED）・失敗・冪等の Part では出さない
+- **RTTM の読み方**（`RTTMParser`）: 改行で分け、strip して空の行を飛ばす。各行を空白（連続は 1 つ）で分けて 8 列以上、1 列目が `SPEAKER`、4 列目（開始秒）と 5 列目（長さ秒）が有限の 10 進の数で開始 ≥ 0・長さ ≥ 0、8 列目（話者）が空でない。1 行でも合わなければ全体を「読めない」にする。0 行は「話者の区間なし」（成功。`speakers=0`。全区間が話者なし）
+- **割り当て**（`SpeakerAssigner`）: whisper の各区間 `[start, end]` について、RTTM の話者ごとの重なり `Σ max(0, min(end, t.end) − max(start, t.start))` が最大の話者。同点は RTTM で先に出た話者。
+  重なりが 0 なら、区間との隔たり `max(t.start − end, start − t.end, 0)` が 1.0 秒以下で最も近い RTTM の行の話者（同点は先の行）。それも無ければ話者なし
+- **ラベル**: 割り当てた話者を、区間の順に初めて出た順で `A`〜`Z`（27 人目からは `S27`・`S28`…）に付け替える。表示は `話者` + ラベル（`SpeakerLabel`。VDCore。CR-06）。
+  **ラベルは Part ごとに振り直す**（Part をまたいで同じ人を同じラベルにするには埋め込みの照合が要るので v1.0 では行わない。既知の制約）。whisper の 1 区間の中で話者が替わると、その区間は重なりの多い側の話者になる（単語単位の時刻は使わない。P0-13）
+- **正規化 transcript**: 区間の `speaker`（ラベルの文字列）は**値があるときだけ** `text` の後に書く（`{start, end, text, speaker}`）。話者なしの transcript は §8.4 の形とバイト単位で同じ。
+  読み戻しは `speaker` が在れば文字列であること（違えば読めない）。Session の統合（§8.5）は `AbsoluteSegment.speaker` に運ぶ。指紋（§8.5）は `speaker` の在る区間にだけ `"speaker"` を足す（話者なしの Session の指紋は変わらない）
+- Raw ノート（§8.6）と LLM のチャンク（§8.5）への反映はそれぞれの節。Daily ノートの書式は変えない
+- **ログのイベントと診断**（付録 A.4 の列と §8.11 の表は、SPEC とコードの同期のテストがあるので、**実装の PR（T-47・T-49）が PLAN・SPEC・コードを同時に直す**。値はここが正）:
+  - 付録 A.4 のイベントの列: `transcription_completed transcription_failed` の次の行に `diarization_completed diarization_failed`。フィールド: `diarization_completed recording_key=… speakers=<n> elapsed_s=<x>`（INFO）/ `diarization_failed recording_key=… reason=helper_missing|spawn_failed|timeout|exit_<n>|signal_<n>|rttm_unreadable`（WARNING）。`LogKey` に `speakers` を足す（T-47）
+  - §8.11 の表の DR-06 の次の行: `| DR-18 | 7.5 | 話者分離（§8.4.1。F-89）: 設定がオフなら skip。オンなら argmax-cli が在り実行でき、argmax-cli diarize --help に --audio-path・--model-path・--rttm-path・--use-exclusive-reconciliation が逐語で在り、SpeakerModels がディレクトリである。欠ければ notice「話者分離の部品がありません（<欠けたもの>）。話者なしで文字起こしします」（失敗しても文字起こしは止まらないので fail にしない） | notice |  |`（フラグと `SpeakerModels` はコードスパン）。件数の注記は「16 + DR-09 = 17」（T-49）
+
 ---
 
 ### 8.5 VDLLM（llama-server と解析）
@@ -1562,6 +1611,7 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
   重なり: 末尾から、合計スカラー数が `chunkOverlapChars` を超える手前まで（ただし最低 1 つ）の segment。現在の全部になるなら先頭の 1 つを落とす。**両方超えたら重ねない**（LLM-05）
   最後の残りは、直前のチャンクの segment の部分集合（重なりだけ）でなければ確定する
 - チャンク本文は text を `\n` でつないだもの。`start_at = 最初の at`、`end_at = end_at の最大`。**時刻は LLM に渡さない**
+  - 話者分離（§8.4.1。F-89）: `speaker` の在る区間は `話者<ラベル>: <text>`（`SpeakerLabel.display` + `": "`。コロンは半角）として並べる。チャンクの切り方の文字数は従来どおり text だけを数える。話者なしの区間は従来のまま（話者なしの Session の要求はバイト単位で同じ）
 - チャンク 0 → `SESSION_MERGE_FAILED`「チャンクが 0 個です（統合結果が空）」、1 → analyze 1 回（重複除去なし。Timeline は単一パス）、2 以上 → 各チャンクを Map（1 つでも失敗したら即終了）→ Reduce
 - Reduce（深さ 1 から）: 中間結果の配列を PyJSON のコンパクト形式（キーはフィールドの並び、空配列も `due: null` も出す）にした本文が `maxCharsPerRequest` 以下**かつ**件数が `reduceMaxItems`（4。X-43）以下か、中間結果が 1 個なら
   REDUCE プロンプトで最終形 → 重複除去。そうでなく深さ 3 以上なら `LLM_INVALID_JSON`「多段 Reduce が上限 3 段に達しました」。
@@ -1661,6 +1711,16 @@ for part in 載せる Part:
     chunk.append(text)
   if chunk 非空: lines += [chunk を " " でつなぐ, ""]
 本文 = escapeBody(整形(lines))
+```
+- **話者分離（§8.4.1。F-89・X-45）**: Part の区間に `speaker` が 1 つでも在れば、その Part では `chunk` を 1 段落にせず、**話者の替わり目で行を分ける**。同じ `###` の間で、続けて同じ話者（話者なし同士も同じとみなす）の区間の text を " " でつなぎ、`**話者A**: <つないだ text>`（`**` + `SpeakerLabel.display` + `**: `）の行にする（話者なしは text だけの行）。行は "\n" でつなぎ（空行を挟まない）、塊の後に "" を 1 つ足す。`###` の差し込みの規則と `##` の見出しは同じ。**話者の無い Part は上の擬似コードのまま**（voicedock とバイト単位で同じ。golden を変えない）。例:
+
+```text
+### 10:15:02
+
+**話者A**: 今日の打ち合わせを始めます。
+**話者B**: よろしくお願いします。資料は…
+**話者A**: では最初の議題から。
+
 ```
 - 見出しの時刻は**実際の segment の時刻**（NOTE-04）。本文の無い Part でも `##` 見出しは出る。Part が 1 本 RAW_SAVED に届くたびに、その日の分を全体書き直す
 - **トリガが載らない Raw を保存済みにしない**（F-75・X-38）: 書き直しを起こした Part（トリガ）が載せる Part に居なければ（transcript が読めない・`started_at` が読めない）、Raw を書かずに
@@ -2539,7 +2599,7 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
      読むときは、無い・壊れた・`schema` が 1 でないファイルは既定、未知のキーは無視、`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にする（「今はしない」を失わない）
 4. **保存先（Vault）**: フォルダ名の 1 行（押すと「変更…」。`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）
 5. **モデル**: 1 モデル 1 行。Whisper（状態・入手）、LLM（カタログから選ぶ `Picker` を `Menu` の中に。メモリ不足のものは選べない理由付き、「ファイルから読み込む…」も `Menu` の中、進捗バー、キャンセル）
-6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）。状態の見出しの ⚙ から開く「設定」の画面に置く（「はじめに」の④が未完了の間は「はじめに」のカードにも置く）
+6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）と「話者分離（誰が話したか）」トグル（`transcription.diarization.enabled` を `ConfigStore.update` で書く。§8.4.1。F-89）。状態の見出しの ⚙ から開く「設定」の画面に置く（「はじめに」の④が未完了の間は「はじめに」のカードにも置く）
 7. **元音声の削除**（主画面は「› 元音声の削除  有効／無効」の行。押すと別の画面）: §8.9.8 のロック表示・事前確認・有効化（赤いボタンの 3 秒長押し）・無効化（確認なしの 1 クリック）・無音と重複の削除（同じ長押し）
 8. **詳細・診断**（主画面は行。押すと別の画面。状態の詳細はこの画面にいる間だけ読む）: 状態の詳細（下記）、診断を実行・LLM の疎通確認、過去分の削除・手動で消した分（§8.9.9）、ログと設定ファイルを Finder で表示、設定を読み直す、版。
    状態の詳細は画面に入ったときと、同じ画面での「設定を読み直す」・後追いの実行の返事の後に読み直す。「再試行」は Worker に要求を積むだけで DB を書き換えるのは次の tick なので、
@@ -2991,6 +3051,10 @@ cmake --build build --config Release --target llama-server -j       # → build/
 - `LLAMA_CURL` は b11033 で廃止済み（指定しても無視される）。ダウンロード能力は `LLAMA_OPENSSL=OFF`（HTTPS を無くす）と実行時の `--offline` で断つ。`LLAMA_USE_PREBUILT_UI=OFF` はビルド中に HF から UI を落とさないため
 - **whisper.cpp のリリース・llama.cpp の配布バイナリは使わない**（dylib 構成で ad-hoc 署名のため。ソースから静的にビルドする）
 - `otool -L` の出力が `/usr/lib/` と `/System/Library/` だけであること（libssl・libcurl・`@rpath` を含まない）を `verify-bundle.sh` が確かめる（静的リンクの確認）
+- **話者分離（F-89）**: `Vendor/build-argmax.sh` が argmax-oss-swift（`ARGMAX_OSS_REF=v1.1.0`・`ARGMAX_OSS_SHA=1e2a163736dfa5a198e637ae44c114e1c6d5cc2d`）を同じ手順（clone → SHA の照合）で取り、
+  `swift build -c release --product argmax-cli --arch arm64` で `Vendor/build/bin/argmax-cli` を作る（Swift のランタイムは `/usr/lib/swift/` なので `check-linkage.sh` の規則のまま通る。P0-13）。`argmax-cli diarize --help` を `Tests/Fixtures/argmax-cli-diarize-help.txt` にコミットする。
+  `Vendor/fetch-speaker-models.sh` が `SPEAKER_MODELS_REPO=argmaxinc/speakerkit-coreml`・`SPEAKER_MODELS_SHA=556fc52a13327837688f02289457cded017802e9` の `resolve/<SHA>/<path>` から `Vendor/speaker-models.sha256` に載る 20 ファイルを取り、sha256 を照合して `Vendor/build/SpeakerModels/` に置く（1 つでも違えば全体を消して失敗）。
+  `make-app.sh` が `Contents/Helpers/argmax-cli` と `Contents/Resources/SpeakerModels/`（20 ファイルと出典の `NOTICE.txt`）を入れ、`bundle-manifest.txt` に全部を載せる。モデルは CC-BY-4.0 なので出典（pyannote community-1・Argmax）を `NOTICE.txt` と README に書く
 
 ### 11.3 署名・公証・dmg（`make release`。手元の Mac で実行）
 
@@ -3103,9 +3167,16 @@ cmake --build build --config Release --target llama-server -j       # → build/
 | T-40 | 有効化・無効化フロー（DeletionEnabler）と常時表示 | | all-or-nothing、失敗時の巻き戻し、`ENABLE` 以外で通らない（UI は 3 秒の長押し。F-65）、無効化は確認なし |
 | T-41 | 後追い（過去分・手動で消した分） | | プレビュー、対象 1 件以上で試す |
 | T-42 | 実機 E2E（削除 ON）: E2E-10, 11, 17 と、E2E-01〜09 を削除 ON で再実行 | docs/E2E.md | **ゲート（12.4）** |
+| **Phase 8.5: 話者分離（F-89。v1.0 に含める）** ||||
+| T-46 | 話者分離の外部バイナリとモデル（`build-argmax.sh`・`fetch-speaker-models.sh`・.app への同梱） | argmax-cli, SpeakerModels | check-linkage、`--help` の fixture、verify-bundle |
+| T-47 | VDCore: 話者の型・設定キーと schemaVersion 2・ログ・AppPaths | TranscriptSegment.speaker, SpeakerLabel | 話者なしのバイト一致、1 → 2 の移行 |
+| T-48 | VDTranscribe: argmax-cli の起動・RTTM・割り当て | Diarizer, RTTMParser, SpeakerAssigner | 偽 argmax-cli、失敗しても話者なしで成功 |
+| T-49 | VDPipeline: 文字起こしの段への配線・統合・Raw の Part・ログ・DR-18 | | オンの Part に `diarization_completed`、オフで起動しない |
+| T-50 | VDNotes / VDLLM: Raw の話者の行とチャンクの前置き | RawNote, Chunker | 話者なしの golden 一致、`**話者A**:` の行 |
+| T-51 | UI: 「一般」のトグルと README の出典 | GeneralSection | トグルが設定を書く、README の文書テスト |
 | **Phase 9: v1.0** ||||
 | T-43 | README（利用者向け: 導入・TCC・削除の有効化と戻し方・既知の制約）と文書テスト | | 文書テスト |
-| T-44 | v1.0 のリリース | dmg | verify-bundle、E2E-06（1 日運用）の記録 |
+| T-44 | v1.0 のリリース | dmg | verify-bundle、E2E-06（1 日運用）の記録。T-46〜T-51（話者分離）の後 |
 
 ### 12.4 削除のゲート（Phase 8 の完了条件。緩めない）
 
@@ -3632,6 +3703,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | X-42 | `INCLUDE_VOLUMES` の既定は空（「改名した瞬間に無言で検出されなくなるのを避けるため」。helper/helper.example.conf:4-8） | `device.includeVolumes` の既定は `["DJIMIC3"]`（既存の `config.json` の値は変えない。§6.2）。名前が合わないが録音のフォルダがあるボリュームは取り込まずに「はじめに」の⑤で改名を案内する（§8.1 規則 1） | 利用者の決定（2026-09-23。F-81）。ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすと、録音の写しを入れたバックアップ用のメモリが DUPLICATE_CONTENT → 根拠 B で消されうる。voicedock が避けた「無言で検出されなくなる」は案内で補う |
 | X-43 | `reduce_phase` は本文の文字数だけで単一パス Reduce にするか決める（`_bundles` も文字数だけで束ねる） | 本文の文字数に加えて、件数が `reduceMaxItems`（4）を超えたら束ねる（単一パスは文字数以下**かつ**件数 4 以下のときだけ。`_bundles` も文字数か件数のどちらかで区切る） | 2026-09-24。4B・30B の受け入れ試験（10 時間・220,000 文字）で、18 個の中間結果を 1 回でまとめる最終 Reduce が壊れた JSON になった（`max_tokens=4096` に収まらず切れる。修復も同じ枠なので直らない）。voicedock にも同じ弱点があるが（`git show d3d595e:src/voicedock/llm.py` の `reduce_phase`・`strip_think` のコメント「`max_tokens` で切られた場合にこうなる」）、実機で確かめたのは今回が初めて。3 個の Reduce（s09-allhands）は壊れておらず、4 を上限にする
 | X-44 | `max_output_tokens: 4096`（config/config.example.yaml:98） | `maxOutputTokens` の既定を **8192** に | 2026-09-24。30B の受け入れ試験（220,000 文字）で、X-43 の畳み込みとは別に、1 チャンク（約 1〜1.5 万文字）を要約するだけの map 呼び出しが `LLM_INVALID_JSON` で落ちた（18 個中 15 個目あたり）。スキーマの上限（タスク最大 50 件×500 文字など）を素直に計算すると 4096 では足りないことがある。`CV-51`（`contextSize >= maxCharsPerRequest + maxOutputTokens + 2048`）の範囲で、既定の `contextSize`（32768）・`maxCharsPerRequest`（20000）のまま上げられる上限は 10720。倍の 8192 にする（利用者の決定）。内容が特に濃いチャンクでは、上げても稀に失敗しうることは許容する（利用者の決定。§8.5 の `LLM_INVALID_JSON` は次の再評価まで待つ既定のまま変えない） |
+| X-45 | 話者分離なし（Raw は段落だけ） | 話者分離（`argmax-cli`。パネルでオン／オフ、既定オフ）。オンの Part は transcript の区間に `speaker`、Raw は `**話者A**: ` の行、LLM のチャンクは `話者A: ` を前に付ける（§8.4.1・§8.5・§8.6） | 2026-09-24。利用者の依頼（issue #104）。**オフのときの出力（transcript・Raw・Daily・指紋・LLM の要求）は voicedock とバイト単位で同じ**（golden を変えない） |
 
 **意図して変えないもの**（voicedock の実装どおりにする。SPEC の記述と違っても）: frontmatter の文字列を常に引用、Timeline の区切り（Map-Reduce はチャンク単位）、
 Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を確かめない、`recorded` は除外 Part を含む、重複除去は Reduce 経路だけ、
@@ -3753,3 +3825,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-86 | 誤 | §10.6・付録 B.3・P0-07・P0-09 | （2026-09-24。利用者の決定。4B の受け入れ試験の後）「1 日分」の想定を **16 時間・約 350,000 文字から 10 時間・約 220,000 文字**に下げた。音声は 30 分ごとに区切られ、16 時間しゃべり続ける使い方は無い。比率は変えない（P0-09 の見積式 10 × 3600 × 4.6 ＝ 165,600 字の約 1.33 倍。以前は 16 時間の 264,960 字の約 1.32 倍）。30 分の上限は変えない。E2E-06 は 10 時間・約 20 本（30 分 × 20）。LLM 受け入れ試験の長文 fixture は 220,000 スカラーに達したところで止める。**この基準の変更は 4B の不合格（J3 は短い会話 4 本で出ている）とは無関係で、変更後も 4B は合格しない**。POC.md の章 15 の 4B の記録（350,000 文字で 26.4 分）は変更前の基準での結果として残す |
 | F-87 | 誤 | §8.5・付録 D | （2026-09-24。利用者の決定「2で進めて」を受けての実装）X-43。単一パス Reduce の判定に件数の上限（`reduceMaxItems`＝4）を足した。4B・30B のどちらも、10 時間分の受け入れ試験の最後の 1 要求（18 個の中間結果を 1 回でまとめる Reduce）が `LLM_INVALID_JSON` で落ちていた（§10.6 の J1・J2 が✗）。F-86（10 時間への変更）とは無関係の、Map-Reduce の実装そのものの穴 |
 | F-88 | 誤 | §6.2（既定値の JSON）・§8.5・付録 D | （2026-09-24。利用者の決定「上げて良い」）X-44。`maxOutputTokens` の既定を 4096 → 8192。F-87（X-43）とは別の失敗（1 チャンクの map 呼び出し単体が切れる）への対応 |
+| F-89 | 事 | §1.2・§1.3・§3.3・§6.1・§6.2・§6.3・§6.4（CV-39）・§8.4.1（新設）・§8.5・§8.6・§8.11（DR-18）・§8.12・§11.2・§12.3・付録 A.4・付録 D | （2026-09-24。利用者の依頼 issue #104 と決定: v1.0 に含める・パネルでオン／オフ・既定オフ・単語単位の時刻は使わない・表示は行頭の `**話者A**: `・精度は利用者が使って判断する）X-45。話者分離を足した。方式は pyannote community-1 の CoreML 版（Argmax SpeakerKit の `argmax-cli`）を whisper-cli と同じく子プロセスで起動する（SwiftPM の依存は増やさない。モデル 13 MB は同梱）。PoC は docs/POC.md の 16 章（P0-13。オフラインで動く・約 69 倍速・whisper の区間の時刻と揃う。合成音声では話者の取り違えが約 5 割で、人の声では未測定）。設定 `transcription.diarization.enabled` を足し `schemaVersion` を 2 に（1 → 2 の移行）。ログのイベント `diarization_completed`・`diarization_failed` とフィールド `speakers`、診断 DR-18、チケット T-46〜T-51 を足した。**失敗しても Part を失敗させない**（話者なしで進む）。エラーコード・遷移の辺・削除の条件は変えない |
