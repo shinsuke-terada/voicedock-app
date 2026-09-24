@@ -24,6 +24,11 @@ struct SpeakerLabelTests {
         #expect(SpeakerLabel.label(index: -1) == "A")
     }
 
+    @Test("Int.max でも落ちない（F-71）")
+    func intMaxDoesNotTrap() {
+        #expect(SpeakerLabel.label(index: Int.max) == "S9223372036854775807")
+    }
+
     @Test("表示は 話者 + ラベル")
     func display() {
         #expect(SpeakerLabel.display("A") == "話者A")

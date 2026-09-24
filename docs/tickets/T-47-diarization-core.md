@@ -55,9 +55,11 @@ public enum SpeakerLabel {
     public static let prefix = "話者"
 
     /// 0→"A" … 25→"Z"、26 以上→"S<index+1>"（27 人目は "S27"）。負は "A"。
+    /// Int.max でも落ちない（F-71 の方針。index + 1 があふれたら Int.max のまま）。
     public static func label(index: Int) -> String {
         if index < 26 { return String(UnicodeScalar(UInt8(65 + max(0, index)))) }
-        return "S\(index + 1)"
+        let (next, overflow) = index.addingReportingOverflow(1)
+        return "S\(overflow ? index : next)"
     }
 
     /// `話者` + label
@@ -133,6 +135,7 @@ public static let currentVersion = 2
 | `firstLabels` | 0〜25 は A〜Z | index 0, 1, 25 | `"A"`・`"B"`・`"Z"` |
 | `beyondZ` | 27 人目からは S27 | index 26, 27 | `"S27"`・`"S28"` |
 | `negativeIsA` | 負の index は A | -1 | `"A"` |
+| `intMaxDoesNotTrap` | Int.max でも落ちない（F-71） | `Int.max` | `"S\(Int.max)"` |
 | `display` | 表示は 話者 + ラベル | `"A"`・`""` | `"話者A"`・`"話者"` |
 
 `Tests/VDCoreTests/TranscriptSpeakerCodecTests.swift`:
