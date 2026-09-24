@@ -40,7 +40,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// みなさない。既定値は config.json が無いときだけ書くので、既存の config.json の値は変わらない。§6.1）
     public static func defaults(timeZone: String) -> AppConfig {
         AppConfig(
-            schemaVersion: 1,
+            schemaVersion: 2,
             timeZone: timeZone,
             vault: VaultConfig(path: nil, marker: ".obsidian"),
             device: DeviceConfig(
@@ -60,7 +60,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
                 timeoutFactor: 3.0, minTimeoutSeconds: 600, maxTimeoutSeconds: 21_600, minChars: 1,
                 vad: VADConfig(
                     enabled: true, modelID: "silero-v5.1.2", threshold: 0.5,
-                    minSpeechDurationMs: 250, minSilenceDurationMs: 1000, speechPadMs: 200)),
+                    minSpeechDurationMs: 250, minSilenceDurationMs: 1000, speechPadMs: 200),
+                diarization: DiarizationConfig(enabled: false)),
             llm: LLMConfig(
                 modelID: nil, contextSize: 32_768, temperature: 0.1, topP: 0.9, maxOutputTokens: 8192,
                 requestTimeoutSeconds: 1800, maxCharsPerRequest: 20_000, maxSecondsPerRequest: 3600,
@@ -206,10 +207,11 @@ public struct TranscriptionConfig: Codable, Equatable, Sendable {
     public var maxTimeoutSeconds: Int
     public var minChars: Int
     public var vad: VADConfig
+    public var diarization: DiarizationConfig
 
     public init(
         whisperModelID: String, language: String, threads: Int, timeoutFactor: Double, minTimeoutSeconds: Int,
-        maxTimeoutSeconds: Int, minChars: Int, vad: VADConfig
+        maxTimeoutSeconds: Int, minChars: Int, vad: VADConfig, diarization: DiarizationConfig
     ) {
         self.whisperModelID = whisperModelID
         self.language = language
@@ -219,6 +221,7 @@ public struct TranscriptionConfig: Codable, Equatable, Sendable {
         self.maxTimeoutSeconds = maxTimeoutSeconds
         self.minChars = minChars
         self.vad = vad
+        self.diarization = diarization
     }
 }
 
@@ -240,6 +243,15 @@ public struct VADConfig: Codable, Equatable, Sendable {
         self.minSpeechDurationMs = minSpeechDurationMs
         self.minSilenceDurationMs = minSilenceDurationMs
         self.speechPadMs = speechPadMs
+    }
+}
+
+/// 話者分離（PLAN §8.4.1。F-89）。
+public struct DiarizationConfig: Codable, Equatable, Sendable {
+    public var enabled: Bool
+
+    public init(enabled: Bool) {
+        self.enabled = enabled
     }
 }
 

@@ -28,6 +28,10 @@ public struct AppPaths: Sendable, Equatable {
     public var whisperCLI: URL { helpers.appendingPathComponent("whisper-cli", isDirectory: false) }
     /// helpers/llama-server
     public var llamaServer: URL { helpers.appendingPathComponent("llama-server", isDirectory: false) }
+    /// helpers/argmax-cli（話者分離。PLAN §8.4.1。F-89）
+    public var argmaxCLI: URL { helpers.appendingPathComponent("argmax-cli", isDirectory: false) }
+    /// resources/SpeakerModels（話者分離のモデル。同梱。PLAN §11.2）
+    public var speakerModels: URL { resources.appendingPathComponent("SpeakerModels", isDirectory: true) }
     /// バンドル内の reaper。**参照してよいのは DeletionEnabler だけ**（PT-11）。ここから実行しない（D-5）。
     public var bundledReaperURL: URL {
         helpers.appendingPathComponent(Contract.reaperFileName, isDirectory: false)

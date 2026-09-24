@@ -3379,6 +3379,7 @@ voicedock の 29 件から `helper_heartbeat_stale` / `helper_recovered` を廃�
 service_started service_stopping config_warning config_invalid recovery_completed
 part_discovered part_skipped unparsable_filename
 normalize_completed normalize_failed transcription_completed transcription_failed
+diarization_completed diarization_failed
 raw_note_saved raw_note_failed session_merged session_merge_failed session_empty session_reopened
 llm_completed llm_failed analysis_trimmed obsidian_saved obsidian_failed
 delete_requested source_deleted source_delete_skipped source_delete_pending disk_space_low
@@ -3406,6 +3407,7 @@ model_downloaded model_download_failed diagnostics_completed
   - `unparsable_filename relpath=…`（DEBUG）: 走査で、ファイル規則の形には一致するが日時が不正な名前（`RecordingName.parseFile` が nil。例 `…_20260230_…`）
   - `scan_completed devices=<n> copied=<n> elapsed_s=<x>`: 走査の終わり。コピーが 1 件以上なら INFO、0 件なら DEBUG
   - `transcription_failed recording_key=… error_code=…`（ERROR）: 文字起こしの FAILED
+  - `diarization_completed recording_key=… speakers=<n> elapsed_s=<x>`（INFO）/ `diarization_failed recording_key=… reason=helper_missing|spawn_failed|timeout|exit_<n>|signal_<n>|rttm_unreadable`（WARNING）
   - `llm_failed session_key=… error_code=… detail=…`（ERROR）: 解析の FAILED（`SESSION_MERGE_FAILED` を除く）
   - `session_merge_failed session_key=… error_code=SESSION_MERGE_FAILED`（ERROR）: チャンク 0 個、有効な Part の transcript が読めず統合結果が空（F-74）
   - `diagnostics_completed passed=<n> failed=<n> notices=<n>`（INFO）: 診断の終わり

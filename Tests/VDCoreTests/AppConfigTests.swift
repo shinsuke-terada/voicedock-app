@@ -11,7 +11,7 @@ struct AppConfigTests {
     /// PLAN §6.2 の JSON を逐語で（timeZone だけ "Asia/Tokyo"）。
     static let section62 = """
         {
-          "schemaVersion": 1,
+          "schemaVersion": 2,
           "timeZone": "Asia/Tokyo",
           "vault": { "path": null, "marker": ".obsidian" },
           "device": {
@@ -31,7 +31,8 @@ struct AppConfigTests {
             "whisperModelID": "large-v3-turbo-q5_0", "language": "ja", "threads": 0,
             "timeoutFactor": 3.0, "minTimeoutSeconds": 600, "maxTimeoutSeconds": 21600, "minChars": 1,
             "vad": { "enabled": true, "modelID": "silero-v5.1.2", "threshold": 0.5,
-                     "minSpeechDurationMs": 250, "minSilenceDurationMs": 1000, "speechPadMs": 200 }
+                     "minSpeechDurationMs": 250, "minSilenceDurationMs": 1000, "speechPadMs": 200 },
+            "diarization": { "enabled": false }
           },
           "llm": {
             "modelID": null, "contextSize": 32768, "temperature": 0.1, "topP": 0.9, "maxOutputTokens": 8192,
@@ -187,10 +188,10 @@ struct AppConfigTests {
         #expect(Set(ConfigKeys.allKeyPaths).count == ConfigKeys.allKeyPaths.count)
     }
 
-    @Test("CE schemaVersion 2 にすると CV-39 で読めない")
+    @Test("CE schemaVersion 3 にすると CV-39 で読めない")
     func ceSchemaVersion() throws {
         var root = try Self.encodedObject(AppConfig.defaults(timeZone: "Asia/Tokyo"))
-        root["schemaVersion"] = 2
+        root["schemaVersion"] = 3
         let data = try JSONSerialization.data(withJSONObject: root)
         let result = ConfigLoader.load(data: data, catalog: TestCatalogs.minimal, reaperConfObservation: .missing)
         #expect(
@@ -198,7 +199,7 @@ struct AppConfigTests {
                 == .invalid([
                     ConfigViolation(
                         rule: "CV-39", code: .configInvalidValue, keyPath: "schemaVersion",
-                        message: "この版のアプリより新しい設定です（schemaVersion 2）。アプリを更新してください")
+                        message: "この版のアプリより新しい設定です（schemaVersion 3）。アプリを更新してください")
                 ]))
     }
 }

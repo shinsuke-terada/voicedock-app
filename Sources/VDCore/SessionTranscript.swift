@@ -5,11 +5,14 @@ public struct AbsoluteSegment: Equatable, Sendable {
     public let at: Instant
     public let endAt: Instant
     public let text: String
+    /// 話者のラベル（`SpeakerLabel`。PLAN §8.4.1。F-89）。話者分離をしていない区間は nil。
+    public let speaker: String?
 
-    public init(at: Instant, endAt: Instant, text: String) {
+    public init(at: Instant, endAt: Instant, text: String, speaker: String? = nil) {
         self.at = at
         self.endAt = endAt
         self.text = text
+        self.speaker = speaker
     }
 }
 
@@ -45,21 +48,24 @@ public enum TranscriptFingerprint {
     }
 
     /// 指紋の元の文字列（PyJSON のコンパクト形式・sortKeys。golden の照合に使う）。
+    /// 区間の speaker は非 nil のときだけ足す（F-89。nil の区間は F-89 の前と同じ）。
     static func payload(_ t: SessionTranscript, zone: ZonedTime) -> String {
         let value = PyJSONValue.object([
-            (
-                "segments",
-                .array(
-                    t.segments.map {
-                        .object([
-                            ("at", .string(zone.iso($0.at))), ("end_at", .string(zone.iso($0.endAt))),
-                            ("text", .string($0.text)),
-                        ])
-                    })
-            ),
+            ("segments", .array(t.segments.map { segmentObject($0, zone: zone) })),
             ("blocks", .array(t.blocks.map { .array([.string(zone.iso($0.start)), .string(zone.iso($0.end))]) })),
         ])
         return PyJSON.dumpsCompact(value, sortKeys: true)
+    }
+
+    private static func segmentObject(_ segment: AbsoluteSegment, zone: ZonedTime) -> PyJSONValue {
+        var pairs: [(String, PyJSONValue)] = [
+            ("at", .string(zone.iso(segment.at))), ("end_at", .string(zone.iso(segment.endAt))),
+            ("text", .string(segment.text)),
+        ]
+        if let speaker = segment.speaker {
+            pairs.append(("speaker", .string(speaker)))
+        }
+        return .object(pairs)
     }
 }
 

@@ -16,6 +16,8 @@ public enum LogEvent: String, CaseIterable, Sendable {
     case normalizeFailed = "normalize_failed"
     case transcriptionCompleted = "transcription_completed"
     case transcriptionFailed = "transcription_failed"
+    case diarizationCompleted = "diarization_completed"
+    case diarizationFailed = "diarization_failed"
     case rawNoteSaved = "raw_note_saved"
     case rawNoteFailed = "raw_note_failed"
     case sessionMerged = "session_merged"
@@ -134,6 +136,7 @@ public enum LogKey: String, CaseIterable, Sendable {
     case durationS = "duration_s"
     case rtf
     case speechRatio = "speech_ratio"
+    case speakers
     case regeneratedCount = "regenerated_count"
     case devices, copied, recopy, port, exit, fields, passed, failed, notices
     // 本文を運ぶキー（常に遮断。voicedock log.py CONTENT_FIELDS の 15 個。PR-08）

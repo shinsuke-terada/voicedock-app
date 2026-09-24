@@ -28,6 +28,7 @@
 | `Sources/VDCore/Config/AppConfig.swift`（変更） | `DiarizationConfig`、`TranscriptionConfig.diarization`、既定値、`schemaVersion: 2` |
 | `Sources/VDCore/Config/ConfigKeys.swift`（変更） | `transcription.diarization.enabled` |
 | `Sources/VDCore/Config/ConfigMigrator.swift`（変更） | 1 → 2 |
+| `Sources/VDCore/Config/ConfigLoader.swift`（変更） | `decodeStructure`: 版が今の版でなければ移行後の辞書を復号する（§4.5） |
 | `Sources/VDCore/AppPaths.swift`（変更） | `argmaxCLI`・`speakerModels` |
 | `Sources/VDCore/Log.swift`（変更） | `LogEvent.diarizationCompleted`・`.diarizationFailed`、`LogKey.speakers` |
 | `docs/PLAN.md`（変更） | 付録 A.4 のイベントの列とフィールド（PLAN §8.4.1 の「ログのイベントと診断」の値をそのまま写す。SPEC 同期と `SpecMatchesPlanTests` のため、コード・SPEC と同じ PR で直す） |
@@ -37,6 +38,7 @@
 | `Tests/VDCoreTests/TranscriptSpeakerCodecTests.swift` | |
 | `Tests/VDCoreTests/SessionTranscriptSpeakerTests.swift` | |
 | `Tests/VDCoreTests/ConfigMigratorV2Tests.swift` | |
+| `Tests/VDCoreTests/LogTests.swift`（変更） | イベントの数と列を 49 個に |
 
 既存のテストで `schemaVersion` 1 を前提にしたもの（`AppConfigTests`・`ConfigLoaderTests`・golden の設定など）は 2 に直す。1 の JSON を読む既存のテストは「移行して読める」に意味が変わるので、期待を 2 に直す。
 
@@ -105,6 +107,8 @@ public static let currentVersion = 2
 4. それ以外 → 今の「不正な schemaVersion（<n>）」
 
 ファイルは書き換えない（PLAN §6.1）。
+
+`ConfigLoader.decodeStructure` は、元の `schemaVersion` が `ConfigMigrator.currentVersion` なら今までどおり元の data を復号し、そうでなければ（1 → 2 の移行で値を足したとき）移行後の辞書を `JSONSerialization.data(withJSONObject:)` で Data にして復号する（移行した値はメモリの上だけ。PLAN §6.1）。Data にできなければ CV-39（`<file>`、「読めません」）。
 
 ### 4.6 `AppPaths.swift`
 
