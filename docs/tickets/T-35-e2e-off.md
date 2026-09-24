@@ -119,6 +119,7 @@ export VD_HOME="$HOME/Library/Application Support/VoiceDock"
 export VD_DB="$VD_HOME/voicedock.sqlite"
 export VAULT="<Obsidian の Vault の絶対パス>"
 export DEV="<デバイスのボリューム名。例 DJIMIC3>"
+export BACKUP="<デバイスの退避先の絶対パス。利用者が決める。/Volumes の外・空か新規>"
 ```
 
 ### 共通のコマンド
@@ -165,16 +166,16 @@ export DEV="<デバイスのボリューム名。例 DJIMIC3>"
      `[C-7]` は `.wav` だけを見るので、ここでは種類を問わず全ファイルを取る:
 
      ```bash
-     mkdir -p "$HOME/VoiceDockE2E"
-     find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before.txt"
-     wc -l "$HOME/VoiceDockE2E/device-all-before.txt"
+     mkdir -p "$BACKUP"
+     find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$BACKUP/device-all-before.txt"
+     wc -l "$BACKUP/device-all-before.txt"
      ```
 
      試験をすべて終えたら、同じ `find` の出力を `device-all-after.txt` に取り、`comm -23` で**前にあって後に無い行**が 0 行であることを確かめる
      （削除 OFF の 13 件では録音は 1 本も消えない。後には新しく録った分が増えているだけになる）:
 
      ```bash
-     comm -23 "$HOME/VoiceDockE2E/device-all-before.txt" "$HOME/VoiceDockE2E/device-all-after.txt"
+     comm -23 "$BACKUP/device-all-before.txt" "$BACKUP/device-all-after.txt"
      ```
 
 3. 下準備の接続が終わったら、以後の各シナリオはそのシナリオの `#### 前提` どおりに録音を足して挿す
@@ -293,7 +294,7 @@ PLAN 付録 B.3 の E2E-18 の行（取り下げ）。
 |---|---|
 | 題 | `コピー中に抜く` |
 | 前提 | 削除 OFF。**危険な窓はコピー中である**（変換中ではない。変換は inbox から読むのでデバイスと無関係）。**コピーに数分かかる状態を作る**: 30 分程度の録音を 3 本、新しく録っておく（24 bit / 48 kHz なら 1 本約 259 MB） |
-| 手順 | ① [C-1]・[C-5] を取る ② デバイスを挿す ③ [C-8] に `read-only` が出たら [C-7] を取り、**ファイルに保存する**（[C-7] のコマンドの末尾に `\| tee "$HOME/VoiceDockE2E/e2e02-before.txt"` を足す） ④ パネルが「取り込み中 n/3」の間に、**コピーが始まってから 30 秒待って抜く** ⑤ [C-5]・[C-2] を取る ⑥ もう一度挿し、[C-8] に `read-only` が出たら [C-7] を同じく `\| tee "$HOME/VoiceDockE2E/e2e02-after.txt"` で取り、`diff "$HOME/VoiceDockE2E/e2e02-before.txt" "$HOME/VoiceDockE2E/e2e02-after.txt"; echo "exit=$?"` を打つ ⑦ 最後まで待つ ⑧ [C-1]・[C-5]・[C-7]・[C-10] を取る |
+| 手順 | ① [C-1]・[C-5] を取る ② デバイスを挿す ③ [C-8] に `read-only` が出たら [C-7] を取り、**ファイルに保存する**（[C-7] のコマンドの末尾に `\| tee "$BACKUP/e2e02-before.txt"` を足す） ④ パネルが「取り込み中 n/3」の間に、**コピーが始まってから 30 秒待って抜く** ⑤ [C-5]・[C-2] を取る ⑥ もう一度挿し、[C-8] に `read-only` が出たら [C-7] を同じく `\| tee "$BACKUP/e2e02-after.txt"` で取り、`diff "$BACKUP/e2e02-before.txt" "$BACKUP/e2e02-after.txt"; echo "exit=$?"` を打つ ⑦ 最後まで待つ ⑧ [C-1]・[C-5]・[C-7]・[C-10] を取る |
 | 期待 | 抜いた直後: `.<名前>.partial` が inbox から**消える**（[C-5] に `.partial` が無い）。`copy_failed reason=read_error`（または `changed`）が出る。クラッシュしない。**デバイスの全ファイルのサイズと mtime が 1 バイトも変わらない**（⑥ の `diff` が空）。再接続で**同じファイルを最初から再コピー**し、最後まで通る。**inbox に取り残しが出ない**（パネルの「状態の詳細」の inbox が「処理待ち n 件」だけで「取り残し」が 0 件。voicedock #120） |
 | 記録 | ⑥ の `diff` の**全文**（空なら `（差分なし）` と書いてコマンドと終了コードを貼る）、[C-5] の前後、`copy_failed` の行（`grep copy_failed "$VD_HOME/logs/app.log"`）、[C-10] の inbox の 2 つの件数 |
 | 落とし穴 | 10 秒の録音では窓が取れない。**コピーが 30 秒以上続く状態でなければこの試験は空振りする**（voicedock は v5.24 までここを取り違えていた） |

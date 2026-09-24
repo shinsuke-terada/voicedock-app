@@ -1,0 +1,90 @@
+swift build --build-tests
+Building for debugging...
+[Computing dependencies]
+[Using on-disk description]
+[1 / 1]
+[2 / 7] PolicyTests-product
+[4 / 9] PolicyTests-product
+[10 / 14] PolicyTests-product
+Build complete! (2.31秒)
+VOICEDOCK_LLM_MODEL="custom-3605803b982cb64a" VOICEDOCK_LLM_REPORT="/Users/terada/Projects/voicedock_app/llm-acceptance-custom-3605803b982cb64a.md" swift test --skip-build --filter LLMAcceptance
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite "350,000 文字の Map-Reduce" started.
+􀟈  Suite "LLM 受け入れ試験" started.
+􀟈  Suite "AcceptanceJudge" started.
+􀟈  Suite "AcceptanceFixture" started.
+􀟈  Test "due がすべて null なら問題なし" started.
+􀟈  Test "空のディレクトリは失敗になる（TEST-28）" started.
+􀟈  Test "長文の要素はどれも元の 9 本の要素と完全に一致する（途中で切らない）" started.
+􀟈  Test "既定のディレクトリの 9 本を id の昇順に読む" started.
+􀟈  Test "長文は決定的（同じ 9 本から同じ長文ができる）" started.
+􀟈  Test "summary の `[[` を見つける" started.
+􀟈  Test "長文が 30 分を 1 秒超えると不合格" started.
+􀟈  Test "segments が startedAt から segmentSeconds 秒ずつの絶対時刻になる" started.
+􀟈  Test "10 本すべてが解析できる（§10.6-1）" started.
+􀟈  Test "すべて通れば合格" started.
+􀟈  Test "本文に日付の無い fixture で due が出れば不合格" started.
+􀟈  Test "修復なしの割合が 90% を下回ると不合格" started.
+􀟈  Test "空の結果でも落ちない（TEST-28）" started.
+􀟈  Test "キーが足りない JSON は失敗になり、メッセージにファイル名が入る" started.
+􀟈  Test "長文の maxTasksWithDue は 9 本の合計 × 繰り返し回数（9 × 2 = 18）" started.
+􀟈  Test "1 本の失敗で J1 と修復込みの割合が両方落ちる" started.
+􀟈  Test "350,000 文字が 30 分以内（§10.6-4）" started.
+􀟈  Test "due の形が違えば不合格" started.
+􀟈  Test "修復なしの割合がちょうど 90% なら合格" started.
+􀟈  Test "partials の `[[` を見つける" started.
+􁁛  Test "空の結果でも落ちない（TEST-28）" passed after 0.001 seconds.
+􁁛  Test "すべて通れば合格" passed after 0.001 seconds.
+􁁛  Test "長文が 30 分を 1 秒超えると不合格" passed after 0.001 seconds.
+􁁛  Test "修復なしの割合が 90% を下回ると不合格" passed after 0.001 seconds.
+􁁛  Test "due がすべて null なら問題なし" passed after 0.001 seconds.
+􁁛  Test "1 本の失敗で J1 と修復込みの割合が両方落ちる" passed after 0.001 seconds.
+􁁛  Test "summary の `[[` を見つける" passed after 0.001 seconds.
+􁁛  Test "partials の `[[` を見つける" passed after 0.001 seconds.
+􁁛  Test "修復なしの割合がちょうど 90% なら合格" passed after 0.001 seconds.
+􁁛  Test "本文に日付の無い fixture で due が出れば不合格" passed after 0.001 seconds.
+􁁛  Test "due の形が違えば不合格" passed after 0.002 seconds.
+􁁛  Suite "AcceptanceJudge" passed after 0.002 seconds.
+􁁛  Test "空のディレクトリは失敗になる（TEST-28）" passed after 0.003 seconds.
+􁁛  Test "キーが足りない JSON は失敗になり、メッセージにファイル名が入る" passed after 0.003 seconds.
+􁁛  Test "既定のディレクトリの 9 本を id の昇順に読む" passed after 0.006 seconds.
+􁁛  Test "segments が startedAt から segmentSeconds 秒ずつの絶対時刻になる" passed after 0.006 seconds.
+􁁛  Test "長文の maxTasksWithDue は 9 本の合計 × 繰り返し回数（9 × 2 = 18）" passed after 0.010 seconds.
+􀢄  Test "10 本すべてが解析できる（§10.6-1）" recorded an issue at AnalysisAcceptanceTests.swift:76:25: Issue recorded
+􀄵  受け入れ試験を走らせられません: モデル custom-3605803b982cb64a が見つかりません
+􀢄  Test "10 本すべてが解析できる（§10.6-1）" failed after 0.015 seconds with 1 issue.
+􀟈  Test "修復なしで 90% 以上（§10.6-2）" started.
+􀢄  Test "修復なしで 90% 以上（§10.6-2）" recorded an issue at AnalysisAcceptanceTests.swift:76:25: Issue recorded
+􀄵  受け入れ試験を走らせられません: モデル custom-3605803b982cb64a が見つかりません
+􀢄  Test "修復なしで 90% 以上（§10.6-2）" failed after 0.001 seconds with 1 issue.
+􀢄  Test "350,000 文字が 30 分以内（§10.6-4）" recorded an issue at LongTranscriptAcceptanceTests.swift:17:25: Issue recorded
+􀄵  受け入れ試験を走らせられません: failure(モデル custom-3605803b982cb64a が見つかりません)
+􀟈  Test "修復込みで 100%（§10.6-2）" started.
+􀢄  Test "350,000 文字が 30 分以内（§10.6-4）" failed after 0.015 seconds with 1 issue.
+􀢄  Test "修復込みで 100%（§10.6-2）" recorded an issue at AnalysisAcceptanceTests.swift:76:25: Issue recorded
+􀄵  受け入れ試験を走らせられません: モデル custom-3605803b982cb64a が見つかりません
+􀢄  Suite "350,000 文字の Map-Reduce" failed after 0.015 seconds with 1 issue.
+􀢄  Test "修復込みで 100%（§10.6-2）" failed after 0.001 seconds with 1 issue.
+􀟈  Test "出力に `[[` が無い（§10.6-3）" started.
+􀢄  Test "出力に `[[` が無い（§10.6-3）" recorded an issue at AnalysisAcceptanceTests.swift:76:25: Issue recorded
+􀄵  受け入れ試験を走らせられません: モデル custom-3605803b982cb64a が見つかりません
+􀢄  Test "出力に `[[` が無い（§10.6-3）" failed after 0.001 seconds with 1 issue.
+􀟈  Test "期限の無い task の due は null（§10.6-3）" started.
+􀢄  Test "期限の無い task の due は null（§10.6-3）" recorded an issue at AnalysisAcceptanceTests.swift:76:25: Issue recorded
+􀄵  受け入れ試験を走らせられません: モデル custom-3605803b982cb64a が見つかりません
+􀢄  Test "期限の無い task の due は null（§10.6-3）" failed after 0.001 seconds with 1 issue.
+􀟈  Test "報告を書き出す" started.
+􀢄  Test "報告を書き出す" recorded an issue at AnalysisAcceptanceTests.swift:76:25: Issue recorded
+􀄵  受け入れ試験を走らせられません: モデル custom-3605803b982cb64a が見つかりません
+􀢄  Test "報告を書き出す" failed after 0.001 seconds with 1 issue.
+􀄵  /// .serialized の最後に走らせる（Swift Testing は宣言の順に走らせる）。
+􀢄  Suite "LLM 受け入れ試験" failed after 0.015 seconds with 6 issues.
+􁁛  Test "長文は決定的（同じ 9 本から同じ長文ができる）" passed after 0.022 seconds.
+􁁛  Test "長文の要素はどれも元の 9 本の要素と完全に一致する（途中で切らない）" passed after 0.045 seconds.
+􁁛  Suite "AcceptanceFixture" passed after 0.045 seconds.
+􀢄  Test run with 25 tests in 4 suites failed after 0.045 seconds with 7 issues.
+Note: Some test targets reported failures:
+  - LLMAcceptance (Swift Testing)
+make: *** [llm-acceptance] Error 1

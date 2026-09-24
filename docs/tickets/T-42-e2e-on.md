@@ -33,7 +33,7 @@ PLAN §12.4 の削除のゲート（5 条件。5 番目「削除 ON で E2E-01�
 - reaper を**手で起動しない**（ND-40 の確認を除く。その確認は「何も消えないこと」を見るもの）
 - 削除 ON の試験は、`make app`（Apple Development 署名）の `.app` でも `make release`（Developer ID 署名・公証）の `.app` でも行える。`ReaperSignature.requirement`（PLAN §8.9.3）は
   識別子と Team ID（`certificate leaf[subject.OU]`）で束縛しており、証明書の種類は問わない（T-34 で確かめた）。**ad-hoc 署名（`--sign -`）の `.app` では `.disabled(reaper_invalid)` になり、この Phase の試験が全部空振りする**
-- **退避は必須**: E2E-10 の手順 1（削除 OFF で読み取り専用の間）に `ditto "/Volumes/$DEV" "$HOME/VoiceDockE2E/device-backup"` を行い、`find … | wc -l` で件数を照合して記録に入れる
+- **退避は必須**: E2E-10 の手順 1（削除 OFF で読み取り専用の間）に `ditto "/Volumes/$DEV" "$BACKUP/device-backup"` を行い、`find … | wc -l` で件数を照合して記録に入れる
 - **有効化の前に、削除の段で止まっている Session（`SAVED`・`SOURCE_DELETING`・`SOURCE_DELETE_PENDING`・`CLEANUP`）が 0 行、`RAW_SAVED` の Part が 0 件であることを確かめる**（残っていると有効化の直後にその元音声が消えうる）
 - **止め方**（`docs/E2E.md` §3.10 と §6 の冒頭に置く）: 想定外のファイルが消えたら ① 直ちに「無効にする」 ② Finder でデバイスを取り出す ③ その時点の [C-7]・[C-6]・[C-12] を取る ④ `✗ FAIL`
 - **削除 ON の間は、抜く前に Finder で取り出す**（E2E-10 の 4 と 9、E2E-11、R-05、§5、E2E-17 の後の挿し直し）。急に抜くこと自体が試験である R-02・R-03 は例外で、退避済み・抜く直前の `queue/delete` が空・抜いた後に `device-all-before-*.txt` と `comm -23` で照合・修復や初期化を求められたら中断（利用者が判断）の手順を踏み、FAT が壊れて録音を失う危険を冒頭に書く。R-02・R-03 は必須（利用者の決定。任意にしない）
@@ -324,7 +324,7 @@ T-35 の `Tests/PolicyTests/RunbookTests.swift` に足すもの（§3）:
 | 14 | `RunbookGate.passes` を `verdict.contains("PASS")` に変える | `thePassPredicateIsExact`（`PASS`（記号なし）が真になり、`— 対象外` が偽になる） |
 | 15 | 判定表・G・R・各節の判定をすべて `✅ PASS` にし（取り下げの 2 件は `—` のまま）、`R-02` だけを `— 対象外` にして `**ゲート: 開**` にする | `theGateIsClosedUntilEverythingPasses`（`R-02` を挙げる） |
 | 16 | `RunbookGate.gatePasses` を `passes` と同じ（`✅` か `—`）にする | `theGatePassPredicateIsExact` |
-| 17 | `docs/E2E.md` の退避の行の `ditto` の引数を逆にする（`ditto "$HOME/VoiceDockE2E/device-backup" "/Volumes/$DEV"`） | T-35 の `theRunbookNeverTellsYouToWriteToTheDevice` |
+| 17 | `docs/E2E.md` の退避の行の `ditto` の引数を逆にする（`ditto "$BACKUP/device-backup" "/Volumes/$DEV"`） | T-35 の `theRunbookNeverTellsYouToWriteToTheDevice` |
 | 18 | `RunbookTests.copiesIntoTheDevice` を常に偽にする | T-35 の `theCopyDirectionIsChecked` |
 | 19 | `## 4` の表から `G-5` の行を消す | `theGateTableCoversPlanSection124`（`E2E-01〜09` が無く、行数が PLAN の 5 条件より少ない） |
 

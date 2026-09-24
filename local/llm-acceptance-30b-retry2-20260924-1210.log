@@ -1,0 +1,77 @@
+swift build --build-tests
+Building for debugging...
+[Computing dependencies]
+[Using on-disk description]
+[1 / 1]
+[2 / 107] VDCore
+[4 / 109] VDCore
+[10 / 19] VDLLMTests-product
+[16 / 25] VDCoreTests-product
+[16 / 25] VDLLMTests-product
+[21 / 27] VDCoreTests-product
+[24 / 28] VDCoreTests-product
+Build complete! (3.02秒)
+VOICEDOCK_LLM_MODEL="qwen3-30b-a3b-instruct-2507-q4_k_m" VOICEDOCK_LLM_REPORT="/Users/terada/Projects/voicedock_app/llm-acceptance-qwen3-30b-a3b-instruct-2507-q4_k_m.md" swift test --skip-build --filter LLMAcceptance
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite "AcceptanceFixture" started.
+􀟈  Suite "220,000 文字の Map-Reduce" started.
+􀟈  Suite "LLM 受け入れ試験" started.
+􀟈  Suite "AcceptanceJudge" started.
+􀟈  Test "空のディレクトリは失敗になる（TEST-28）" started.
+􀟈  Test "長文の maxTasksWithDue は 9 本の合計 × 繰り返し回数（9 × 2 = 18）" started.
+􀟈  Test "長文の要素はどれも元の 9 本の要素と完全に一致する（途中で切らない）" started.
+􀟈  Test "220,000 文字が 30 分以内（§10.6-4）" started.
+􀟈  Test "segments が startedAt から segmentSeconds 秒ずつの絶対時刻になる" started.
+􀟈  Test "長文は決定的（同じ 9 本から同じ長文ができる）" started.
+􀟈  Test "10 本すべてが解析できる（§10.6-1）" started.
+􀟈  Test "既定のディレクトリの 9 本を id の昇順に読む" started.
+􀟈  Test "空の結果でも落ちない（TEST-28）" started.
+􀟈  Test "キーが足りない JSON は失敗になり、メッセージにファイル名が入る" started.
+􀟈  Test "due がすべて null なら問題なし" started.
+􀟈  Test "partials の `[[` を見つける" started.
+􀟈  Test "due の形が違えば不合格" started.
+􀟈  Test "本文に日付の無い fixture で due が出れば不合格" started.
+􀟈  Test "長文が 30 分を 1 秒超えると不合格" started.
+􀟈  Test "summary の `[[` を見つける" started.
+􀟈  Test "1 本の失敗で J1 と修復込みの割合が両方落ちる" started.
+􀟈  Test "修復なしの割合がちょうど 90% なら合格" started.
+􀟈  Test "すべて通れば合格" started.
+􀟈  Test "修復なしの割合が 90% を下回ると不合格" started.
+􁁛  Test "空の結果でも落ちない（TEST-28）" passed after 0.001 seconds.
+􁁛  Test "due がすべて null なら問題なし" passed after 0.001 seconds.
+􁁛  Test "長文が 30 分を 1 秒超えると不合格" passed after 0.001 seconds.
+􁁛  Test "partials の `[[` を見つける" passed after 0.001 seconds.
+􁁛  Test "summary の `[[` を見つける" passed after 0.001 seconds.
+􁁛  Test "1 本の失敗で J1 と修復込みの割合が両方落ちる" passed after 0.001 seconds.
+􁁛  Test "修復なしの割合が 90% を下回ると不合格" passed after 0.001 seconds.
+􁁛  Test "修復なしの割合がちょうど 90% なら合格" passed after 0.001 seconds.
+􁁛  Test "すべて通れば合格" passed after 0.001 seconds.
+􁁛  Test "本文に日付の無い fixture で due が出れば不合格" passed after 0.001 seconds.
+􁁛  Test "due の形が違えば不合格" passed after 0.001 seconds.
+􁁛  Suite "AcceptanceJudge" passed after 0.001 seconds.
+􁁛  Test "空のディレクトリは失敗になる（TEST-28）" passed after 0.002 seconds.
+􁁛  Test "キーが足りない JSON は失敗になり、メッセージにファイル名が入る" passed after 0.002 seconds.
+􁁛  Test "既定のディレクトリの 9 本を id の昇順に読む" passed after 0.005 seconds.
+􁁛  Test "segments が startedAt から segmentSeconds 秒ずつの絶対時刻になる" passed after 0.006 seconds.
+􁁛  Test "長文の maxTasksWithDue は 9 本の合計 × 繰り返し回数（9 × 2 = 18）" passed after 0.007 seconds.
+􁁛  Test "長文は決定的（同じ 9 本から同じ長文ができる）" passed after 0.016 seconds.
+􁁛  Test "長文の要素はどれも元の 9 本の要素と完全に一致する（途中で切らない）" passed after 0.033 seconds.
+􁁛  Suite "AcceptanceFixture" passed after 0.033 seconds.
+􁁛  Test "10 本すべてが解析できる（§10.6-1）" passed after 2290.918 seconds.
+􁁛  Test "220,000 文字が 30 分以内（§10.6-4）" passed after 2290.918 seconds.
+􁁛  Suite "220,000 文字の Map-Reduce" passed after 2290.918 seconds.
+􀟈  Test "修復なしで 90% 以上（§10.6-2）" started.
+􁁛  Test "修復なしで 90% 以上（§10.6-2）" passed after 0.025 seconds.
+􀟈  Test "修復込みで 100%（§10.6-2）" started.
+􁁛  Test "修復込みで 100%（§10.6-2）" passed after 0.025 seconds.
+􀟈  Test "出力に `[[` が無い（§10.6-3）" started.
+􁁛  Test "出力に `[[` が無い（§10.6-3）" passed after 0.025 seconds.
+􀟈  Test "期限の無い task の due は null（§10.6-3）" started.
+􁁛  Test "期限の無い task の due は null（§10.6-3）" passed after 0.027 seconds.
+􀟈  Test "報告を書き出す" started.
+􁁛  Test "報告を書き出す" passed after 7.066 seconds.
+􁁛  Suite "LLM 受け入れ試験" passed after 2298.089 seconds.
+􁁛  Test run with 25 tests in 4 suites passed after 2298.089 seconds.
+報告: /Users/terada/Projects/voicedock_app/llm-acceptance-qwen3-30b-a3b-instruct-2507-q4_k_m.md（docs/POC.md 章 15 に貼る）

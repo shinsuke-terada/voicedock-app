@@ -38,6 +38,7 @@ export VD_HOME="$HOME/Library/Application Support/VoiceDock"
 export VD_DB="$VD_HOME/voicedock.sqlite"
 export VAULT="<Obsidian の Vault の絶対パス>"
 export DEV="<デバイスのボリューム名。例 DJIMIC3>"
+export BACKUP="<デバイスの退避先の絶対パス。利用者が決める。/Volumes の外・空か新規>"
 ```
 
 ### 共通のコマンド
@@ -92,16 +93,16 @@ export DEV="<デバイスのボリューム名。例 DJIMIC3>"
      `[C-7]` は `.wav` だけを見るので、ここでは種類を問わず全ファイルを取る:
 
      ```bash
-     mkdir -p "$HOME/VoiceDockE2E"
-     find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before.txt"
-     wc -l "$HOME/VoiceDockE2E/device-all-before.txt"
+     mkdir -p "$BACKUP"
+     find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$BACKUP/device-all-before.txt"
+     wc -l "$BACKUP/device-all-before.txt"
      ```
 
      試験をすべて終えたら、同じ `find` の出力を `device-all-after.txt` に取り、`comm -23` で**前にあって後に無い行**が 0 行であることを確かめる
      （削除 OFF の 13 件では録音は 1 本も消えない。後には新しく録った分が増えているだけになる）:
 
      ```bash
-     comm -23 "$HOME/VoiceDockE2E/device-all-before.txt" "$HOME/VoiceDockE2E/device-all-after.txt"
+     comm -23 "$BACKUP/device-all-before.txt" "$BACKUP/device-all-after.txt"
      ```
 
 3. 下準備の接続が終わったら、以後の各シナリオはそのシナリオの `#### 前提` どおりに録音を足して挿す
@@ -197,10 +198,10 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 
 1. [C-1]・[C-5] を取る
 2. デバイスを挿す
-3. [C-8] に `read-only` が出たら [C-7] を取り、**ファイルに保存する**（[C-7] のコマンドの末尾に `| tee "$HOME/VoiceDockE2E/e2e02-before.txt"` を足す）
+3. [C-8] に `read-only` が出たら [C-7] を取り、**ファイルに保存する**（[C-7] のコマンドの末尾に `| tee "$BACKUP/e2e02-before.txt"` を足す）
 4. パネルが「取り込み中 n/3」の間に、**コピーが始まってから 30 秒待って抜く**
 5. [C-5]・[C-2] を取る
-6. もう一度挿し、[C-8] に `read-only` が出たら [C-7] を同じく `| tee "$HOME/VoiceDockE2E/e2e02-after.txt"` で取り、`diff "$HOME/VoiceDockE2E/e2e02-before.txt" "$HOME/VoiceDockE2E/e2e02-after.txt"; echo "exit=$?"` を打つ
+6. もう一度挿し、[C-8] に `read-only` が出たら [C-7] を同じく `| tee "$BACKUP/e2e02-after.txt"` で取り、`diff "$BACKUP/e2e02-before.txt" "$BACKUP/e2e02-after.txt"; echo "exit=$?"` を打つ
 7. 最後まで待つ
 8. [C-1]・[C-5]・[C-7]・[C-10] を取る
 
@@ -460,7 +461,7 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 - 削除はまだ OFF。[C-11] が `ロック 1  : アプリ=無効, reaper.conf=無し`（前に無効化していれば `reaper.conf=無効`）と `ロック 2-A: 削除モジュール=未導入` を示している
 - デバイスに**未処理の録音が無い**（E2E-01〜09 で処理済み。パネルが「待機中」）
 - **消えてよいファイルの範囲を利用者が決めて書き留める。**
-- **退避は必須**（手順 1。削除 OFF で読み取り専用の間に行う）。退避先の `$HOME/VoiceDockE2E/device-backup` は空か、まだ無いこと
+- **退避は必須**（手順 1。削除 OFF で読み取り専用の間に行う）。退避先の `$BACKUP/device-backup` は空か、まだ無いこと
 - **削除の段で止まっている Session と Part が無い**（手順 1 で確かめる。残っていると、有効にした直後にその Part の元音声が消えうる）
 - 1 分程度の**普通の録音 2 本**と**無音の録音 1 本**（マイクを止めて 1 分）を、有効化の後に新しく録る（手順の 4）
 
@@ -468,9 +469,9 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 【利用者が行う】
 
 1. デバイスを挿し、[C-8] に `read-only` が出たら [C-7]・[C-15]・[C-11]・[C-16]・[C-1] を取る（前。削除 OFF なので読み取り専用で挿さっている）。続けて、読み取り専用のうちに次を行う:
-   - 全ファイルの一覧: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before-on.txt"`
-   - **退避（必須）**: `ditto "/Volumes/$DEV" "$HOME/VoiceDockE2E/device-backup"`
-   - 件数の照合: `find "/Volumes/$DEV" -type f | wc -l` と `find "$HOME/VoiceDockE2E/device-backup" -type f | wc -l` が同じ数であること（違えば始めない）
+   - 全ファイルの一覧: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$BACKUP/device-all-before-on.txt"`
+   - **退避（必須）**: `ditto "/Volumes/$DEV" "$BACKUP/device-backup"`
+   - 件数の照合: `find "/Volumes/$DEV" -type f | wc -l` と `find "$BACKUP/device-backup" -type f | wc -l` が同じ数であること（違えば始めない）
    - 削除の段で止まっている Session: `sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions WHERE status IN ('SAVED','SOURCE_DELETING','SOURCE_DELETE_PENDING','CLEANUP') GROUP BY status;"` が **0 行**
    - `RAW_SAVED` の Part: `sqlite3 "$VD_DB" "SELECT COUNT(*) FROM recordings WHERE status = 'RAW_SAVED';"` が **0**
    - どちらかが 0 でなければ有効化しない（処理が終わるのを待つ。終わらなければ調べる）
@@ -916,9 +917,9 @@ Raw / Daily ノートと `## Timeline` は §3.1 の期待のとおり。
 **危険**: この試験は、読み書き可能でマウントされたデバイスを取り出さずに急に抜く。**FAT が壊れて、デバイスの録音を失うおそれがある。**次の安全の手順を省かない。
 
 - E2E-10 の手順 1 の退避（`device-backup` と件数の照合）が済んでいること
-- 抜く直前に、デバイスの全ファイルの一覧を取る: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before-r02.txt"`
+- 抜く直前に、デバイスの全ファイルの一覧を取る: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$BACKUP/device-all-before-r02.txt"`
 - 抜く直前に [C-6] で `queue/delete` が**空**であることを確かめる（空でなければ空になるまで待つ。要求が残ったまま抜かない）
-- 挿し直したら、同じ `find` を `device-all-after-r02.txt` に取り、`comm -23 "$HOME/VoiceDockE2E/device-all-before-r02.txt" "$HOME/VoiceDockE2E/device-all-after-r02.txt"` で**前にあって後に無い行**を出す。
+- 挿し直したら、同じ `find` を `device-all-after-r02.txt` に取り、`comm -23 "$BACKUP/device-all-before-r02.txt" "$BACKUP/device-all-after-r02.txt"` で**前にあって後に無い行**を出す。
   出た行が、その間に Raw の検証を通って消えた Part のファイル（[C-13] の `source_deleted_at` が入った行）だけであること
 - 挿し直したときに macOS がディスクの**修復や初期化**を求めたら、押さずに**中断**する（何もせずに取り出す）。続けるかどうかは利用者が判断する
 
@@ -947,9 +948,9 @@ Raw / Daily ノートと `## Timeline` は §3.1 の期待のとおり。
 **危険**: この試験は、読み書き可能でマウントされたデバイスを取り出さずに急に抜く。**FAT が壊れて、デバイスの録音を失うおそれがある。**次の安全の手順を省かない。
 
 - E2E-10 の手順 1 の退避（`device-backup` と件数の照合）が済んでいること
-- 抜く直前に、デバイスの全ファイルの一覧を取る: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$HOME/VoiceDockE2E/device-all-before-r03.txt"`
+- 抜く直前に、デバイスの全ファイルの一覧を取る: `find "/Volumes/$DEV" -type f -exec stat -f '%z %m %N' {} \; | sort | tee "$BACKUP/device-all-before-r03.txt"`
 - 抜く直前に [C-6] で `queue/delete` が**空**であることを確かめる（空でなければ空になるまで待つ。要求が残ったまま抜かない）
-- 挿し直したら、同じ `find` を `device-all-after-r03.txt` に取り、`comm -23 "$HOME/VoiceDockE2E/device-all-before-r03.txt" "$HOME/VoiceDockE2E/device-all-after-r03.txt"` で**前にあって後に無い行**を出す。
+- 挿し直したら、同じ `find` を `device-all-after-r03.txt` に取り、`comm -23 "$BACKUP/device-all-before-r03.txt" "$BACKUP/device-all-after-r03.txt"` で**前にあって後に無い行**を出す。
   出た行が、その間に Raw の検証を通って消えた Part のファイル（[C-13] の `source_deleted_at` が入った行）だけであること
 - 挿し直したときに macOS がディスクの**修復や初期化**を求めたら、押さずに**中断**する（何もせずに取り出す）。続けるかどうかは利用者が判断する
 

@@ -112,7 +112,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | VAD モデル | `<HOME>/models/vad/ggml-silero-v5.1.2.bin` |
 | LLM モデル | `<HOME>/models/llm/custom-3605803b982cb64a.gguf`（2.5 GB。4B と同一。`verified: false`）と `Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`（18.6 GB。カタログから取り込み。**`verified: true`**。2026-09-24） |
 | 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
-| 退避先 | `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`） |
+| 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
 | 削除 | **無効**（2026-09-23 夜の確認で「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`deleteSkippedSource=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`）。**有効に戻すときは削除の画面で赤いボタンを 3 秒長押し**（事前に `docs/E2E.md` §3.10 の退避と件数の照合） |
 | 取り込むデバイスの名前 | `config.json` の `device.includeVolumes` は `["DJIMIC3"]`（F-81 の既定に合わせて 2026-09-23 に利用者が手で直した。控えは `config.json.bak`） |
 | 実機 | 2026-09-23 夜の記録では `/Volumes/DJIMIC3` に接続中だったが、2026-09-24 のセッション開始時は `/Volumes` に外部ボリューム無し（抜かれている）。次のセッションもまず `ls /Volumes` で確かめる |
