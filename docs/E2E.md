@@ -135,11 +135,11 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 
 | # | シナリオ | 削除 | 判定 | 記録 |
 |---|---|---|---|---|
-| E2E-01 | 1 本を通しで | OFF | ⬜ 未実施 | §3.1 |
+| E2E-01 | 1 本を通しで | OFF | ✅ PASS | §3.1 |
 | E2E-02 | コピー中に抜く | OFF | ⬜ 未実施 | §3.2 |
 | E2E-03 | 文字起こし中に抜く | OFF | ⬜ 未実施 | §3.3 |
 | E2E-04 | Vault を利用不可にする | OFF | ⬜ 未実施 | §3.4 |
-| E2E-05 | 抜き挿しを 6 回以上 | OFF | ⬜ 未実施 | §3.5 |
+| E2E-05 | 抜き挿しを 6 回以上 | OFF | ✅ PASS | §3.5 |
 | E2E-06 | 1 日分を 1 セッションに | OFF | ⬜ 未実施 | §3.6 |
 | E2E-07 | 無音の Part を混ぜる | OFF | ⬜ 未実施 | §3.7 |
 | E2E-08 | 1 本だけ文字起こしを失敗させる | OFF | ⬜ 未実施 | §3.8 |
@@ -179,13 +179,84 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 **単一チャンクでも Daily に `## Timeline` と時刻の見出しが出る**（Map の中間結果が無くても代替経路が働く）。
 
 #### 記録
-[C-1]（前後）、[C-3]、[C-7]（前後の `diff`）、[C-8]、[C-9]（後）、Daily ノートの `## Timeline` の見出しから 5 行。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3、新規録音 1 本（TX00_MIC006_20260924_211229_orig.wav、約 2 分13秒）。既存の録音 4 本（TX_MIC001_20260915_165730 配下）はそのまま残した状態で試験した。
+
+[C-1]（前）:
 ```text
+recordings: COMPLETED|12 RAW_SAVED|1 SKIPPED|1
+sessions:   COMPLETED|2 OPEN|1
+```
+
+[C-1]（後・今すぐ要約の前）:
+```text
+recordings: COMPLETED|12 RAW_SAVED|2 SKIPPED|1
+sessions:   COMPLETED|2 OPEN|1
+```
+
+[C-1]（今すぐ要約の後）:
+```text
+recordings: COMPLETED|14 SKIPPED|1
+sessions:   COMPLETED|3
+```
+
+[C-3]（今回の分。話者分離のイベントも実測どおり載せる。F-89）:
+```text
+2026-09-24T21:15:16+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC006_20260924_211229_orig.wav duration_s=133.1
+2026-09-24T21:15:16+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC006_20260924_211229_orig.wav in_bytes=19199176 out_bytes=4263296 elapsed_s=0.3
+2026-09-24T21:15:22+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC006_20260924_211229_orig.wav elapsed_s=4.9 chars=594 rtf=0.037 speech_ratio=0.695
+2026-09-24T21:15:22+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC006_20260924_211229_orig.wav speakers=1 elapsed_s=0.4
+2026-09-24T21:15:22+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=2 bytes=5922
+（パネルの「今すぐ要約」を押した後）
+2026-09-24T21:16:42+09:00 INFO  session_merged session_key=DJIMIC3:20260924 parts=2 excluded=0 chars=1783
+2026-09-24T21:16:53+09:00 INFO  llm_completed session_key=DJIMIC3:20260924 chunks=1 elapsed_s=10.7
+2026-09-24T21:16:53+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260924 path="Daily/Voice/Wiki/20260924/2026-09-24 Voice.md" bytes=3133
+```
+`llm_completed` は今回のセッション（`DJIMIC3:20260924`）に 1 件だけ（落とし穴クリア。Timeline のために 2 回呼んでいない）。
+
+[C-7]（前後の `diff`。挿した直後 → 全工程の完了後）:
+```text
+$ diff /tmp/e2e01-device-before.txt /tmp/e2e01-device-final.txt
+（差分なし）
+```
+挿した直後の一覧は新規録音を含む 5 本（TX00_MIC002〜006）。全工程（コピー・変換・文字起こし・話者分離・Raw・統合・要約・Daily 保存）の後でも、この 5 本のサイズ・mtime は 1 バイトも変わらなかった。
+
+[C-8]:
+```text
+/dev/disk20 on /Volumes/DJIMIC3 (msdos, local, nodev, nosuid, read-only, noowners, noatime, fskit)
+```
+
+[C-9]（後。`diff`）:
+```text
+4d3
+< 4012 1790250875 .../Daily/Voice/Raw/20260924/2026-09-24 raw.md
+5a5
+> 5922 1790252122 .../Daily/Voice/Raw/20260924/2026-09-24 raw.md
+（今すぐ要約の後、Wiki/20260924/2026-09-24 Voice.md 3133 バイトが新規に増えた）
+```
+
+[C-10]（パネル。スクリーンショットより書き写し）:
+```text
+待機中
+最終接続  接続中 (DJIMIC3) ・未処理なし
+デバイスの空き容量 DJIMIC3 27.7 GiB
+保存先 (Vault): VoiceDockTestVault
+モデル: Whisper large-v3-turbo (q5_0) ✓ / VAD Silero VAD v5.1.2 ✓ / LLM 読み込んだモデル (3605803b) ✓
+元音声の削除: 無効
+要対応: （表示なし）
+```
+
+Daily ノート `## Timeline` の見出し（単一チャンクの代替経路）:
+```text
+## Timeline
+
+### 20:51–21:14
+
+- 防衛費の増減は単純な戦争意志の問題ではなく、防衛力の構築や技術導入（例：ドローン）への戦略的アプローチが必要であると指摘。
 ```
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.2 E2E-02 — コピー中に抜く
 
@@ -306,13 +377,29 @@ Part と Session の件数が**1 件も増えない**（[C-1] の前後が完全
 `scan_completed devices=1 copied=0` と `file_not_stable` は DEBUG であり、既定（`logging.level` が `INFO`）の `app.log` には出ないので数えない（PLAN 付録 A.4）。
 
 #### 記録
-[C-1] の前後の表、1 と 3 の `grep -c` の出力、6 回分の [C-8] と「状態」の文言。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。処理がすべて終わった「待機中」の状態から、新しい録音を足さずに抜き挿しを 6 回繰り返した。
+
+[C-1]（前）:
 ```text
+recordings: COMPLETED|14 SKIPPED|1
+sessions:   COMPLETED|3
 ```
 
+`part_discovered`/`copy_completed` の件数（前）: **30**
+
+6 回の抜き挿し: 毎回 `read-only` を確認し、パネルは一瞬「デバイスを調べています」に変わってすぐ「待機中」に戻った。「取り込み中」になった回は無く、6 回とも異常なし（利用者の報告）。
+
+[C-1]（後）:
+```text
+recordings: COMPLETED|14 SKIPPED|1
+sessions:   COMPLETED|3
+```
+
+`part_discovered`/`copy_completed` の件数（後）: **30**（前後で完全一致。1 件も増えていない）
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.6 E2E-06 — 1 日分を 1 セッションに
 
