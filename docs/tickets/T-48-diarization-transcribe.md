@@ -28,6 +28,7 @@
 | `Sources/VDTranscribe/SpeakerAssigner.swift` | `SpeakerAssigner` |
 | `Sources/VDTranscribe/Diarizer.swift` | `Diarizer` / `DiarizeOutcome` / `DiarizationReport` |
 | `Sources/VDTranscribe/Transcriber.swift`（変更） | `diarizer` 引数、`TranscribeMetrics.diarization` |
+| `Sources/VDTranscribe/WhisperHelpCheck.swift`（変更） | 判定を `containsFlag`（internal）に切り出す（§4.1） |
 | `Tests/TestSupport/FakeArgmax.swift` | 偽 argmax-cli（シェルスクリプトを書く） |
 | `Tests/VDTranscribeTests/DiarizeArgsTests.swift` | |
 | `Tests/VDTranscribeTests/RTTMParserTests.swift` | |
@@ -70,6 +71,7 @@ public enum DiarizeArgs {
 ```swift
 // argmax-cli の RTTM（PLAN §8.4.1）。
 import Foundation
+import VDCore  // PyText
 
 public struct SpeakerTurn: Equatable, Sendable {
     public let start: Double
@@ -85,8 +87,8 @@ public enum RTTMParser {
 }
 ```
 
-手順: `text` を `\n` で分け、各行の末尾の `\r` を落として `PyText.strip`。空なら飛ばす。空白（`" "` と `\t`、連続は 1 つ）で分けた列が 8 未満・1 列目が `SPEAKER` でない → nil。
-4 列目 `start = Double(col[3])`、5 列目 `duration = Double(col[4])` が nil・有限でない・`start < 0`・`duration < 0` → nil。8 列目 `col[7]` が空 → nil（空白で分けるので空にはならないが検査は残す）。`SpeakerTurn(start: start, end: start + duration, speaker: col[7])`。行の順を保つ。
+手順: `text` を `\n` で分け（Swift の `Character` では `"\r\n"` が 1 文字なので、スカラーの `\n` で分ける）、各行の末尾の `\r` を落として `PyText.strip`。空なら飛ばす。空白（`" "` と `\t`、連続は 1 つ）で分けた列が 8 未満・1 列目が `SPEAKER` でない → nil。
+4 列目 `start = Double(col[3])`、5 列目 `duration = Double(col[4])` が nil・有限でない・`start < 0`・`duration < 0` → nil。PLAN §8.4.1 の「10 進の数」に合わせ、列に `0123456789.+-eE` 以外のスカラーがあれば nil（`Double(String)` は 16 進の `0x1p3` も受けるため）。8 列目 `col[7]` が空 → nil（空白で分けるので空にはならないが検査は残す）。`SpeakerTurn(start: start, end: start + duration, speaker: col[7])`。行の順を保つ。
 
 ### 4.3 `SpeakerAssigner.swift`
 
@@ -151,6 +153,8 @@ public struct Diarizer: Sendable {
 }
 ```
 
+`missingParts` の「通常ファイルで実行権」は `Transcriber.isExecutableFile`（`private` を外して internal にし、同じ判定を 2 か所に書かない）。
+
 `diarize` の手順:
 1. `missingParts()` が空でなければ `.failed(reason: "helper_missing")`（起動しない）
 2. `rttm = layout.stagingDirectory(slug: slug).appendingPathComponent(rttmFileName, isDirectory: false)`。`SafeUnlink.remove(rttm, under: .staging, layout: layout, missingOK: true)` が投げたら `.failed(reason: "rttm_unreadable")`（起動しない）
@@ -173,6 +177,7 @@ public struct Diarizer: Sendable {
      - `.diarized(let turns)` → `segments = SpeakerAssigner.assign(segments, turns: turns)`、`report = .completed(speakers: Set(segments.compactMap(\.speaker)).count, elapsedSeconds: <begin からの秒>)`
   3. `PartTranscript(…, segments: segments)`。text は変えない（話者のラベルを text に入れない）
   4. 成功（手順 13）の `metrics` に `diarization: report` を載せる。無音（手順 12）・冪等（手順 1）では載せない（冪等は nil）
+- 内部の `metrics(_:elapsed:duration:)` は最後に `diarization: DiarizationReport? = nil` を足す。`Duration` を秒にする式（whisper の経過と話者分離の経過）は internal の `static func seconds(_ d: Duration) -> Double` に 1 つにまとめる
 
 ## 5. テスト
 
@@ -203,6 +208,7 @@ public enum FakeArgmax {
 | `missingFlagReported` | 無いフラグを宣言順に返す | `--rttm-path` を消した help | `["--rttm-path"]` |
 | `prefixIsNotAFlag` | 長いフラグの一部は在ると見なさない | `--model-path-x` だけの help | `--model-path` を返す |
 | `emptyHelp` | 空の help（TEST-28） | `""` | 4 つ全部 |
+| `delimitersAroundFlag` | 前後の区切りは §4.1 のとおり | `"USAGE: x [--rttm-path <p>]\n  --audio-path=<a>\n  --use-exclusive-reconciliation]\n  x--model-path <p>"` | `["--model-path"]`（`[` `]` `<` `=` は区切り。`x` は区切りでない） |
 
 `Tests/VDTranscribeTests/RTTMParserTests.swift`:
 
@@ -214,18 +220,19 @@ public enum FakeArgmax {
 | `wrongTypeIsUnreadable` | 1 列目が SPEAKER でなければ全体が読めない | 2 行目が `LEXEME …` | nil |
 | `tooFewColumns` | 8 列未満は読めない | 7 列 | nil |
 | `negativeOrNonFinite` | 負・nan・inf は読めない | start `-1`、duration `nan`、`inf` | それぞれ nil |
+| `hexIsUnreadable` | 16 進の数は読めない（10 進だけ） | start `0x1p3` | nil |
 | `tabsSeparate` | タブ区切りも読める | タブ区切り 10 列 | 1 件 |
 
 `Tests/VDTranscribeTests/SpeakerAssignerTests.swift`:
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `maxOverlapWins` | 重なりの最も長い話者を付ける | 区間 [0,10]、X:[0,3]・Y:[3,10] | speaker `"A"`（Y が最初に付いた話者なので A） |
-| `labelsFollowSegmentOrder` | ラベルは区間の順に初めて出た順 | RTTM は B が先の行、区間は A の発話が先 | 区間の順に A, B |
-| `tieGoesToEarlierRTTMSpeaker` | 同点は RTTM で先に出た話者 | 区間 [0,4]、X:[0,2]・Y:[2,4]（X が先の行） | X の側 |
+| `maxOverlapWins` | 重なりの最も長い話者を付ける | 区間 [0,10]・[1,2]、X:[0,3]・Y:[3,10] | speaker `"A"`・`"B"`（Y が最初に付いた話者なので A。2 つ目は X だけで B。最小を取ると 2 つとも A） |
+| `labelsFollowSegmentOrder` | ラベルは区間の順に初めて出た順 | RTTM の先の行は名前 `A` の [5,7]、次の行は名前 `B` の [0,2]。区間は [0,2]・[5,7] | 区間の順に A, B（RTTM の名前のまま・RTTM の順だと B, A） |
+| `tieGoesToEarlierRTTMSpeaker` | 同点は RTTM で先に出た話者 | 区間 [0,4]・[2.5,3.5]・[0.5,1.5]、X:[0,2]・Y:[2,4]（X が先の行） | A, B, A（1 つ目は X の側。Y の側だと A, A, B） |
 | `nearestWithinTolerance` | 重なりが無ければ 1 秒以内の最も近い話者 | 区間 [5,6]、X:[6.5,8] | X の側 |
 | `beyondToleranceIsNil` | 1 秒より離れていれば話者なし | 区間 [5,6]、X:[7.1,8] | nil |
-| `sumsAcrossTurns` | 同じ話者の複数の行の重なりを足す | 区間 [0,10]、X:[0,3]・[7,10]、Y:[3,7] | X の側（6 > 4） |
+| `sumsAcrossTurns` | 同じ話者の複数の行の重なりを足す | 区間 [0,10]・[4,6]、Y:[3,7]（先の行）、X:[0,3]・[7,10] | A, B（1 つ目は X の側。6 > 4。足さないと Y の側で A, A） |
 | `zeroLengthSegment` | 長さ 0 の区間は近さで決める | 区間 [2,2]、X:[1,3] | X の側 |
 | `emptyTurns` | RTTM が空なら全部話者なし（TEST-28） | turns `[]` | 全区間 nil、text・時刻は同じ |
 | `emptySegments` | 区間が空なら空（TEST-28） | segments `[]` | `[]` |

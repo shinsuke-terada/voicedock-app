@@ -31,12 +31,17 @@ public struct TranscribeMetrics: Equatable, Sendable {
     public let chars: Int  // text の Unicode スカラー数
     public let rtf: Double?  // round(elapsed / duration, 3)。duration が nil か 0 以下なら nil
     public let speechRatio: Double?  // round(Σmax(0, end − start) / duration, 3)。同上
+    /// 話者分離の結果（PLAN §8.4.1。F-89）。diarizer が無い・起動しなかった・冪等で読み直したときは nil
+    public let diarization: DiarizationReport?
 
-    public init(elapsedSeconds: Double, chars: Int, rtf: Double?, speechRatio: Double?) {
+    public init(
+        elapsedSeconds: Double, chars: Int, rtf: Double?, speechRatio: Double?, diarization: DiarizationReport? = nil
+    ) {
         self.elapsedSeconds = elapsedSeconds
         self.chars = chars
         self.rtf = rtf
         self.speechRatio = speechRatio
+        self.diarization = diarization
     }
 }
 
@@ -57,10 +62,12 @@ public struct Transcriber: Sendable {
     let config: TranscriptionConfig
     let catalog: ModelCatalog
     let clock: any AppClock
+    /// 渡されたときだけ、正規化 transcript を書く前に話者分離を行う（PLAN §8.4.1。F-89）
+    let diarizer: Diarizer?
 
     public init(
         runner: any ProcessRunning, paths: AppPaths, layout: HomeLayout,
-        config: TranscriptionConfig, catalog: ModelCatalog, clock: any AppClock
+        config: TranscriptionConfig, catalog: ModelCatalog, clock: any AppClock, diarizer: Diarizer? = nil
     ) {
         self.runner = runner
         self.paths = paths
@@ -68,6 +75,7 @@ public struct Transcriber: Sendable {
         self.config = config
         self.catalog = catalog
         self.clock = clock
+        self.diarizer = diarizer
     }
 
     /// ガード（T-18）が使う。前提の欠けを宣言順で返す。
@@ -122,8 +130,7 @@ public struct Transcriber: Sendable {
         let result = await runner.run(
             ProcessSpec(executable: paths.whisperCLI, arguments: argv, environment: ProcessEnvironment.standard),
             timeout: .seconds(timeout))
-        let d = clock.uptime() - start
-        let elapsed = Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
+        let elapsed = Self.seconds(clock.uptime() - start)
 
         // 8. 結果の写し方。
         // アプリの終了で止めた・閉じた後で起動しなかったものは失敗として記録しない（F-82）。止める前に 0 で終わっていれば読む
@@ -162,12 +169,33 @@ public struct Transcriber: Sendable {
             }
         }
 
+        // 話者分離（PLAN §8.4.1。F-89）。無音と区間 0 には起動しない。失敗しても文字起こしは失敗させない
+        var segments = parsed.segments
+        var report: DiarizationReport? = nil
+        if let diarizer, TextLimit.scalarCount(parsed.text) >= config.minChars, !segments.isEmpty {
+            let begin = clock.uptime()
+            switch await diarizer.diarize(
+                input: req.input, slug: req.slug, durationSeconds: req.durationSeconds)
+            {
+            case .stopped:
+                return .stopped
+            case .failed(let r):
+                report = .failed(reason: r)
+            case .diarized(let turns):
+                segments = SpeakerAssigner.assign(segments, turns: turns)
+                report = .completed(
+                    speakers: Set(segments.compactMap(\.speaker)).count,
+                    elapsedSeconds: Self.seconds(clock.uptime() - begin))
+            }
+        }
+
         // 10〜11. ASR-09: 無音判定より前に保存する（根拠 B の証拠）。
         // F-83: 根拠 B の証拠で、根拠 A の本文の 2 つ目の写し（Raw ノートを書き直すときの元）なので、
         // Vault のノートと同じく F_FULLFSYNC で書き出す（PLAN §8.7。PolicyTests の DurableWriteCallTests が字句で固定）
+        // text は変えない（話者のラベルを text に入れない）
         let t = PartTranscript(
             partkey: req.partkey, language: parsed.language, durationSeconds: req.durationSeconds,
-            startedAt: req.startedAt, text: parsed.text, segments: parsed.segments)
+            startedAt: req.startedAt, text: parsed.text, segments: segments)
         do {
             try FileManager.default.createDirectory(
                 at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -183,7 +211,8 @@ public struct Transcriber: Sendable {
         }
 
         // 13. 成功。
-        return .transcribed(t, metrics: metrics(t, elapsed: elapsed, duration: req.durationSeconds))
+        return .transcribed(
+            t, metrics: metrics(t, elapsed: elapsed, duration: req.durationSeconds, diarization: report))
     }
 
     /// 起動の失敗（posix_spawn の errno）のうち、実行ファイル（か起動の指定）の問題で、起動し直しても変わらないもの（F-82）。
@@ -217,15 +246,23 @@ public struct Transcriber: Sendable {
     }
 
     /// メトリクス。duration が nil か 0 以下なら rtf と speechRatio は nil。
-    func metrics(_ t: PartTranscript, elapsed: Double, duration: Double?) -> TranscribeMetrics {
+    func metrics(
+        _ t: PartTranscript, elapsed: Double, duration: Double?, diarization: DiarizationReport? = nil
+    ) -> TranscribeMetrics {
         let chars = TextLimit.scalarCount(t.text)
         guard let duration, duration > 0 else {
-            return TranscribeMetrics(elapsedSeconds: elapsed, chars: chars, rtf: nil, speechRatio: nil)
+            return TranscribeMetrics(
+                elapsedSeconds: elapsed, chars: chars, rtf: nil, speechRatio: nil, diarization: diarization)
         }
         let speech = t.segments.reduce(0.0) { $0 + max(0, $1.end - $1.start) }
         return TranscribeMetrics(
             elapsedSeconds: elapsed, chars: chars, rtf: PyRound.round(elapsed / duration, digits: 3),
-            speechRatio: PyRound.round(speech / duration, digits: 3))
+            speechRatio: PyRound.round(speech / duration, digits: 3), diarization: diarization)
+    }
+
+    /// Duration を秒の Double に（丸めない）。
+    static func seconds(_ d: Duration) -> Double {
+        Double(d.components.seconds) + Double(d.components.attoseconds) / 1e18
     }
 
     /// 在り、大きさがカタログどおりの Whisper モデルの URL。
@@ -244,8 +281,8 @@ public struct Transcriber: Sendable {
         return ModelFiles.url(kind: .vad, entry: entry, layout: layout)
     }
 
-    /// 通常ファイルで実行権がある。
-    private static func isExecutableFile(_ url: URL) -> Bool {
+    /// 通常ファイルで実行権がある（Diarizer.missingParts も使う）。
+    static func isExecutableFile(_ url: URL) -> Bool {
         let path = url.path(percentEncoded: false)
         var info = stat()
         guard stat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return false }
