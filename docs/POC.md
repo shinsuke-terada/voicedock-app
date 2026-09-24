@@ -970,7 +970,7 @@ gh: Upgrade to GitHub Pro or make this repository public to enable this feature.
 
 ## 15. LLM 受け入れ試験（PLAN §10.6）
 
-一部実施（2026-09-24。Qwen3 4B（`qwen3-4b-instruct-2507-q4_k_m` と sha256 が一致する取り込み済みのファイル）は **✗ FAIL**。30B は未実施。カタログの再確認（15.1）も未実施）
+一部実施（2026-09-24。X-43・X-44 の修正の前は 4B・30B とも **✗ FAIL**。修正後に 30B を再試験し **✅ PASS**。`verified: true` にした。カタログの再確認（15.1）は実施。4B は未再試験のまま `verified: false`）
 
 手順（**利用者が行う**。15.1 はネットワークに出る。15.2 はモデル（30B は約 18.6 GB）が `~/Library/Application Support/VoiceDock/models/llm/` に要る）:
 
@@ -982,7 +982,24 @@ gh: Upgrade to GitHub Pro or make this repository public to enable this feature.
 
 ### 15.1 カタログの再確認
 
-⬜ 未実施
+測定日 **2026-09-24**。`scripts/check-catalog.sh` の生の出力:
+
+```text
+MISMATCH large-v3-turbo-q5_0 sha256: catalog=394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2 hf=None
+large-v3-turbo-q5_0	ggerganov/whisper.cpp	pinned=5359861c739e955e79d9a303bcbc70fb988958b1	head=5359861c739e955e79d9a303bcbc70fb988958b1	bytes=574041195	sha256=None	license=mit
+MISMATCH silero-v5.1.2 sha256: catalog=29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf hf=None
+silero-v5.1.2	ggml-org/whisper-vad	pinned=9ffd54a1e1ee413ddf265af9913beaf518d1639b	head=9ffd54a1e1ee413ddf265af9913beaf518d1639b	bytes=885098	sha256=None	license=mit
+MISMATCH qwen3-30b-a3b-instruct-2507-q4_k_m sha256: catalog=6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0 hf=None
+qwen3-30b-a3b-instruct-2507-q4_k_m	unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF	pinned=eea7b2be5805a5f151f8847ede8e5f9a9284bf77	head=eea7b2be5805a5f151f8847ede8e5f9a9284bf77	bytes=18556686752	sha256=None	license=apache-2.0
+MISMATCH qwen3-4b-instruct-2507-q4_k_m sha256: catalog=3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597 hf=None
+qwen3-4b-instruct-2507-q4_k_m	unsloth/Qwen3-4B-Instruct-2507-GGUF	pinned=a06e946bb6b655725eafa393f4a9745d460374c9	head=a06e946bb6b655725eafa393f4a9745d460374c9	bytes=2497281120	sha256=None	license=apache-2.0
+NG
+```
+
+判定: ✅ PASS（読み替えて）。4 項目すべてで `pinned == head`（ピン止めしたコミットが最新のまま）・`bytes` がカタログと一致した。
+`sha256` はどの項目も Hugging Face API（`?blobs=true`）が `None` を返し、スクリプトが `MISMATCH`・`NG` と表示する。
+**これは Xet ストレージのファイルで `oid`（sha256）を API が返さないための既知の限界で、実際の不一致ではない**。
+sha256 の一致は別の経路で直接確かめた: 30B・4B とも、ダウンロード直後の `shasum -a 256`（本セッション）と、受け入れ試験（`FileHasher.sha256(of:chunkBytes: 1_048_576)` の実測。§15.2 の報告）の両方で、カタログの値と全桁一致した。
 
 ### 15.2 受け入れ試験
 
@@ -1028,3 +1045,50 @@ gh: Upgrade to GitHub Pro or make this repository public to enable this feature.
 - J4: 長文は 26.4 分で 30 分以内。ただし 4B でこの所要なので、余裕は小さい
 
 **判定: ✗ FAIL。** 4B は `verified: false` のまま（カタログは変えない）。合格したモデルが無いと、利用者が LLM を選べない（`ModelCatalog.listedLLMs` は `verified: false` を出さない）。v1.0（T-44）の前に、1 つ以上のモデルを合格させる必要がある
+
+#### 15.2.1 4B の不合格を受けた 2 つの修正
+
+- **X-43**（PR #145。develop `eb3b163`）: 単一パス Reduce の判定に件数の上限（`reduceMaxItems`＝4）を追加。18 個の中間結果を 1 回でまとめていた最終 Reduce が、常に多段で畳まれるようにした
+- **X-44**（PR #146。develop `c97e299`）: `maxOutputTokens` の既定を 4096 → 8192 に。X-43 を入れた 30B の再試験でも、1 チャンク単体の map 呼び出しが `LLM_INVALID_JSON` で落ちたため（18 個中 15 個目あたり。Reduce には到達せず）
+
+X-43 適用後・X-44 の前に 30B を再試験したところ、J1 は 9/10・J2 修復込み 97.1%・J3 は 1 件不正（`due`）で、依然 ✗ FAIL だった（原因は Reduce ではなく map 単体。詳細は両 PR の本文）。
+
+#### 15.2.2 30B の再試験（X-43・X-44 の両方を適用後）
+
+測定日 **2026-09-24**。develop `67efc4e`（#146 のマージ）。参照機は章 1 の機種。
+
+| 項目 | 値 |
+|---|---|
+| モデル | `qwen3-30b-a3b-instruct-2507-q4_k_m` |
+| ファイル | `Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf` |
+| sha256 | `6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0`（`FileHasher.sha256(of:chunkBytes: 1_048_576)` の実測） |
+| 機種 / メモリ | `Apple M4 Pro` / `68719476736` |
+| llama.cpp | `b11033`（`Vendor/versions.env`） |
+| コマンド | `make llm-acceptance MODEL=qwen3-30b-a3b-instruct-2507-q4_k_m` |
+
+| fixture | 文字数 | 結果 | 本体の要求 | 修復の入った要求 | 所要 |
+|---|---|---|---|---|---|
+| s01-standup | 4,560 | success | 1 | 0 | 19.0 s |
+| s02-design-review | 7,217 | success | 1 | 0 | 23.3 s |
+| s03-oneonone | 10,730 | success | 1 | 0 | 32.1 s |
+| s04-support-call | 14,282 | success | 1 | 0 | 38.5 s |
+| s05-planning | 19,861 | success | 3 | 0 | 129.1 s |
+| s06-retrospective | 23,569 | success | 3 | 0 | 143.4 s |
+| s07-field-note | 28,371 | success | 3 | 0 | 133.7 s |
+| s08-workshop | 36,402 | success | 3 | 0 | 181.9 s |
+| s09-allhands | 56,048 | success | 4 | 0 | 242.1 s |
+| L01-longday | 220,046 | success | 26 | 0 | 1340.7 s |
+
+L01-longday の 26 回の要求の内訳（設計どおり）: 18 個のチャンクの map → 束ねた 7 回の map（X-43 の畳み込み。18 個 → 5 束 → 2 束）→ 最終 Reduce 1 回。
+
+| 判定 | 基準 | 実測 | 結果 |
+|---|---|---|---|
+| J1 ANALYZED | 10 / 10 | 10 | ✅ |
+| J2 修復なしの割合 | ≥ 90% | 100.0% | ✅ |
+| J2 修復込みの割合 | 100% | 100.0% | ✅ |
+| J3 `[[` と due | 0 件 | 0 件 | ✅ |
+| J4 220,000 文字 | ≤ 30 分 | 22.3 分 | ✅ |
+
+**判定: ✅ PASS。** `Resources/ModelCatalog.json` の `qwen3-30b-a3b-instruct-2507-q4_k_m` を `verified: true` にした（本 PR）。v1.0 で選べる LLM が 1 つ以上になった。
+
+4B（`custom:3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597`）は未再試験のまま `verified: false`。再試験するかは任意（v1.0 の前提は満たした）。
