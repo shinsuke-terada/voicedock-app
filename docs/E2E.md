@@ -141,7 +141,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-04 | Vault を利用不可にする | OFF | ✅ PASS | §3.4 |
 | E2E-05 | 抜き挿しを 6 回以上 | OFF | ✅ PASS | §3.5 |
 | E2E-06 | 1 日分を 1 セッションに | OFF | ⬜ 未実施 | §3.6 |
-| E2E-07 | 無音の Part を混ぜる | OFF | ⬜ 未実施 | §3.7 |
+| E2E-07 | 無音の Part を混ぜる | OFF | ✅ PASS | §3.7 |
 | E2E-08 | 1 本だけ文字起こしを失敗させる | OFF | ⬜ 未実施 | §3.8 |
 | E2E-09 | 保存後に同じ日の Part を追加 | OFF | ⬜ 未実施 | §3.9 |
 | E2E-10 | 削除 ON で通し | ON | ⬜ 未実施 | §3.10 |
@@ -537,13 +537,38 @@ sessions:   COMPLETED|3
 **無音の元音声は残る**（根拠 B は既定 false）。
 
 #### 記録
-Daily ノートの警告の節を**行ごとそのまま**、[C-1]、`grep 'part_skipped\|transcription_completed' "$VD_HOME/logs/app.log"`。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。**実際に録れたのは無音 2 本**（TX00_MIC010・TX00_MIC011。想定は「無音 1 本＋普通の録音 1 本」だったが、2 本目もミュートが解除されないまま録れてしまった。利用者の判断で、無音 2 本の結果のみで判定した。「普通の録音との混在」の直接確認は別の機会に回す。ただし普通の録音が `COMPLETED` まで進むことは E2E-01・03・04・14 で既に確認済み）。
+
+`part_skipped`:
 ```text
+2026-09-24T21:49:33+09:00 INFO  part_skipped recording_key=…TX00_MIC010_20260924_214759_orig.wav reason=no_speech
+2026-09-24T21:49:33+09:00 INFO  part_skipped recording_key=…TX00_MIC011_20260924_214841_orig.wav reason=no_speech
 ```
 
+[C-4]（当該 2 件）:
+```text
+…TX00_MIC010_20260924_214759_orig.wav|SKIPPED|NO_SPEECH_DETECTED|0 文字（min_chars=1）
+…TX00_MIC011_20260924_214841_orig.wav|SKIPPED|NO_SPEECH_DETECTED|0 文字（min_chars=1）
+```
+
+Daily ノートの警告の節（行ごとそのまま）:
+```text
+> この日の録音のうち 2 本を除外しました（無音）。自動では再試行されません。
+```
+`voicedock_skipped_parts` にも 2 件が載る。本文・frontmatter のどこにも `⚠` は付いていない（「再試行されます」のような誤った文言も無い）。
+
+元音声（デバイス上）:
+```text
+5370856 1790254078 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC010_20260924_214759_orig.wav
+4927336 1790254120 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC011_20260924_214841_orig.wav
+```
+処理後も 2 本とも残っている（削除 OFF・`cleanup.deleteSkippedSource=false` の既定どおり）。
+
+アプリは止まらず、他の Part の処理も続いた（`recordings: COMPLETED|17 SKIPPED|3`）。
+
 #### 判定
-⬜ 未実施
+✅ PASS（無音 1 本＋普通の録音 1 本の「混在」の直接確認は未実施。無音の判定・警告・`⚠` 無し・元音声が残ることは確認済み）
 
 ### 3.8 E2E-08 — 1 本だけ文字起こしを失敗させる
 
