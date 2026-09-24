@@ -7,6 +7,7 @@ import VDModels
 import VDNotes
 import VDPipeline
 import VDStore
+import VDTranscribe
 
 /// AppModel が外の世界に触れる唯一の口。
 protocol AppServices: Sendable {
@@ -89,6 +90,13 @@ struct LiveServices: AppServices {
             s.llmChoices = ModelChoices.llm(
                 catalog: catalog, physicalMemoryBytes: s.physicalMemoryBytes, currentID: c.llm.modelID,
                 layout: layout)
+            // T-51（F-89）: オンのときだけ部品を見る（起動はしない。stat だけ）
+            s.diarizationEnabled = c.transcription.diarization.enabled
+            if s.diarizationEnabled {
+                s.diarizationMissing = Diarizer(
+                    runner: context.runner, paths: context.paths, layout: layout, maxTimeoutSeconds: 1
+                ).missingParts()
+            }
         }
         s.ingestState = await context.ingest.state()
         s.ingestActivity = await context.ingest.activity()

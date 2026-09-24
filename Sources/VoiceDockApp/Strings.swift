@@ -159,6 +159,12 @@ enum Strings {
     static func configRejected(_ violations: [ConfigViolation]) -> String {
         "設定に書けませんでした: " + violations.map(\.rendered).joined(separator: "、")
     }
+    // T-51: 話者分離（PLAN §8.12 の 6。F-89）
+    static let labelDiarization = "話者分離（誰が話したか）"
+    static let diarizationNote = "オンにした後に文字起こしする録音から、Raw ノートを「話者A: …」の行に分けます。精度は録音の条件で変わります。"
+    static func diarizationMissing(_ parts: [String]) -> String {
+        "話者分離の部品がありません（\(parts.joined(separator: "、"))）。話者なしで文字起こしします"
+    }
 
     // T-40: 元音声の削除（PLAN §8.9.8・§8.12 の 7）。事前確認・確認語・挿し直しの案内は DeletionStrings
     static let buttonEnableDeletion = "有効にする"
