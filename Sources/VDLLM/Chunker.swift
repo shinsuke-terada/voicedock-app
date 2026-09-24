@@ -3,7 +3,7 @@ import Foundation
 import VDCore
 
 public struct Chunk: Equatable, Sendable {
-    /// segments の text を "\n" でつないだもの。
+    /// segments の行（`Chunker.line`。話者つきは `話者A: ` を前に付ける。F-89）を "\n" でつないだもの。
     public let text: String
     /// segments[0].at。
     public let startAt: Instant
@@ -73,6 +73,12 @@ public enum Chunker {
             return nil
         }
         return Chunk(
-            text: segments.map(\.text).joined(separator: "\n"), startAt: first.at, endAt: endAt, segments: segments)
+            text: segments.map(Self.line).joined(separator: "\n"), startAt: first.at, endAt: endAt, segments: segments)
+    }
+
+    /// 話者つきの区間は `話者A: <text>`（PLAN §8.5。F-89）。話者なしは text のまま。
+    static func line(_ seg: AbsoluteSegment) -> String {
+        guard let speaker = seg.speaker else { return seg.text }
+        return SpeakerLabel.display(speaker) + ": " + seg.text
     }
 }
