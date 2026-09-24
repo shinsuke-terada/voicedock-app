@@ -148,7 +148,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-11 | 過去分の削除・手動で消した分の完了 | ON | ⬜ 未実施 | §3.11 |
 | E2E-12 | 文字起こし中に強制終了 | OFF | ⬜ 未実施 | §3.12 |
 | E2E-13 | 処理中にスリープ | OFF | ⬜ 未実施 | §3.13 |
-| E2E-14 | アプリが動いていない間に接続 | OFF | ⬜ 未実施 | §3.14 |
+| E2E-14 | アプリが動いていない間に接続 | OFF | ✅ PASS | §3.14 |
 | E2E-15 | 取り下げ | — | — 対象外 | §3.15 |
 | E2E-16 | リムーバブルボリュームの許可を拒否 | OFF | ⬜ 未実施 | §3.16 |
 | E2E-17 | 削除を無効化 | ON→OFF | ⬜ 未実施 | §3.17 |
@@ -803,13 +803,32 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 3 の間は何も起きない。4 の起動後の最初の走査で取り込まれ、最後まで通る（`service_started` → `scan_completed copied=1`）。
 
 #### 記録
-[C-1]（前後）、`service_started` と最初の `scan_completed` の行と時刻（`grep -E 'service_started|scan_completed' "$VD_HOME/logs/app.log" | tail -n 5`）。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。約 1 分の新しい録音 1 本。
+
+[C-1]（前）:
 ```text
+recordings: COMPLETED|15 SKIPPED|1
+sessions:   COMPLETED|3
+```
+
+手順: `pgrep -x VoiceDock` が空であることを確認 → 録音を作り挿す → 1 分待つ（アプリは起動しないまま）→ `open dist/VoiceDock.app`。
+
+`service_started` と `scan_completed`:
+```text
+2026-09-24T21:36:07+09:00 INFO  service_started version=0.1.0 schema=v1_initial
+2026-09-24T21:36:09+09:00 INFO  scan_completed devices=1 copied=1 elapsed_s=2.1
+```
+起動の 2 秒後の最初の走査で取り込まれた。
+
+[C-1]（後）:
+```text
+recordings: COMPLETED|16 SKIPPED|1
+sessions:   COMPLETED|3
 ```
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.15 E2E-15 — 取り下げ
 
