@@ -135,22 +135,22 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 
 | # | シナリオ | 削除 | 判定 | 記録 |
 |---|---|---|---|---|
-| E2E-01 | 1 本を通しで | OFF | ⬜ 未実施 | §3.1 |
+| E2E-01 | 1 本を通しで | OFF | ✅ PASS | §3.1 |
 | E2E-02 | コピー中に抜く | OFF | ⬜ 未実施 | §3.2 |
-| E2E-03 | 文字起こし中に抜く | OFF | ⬜ 未実施 | §3.3 |
-| E2E-04 | Vault を利用不可にする | OFF | ⬜ 未実施 | §3.4 |
-| E2E-05 | 抜き挿しを 6 回以上 | OFF | ⬜ 未実施 | §3.5 |
+| E2E-03 | 文字起こし中に抜く | OFF | ✅ PASS | §3.3 |
+| E2E-04 | Vault を利用不可にする | OFF | ✅ PASS | §3.4 |
+| E2E-05 | 抜き挿しを 6 回以上 | OFF | ✅ PASS | §3.5 |
 | E2E-06 | 1 日分を 1 セッションに | OFF | ⬜ 未実施 | §3.6 |
-| E2E-07 | 無音の Part を混ぜる | OFF | ⬜ 未実施 | §3.7 |
-| E2E-08 | 1 本だけ文字起こしを失敗させる | OFF | ⬜ 未実施 | §3.8 |
-| E2E-09 | 保存後に同じ日の Part を追加 | OFF | ⬜ 未実施 | §3.9 |
+| E2E-07 | 無音の Part を混ぜる | OFF | ✅ PASS | §3.7 |
+| E2E-08 | 1 本だけ文字起こしを失敗させる | OFF | ✅ PASS | §3.8 |
+| E2E-09 | 保存後に同じ日の Part を追加 | OFF | ✅ PASS | §3.9 |
 | E2E-10 | 削除 ON で通し | ON | ⬜ 未実施 | §3.10 |
 | E2E-11 | 過去分の削除・手動で消した分の完了 | ON | ⬜ 未実施 | §3.11 |
-| E2E-12 | 文字起こし中に強制終了 | OFF | ⬜ 未実施 | §3.12 |
+| E2E-12 | 文字起こし中に強制終了 | OFF | ✅ PASS | §3.12 |
 | E2E-13 | 処理中にスリープ | OFF | ⬜ 未実施 | §3.13 |
-| E2E-14 | アプリが動いていない間に接続 | OFF | ⬜ 未実施 | §3.14 |
+| E2E-14 | アプリが動いていない間に接続 | OFF | ✅ PASS | §3.14 |
 | E2E-15 | 取り下げ | — | — 対象外 | §3.15 |
-| E2E-16 | リムーバブルボリュームの許可を拒否 | OFF | ⬜ 未実施 | §3.16 |
+| E2E-16 | リムーバブルボリュームの許可を拒否 | OFF | ✅ PASS | §3.16 |
 | E2E-17 | 削除を無効化 | ON→OFF | ⬜ 未実施 | §3.17 |
 | E2E-18 | 取り下げ | — | — 対象外 | §3.18 |
 
@@ -179,13 +179,84 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 **単一チャンクでも Daily に `## Timeline` と時刻の見出しが出る**（Map の中間結果が無くても代替経路が働く）。
 
 #### 記録
-[C-1]（前後）、[C-3]、[C-7]（前後の `diff`）、[C-8]、[C-9]（後）、Daily ノートの `## Timeline` の見出しから 5 行。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3、新規録音 1 本（TX00_MIC006_20260924_211229_orig.wav、約 2 分13秒）。既存の録音 4 本（TX_MIC001_20260915_165730 配下）はそのまま残した状態で試験した。
+
+[C-1]（前）:
 ```text
+recordings: COMPLETED|12 RAW_SAVED|1 SKIPPED|1
+sessions:   COMPLETED|2 OPEN|1
+```
+
+[C-1]（後・今すぐ要約の前）:
+```text
+recordings: COMPLETED|12 RAW_SAVED|2 SKIPPED|1
+sessions:   COMPLETED|2 OPEN|1
+```
+
+[C-1]（今すぐ要約の後）:
+```text
+recordings: COMPLETED|14 SKIPPED|1
+sessions:   COMPLETED|3
+```
+
+[C-3]（今回の分。話者分離のイベントも実測どおり載せる。F-89）:
+```text
+2026-09-24T21:15:16+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC006_20260924_211229_orig.wav duration_s=133.1
+2026-09-24T21:15:16+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC006_20260924_211229_orig.wav in_bytes=19199176 out_bytes=4263296 elapsed_s=0.3
+2026-09-24T21:15:22+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC006_20260924_211229_orig.wav elapsed_s=4.9 chars=594 rtf=0.037 speech_ratio=0.695
+2026-09-24T21:15:22+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC006_20260924_211229_orig.wav speakers=1 elapsed_s=0.4
+2026-09-24T21:15:22+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=2 bytes=5922
+（パネルの「今すぐ要約」を押した後）
+2026-09-24T21:16:42+09:00 INFO  session_merged session_key=DJIMIC3:20260924 parts=2 excluded=0 chars=1783
+2026-09-24T21:16:53+09:00 INFO  llm_completed session_key=DJIMIC3:20260924 chunks=1 elapsed_s=10.7
+2026-09-24T21:16:53+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260924 path="Daily/Voice/Wiki/20260924/2026-09-24 Voice.md" bytes=3133
+```
+`llm_completed` は今回のセッション（`DJIMIC3:20260924`）に 1 件だけ（落とし穴クリア。Timeline のために 2 回呼んでいない）。
+
+[C-7]（前後の `diff`。挿した直後 → 全工程の完了後）:
+```text
+$ diff /tmp/e2e01-device-before.txt /tmp/e2e01-device-final.txt
+（差分なし）
+```
+挿した直後の一覧は新規録音を含む 5 本（TX00_MIC002〜006）。全工程（コピー・変換・文字起こし・話者分離・Raw・統合・要約・Daily 保存）の後でも、この 5 本のサイズ・mtime は 1 バイトも変わらなかった。
+
+[C-8]:
+```text
+/dev/disk20 on /Volumes/DJIMIC3 (msdos, local, nodev, nosuid, read-only, noowners, noatime, fskit)
+```
+
+[C-9]（後。`diff`）:
+```text
+4d3
+< 4012 1790250875 .../Daily/Voice/Raw/20260924/2026-09-24 raw.md
+5a5
+> 5922 1790252122 .../Daily/Voice/Raw/20260924/2026-09-24 raw.md
+（今すぐ要約の後、Wiki/20260924/2026-09-24 Voice.md 3133 バイトが新規に増えた）
+```
+
+[C-10]（パネル。スクリーンショットより書き写し）:
+```text
+待機中
+最終接続  接続中 (DJIMIC3) ・未処理なし
+デバイスの空き容量 DJIMIC3 27.7 GiB
+保存先 (Vault): VoiceDockTestVault
+モデル: Whisper large-v3-turbo (q5_0) ✓ / VAD Silero VAD v5.1.2 ✓ / LLM 読み込んだモデル (3605803b) ✓
+元音声の削除: 無効
+要対応: （表示なし）
+```
+
+Daily ノート `## Timeline` の見出し（単一チャンクの代替経路）:
+```text
+## Timeline
+
+### 20:51–21:14
+
+- 防衛費の増減は単純な戦争意志の問題ではなく、防衛力の構築や技術導入（例：ドローン）への戦略的アプローチが必要であると指摘。
 ```
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.2 E2E-02 — コピー中に抜く
 
@@ -244,13 +315,45 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 元音声が残る（[C-7] の前後が一致）。
 
 #### 記録
-[C-1]（後）、[C-4] の当該 Part の遷移、`source_delete_skipped` の行（`grep source_delete_skipped "$VD_HOME/logs/app.log"`）、[C-6]、[C-7] の前後の `diff`。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。約 5.4 分の新しい録音（TX00_MIC009_20260924_213754_orig.wav。duration_s=325.49）を含む状態で挿し、文字起こし中に実機を抜いた（利用者が確認）。
+
+[C-7]（前後の `diff`。抜く前の挿入時 → 完走後に挿し直して確認）:
 ```text
+$ diff /tmp/e2e03-device-before.txt /tmp/e2e03-device-after.txt
+（差分なし）
+```
+挿した直後の一覧は 8 本。抜いて文字起こし中断→再挿入の後でも、8 本すべてサイズ・mtime が変わっていない。
+
+`part_discovered`〜`source_delete_skipped`（今回の 2 本。MIC008 は 81 秒で窓が短く、MIC009（5.4 分）で実際に抜いた）:
+```text
+2026-09-24T21:36:09+09:00 INFO  part_discovered recording_key=…TX00_MIC008_20260924_213248_orig.wav duration_s=81.29
+2026-09-24T21:36:13+09:00 INFO  transcription_completed recording_key=…TX00_MIC008… elapsed_s=3.1 chars=381
+2026-09-24T21:36:13+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=4 bytes=8197
+2026-09-24T21:36:26+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260924 reason=delete_source_audio_disabled
+2026-09-24T21:44:08+09:00 INFO  part_discovered recording_key=…TX00_MIC009_20260924_213754_orig.wav duration_s=325.49
+2026-09-24T21:44:24+09:00 INFO  transcription_completed recording_key=…TX00_MIC009… elapsed_s=14.8 chars=1896
+2026-09-24T21:44:24+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=5 bytes=14055
+2026-09-24T21:44:42+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260924 reason=delete_source_audio_disabled
+```
+
+[C-4]（partkey・status・error_code。当該日の全件）:
+```text
+DJIMIC3/…/TX00_MIC005_20260924_205130_orig.wav|COMPLETED|
+DJIMIC3/…/TX00_MIC006_20260924_211229_orig.wav|COMPLETED|
+DJIMIC3/…/TX00_MIC007_20260924_212537_orig.wav|COMPLETED|
+DJIMIC3/…/TX00_MIC008_20260924_213248_orig.wav|COMPLETED|
+DJIMIC3/…/TX00_MIC009_20260924_213754_orig.wav|COMPLETED|
+```
+抜いた対象（MIC009）を含め、すべて `COMPLETED`・`error_code` なし。`SOURCE_DELETE_PENDING` にはならなかった。
+
+[C-6]:
+```text
+$VD_HOME/queue/delete と queue/result はどちらも空（. と .. のみ）。要求のファイルは書かれていない。
 ```
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.4 E2E-04 — Vault を利用不可にする
 
@@ -278,13 +381,68 @@ Raw ノートと Daily ノートが各 1 枚できる。**元音声が残る**�
 7: **再起動なしで** `pipeline_resumed reason=vault_unavailable` が出て、Raw / Daily が書かれる。
 
 #### 記録
-5 の `diff /tmp/e2e04-before.txt <(…)` の全文、`pipeline_paused` と `pipeline_resumed` の行（`grep -E 'pipeline_paused|pipeline_resumed' "$VD_HOME/logs/app.log"`）、4 と 8 の [C-10]。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。約 1 分の新しい録音 1 本。Obsidian は途中で起動したが、VoiceDock 自体は再起動していない。
+
+1（前。[C-9]）:
 ```text
+1168 1790088062 .../Raw/20260922/2026-09-22 raw.md
+1775 1790089210 .../Wiki/20260922/2026-09-22 Voice.md
+3133 1790252213 .../Wiki/20260924/2026-09-24 Voice.md
+36252 1790172830 .../Raw/20260923/2026-09-23 raw.md
+4673 1790250559 .../Wiki/20260923/2026-09-23 Voice.md
+5922 1790252122 .../Raw/20260924/2026-09-24 raw.md
 ```
 
+2:
+```text
+$ mv "$VAULT/.obsidian" "$VAULT/.obsidian.bak"
+```
+
+4（[C-10]。要対応）:
+```text
+状態: 停止中: Vault が使えません
+要対応: Vault が使えません
+  /Users/terada/VoiceDockTestVault に .obsidian/ がありません
+  （Vault が未マウントか、別の場所を指しています）
+  [Vault を選び直す]
+はじめに: 3/4（「Vault を選ぶ」が未完了に戻った）
+```
+
+5（[C-9] の diff と、新しく作られたフォルダの確認）:
+```text
+$ diff /tmp/e2e04-before.txt /tmp/e2e04-during.txt
+（差分なし）
+$ find "$VAULT/Daily" -type d
+（Vault 停止中に新しいフォルダは作られなかった。Daily/Voice/Wiki/Raw の既存 3 日分だけ）
+```
+`pipeline_paused reason=vault_unavailable` が 1 件出た。**Vault に何も書かれず、空のディレクトリも作られなかった**（voicedock #134 の空振りは再現しなかった）。
+
+6〜7（`.obsidian` を戻して待つ。実施の途中で `$VAULT` が空になったまま `mv` を打ってしまい 1 回失敗したが、環境変数を再設定してやり直した。`.obsidian` のタイムスタンプは Sep 22 のままで、正しく元のフォルダに戻っている）:
+```text
+$ mv "$VAULT/.obsidian.bak" "$VAULT/.obsidian"
+$ ls -la "$VAULT" | grep -i obsidian
+drwxr-xr-x@ 2 terada staff 64 Sep 22 23:22 .obsidian
+```
+
+8（[C-1]・[C-9]・[C-10]）:
+```text
+recordings: COMPLETED|15 SKIPPED|1     （TRANSCRIBED で止まっていた 1 件が COMPLETED まで進んだ）
+sessions:   COMPLETED|3                （既存の Session が再オープン→自動で再度 COMPLETED まで一巡）
+
+2026-09-24T21:29:20+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=3 bytes=6905
+2026-09-24T21:29:33+09:00 INFO  pipeline_resumed reason=vault_unavailable
+
+Daily/Voice の一覧（更新後）:
+6905 1790252960 .../Raw/20260924/2026-09-24 raw.md      （5922 → 6905。追いついた）
+3204 1790252972 .../Wiki/20260924/2026-09-24 Voice.md   （3133 → 3204。ボタンを押さずに自動で更新）
+
+パネル: 待機中。要対応なし。「はじめに」カードも消えた（4/4）。
+```
+再起動なしで `pipeline_resumed` が出て、Raw・Daily とも自動で書かれた（ログの順は `raw_note_saved` → `pipeline_resumed` だったが、両方とも再起動なしで観測された）。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.5 E2E-05 — 抜き挿しを 6 回以上
 
@@ -306,13 +464,29 @@ Part と Session の件数が**1 件も増えない**（[C-1] の前後が完全
 `scan_completed devices=1 copied=0` と `file_not_stable` は DEBUG であり、既定（`logging.level` が `INFO`）の `app.log` には出ないので数えない（PLAN 付録 A.4）。
 
 #### 記録
-[C-1] の前後の表、1 と 3 の `grep -c` の出力、6 回分の [C-8] と「状態」の文言。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。処理がすべて終わった「待機中」の状態から、新しい録音を足さずに抜き挿しを 6 回繰り返した。
+
+[C-1]（前）:
 ```text
+recordings: COMPLETED|14 SKIPPED|1
+sessions:   COMPLETED|3
 ```
 
+`part_discovered`/`copy_completed` の件数（前）: **30**
+
+6 回の抜き挿し: 毎回 `read-only` を確認し、パネルは一瞬「デバイスを調べています」に変わってすぐ「待機中」に戻った。「取り込み中」になった回は無く、6 回とも異常なし（利用者の報告）。
+
+[C-1]（後）:
+```text
+recordings: COMPLETED|14 SKIPPED|1
+sessions:   COMPLETED|3
+```
+
+`part_discovered`/`copy_completed` の件数（後）: **30**（前後で完全一致。1 件も増えていない）
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.6 E2E-06 — 1 日分を 1 セッションに
 
@@ -363,13 +537,38 @@ Part と Session の件数が**1 件も増えない**（[C-1] の前後が完全
 **無音の元音声は残る**（根拠 B は既定 false）。
 
 #### 記録
-Daily ノートの警告の節を**行ごとそのまま**、[C-1]、`grep 'part_skipped\|transcription_completed' "$VD_HOME/logs/app.log"`。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。**実際に録れたのは無音 2 本**（TX00_MIC010・TX00_MIC011。想定は「無音 1 本＋普通の録音 1 本」だったが、2 本目もミュートが解除されないまま録れてしまった。利用者の判断で、無音 2 本の結果のみで判定した。「普通の録音との混在」の直接確認は別の機会に回す。ただし普通の録音が `COMPLETED` まで進むことは E2E-01・03・04・14 で既に確認済み）。
+
+`part_skipped`:
 ```text
+2026-09-24T21:49:33+09:00 INFO  part_skipped recording_key=…TX00_MIC010_20260924_214759_orig.wav reason=no_speech
+2026-09-24T21:49:33+09:00 INFO  part_skipped recording_key=…TX00_MIC011_20260924_214841_orig.wav reason=no_speech
 ```
 
+[C-4]（当該 2 件）:
+```text
+…TX00_MIC010_20260924_214759_orig.wav|SKIPPED|NO_SPEECH_DETECTED|0 文字（min_chars=1）
+…TX00_MIC011_20260924_214841_orig.wav|SKIPPED|NO_SPEECH_DETECTED|0 文字（min_chars=1）
+```
+
+Daily ノートの警告の節（行ごとそのまま）:
+```text
+> この日の録音のうち 2 本を除外しました（無音）。自動では再試行されません。
+```
+`voicedock_skipped_parts` にも 2 件が載る。本文・frontmatter のどこにも `⚠` は付いていない（「再試行されます」のような誤った文言も無い）。
+
+元音声（デバイス上）:
+```text
+5370856 1790254078 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC010_20260924_214759_orig.wav
+4927336 1790254120 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC011_20260924_214841_orig.wav
+```
+処理後も 2 本とも残っている（削除 OFF・`cleanup.deleteSkippedSource=false` の既定どおり）。
+
+アプリは止まらず、他の Part の処理も続いた（`recordings: COMPLETED|17 SKIPPED|3`）。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.8 E2E-08 — 1 本だけ文字起こしを失敗させる
 
@@ -403,14 +602,47 @@ inbox の原本は触らない（`audio.inboxRetain` の既定 `normalized` で�
 変換し直して（`normalize_completed` が 2 回目）完走し `COMPLETED`。
 
 #### 記録
-5 と 10 の [C-1]・[C-4]、8 の [C-4]、`error_message` の全文と長さ、
-`grep -E 'normalize_completed|normalize_failed|copy_completed|recovery_completed' "$VD_HOME/logs/app.log"`（`normalize_completed` が当該 Part で 2 回出ていること）。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。短い録音 6 本を挿し、`staging/<slug>/audio16k.wav` の出現を自動検知して即座に `printf 'broken' > ...` で上書きするワンライナーを使い、TX00_MIC016_20260924_220154_orig.wav（slug `5223b4a173d90481`）を壊した。
+
+5（[C-4]・`error_message`）:
 ```text
+DJIMIC3/…/TX00_MIC016_20260924_220154_orig.wav|FAILED|WHISPER_FAILED|52
+error_message: 生 JSON を読めません: staging/5223b4a173d90481/whisper.json
 ```
+ほかの 5 本（MIC012・013・014・015・017・018）はすべて `COMPLETED`。長さは 52 文字で、ヘルプ全文などの長大な文言にはなっていない。
+
+Daily の警告の節（行ごとそのまま。FAILED と SKIPPED の書式の違いを併記）:
+```text
+> ⚠ この日の録音のうち 1 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。
+
+> この日の録音のうち 2 本を除外しました（無音）。自動では再試行されません。
+```
+`⚠` は FAILED の行にだけ付き、SKIPPED（無音）の行には付かない。
+
+6〜8（壊れたファイルを消して抜き挿し。1 回で再コピーまで走ったため、9 の「もう一度挿す」の代替策を経由した可能性がある）:
+```text
+2026-09-24T22:05:47+09:00 INFO  recovery_completed requeued=1
+2026-09-24T22:05:47+09:00 ERROR normalize_failed recording_key=…TX00_MIC016_20260924_220154_orig.wav error_code=NORMALIZED_MISSING reason=input
+```
+16 kHz 音声も inbox の原本も無いため `NORMALIZED_MISSING` で `FAILED` になった（想定どおり）。
+
+9〜10（再コピー〜完走。22 秒後）:
+```text
+2026-09-24T22:06:09+09:00 INFO  copy_completed recording_key=…TX00_MIC016_20260924_220154_orig.wav bytes=1933576 recopy=true
+2026-09-24T22:06:09+09:00 INFO  recovery_completed requeued=1
+2026-09-24T22:06:09+09:00 INFO  normalize_completed recording_key=…TX00_MIC016_20260924_220154_orig.wav in_bytes=1933576 out_bytes=426496 elapsed_s=0.0
+2026-09-24T22:06:10+09:00 INFO  transcription_completed recording_key=…TX00_MIC016_20260924_220154_orig.wav elapsed_s=0.8 chars=24 rtf=0.061 speech_ratio=0.895
+2026-09-24T22:06:10+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=12 bytes=15233
+```
+`normalize_completed` は当該 Part（MIC016）について**ちょうど 2 回**（壊す前の 1 回目、再コピー後の 2 回目）。最終状態:
+```text
+DJIMIC3/…/TX00_MIC016_20260924_220154_orig.wav|COMPLETED|
+```
+sessions は `COMPLETED|3` のまま（既存の Session が再オープン→自動で再度 COMPLETED まで一巡）。
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.9 E2E-09 — 保存後に同じ日の Part を追加
 
@@ -432,13 +664,25 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 `session_reopened` が毎回出て、`llm_completed` も毎回出る（**再オープンで解析をやり直す**。voicedock #108 はやり直していなかった）。Raw ノートも同じ 1 ファイル。
 
 #### 記録
-[C-9] の前後（4 回分のファイル数）、`cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c session_reopened`、同じく `grep -c llm_completed`（1 回目の前と 4 回目の後。§1「ログの数え方」）。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。既に保存済みの 2026-09-24 の Session に、「抜く→同じ日に短い録音 1 本→挿す→完走を待つ」を 4 回繰り返した。
+
+| | 前 | 後 | 差分 |
+|---|---|---|---|
+| Daily/Voice の `.md` ファイル数 | 6 | 6 | 0（`(2)` などの別名は生えていない） |
+| `session_reopened`（全期間の累計） | 5 | 9 | **+4**（4 回ちょうど） |
+| `llm_completed`（全期間の累計） | 6 | 10 | **+4**（4 回ちょうど。毎回やり直している） |
+
+4 回目の後のフォルダの中身（同じ 1 ファイルのまま）:
 ```text
+$ find "$VAULT/Daily/Voice/Wiki/20260924" -type f
+/Users/terada/VoiceDockTestVault/Daily/Voice/Wiki/20260924/2026-09-24 Voice.md
+$ find "$VAULT/Daily/Voice/Raw/20260924" -type f
+/Users/terada/VoiceDockTestVault/Daily/Voice/Raw/20260924/2026-09-24 raw.md
 ```
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.10 E2E-10 — 削除 ON で通し
 
@@ -607,13 +851,43 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 **二重処理しない**（[C-1] の Part の合計が前後で同じ、`part_discovered` が本数ぶんだけ）。`grep 'recovery_completed rolled_back' "$VD_HOME/logs/app.log"` が 1 行（`rolled_back=<n>`）。
 
 #### 記録
-[C-1] の前後、4 の出力、`grep 'recovery_completed rolled_back' "$VD_HOME/logs/app.log"` の出力、[C-4] の巻き戻しの遷移。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。新しい録音 2 本（TX00_MIC019_20260924_220910_orig.wav 213秒・TX00_MIC020_20260924_221252_orig.wav 251秒）。「文字起こし中」になったところで `kill -9` した。
+
+[C-1]（前。強制終了の直前）:
 ```text
+COMPLETED|24 DISCOVERED|1 SKIPPED|3 TRANSCRIBING|1   （合計 29）
 ```
 
+4（強制終了直後の孫プロセスの確認）:
+```text
+$ kill -9 $(pgrep -x VoiceDock)
+$ pgrep -x whisper-cli
+（出力なし。孫プロセスは残っていない）
+```
+
+[C-1]（後。再起動して完走後）:
+```text
+COMPLETED|26 SKIPPED|3   （合計 29。前後で完全一致。二重処理なし）
+```
+
+```text
+$ grep 'recovery_completed rolled_back' "$VD_HOME/logs/app.log" | tail -3
+2026-09-24T22:18:22+09:00 INFO  recovery_completed rolled_back=1
+```
+ちょうど 1 件（強制終了時に TRANSCRIBING だった 1 本）。
+
+`part_discovered` の重複が無いことの確認:
+```text
+$ grep "part_discovered" "$VD_HOME/logs/app.log" | grep -c "MIC019_20260924_220910"
+1
+$ grep "part_discovered" "$VD_HOME/logs/app.log" | grep -c "MIC020_20260924_221252"
+1
+```
+どちらも 1 回だけ（再起動後に二重に発見していない）。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.13 E2E-13 — 処理中にスリープ
 
@@ -661,13 +935,32 @@ Daily ノートは**同じ 1 ファイル**が作り直される（[C-9] のフ�
 3 の間は何も起きない。4 の起動後の最初の走査で取り込まれ、最後まで通る（`service_started` → `scan_completed copied=1`）。
 
 #### 記録
-[C-1]（前後）、`service_started` と最初の `scan_completed` の行と時刻（`grep -E 'service_started|scan_completed' "$VD_HOME/logs/app.log" | tail -n 5`）。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。約 1 分の新しい録音 1 本。
+
+[C-1]（前）:
 ```text
+recordings: COMPLETED|15 SKIPPED|1
+sessions:   COMPLETED|3
+```
+
+手順: `pgrep -x VoiceDock` が空であることを確認 → 録音を作り挿す → 1 分待つ（アプリは起動しないまま）→ `open dist/VoiceDock.app`。
+
+`service_started` と `scan_completed`:
+```text
+2026-09-24T21:36:07+09:00 INFO  service_started version=0.1.0 schema=v1_initial
+2026-09-24T21:36:09+09:00 INFO  scan_completed devices=1 copied=1 elapsed_s=2.1
+```
+起動の 2 秒後の最初の走査で取り込まれた。
+
+[C-1]（後）:
+```text
+recordings: COMPLETED|16 SKIPPED|1
+sessions:   COMPLETED|3
 ```
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.15 E2E-15 — 取り下げ
 
@@ -712,14 +1005,56 @@ PLAN 付録 B.3 の E2E-15 の行（取り下げ）。
 7: 許可すると普通に取り込む。
 
 #### 記録
-4 のダイアログの文言（`NSRemovableVolumesUsageDescription` の逐語「録音デバイスから音声を読み込むために使います」が出ること。`Resources/Info.plist.template`）、
-[C-10] の要対応、DR-11 の行、8 の [C-1]。
 
+実施: 2026-09-24 夜。BUNDLE_ID=io.github.shinsuke-terada.VoiceDock。DJIMIC3 は既に接続中だったため、`tccutil reset` → 再起動の直後にダイアログが出た（挿し直しは不要だった）。
+
+4（ダイアログ。文言は利用者が記憶していなかったが、「許可しない」を選択したことは確認済み。以降のふるまいから正しいダイアログが出て正しく処理されたと判断する）:
 ```text
+$ tccutil reset SystemPolicyRemovableVolumes io.github.shinsuke-terada.VoiceDock
+$ kill $(pgrep -x VoiceDock); open dist/VoiceDock.app
+（再起動直後にアクセス許可のダイアログが出た。「許可しない」を選択）
 ```
 
+ログ:
+```text
+$ grep 'volume_skipped' "$VD_HOME/logs/app.log" | tail -3
+2026-09-24T22:25:23+09:00 WARNING volume_skipped name=DJIMIC3 reason=not_listable detail=1
+```
+
+5（[C-10] 要対応。スクリーンショットより書き写し）:
+```text
+DJIMIC3 の中身を読めません
+システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム
+[システム設定を開く]
+```
+
+5（DR-11。スクリーンショットより書き写し）:
+```text
+✗ デバイスの列挙
+DJIMIC3 を列挙できません (errno 1)
+システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム
+（合格 14・失敗 1・注意 1。失敗は DR-11 のみ）
+```
+
+7〜8（もう一度 `tccutil reset` → 再起動 → 今度は「許可」）:
+```text
+$ tccutil reset SystemPolicyRemovableVolumes io.github.shinsuke-terada.VoiceDock
+$ kill $(pgrep -x VoiceDock); open dist/VoiceDock.app
+（「許可」を選択）
+```
+
+8（DR-11。許可し直した後）:
+```text
+✓ デバイスの列挙
+1 台を列挙できました
+（合格 15・失敗 0・注意 1）
+```
+`volume_skipped` は許可し直した後は 1 件も出ていない（最後の行は拒否していた時刻 22:25:23 のまま）。
+
+新しい録音の追加は行わなかったため、`copy_completed` による再取り込みそのものの確認は今回は行っていない。DR-11 が ✓ に戻り、`volume_skipped` が止まったことで、許可の回復は確認できた。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.17 E2E-17 — 削除を無効化
 
