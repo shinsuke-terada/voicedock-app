@@ -29,9 +29,8 @@ public enum RTTMParser {
         var turns: [SpeakerTurn] = []
         // "\r\n" は Swift の Character では 1 つなので、スカラーの "\n" で分ける
         for rawLine in text.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false) {
-            var scalars = String.UnicodeScalarView(rawLine)
-            if scalars.last == "\r" { scalars.removeLast() }
-            let line = PyText.strip(String(scalars))
+            // CRLF の "\r" は PyText.strip が落とす（U+000D は Python の空白）
+            let line = PyText.strip(String(String.UnicodeScalarView(rawLine)))
             if line.isEmpty { continue }
             let columns = line.unicodeScalars.split(whereSeparator: { $0 == " " || $0 == "\t" }).map {
                 String(String.UnicodeScalarView($0))

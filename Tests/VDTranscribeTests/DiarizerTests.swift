@@ -86,6 +86,15 @@ struct DiarizerTests {
         #expect(FakeArgmax.recordedArgv(f.script).isEmpty)
     }
 
+    @Test("部品の確かめは Diarizer を作らずにできる（F-90）")
+    func staticMissingParts() async throws {
+        let f = try Fixture(models: false)
+        try FakeArgmax.write(to: f.script)
+        #expect(Diarizer.missingParts(paths: f.paths) == ["SpeakerModels"])
+        let bare = try Fixture(models: false)
+        #expect(Diarizer.missingParts(paths: bare.paths) == ["argmax-cli", "SpeakerModels"])
+    }
+
     @Test("終了 3 は exit_3")
     func exitNonZero() async throws {
         let f = try Fixture()

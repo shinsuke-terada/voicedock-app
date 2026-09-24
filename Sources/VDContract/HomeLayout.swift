@@ -103,6 +103,11 @@ public struct HomeLayout: Equatable, Sendable {
         stagingDirectory(slug: slug).appendingPathComponent("whisper.json", isDirectory: false)
     }
 
+    /// staging/<slug>/diarization.rttm（話者分離の出力。PLAN §8.4.1。F-89・F-90: 復旧と後始末も消す）
+    public func diarizationRTTM(slug: String) -> URL {
+        stagingDirectory(slug: slug).appendingPathComponent("diarization.rttm", isDirectory: false)
+    }
+
     public func transcript(slug: String) -> URL {
         transcriptsParts.appendingPathComponent(slug + ".json", isDirectory: false)
     }

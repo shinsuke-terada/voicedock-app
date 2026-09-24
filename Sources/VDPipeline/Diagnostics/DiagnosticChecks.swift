@@ -148,8 +148,7 @@ enum DiagnosticChecks {
             return result(id, .skip, [DiagnosticTexts.diarizationOff])
         }
         let paths = ctx.deps.paths
-        let d = Diarizer(runner: ctx.deps.runner, paths: paths, layout: ctx.deps.layout, maxTimeoutSeconds: 1)
-        var missing = d.missingParts()
+        var missing = Diarizer.missingParts(paths: paths)
         if !missing.contains("argmax-cli") {
             let r = await ctx.deps.runner.run(
                 ProcessSpec(

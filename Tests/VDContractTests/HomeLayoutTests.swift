@@ -61,6 +61,7 @@ struct HomeLayoutTests {
         #expect(rel(layout.normalizedAudioTmp(slug: slug)) == "staging/a5d046dce76cfedc/audio16k.wav.tmp")
         #expect(rel(layout.whisperOutputBase(slug: slug)) == "staging/a5d046dce76cfedc/whisper")
         #expect(rel(layout.whisperJSON(slug: slug)) == "staging/a5d046dce76cfedc/whisper.json")
+        #expect(rel(layout.diarizationRTTM(slug: slug)) == "staging/a5d046dce76cfedc/diarization.rttm")
         #expect(rel(layout.transcript(slug: slug)) == "transcripts/parts/a5d046dce76cfedc.json")
         #expect(rel(layout.analysisJSON(sessionSlug: session)) == "analysis/43a71bce144be7a7.json")
         #expect(rel(layout.timelineJSON(sessionSlug: session)) == "analysis/43a71bce144be7a7.timeline.json")

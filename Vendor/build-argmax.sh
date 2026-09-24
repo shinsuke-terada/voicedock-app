@@ -39,7 +39,7 @@ install -m 0755 "$built" "$out/argmax-cli"
 
 help="$("$out/argmax-cli" diarize --help 2>&1 || true)"
 for flag in --audio-path --model-path --rttm-path --use-exclusive-reconciliation; do
-  grep -qE -- "(^|[[:space:],[])${flag}([][:space:],=]|$)" <<<"$help" || { echo "ERROR: argmax-cli diarize --help に $flag がありません" >&2; exit 1; }
+  grep -qE -- "(^|[[:space:],[])${flag}([][:space:],=<]|$)" <<<"$help" || { echo "ERROR: argmax-cli diarize --help に $flag がありません" >&2; exit 1; }
 done
 
 if [ "$update_fixtures" -eq 1 ]; then

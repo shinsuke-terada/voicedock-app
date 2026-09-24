@@ -199,7 +199,7 @@ bash 3.2 互換、C ランチャ（ただし「responsible process を保つに�
 ├── voicedock.sqlite (+ -wal, -shm)  # §7
 ├── inbox/<device_id>/<folder>/<name>_orig.wav      # コピー（NORMALIZED 後に削除）。ボリューム直下の録音は inbox/<device_id>/<name>
 ├── inbox/<device_id>/<folder>/.<name>_orig.wav.partial  # コピー中
-├── staging/<slug>/audio16k.wav(.tmp), whisper.json  # 作業領域（slug = partkey の key_slug）
+├── staging/<slug>/audio16k.wav(.tmp), whisper.json, diarization.rttm  # 作業領域（slug = partkey の key_slug。rttm は話者分離。F-89）
 ├── transcripts/parts/<slug>.json    # 正規化 transcript。**無期限保持**（削除根拠 A の 2 つ目のコピー）
 ├── analysis/<session_slug>.json, <session_slug>.timeline.json, <session_slug>.source.json
 ├── queue/delete/<request_id>.json   # 削除要求（アプリが書き、reaper が消す）
@@ -612,7 +612,7 @@ Session（sessionRecovery。この順）: MERGING→READY, ANALYZING→MERGED, W
 - 各状態の行を `started_at, partkey`（Session は `session_key`）の順に、`kind: .recovery` で戻す。1 件以上戻したら `recovery_completed rolled_back=<n>`
 - 戻す前の部分出力の削除（`SafeUnlink`。失敗は `config_warning rule=recovery` を WARNING で出して続行）:
   - NORMALIZING: **partkey から算出した** `staging/<slug>/audio16k.wav` と `audio16k.wav.tmp`（voicedock は `normalized_path` 列を見ていたが、初回変換中は列が NULL で何も消さなかった）
-  - TRANSCRIBING: `transcripts/parts/<slug>.json` と `staging/<slug>/whisper.json`
+  - TRANSCRIBING: `transcripts/parts/<slug>.json` と `staging/<slug>/whisper.json` と `staging/<slug>/diarization.rttm`（話者分離の途中で落ちた残り。F-90）
   - RAW_WRITING / WRITING（**本計画の差分**。voicedock は残していた）: Vault の確認（§8.7 手順 0）が通ったときだけ、そのノートの一時ファイルを消す。
     対象は DB の `raw_output_path` / `output_path` があればそのファイル名の `.<ファイル名>.tmp`（例 `.2026-08-29 raw.md.tmp`。**`.md` を含む**。voicedock notes.py:248 と同じ）と、**それに加えて**今の設定のテンプレートで決まるフォルダの §8.8 の候補名（基本名と ` (2)`〜` (99)`）それぞれの `.<基本名>.md.tmp` の**名前が完全一致するものだけ**（重複は 1 回。`Recovery.tmpTargets`）。
     F-83: 書き手は DB のパスを使えなければ（親フォルダが無い（F-75）・上書きしてはいけないノートに替わった）候補名へ書くので、DB のパスの側だけを見ると、その途中で落ちた tmp が今のフォルダに残り続けた。Vault の外（`..`・symlink の親）と名前の規則（`.` で始まり `.tmp` で終わる）は `SafeUnlink` の `.vaultTmp` が拒む。
@@ -1611,7 +1611,7 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
   重なり: 末尾から、合計スカラー数が `chunkOverlapChars` を超える手前まで（ただし最低 1 つ）の segment。現在の全部になるなら先頭の 1 つを落とす。**両方超えたら重ねない**（LLM-05）
   最後の残りは、直前のチャンクの segment の部分集合（重なりだけ）でなければ確定する
 - チャンク本文は text を `\n` でつないだもの。`start_at = 最初の at`、`end_at = end_at の最大`。**時刻は LLM に渡さない**
-  - 話者分離（§8.4.1。F-89）: `speaker` の在る区間は `話者<ラベル>: <text>`（`SpeakerLabel.display` + `": "`。コロンは半角）として並べる。チャンクの切り方の文字数は従来どおり text だけを数える。話者なしの区間は従来のまま（話者なしの Session の要求はバイト単位で同じ）
+  - 話者分離（§8.4.1。F-89）: `speaker` の在る区間は `話者<ラベル>: <text>`（`SpeakerLabel.display` + `": "`。コロンは半角）として並べる。チャンクの切り方と重なりの文字数は、**LLM に送る行（前置きを含む）で数える**（F-90。text だけを数えると、話者つきの Session は送る量が上限の 2〜5 割増しになり、`contextSize` を超えうる）。話者なしの区間は行が text と同じなので従来のまま（話者なしの Session の要求はバイト単位で同じ）
 - チャンク 0 → `SESSION_MERGE_FAILED`「チャンクが 0 個です（統合結果が空）」、1 → analyze 1 回（重複除去なし。Timeline は単一パス）、2 以上 → 各チャンクを Map（1 つでも失敗したら即終了）→ Reduce
 - Reduce（深さ 1 から）: 中間結果の配列を PyJSON のコンパクト形式（キーはフィールドの並び、空配列も `due: null` も出す）にした本文が `maxCharsPerRequest` 以下**かつ**件数が `reduceMaxItems`（4。X-43）以下か、中間結果が 1 個なら
   REDUCE プロンプトで最終形 → 重複除去。そうでなく深さ 3 以上なら `LLM_INVALID_JSON`「多段 Reduce が上限 3 段に達しました」。
@@ -2090,7 +2090,7 @@ completeWithoutDeleting(row, parts):
   row.status ∈ cleanupFrom なら row.status → CLEANUP
   finishCleanup(読み直した row)
 finishCleanup(row):   // row.status == CLEANUP のときだけ
-  stagingDisposable の各 Part について SafeUnlink で staging/<slug>/ の audio16k.wav・audio16k.wav.tmp・whisper.json を消し、空になったディレクトリを消す（FAILED の 16 kHz は残す。SM-23）
+  stagingDisposable の各 Part について SafeUnlink で staging/<slug>/ の audio16k.wav・audio16k.wav.tmp・whisper.json・diarization.rttm（F-90）を消し、空になったディレクトリを消す（FAILED の 16 kHz は残す。SM-23）
   1 つでも失敗 → disk_space_low session_key=… reason=staging_unlink_failed（WARNING）で CLEANUP のまま終わる（次の評価でやり直す）
   全部成功 → CLEANUP→COMPLETED
 ```
@@ -3829,3 +3829,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-87 | 誤 | §8.5・付録 D | （2026-09-24。利用者の決定「2で進めて」を受けての実装）X-43。単一パス Reduce の判定に件数の上限（`reduceMaxItems`＝4）を足した。4B・30B のどちらも、10 時間分の受け入れ試験の最後の 1 要求（18 個の中間結果を 1 回でまとめる Reduce）が `LLM_INVALID_JSON` で落ちていた（§10.6 の J1・J2 が✗）。F-86（10 時間への変更）とは無関係の、Map-Reduce の実装そのものの穴 |
 | F-88 | 誤 | §6.2（既定値の JSON）・§8.5・付録 D | （2026-09-24。利用者の決定「上げて良い」）X-44。`maxOutputTokens` の既定を 4096 → 8192。F-87（X-43）とは別の失敗（1 チャンクの map 呼び出し単体が切れる）への対応 |
 | F-89 | 事 | §1.2・§1.3・§3.3・§6.1・§6.2・§6.3・§6.4（CV-39）・§8.4.1（新設）・§8.5・§8.6・§8.11（DR-18）・§8.12・§11.2・§12.3・付録 A.4・付録 D | （2026-09-24。利用者の依頼 issue #104 と決定: v1.0 に含める・パネルでオン／オフ・既定オフ・単語単位の時刻は使わない・表示は行頭の `**話者A**: `・精度は利用者が使って判断する）X-45。話者分離を足した。方式は pyannote community-1 の CoreML 版（Argmax SpeakerKit の `argmax-cli`）を whisper-cli と同じく子プロセスで起動する（SwiftPM の依存は増やさない。モデル 13 MB は同梱）。PoC は docs/POC.md の 16 章（P0-13。オフラインで動く・約 69 倍速・whisper の区間の時刻と揃う。合成音声では話者の取り違えが約 5 割で、人の声では未測定）。設定 `transcription.diarization.enabled` を足し `schemaVersion` を 2 に（1 → 2 の移行）。ログのイベント `diarization_completed`・`diarization_failed` とフィールド `speakers`、診断 DR-18、チケット T-46〜T-51 を足した。**失敗しても Part を失敗させない**（話者なしで進む）。エラーコード・遷移の辺・削除の条件は変えない |
+| F-90 | 誤 | §2（ディレクトリ）・§5.3・§8.4.1・§8.5・§8.9（後始末）・§11.2 | （2026-09-24。話者分離（F-89）のコードレビューを受けた利用者の決定: 話者の前置きは付けたまま LLM に渡す、ほかの指摘もすべて直す）(1) チャンクの切り方と重なりを、LLM に送る行（`話者A: ` の前置きを含む）の文字数で数える（text だけを数えると送る量が 2〜5 割増え `contextSize` を超えうる。話者なしは行 = text なので voicedock と同じ）。(2) 話者分離の途中で落ちたときの `staging/<slug>/diarization.rttm` を、起動時の復旧（TRANSCRIBING の後片付け）と Session の後始末（CLEANUP）でも消す（`HomeLayout.diarizationRTTM(slug:)`。それまでは次の話者分離が起動したときにしか消えず、オフに戻すと staging のフォルダごと残った）。(3) 部品の確かめを `Diarizer.missingParts(paths:)`（static）にし、診断 DR-18 とパネルが仮のタイムアウトの `Diarizer` を作らないようにした。(4) `build-argmax.sh` のフラグの判定を Swift 側（`containsFlag`）と同じ区切りに（後ろに `<` を足した）。(5) `fetch-speaker-models.sh` の「取得済み」は、一覧の全ファイルの sha256 が合い、一覧と NOTICE.txt のほかにファイルが無いときだけ（紛れ込んだファイルを同梱しない）。(6) `RTTMParser` の `\r` の手での除去を消した（`PyText.strip` が落とす）。設定キー・ログのイベント・エラーコード・遷移の辺は変えない |

@@ -20,7 +20,6 @@ public enum DiarizationReport: Equatable, Sendable {
 public struct Diarizer: Sendable {
     public static let timeoutFactor = 0.5
     public static let minTimeoutSeconds = 120
-    public static let rttmFileName = "diarization.rttm"
 
     let runner: any ProcessRunning
     let paths: AppPaths
@@ -36,9 +35,14 @@ public struct Diarizer: Sendable {
 
     /// 欠けている部品（宣言順）: "argmax-cli"（通常ファイルで実行権が無い）、"SpeakerModels"（ディレクトリでない）。
     public func missingParts() -> [String] {
+        Self.missingParts(paths: paths)
+    }
+
+    /// 部品の確かめだけ（起動しない。stat だけ）。診断 DR-18 とパネルが使う（F-90: 仮の Diarizer を作らない）。
+    public static func missingParts(paths: AppPaths) -> [String] {
         var missing: [String] = []
         if !Transcriber.isExecutableFile(paths.argmaxCLI) { missing.append("argmax-cli") }
-        if !Self.isDirectory(paths.speakerModels) { missing.append("SpeakerModels") }
+        if !isDirectory(paths.speakerModels) { missing.append("SpeakerModels") }
         return missing
     }
 
@@ -47,7 +51,7 @@ public struct Diarizer: Sendable {
         if !missingParts().isEmpty { return .failed(reason: "helper_missing") }
 
         // 2. 起動の前に前回の RTTM を消す（前回の中身で成功にしない）。消せなければ起動しない。
-        let rttm = layout.stagingDirectory(slug: slug).appendingPathComponent(Self.rttmFileName, isDirectory: false)
+        let rttm = layout.diarizationRTTM(slug: slug)
         do {
             try SafeUnlink.remove(rttm, under: .staging, layout: layout, missingOK: true)
         } catch {
