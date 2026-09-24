@@ -109,5 +109,11 @@ VoiceDock for Mac の実装タスクごとの詳細仕様。**誰が実装して
 | [T-40](T-40-deletion-enabler.md) | 有効化・無効化と常時表示 | 8 | T-38, T-30 |
 | [T-41](T-41-backlog.md) | 後追い（過去分・手動で消した分） | 8 | T-30, T-32, T-38 |
 | [T-42](T-42-e2e-on.md) | 実機 E2E（削除 ON）とゲート | 8 | T-34, T-35, T-36〜T-41 |
+| [T-46](T-46-diarization-vendor.md) | 話者分離の外部バイナリとモデル（argmax-cli・SpeakerModels の同梱。F-89） | 8.5 | T-03, T-34 |
+| [T-47](T-47-diarization-core.md) | VDCore: 話者の型・設定キーと schemaVersion 2・ログ・AppPaths | 8.5 | T-09, T-10 |
+| [T-48](T-48-diarization-transcribe.md) | VDTranscribe: argmax-cli の起動・RTTM・話者の割り当て | 8.5 | T-46, T-47, T-17 |
+| [T-49](T-49-diarization-pipeline.md) | VDPipeline: 話者分離の配線・統合・Raw の Part・ログ・DR-18 | 8.5 | T-48 |
+| [T-50](T-50-diarization-notes-llm.md) | VDNotes / VDLLM: Raw の話者の行とチャンクの前置き | 8.5 | T-47 |
+| [T-51](T-51-diarization-ui.md) | UI: 「一般」の話者分離のトグル | 8.5 | T-47, T-48 |
 | [T-43](T-43-readme.md) | README と文書テスト | 9 | T-42 |
-| [T-44](T-44-release-v1.md) | v1.0 のリリース | 9 | T-34, T-42, T-43 |
+| [T-44](T-44-release-v1.md) | v1.0 のリリース | 9 | T-34, T-42, T-43, T-46〜T-51 |

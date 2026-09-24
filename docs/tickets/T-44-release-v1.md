@@ -5,7 +5,7 @@
 | ID | T-44 |
 | 題 | v1.0 のリリース（VERSION・タグ・dmg・verify-bundle・E2E-06 の記録・非公開リポジトリでのリリース） |
 | Phase | 9 |
-| 前提 | T-43（README）、T-42（削除のゲート）、T-34（`make release`） |
+| 前提 | T-43（README）、T-42（削除のゲート）、T-34（`make release`）、T-46〜T-51（話者分離。PLAN F-89） |
 | 見積もり | 手で書く行 約 230（`docs/RELEASE.md` 約 140、テスト約 80、`VERSION` と `Version.swift` と README の更新 約 10） |
 
 ## 1. 目的

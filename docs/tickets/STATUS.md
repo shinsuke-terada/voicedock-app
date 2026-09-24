@@ -167,7 +167,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | #81 | T-35 実機 E2E（削除 OFF） | 手順書とテストはマージ済み（#82）。**実施は【利用者が行う】**（`docs/E2E.md` §2） |
 | #95 | T-42 実機 E2E（削除 ON）とゲート | 手順書とテストはマージ済み（#96）。**実施は【利用者が行う】**。`docs/E2E.md` §4 のゲート G-1〜G-5 はいま全部「未実施」で **ゲート: 閉** |
 | #103 | Bluetooth 接続での読み込みと削除の調査・実験 | **v1.0 の後**。調査はエージェント、実験は【利用者が行う】 |
-| #104 | 文字起こしの話者分離 | **v1.0 の後**。方式の調査から |
+| #104 | 文字起こしの話者分離 | **v1.0 に含める**（2026-09-24 の利用者の決定。PLAN F-89・X-45）。方式は pyannote community-1 の CoreML 版（Argmax SpeakerKit の `argmax-cli`）。PoC は docs/POC.md 16 章（P0-13）。チケット T-46〜T-51（下の「話者分離」） |
 
 **2026-09-24 に閉じた issue**: #67（T-24。30B が `verified: true` に。v1.0 で選べる LLM が 1 つ以上になった）、#77（T-34。`make release` が通り、署名・公証・dmg まで確認済み）。
 
@@ -176,7 +176,22 @@ PR がマージされても issue が開いたままなのは、**実機・実�
 ### T-43 と T-44 の前提
 
 - **T-43（README）** — **完了（PR #140。2026-09-24）**。実機で確かめる文言は T-42 の後に確かめる合意（issue #139 に残る）
-- **T-44（v1.0 リリース）** — 前提は T-43・T-42・T-34。`docs/RELEASE.md`・`docs/release-notes/TEMPLATE.md`・`ReleaseChecklistTests.swift`、`VERSION` と `AppVersion.string` を `1.0.0` へ（同じ PR で両方）。**削除のゲートが開いていないと出せない**
+- **T-44（v1.0 リリース）** — 前提は T-43・T-42・T-34 と、話者分離の T-46〜T-51（F-89）。`docs/RELEASE.md`・`docs/release-notes/TEMPLATE.md`・`ReleaseChecklistTests.swift`、`VERSION` と `AppVersion.string` を `1.0.0` へ（同じ PR で両方）。**削除のゲートが開いていないと出せない**
+
+### 話者分離（F-89。issue #104。v1.0 に含める）
+
+パネルでオン／オフ（既定オフ）、表示は Raw の `**話者A**: …` の行、単語単位の時刻は使わない、精度は利用者が使って判断する（2026-09-24 の利用者の決定）。
+
+| チケット | 中身 | 前提 | 並列 |
+|---|---|---|---|
+| T-46 | argmax-cli のビルドとモデルの同梱（Vendor・make-app・verify-bundle） | T-03, T-34 | T-47 と並列 |
+| T-47 | VDCore: `speaker`・`SpeakerLabel`・設定キーと schemaVersion 2・ログ・AppPaths | T-09, T-10 | T-46 と並列 |
+| T-48 | VDTranscribe: `Diarizer`・RTTM・割り当て・`Transcriber` | T-46, T-47 | T-50 と並列 |
+| T-49 | VDPipeline: 配線・ログ・DR-18・README の件数と出典 | T-48 | T-51 と並列 |
+| T-50 | VDNotes / VDLLM: Raw の話者の行・チャンクの前置き | T-47 | T-48 と並列 |
+| T-51 | UI: 「一般」のトグル | T-47, T-48 | T-49 と並列 |
+
+T-44（v1.0 リリース）は T-46〜T-51 の後。
 
 ### Phase 0 の残り
 
