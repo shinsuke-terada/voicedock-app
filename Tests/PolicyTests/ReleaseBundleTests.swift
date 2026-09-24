@@ -1,4 +1,4 @@
-// 配布スクリプト・Info.plist・エンタイトルメント・バンドルの許可リストの静的検査（PLAN §11.1〜§11.3。T-34）。
+// 配布スクリプト・Info.plist・エンタイトルメント・バンドルの許可リストの静的検査（PLAN §11.1〜§11.3。T-34・T-46）。
 import Foundation
 import TestSupport
 import Testing
@@ -14,14 +14,43 @@ struct ReleaseBundleTests {
         try String(contentsOf: PackageRoot.file(relativePath), encoding: .utf8)
     }
 
-    /// `identity.env` の `KEY=VALUE`。
-    static func identity() throws -> [String: String] {
+    /// `KEY=VALUE` の行を並べたファイル（`identity.env`・`Vendor/versions.env`）の値。
+    static func keyValues(_ relativePath: String) throws -> [String: String] {
         var values: [String: String] = [:]
-        for line in try text("identity.env").split(separator: "\n") where !line.hasPrefix("#") {
+        for line in try text(relativePath).split(separator: "\n") where !line.hasPrefix("#") {
             let parts = line.split(separator: "=", maxSplits: 1)
             if parts.count == 2 { values[String(parts[0])] = String(parts[1]) }
         }
         return values
+    }
+
+    /// `identity.env` の `KEY=VALUE`。
+    static func identity() throws -> [String: String] {
+        try keyValues("identity.env")
+    }
+
+    /// `Vendor/speaker-models.sha256` の注釈でも空でもない行。
+    static func speakerModelHashLines() throws -> [String] {
+        try text("Vendor/speaker-models.sha256")
+            .split(separator: "\n", omittingEmptySubsequences: true)
+            .map(String.init)
+            .filter { !$0.hasPrefix("#") && !$0.isEmpty }
+    }
+
+    /// `Vendor/speaker-models.sha256` の各行の相対パス（区切りの空白 2 つの後ろ）。
+    static func speakerModelPaths() throws -> [String] {
+        try speakerModelHashLines().compactMap { line in
+            line.range(of: "  ").map { String(line[$0.upperBound...]) }
+        }
+    }
+
+    static let speakerModelsPrefix = "Contents/Resources/SpeakerModels/"
+
+    /// 許可リストの SpeakerModels の行と、モデルの相対パス + `NOTICE.txt` の食い違い（両方向。辞書順）。空なら一致。
+    static func speakerModelMismatches(manifest: [String], modelPaths: [String]) -> [String] {
+        let expected = Set((modelPaths + ["NOTICE.txt"]).map { speakerModelsPrefix + $0 })
+        let listed = Set(manifest.filter { $0.hasPrefix(speakerModelsPrefix) })
+        return expected.symmetricDifference(listed).sorted()
     }
 
     /// `Resources/bundle-manifest.txt` の注釈でない行。
@@ -207,13 +236,62 @@ struct ReleaseBundleTests {
         #expect(!entry.hasPrefix("/"))
     }
 
-    @Test("許可リストにヘルパー 3 本が在る")
-    func manifestListsTheThreeHelpers() throws {
+    @Test("許可リストにヘルパー 4 本が在る")
+    func manifestListsTheFourHelpers() throws {
         let entries = try Self.manifest()
         #expect(entries.contains("Contents/Helpers/whisper-cli"))
         #expect(entries.contains("Contents/Helpers/llama-server"))
         #expect(entries.contains("Contents/Helpers/voicedock-reaper"))
-        #expect(entries.filter { $0.hasPrefix("Contents/Helpers/") }.count == 3)
+        #expect(entries.contains("Contents/Helpers/argmax-cli"))
+        #expect(entries.filter { $0.hasPrefix("Contents/Helpers/") }.count == 4)
+    }
+
+    @Test("許可リストの SpeakerModels が speaker-models.sha256 と NOTICE に一致")
+    func manifestListsEverySpeakerModelFile() throws {
+        let paths = try Self.speakerModelPaths()
+        #expect(paths.count == 20)
+        let entries = try Self.manifest()
+        #expect(Self.speakerModelMismatches(manifest: entries, modelPaths: paths).isEmpty)
+        #expect(entries.filter { $0.hasPrefix("Contents/Resources/SpeakerModels/") }.count == 21)
+        #expect(entries.contains("Contents/Resources/SpeakerModels/NOTICE.txt"))
+    }
+
+    @Test("speaker-models.sha256 は 20 行で、各行が 64 桁の小文字 16 進と相対パス")
+    func speakerModelHashesAreWellFormed() throws {
+        let lines = try Self.speakerModelHashLines()
+        #expect(lines.count == 20)
+        let pattern = try Regex("^[0-9a-f]{64}  [^/][^ ]*$")
+        for line in lines {
+            #expect(line.wholeMatch(of: pattern) != nil, "形が違う: \(line)")
+            #expect(!line.contains(".."), "`..` を含む: \(line)")
+        }
+    }
+
+    @Test("versions.env の SPEAKER_MODELS_SHA と ARGMAX_OSS_SHA は 40 桁")
+    func speakerModelsArePinnedToACommit() throws {
+        let versions = try Self.keyValues("Vendor/versions.env")
+        let pattern = try Regex("^[0-9a-f]{40}$")
+        for key in ["SPEAKER_MODELS_SHA", "ARGMAX_OSS_SHA"] {
+            let value = try #require(versions[key], "\(key) が無い")
+            #expect(value.wholeMatch(of: pattern) != nil, "\(key) が 40 桁のコミットでない: \(value)")
+        }
+    }
+
+    @Test(
+        "argmax-cli の --help の fixture に 4 つのフラグが在る",
+        arguments: ["--audio-path", "--model-path", "--rttm-path", "--use-exclusive-reconciliation"])
+    func argmaxHelpFixtureHasTheFlags(_ flag: String) throws {
+        let help = try Self.text("Tests/Fixtures/argmax-cli-diarize-help.txt")
+        #expect(try VendorFixtureTests.contains(help, flag: flag))
+    }
+
+    @Test("SpeakerModels の行が 0 のとき検査が落ちる（TEST-28）")
+    func emptyManifestSectionIsRejected() throws {
+        let paths = try Self.speakerModelPaths()
+        #expect(!Self.speakerModelMismatches(manifest: [], modelPaths: paths).isEmpty)
+        // モデルの一覧まで空でも、NOTICE.txt が足りないことを報告する
+        let onlyNotice = Self.speakerModelMismatches(manifest: [], modelPaths: [])
+        #expect(onlyNotice == ["Contents/Resources/SpeakerModels/NOTICE.txt"])
     }
 
     @Test("許可リストのプロンプトが Resources/prompts と一致")
@@ -245,7 +323,10 @@ struct ReleaseBundleTests {
         let installedByPromptLoop =
             entry.hasPrefix("Contents/Resources/prompts/") && makeApp.contains("Resources/prompts/*.txt")
             && makeApp.contains("\"$app/Contents/Resources/prompts/")
-        #expect(installedDirectly || installedByPromptLoop)
+        let installedBySpeakerModelsCopy =
+            entry.hasPrefix("Contents/Resources/SpeakerModels/")
+            && makeApp.contains("ditto \"$root/Vendor/build/SpeakerModels\" \"$app/Contents/Resources/SpeakerModels\"")
+        #expect(installedDirectly || installedByPromptLoop || installedBySpeakerModelsCopy)
     }
 
     @Test("verify-bundle が PLAN §11.3 の 4 の全項目を行う", arguments: requiredChecks)

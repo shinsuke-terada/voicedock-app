@@ -15,7 +15,7 @@
 ## 2. 参照
 
 - PLAN §3.3（argmax-oss-swift・話者分離のモデルの行）、§11.1、§11.2（話者分離の段落）、§8.4.1（argv）
-- docs/POC.md 16 章（P0-13。ビルドのコマンド・`otool -L`・20 ファイルの sha256・`--help`）
+- docs/POC.md 16 章（P0-13。ビルドのコマンド・`otool -L`・`--help`）。20 ファイルの sha256 は §4.4（値の正。POC.md には値が無い）
 - `Vendor/build-whisper.sh`（同じ手順の型）
 
 ## 3. 作るもの
@@ -34,6 +34,7 @@
 | `scripts/verify-bundle.sh`（変更） | V-3 / V-4 の Mach-O に argmax-cli を足す |
 | `Resources/bundle-manifest.txt`（変更） | argmax-cli・SpeakerModels の 21 ファイルを足す（辞書順） |
 | `Tests/PolicyTests/ReleaseBundleTests.swift`（変更） | ヘルパーを 4 本に、SpeakerModels の検査を足す |
+| `Tests/PolicyTests/VendorFixtureTests.swift`（変更） | `versionsEnvHasAllKeys` の期待を 11 キーにし、表示名を「versions.env に 11 のキーがすべて在る」にする |
 
 ## 4. 仕様
 
@@ -58,7 +59,7 @@ install -m 0755 "$built" "$out/argmax-cli"
 "$here/check-linkage.sh" "$out/argmax-cli"
 help="$("$out/argmax-cli" diarize --help 2>&1 || true)"
 for flag in --audio-path --model-path --rttm-path --use-exclusive-reconciliation; do
-  grep -qE -- "(^|[[:space:],\[])${flag}([[:space:],=\]]|$)" <<<"$help" || { echo "ERROR: argmax-cli diarize --help に $flag がありません" >&2; exit 1; }
+  grep -qE -- "(^|[[:space:],[])${flag}([][:space:],=]|$)" <<<"$help" || { echo "ERROR: argmax-cli diarize --help に $flag がありません" >&2; exit 1; }
 done
 ```
 
@@ -71,8 +72,8 @@ done
 1. `versions.env` を読む。出力先 `out="$here/build/SpeakerModels"`。作業は `"$here/work/SpeakerModels.tmp"`（先に `rm -rf`）
 2. `Vendor/speaker-models.sha256` の各行（`<sha256>  <相対パス>`。`#` と空行は飛ばす）について `curl -fsSL --retry 3 -o "<tmp>/<path>" "https://huggingface.co/$SPEAKER_MODELS_REPO/resolve/$SPEAKER_MODELS_SHA/<path>"`（親ディレクトリは `mkdir -p`）
 3. `(cd "$tmp" && shasum -a 256 -c "$here/speaker-models.sha256")` が通らなければ `ERROR: 話者分離のモデルの sha256 が一致しません` で `rm -rf "$tmp"` して 1
-4. `install -m 0644 "$here/speaker-models-NOTICE.txt" "$tmp/NOTICE.txt"`、`rm -rf "$out" && mv "$tmp" "$out"`、`OK: $out（20 ファイル）`
-5. 既に `$out` が在り `shasum -c` が通るならダウンロードしない（`OK: $out（取得済み）`）
+4. `install -m 0644 "$here/speaker-models-NOTICE.txt" "$tmp/NOTICE.txt"`、`rm -rf "$out" && mv "$tmp" "$out"`、`OK: ${out}（20 ファイル）`
+5. 既に `$out` が在り `shasum -c` が通るならダウンロードしない（`OK: ${out}（取得済み）`）
 
 ### 4.4 `Vendor/speaker-models.sha256`
 
@@ -157,6 +158,12 @@ vendor:
 | `speakerModelsArePinnedToACommit` | versions.env の SPEAKER_MODELS_SHA と ARGMAX_OSS_SHA は 40 桁 | `Vendor/versions.env` | どちらも `^[0-9a-f]{40}$` |
 | `argmaxHelpFixtureHasTheFlags` | argmax-cli の --help の fixture に 4 つのフラグが在る | `Tests/Fixtures/argmax-cli-diarize-help.txt` | `--audio-path`・`--model-path`・`--rttm-path`・`--use-exclusive-reconciliation` を含む |
 | `emptyManifestSectionIsRejected` | SpeakerModels の行が 0 のとき検査が落ちる（TEST-28） | 空の配列を検査の関数に渡す | 不一致を報告する |
+
+`Tests/PolicyTests/VendorFixtureTests.swift`（変更）:
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `versionsEnvHasAllKeys`（変更） | versions.env に 11 のキーがすべて在る | versions.env | キーの集合が T-03 の 6 つ + §4.1 の 5 つ（`ARGMAX_OSS_REPO`・`ARGMAX_OSS_REF`・`ARGMAX_OSS_SHA`・`SPEAKER_MODELS_REPO`・`SPEAKER_MODELS_SHA`）と一致 |
 
 既存の「組み立てが許可リストの各ファイルを作る」は argmax-cli と SpeakerModels の行も対象になる（make-app.sh の文言で確かめている形に合わせて直す）。
 

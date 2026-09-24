@@ -44,7 +44,7 @@ struct VendorFixtureTests {
         #expect(try !Self.contains("  --no-models", flag: "--model"))
     }
 
-    @Test("versions.env に 6 つのキーがすべて在る")
+    @Test("versions.env に 11 のキーがすべて在る")
     func versionsEnvHasAllKeys() throws {
         let text = try String(contentsOf: PackageRoot.file("Vendor/versions.env"), encoding: .utf8)
         let keys = text.split(separator: "\n")
@@ -55,6 +55,8 @@ struct VendorFixtureTests {
                 == [
                     "WHISPER_CPP_REPO", "WHISPER_CPP_REF", "WHISPER_CPP_SHA",
                     "LLAMA_CPP_REPO", "LLAMA_CPP_REF", "LLAMA_CPP_SHA",
+                    "ARGMAX_OSS_REPO", "ARGMAX_OSS_REF", "ARGMAX_OSS_SHA",
+                    "SPEAKER_MODELS_REPO", "SPEAKER_MODELS_SHA",
                 ])
     }
 }

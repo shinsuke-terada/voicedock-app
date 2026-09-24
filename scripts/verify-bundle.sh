@@ -73,7 +73,8 @@ done
 # V-3 すべての Mach-O が arm64 単体
 step "V-3 アーキテクチャ"
 machos=("$app/Contents/MacOS/VoiceDock" "$app/Contents/Helpers/voicedock-reaper"
-        "$app/Contents/Helpers/whisper-cli" "$app/Contents/Helpers/llama-server")
+        "$app/Contents/Helpers/whisper-cli" "$app/Contents/Helpers/llama-server"
+        "$app/Contents/Helpers/argmax-cli")
 for bin in "${machos[@]}"; do
   arch="$(lipo -archs "$bin" 2>/dev/null || echo "<読めない>")"
   [ "$arch" = "arm64" ] && ok "$(basename "$bin") = arm64" || ng "$(basename "$bin") が arm64 単体でない（${arch}）"
