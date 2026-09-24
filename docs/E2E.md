@@ -142,7 +142,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-05 | 抜き挿しを 6 回以上 | OFF | ✅ PASS | §3.5 |
 | E2E-06 | 1 日分を 1 セッションに | OFF | ⬜ 未実施 | §3.6 |
 | E2E-07 | 無音の Part を混ぜる | OFF | ✅ PASS | §3.7 |
-| E2E-08 | 1 本だけ文字起こしを失敗させる | OFF | ⬜ 未実施 | §3.8 |
+| E2E-08 | 1 本だけ文字起こしを失敗させる | OFF | ✅ PASS | §3.8 |
 | E2E-09 | 保存後に同じ日の Part を追加 | OFF | ✅ PASS | §3.9 |
 | E2E-10 | 削除 ON で通し | ON | ⬜ 未実施 | §3.10 |
 | E2E-11 | 過去分の削除・手動で消した分の完了 | ON | ⬜ 未実施 | §3.11 |
@@ -602,14 +602,47 @@ inbox の原本は触らない（`audio.inboxRetain` の既定 `normalized` で�
 変換し直して（`normalize_completed` が 2 回目）完走し `COMPLETED`。
 
 #### 記録
-5 と 10 の [C-1]・[C-4]、8 の [C-4]、`error_message` の全文と長さ、
-`grep -E 'normalize_completed|normalize_failed|copy_completed|recovery_completed' "$VD_HOME/logs/app.log"`（`normalize_completed` が当該 Part で 2 回出ていること）。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。短い録音 6 本を挿し、`staging/<slug>/audio16k.wav` の出現を自動検知して即座に `printf 'broken' > ...` で上書きするワンライナーを使い、TX00_MIC016_20260924_220154_orig.wav（slug `5223b4a173d90481`）を壊した。
+
+5（[C-4]・`error_message`）:
 ```text
+DJIMIC3/…/TX00_MIC016_20260924_220154_orig.wav|FAILED|WHISPER_FAILED|52
+error_message: 生 JSON を読めません: staging/5223b4a173d90481/whisper.json
 ```
+ほかの 5 本（MIC012・013・014・015・017・018）はすべて `COMPLETED`。長さは 52 文字で、ヘルプ全文などの長大な文言にはなっていない。
+
+Daily の警告の節（行ごとそのまま。FAILED と SKIPPED の書式の違いを併記）:
+```text
+> ⚠ この日の録音のうち 1 本が処理できませんでした。次にデバイスを接続したときに自動で再試行されます。
+
+> この日の録音のうち 2 本を除外しました（無音）。自動では再試行されません。
+```
+`⚠` は FAILED の行にだけ付き、SKIPPED（無音）の行には付かない。
+
+6〜8（壊れたファイルを消して抜き挿し。1 回で再コピーまで走ったため、9 の「もう一度挿す」の代替策を経由した可能性がある）:
+```text
+2026-09-24T22:05:47+09:00 INFO  recovery_completed requeued=1
+2026-09-24T22:05:47+09:00 ERROR normalize_failed recording_key=…TX00_MIC016_20260924_220154_orig.wav error_code=NORMALIZED_MISSING reason=input
+```
+16 kHz 音声も inbox の原本も無いため `NORMALIZED_MISSING` で `FAILED` になった（想定どおり）。
+
+9〜10（再コピー〜完走。22 秒後）:
+```text
+2026-09-24T22:06:09+09:00 INFO  copy_completed recording_key=…TX00_MIC016_20260924_220154_orig.wav bytes=1933576 recopy=true
+2026-09-24T22:06:09+09:00 INFO  recovery_completed requeued=1
+2026-09-24T22:06:09+09:00 INFO  normalize_completed recording_key=…TX00_MIC016_20260924_220154_orig.wav in_bytes=1933576 out_bytes=426496 elapsed_s=0.0
+2026-09-24T22:06:10+09:00 INFO  transcription_completed recording_key=…TX00_MIC016_20260924_220154_orig.wav elapsed_s=0.8 chars=24 rtf=0.061 speech_ratio=0.895
+2026-09-24T22:06:10+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=12 bytes=15233
+```
+`normalize_completed` は当該 Part（MIC016）について**ちょうど 2 回**（壊す前の 1 回目、再コピー後の 2 回目）。最終状態:
+```text
+DJIMIC3/…/TX00_MIC016_20260924_220154_orig.wav|COMPLETED|
+```
+sessions は `COMPLETED|3` のまま（既存の Session が再オープン→自動で再度 COMPLETED まで一巡）。
 
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.9 E2E-09 — 保存後に同じ日の Part を追加
 
