@@ -55,8 +55,12 @@ test-disk:
 vendor:
 	$(call require_script,Vendor/build-whisper.sh,T-03)
 	$(call require_script,Vendor/build-llama.sh,T-03)
+	$(call require_script,Vendor/build-argmax.sh,T-46)
+	$(call require_script,Vendor/fetch-speaker-models.sh,T-46)
 	Vendor/build-whisper.sh
 	Vendor/build-llama.sh
+	Vendor/build-argmax.sh
+	Vendor/fetch-speaker-models.sh
 
 app:
 	$(call require_script,scripts/make-app.sh,T-34)

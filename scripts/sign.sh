@@ -52,7 +52,7 @@ if [ "${target##*.}" = "dmg" ]; then
 fi
 
 # .app は内側から。ヘルパー → reaper → 本体 の順
-for tool in whisper-cli llama-server; do
+for tool in whisper-cli llama-server argmax-cli; do
   codesign --force --options runtime $timestamp --sign "$identity" "$target/Contents/Helpers/$tool"
 done
 codesign --force --options runtime $timestamp --sign "$identity" \

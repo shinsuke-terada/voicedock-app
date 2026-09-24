@@ -1,5 +1,6 @@
 # VoiceDock.app に入ってよいファイルの全部（PLAN §11.1・§11.3）。行は VoiceDock.app からの相対パス。
 # `#` で始まる行と空行は注釈。並びは辞書順。ここに無いファイルがバンドルに在れば verify-bundle.sh が落ちる。
+Contents/Helpers/argmax-cli
 Contents/Helpers/llama-server
 Contents/Helpers/voicedock-reaper
 Contents/Helpers/whisper-cli
@@ -7,6 +8,27 @@ Contents/Info.plist
 Contents/MacOS/VoiceDock
 Contents/Resources/AppIcon.icns
 Contents/Resources/ModelCatalog.json
+Contents/Resources/SpeakerModels/NOTICE.txt
+Contents/Resources/SpeakerModels/speaker_clusterer/pyannote-v4/W32A32/PldaProjector.mlmodelc/analytics/coremldata.bin
+Contents/Resources/SpeakerModels/speaker_clusterer/pyannote-v4/W32A32/PldaProjector.mlmodelc/coremldata.bin
+Contents/Resources/SpeakerModels/speaker_clusterer/pyannote-v4/W32A32/PldaProjector.mlmodelc/metadata.json
+Contents/Resources/SpeakerModels/speaker_clusterer/pyannote-v4/W32A32/PldaProjector.mlmodelc/model.mil
+Contents/Resources/SpeakerModels/speaker_clusterer/pyannote-v4/W32A32/PldaProjector.mlmodelc/weights/weight.bin
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedder.mlmodelc/analytics/coremldata.bin
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedder.mlmodelc/coremldata.bin
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedder.mlmodelc/metadata.json
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedder.mlmodelc/model.mil
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedder.mlmodelc/weights/weight.bin
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedderPreprocessor.mlmodelc/analytics/coremldata.bin
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedderPreprocessor.mlmodelc/coremldata.bin
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedderPreprocessor.mlmodelc/metadata.json
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedderPreprocessor.mlmodelc/model.mil
+Contents/Resources/SpeakerModels/speaker_embedder/pyannote-v3/W8A16/SpeakerEmbedderPreprocessor.mlmodelc/weights/weight.bin
+Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegmenter.mlmodelc/analytics/coremldata.bin
+Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegmenter.mlmodelc/coremldata.bin
+Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegmenter.mlmodelc/metadata.json
+Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegmenter.mlmodelc/model.mil
+Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegmenter.mlmodelc/weights/weight.bin
 Contents/Resources/prompts/analyze_ja.txt
 Contents/Resources/prompts/map_ja.txt
 Contents/Resources/prompts/reduce_ja.txt

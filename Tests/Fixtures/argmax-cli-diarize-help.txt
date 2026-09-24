@@ -1,0 +1,31 @@
+OVERVIEW: Speaker diarization tool
+
+Process audio files for speaker diarization. Identifies and labels different
+speakers in the audio.
+
+USAGE: argmax-cli diarize --audio-path <audio-path> [--rttm-path <rttm-path>] [--model-path <model-path>] [--model-repo <model-repo>] [--model-token <model-token>] [--download-model-path <download-model-path>] [--num-speakers <num-speakers>] [--cluster-distance-threshold <cluster-distance-threshold>] [--use-exclusive-reconciliation] [--disable-full-redundancy] [--verbose]
+
+OPTIONS:
+  --audio-path <audio-path>
+                          Path to the audio file to process
+  --rttm-path <rttm-path> Path to save the diarization output as RTTM
+  --model-path <model-path>
+                          Path of local model files (skips download)
+  --model-repo <model-repo>
+                          HuggingFace model repository
+  --model-token <model-token>
+                          HuggingFace API token
+  --download-model-path <download-model-path>
+                          Path to save downloaded models
+  --num-speakers <num-speakers>
+                          Number of speakers to detect (default: automatic)
+  --cluster-distance-threshold <cluster-distance-threshold>
+                          Cluster distance threshold for VBx clustering
+                          (default: 0.6)
+  --use-exclusive-reconciliation
+                          Use exclusive reconciliation in post processing
+  --disable-full-redundancy
+                          Disable full redundancy in segmenter
+  --verbose               Enable verbose output
+  --version               Show the version.
+  -h, --help              Show help information.
