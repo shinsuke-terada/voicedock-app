@@ -146,7 +146,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-09 | 保存後に同じ日の Part を追加 | OFF | ✅ PASS | §3.9 |
 | E2E-10 | 削除 ON で通し | ON | ⬜ 未実施 | §3.10 |
 | E2E-11 | 過去分の削除・手動で消した分の完了 | ON | ⬜ 未実施 | §3.11 |
-| E2E-12 | 文字起こし中に強制終了 | OFF | ⬜ 未実施 | §3.12 |
+| E2E-12 | 文字起こし中に強制終了 | OFF | ✅ PASS | §3.12 |
 | E2E-13 | 処理中にスリープ | OFF | ⬜ 未実施 | §3.13 |
 | E2E-14 | アプリが動いていない間に接続 | OFF | ✅ PASS | §3.14 |
 | E2E-15 | 取り下げ | — | — 対象外 | §3.15 |
@@ -851,13 +851,43 @@ $ find "$VAULT/Daily/Voice/Raw/20260924" -type f
 **二重処理しない**（[C-1] の Part の合計が前後で同じ、`part_discovered` が本数ぶんだけ）。`grep 'recovery_completed rolled_back' "$VD_HOME/logs/app.log"` が 1 行（`rolled_back=<n>`）。
 
 #### 記録
-[C-1] の前後、4 の出力、`grep 'recovery_completed rolled_back' "$VD_HOME/logs/app.log"` の出力、[C-4] の巻き戻しの遷移。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。新しい録音 2 本（TX00_MIC019_20260924_220910_orig.wav 213秒・TX00_MIC020_20260924_221252_orig.wav 251秒）。「文字起こし中」になったところで `kill -9` した。
+
+[C-1]（前。強制終了の直前）:
 ```text
+COMPLETED|24 DISCOVERED|1 SKIPPED|3 TRANSCRIBING|1   （合計 29）
 ```
 
+4（強制終了直後の孫プロセスの確認）:
+```text
+$ kill -9 $(pgrep -x VoiceDock)
+$ pgrep -x whisper-cli
+（出力なし。孫プロセスは残っていない）
+```
+
+[C-1]（後。再起動して完走後）:
+```text
+COMPLETED|26 SKIPPED|3   （合計 29。前後で完全一致。二重処理なし）
+```
+
+```text
+$ grep 'recovery_completed rolled_back' "$VD_HOME/logs/app.log" | tail -3
+2026-09-24T22:18:22+09:00 INFO  recovery_completed rolled_back=1
+```
+ちょうど 1 件（強制終了時に TRANSCRIBING だった 1 本）。
+
+`part_discovered` の重複が無いことの確認:
+```text
+$ grep "part_discovered" "$VD_HOME/logs/app.log" | grep -c "MIC019_20260924_220910"
+1
+$ grep "part_discovered" "$VD_HOME/logs/app.log" | grep -c "MIC020_20260924_221252"
+1
+```
+どちらも 1 回だけ（再起動後に二重に発見していない）。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.13 E2E-13 — 処理中にスリープ
 
