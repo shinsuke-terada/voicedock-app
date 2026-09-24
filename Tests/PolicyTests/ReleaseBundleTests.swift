@@ -260,9 +260,9 @@ struct ReleaseBundleTests {
     func speakerModelHashesAreWellFormed() throws {
         let lines = try Self.speakerModelHashLines()
         #expect(lines.count == 20)
-        let pattern = try Regex("^[0-9a-f]{64}  [^/][^ ]*$")
+        let pattern = try NSRegularExpression(pattern: "^[0-9a-f]{64}  [^/][^ ]*$")
         for line in lines {
-            #expect(line.wholeMatch(of: pattern) != nil, "形が違う: \(line)")
+            #expect(Self.wholeMatch(pattern, line), "形が違う: \(line)")
             #expect(!line.contains(".."), "`..` を含む: \(line)")
         }
     }
@@ -270,11 +270,17 @@ struct ReleaseBundleTests {
     @Test("versions.env の SPEAKER_MODELS_SHA と ARGMAX_OSS_SHA は 40 桁")
     func speakerModelsArePinnedToACommit() throws {
         let versions = try Self.keyValues("Vendor/versions.env")
-        let pattern = try Regex("^[0-9a-f]{40}$")
+        let pattern = try NSRegularExpression(pattern: "^[0-9a-f]{40}$")
         for key in ["SPEAKER_MODELS_SHA", "ARGMAX_OSS_SHA"] {
             let value = try #require(versions[key], "\(key) が無い")
-            #expect(value.wholeMatch(of: pattern) != nil, "\(key) が 40 桁のコミットでない: \(value)")
+            #expect(Self.wholeMatch(pattern, value), "\(key) が 40 桁のコミットでない: \(value)")
         }
+    }
+
+    /// 文字列全体が正規表現に一致する（PLAN §4.1: 正規表現は NSRegularExpression で持つ）。
+    static func wholeMatch(_ pattern: NSRegularExpression, _ text: String) -> Bool {
+        let whole = NSRange(location: 0, length: text.utf16.count)
+        return pattern.firstMatch(in: text, range: whole)?.range == whole
     }
 
     @Test(

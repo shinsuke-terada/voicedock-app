@@ -22,6 +22,8 @@ list="$here/work/speaker-models.sha256"
 grep -v '^#' "$here/speaker-models.sha256" | grep -v '^$' > "$list"
 
 if [ -d "$out" ] && (cd "$out" && shasum -a 256 -c "$list" > /dev/null 2>&1); then
+  # NOTICE は取り直さずに毎回入れ直す（消えた・文言を直したときに古いまま同梱しない）
+  install -m 0644 "$here/speaker-models-NOTICE.txt" "$out/NOTICE.txt"
   echo "OK: ${out}（取得済み）"
   exit 0
 fi

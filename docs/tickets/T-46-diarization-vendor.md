@@ -71,13 +71,13 @@ done
 
 1. `versions.env` を読む。出力先 `out="$here/build/SpeakerModels"`。作業は `"$here/work/SpeakerModels.tmp"`（先に `rm -rf`）
 2. `Vendor/speaker-models.sha256` の各行（`<sha256>  <相対パス>`。`#` と空行は飛ばす）について `curl -fsSL --retry 3 -o "<tmp>/<path>" "https://huggingface.co/$SPEAKER_MODELS_REPO/resolve/$SPEAKER_MODELS_SHA/<path>"`（親ディレクトリは `mkdir -p`）
-3. `(cd "$tmp" && shasum -a 256 -c "$here/speaker-models.sha256")` が通らなければ `ERROR: 話者分離のモデルの sha256 が一致しません` で `rm -rf "$tmp"` して 1
+3. 注釈と空行を除いた一覧（§4.4 の末尾。`$here/work/speaker-models.sha256`）で `(cd "$tmp" && shasum -a 256 -c <一覧>)` が通らなければ `ERROR: 話者分離のモデルの sha256 が一致しません` で `rm -rf "$tmp"` して 1
 4. `install -m 0644 "$here/speaker-models-NOTICE.txt" "$tmp/NOTICE.txt"`、`rm -rf "$out" && mv "$tmp" "$out"`、`OK: ${out}（20 ファイル）`
-5. 既に `$out` が在り `shasum -c` が通るならダウンロードしない（`OK: ${out}（取得済み）`）
+5. 既に `$out` が在り `shasum -c` が通るならダウンロードしない。NOTICE.txt だけは `install -m 0644` で入れ直す（消えた・文言を直したときに古いまま同梱しない）（`OK: ${out}（取得済み）`）
 
 ### 4.4 `Vendor/speaker-models.sha256`
 
-docs/POC.md 16.2 の 20 行（`./` を外した相対パス、辞書順、区切りは空白 2 つ）。値は P0-13 の実測:
+docs/POC.md 16.2 の 20 ファイル（`./` を外した相対パス、辞書順、区切りは空白 2 つ）。値は下の P0-13 の実測が正（POC.md には値が無い）:
 
 ```text
 3e13c8f4df77ea27cbbcdd6d083c63f5e7b3f32566cc5bf223fab92d40b81b8b  speaker_clusterer/pyannote-v4/W32A32/PldaProjector.mlmodelc/analytics/coremldata.bin
