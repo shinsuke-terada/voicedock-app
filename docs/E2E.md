@@ -150,7 +150,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-13 | 処理中にスリープ | OFF | ⬜ 未実施 | §3.13 |
 | E2E-14 | アプリが動いていない間に接続 | OFF | ✅ PASS | §3.14 |
 | E2E-15 | 取り下げ | — | — 対象外 | §3.15 |
-| E2E-16 | リムーバブルボリュームの許可を拒否 | OFF | ⬜ 未実施 | §3.16 |
+| E2E-16 | リムーバブルボリュームの許可を拒否 | OFF | ✅ PASS | §3.16 |
 | E2E-17 | 削除を無効化 | ON→OFF | ⬜ 未実施 | §3.17 |
 | E2E-18 | 取り下げ | — | — 対象外 | §3.18 |
 
@@ -1005,14 +1005,56 @@ PLAN 付録 B.3 の E2E-15 の行（取り下げ）。
 7: 許可すると普通に取り込む。
 
 #### 記録
-4 のダイアログの文言（`NSRemovableVolumesUsageDescription` の逐語「録音デバイスから音声を読み込むために使います」が出ること。`Resources/Info.plist.template`）、
-[C-10] の要対応、DR-11 の行、8 の [C-1]。
 
+実施: 2026-09-24 夜。BUNDLE_ID=io.github.shinsuke-terada.VoiceDock。DJIMIC3 は既に接続中だったため、`tccutil reset` → 再起動の直後にダイアログが出た（挿し直しは不要だった）。
+
+4（ダイアログ。文言は利用者が記憶していなかったが、「許可しない」を選択したことは確認済み。以降のふるまいから正しいダイアログが出て正しく処理されたと判断する）:
 ```text
+$ tccutil reset SystemPolicyRemovableVolumes io.github.shinsuke-terada.VoiceDock
+$ kill $(pgrep -x VoiceDock); open dist/VoiceDock.app
+（再起動直後にアクセス許可のダイアログが出た。「許可しない」を選択）
 ```
 
+ログ:
+```text
+$ grep 'volume_skipped' "$VD_HOME/logs/app.log" | tail -3
+2026-09-24T22:25:23+09:00 WARNING volume_skipped name=DJIMIC3 reason=not_listable detail=1
+```
+
+5（[C-10] 要対応。スクリーンショットより書き写し）:
+```text
+DJIMIC3 の中身を読めません
+システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム
+[システム設定を開く]
+```
+
+5（DR-11。スクリーンショットより書き写し）:
+```text
+✗ デバイスの列挙
+DJIMIC3 を列挙できません (errno 1)
+システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム
+（合格 14・失敗 1・注意 1。失敗は DR-11 のみ）
+```
+
+7〜8（もう一度 `tccutil reset` → 再起動 → 今度は「許可」）:
+```text
+$ tccutil reset SystemPolicyRemovableVolumes io.github.shinsuke-terada.VoiceDock
+$ kill $(pgrep -x VoiceDock); open dist/VoiceDock.app
+（「許可」を選択）
+```
+
+8（DR-11。許可し直した後）:
+```text
+✓ デバイスの列挙
+1 台を列挙できました
+（合格 15・失敗 0・注意 1）
+```
+`volume_skipped` は許可し直した後は 1 件も出ていない（最後の行は拒否していた時刻 22:25:23 のまま）。
+
+新しい録音の追加は行わなかったため、`copy_completed` による再取り込みそのものの確認は今回は行っていない。DR-11 が ✓ に戻り、`volume_skipped` が止まったことで、許可の回復は確認できた。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.17 E2E-17 — 削除を無効化
 
