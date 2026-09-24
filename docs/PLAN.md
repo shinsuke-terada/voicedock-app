@@ -1631,7 +1631,7 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
 3. **最後に** `analysis/<slug>.source.json` = `{"schema": 1, "transcript_sha256": "<指紋>", "segments": <件数>, "blocks": <件数>}`（PyJSON indent 2 ＋ 末尾改行、このキー順）。`AtomicFile`
 4. `updateSession(analysis_path, title, error_code = NULL, error_message = NULL)` → `ANALYZING→ANALYZED` → `llm_completed session_key=… chunks=… elapsed_s=…`
 - 1 か 3 の書き込み失敗 → `ANALYZING→FAILED`（`LLM_FAILED`「<型名>: <説明>」）
-- **指紋**（voicedock と同一定義）: `{"segments": [{"at": <ISO>, "end_at": <ISO>, "text": <text>}…], "blocks": [[<ISO>, <ISO>]…]}` を PyJSON のコンパクト形式・`sortKeys`・非 ASCII そのままで書いた
+- **指紋**（voicedock と同一定義。F-89: 区間に `speaker` が在るときだけ、その区間に `"speaker": <ラベル>` を足す。話者なしの Session の指紋は voicedock と同じ。§8.4.1）: `{"segments": [{"at": <ISO>, "end_at": <ISO>, "text": <text>}…], "blocks": [[<ISO>, <ISO>]…]}` を PyJSON のコンパクト形式・`sortKeys`・非 ASCII そのままで書いた
   UTF-8 の SHA-256 の小文字 16 進。`<ISO>` は §5.7 の ISO 文字列（秒未満切り捨て）。除外 Part・プロンプト・設定は混ぜない（voicedock 実測値 `894a61422b5c95830fe8b36c33ae2c3af728851d00a5e02e9f691d61ad5fb86f` を golden に置く）
 - トークン数の集計はしない（voicedock も診断以外で使っていない）
 
