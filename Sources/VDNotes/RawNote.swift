@@ -83,7 +83,11 @@ public enum RawNote {
     }
 
     /// 1 Part の区間。interval 秒ごとに実際の区間の時刻で `###` を差し込む（NOTE-04）。0 なら見出しを入れない。
+    /// 区間に speaker が 1 つでも在る Part は話者の行（`speakerLines`。F-89）。無ければ下のまま（voicedock とバイト一致）。
     static func segmentLines(_ part: RawPart, interval: Int) -> [String] {
+        if part.segments.contains(where: { $0.speaker != nil }) {
+            return speakerLines(part, interval: interval)
+        }
         let fixed = ZonedTime(fixedOffsetSeconds: offsetOf(part.startedAt))
         var lines: [String] = []
         var chunk: [String] = []
@@ -104,6 +108,44 @@ public enum RawNote {
         if !chunk.isEmpty {
             lines += [chunk.joined(separator: " "), ""]
         }
+        return lines
+    }
+
+    /// 話者つきの Part（PLAN §8.6。F-89・X-45）。同じ `###` の間で続けて同じ話者（話者なし同士も同じ）の text を " " でつなぎ、
+    /// `**話者A**: <text>` の行にする（話者なしは text だけの行）。行の間に空行を挟まず、塊の後に "" を 1 つ。`###` の規則は同じ。
+    private static func speakerLines(_ part: RawPart, interval: Int) -> [String] {
+        let fixed = ZonedTime(fixedOffsetSeconds: offsetOf(part.startedAt))
+        var lines: [String] = []
+        var turns: [(speaker: String?, texts: [String])] = []
+        var nextMark: Instant?
+        func flush() {
+            if turns.isEmpty { return }
+            for turn in turns {
+                let joined = turn.texts.joined(separator: " ")
+                if let speaker = turn.speaker {
+                    lines.append("**" + SpeakerLabel.display(speaker) + "**: " + joined)
+                } else {
+                    lines.append(joined)
+                }
+            }
+            lines.append("")
+            turns = []
+        }
+        for seg in part.segments {
+            let text = PyText.strip(seg.text)
+            if text.unicodeScalars.isEmpty { continue }
+            if interval > 0 && (nextMark.map { seg.at >= $0 } ?? true) {
+                flush()
+                lines += ["### " + hhmmss(seg.at, fixed), ""]
+                nextMark = seg.at.adding(seconds: interval)
+            }
+            if let last = turns.last, last.speaker == seg.speaker {
+                turns[turns.count - 1].texts.append(text)
+            } else {
+                turns.append((speaker: seg.speaker, texts: [text]))
+            }
+        }
+        flush()
         return lines
     }
 
