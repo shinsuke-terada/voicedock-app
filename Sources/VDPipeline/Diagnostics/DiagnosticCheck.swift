@@ -41,4 +41,5 @@ enum DiagnosticID {
     static let leftovers = "DR-15"
     static let timeZone = "DR-16"
     static let signature = "DR-17"
+    static let diarization = "DR-18"
 }

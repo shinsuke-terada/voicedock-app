@@ -1,4 +1,4 @@
-// Diagnostics の実行規則・サマリ・diagnostics_completed のテスト（T-32 §5.1）。
+// Diagnostics の実行規則・サマリ・diagnostics_completed のテスト（T-32 §5.1。DR-18 は T-49）。
 import Foundation
 import TestSupport
 import Testing
@@ -21,22 +21,22 @@ struct DiagnosticsRunTests {
         DiagnosticResult(id: "DR-01", status: status, label: "設定")
     }
 
-    @Test("15 件が PLAN §8.11 の順")
+    @Test("16 件が PLAN §8.11 の順")
     func orderIsTheSpecOrder() throws {
         #expect(
             Diagnostics.checks.map(\.id) == [
-                "DR-01", "DR-16", "DR-02", "DR-03", "DR-04", "DR-05", "DR-06", "DR-07", "DR-08", "DR-10", "DR-11",
-                "DR-12", "DR-15", "DR-17", "DR-14",
+                "DR-01", "DR-16", "DR-02", "DR-03", "DR-04", "DR-05", "DR-06", "DR-18", "DR-07", "DR-08", "DR-10",
+                "DR-11", "DR-12", "DR-15", "DR-17", "DR-14",
             ])
         // SPEC の S6 の表（DR-09 は別のボタン）と同じ集合・順（T-32 §8）
         let spec = try SpecDocument.load().ids(.dr).filter { $0 != "DR-09" }
         #expect(Diagnostics.checks.map(\.id) == spec)
     }
 
-    @Test("DR-09 を除いて 15 件")
-    func countIs15() {
+    @Test("DR-09 を除いて 16 件")
+    func countIs16() {
         let ids = Diagnostics.checks.map(\.id)
-        #expect(Diagnostics.checks.count == 15)
+        #expect(Diagnostics.checks.count == 16)
         #expect(!ids.contains("DR-09"))
         #expect(!ids.contains("DR-13"))
     }

@@ -25,6 +25,7 @@ public struct Diagnostics: Sendable {
         DiagnosticCheck(id: DiagnosticID.whisperCLI, fatal: false, always: false, run: DiagnosticChecks.dr04),
         DiagnosticCheck(id: DiagnosticID.whisperModel, fatal: false, always: false, run: DiagnosticChecks.dr05),
         DiagnosticCheck(id: DiagnosticID.vadModel, fatal: false, always: false, run: DiagnosticChecks.dr06),
+        DiagnosticCheck(id: DiagnosticID.diarization, fatal: false, always: false, run: DiagnosticChecks.dr18),
         DiagnosticCheck(id: DiagnosticID.llamaServer, fatal: false, always: false, run: DiagnosticChecks.dr07),
         DiagnosticCheck(id: DiagnosticID.llmModel, fatal: false, always: false, run: DiagnosticChecks.dr08),
         DiagnosticCheck(id: DiagnosticID.vault, fatal: false, always: false, run: DiagnosticChecks.dr10),
@@ -35,7 +36,7 @@ public struct Diagnostics: Sendable {
         DiagnosticCheck(id: DiagnosticID.deletion, fatal: false, always: true, run: DiagnosticChecks.dr14),
     ]
 
-    /// 15 件を PLAN §8.11 の表の順に実行する。DR-09 は含まない（別のボタン）。
+    /// 16 件を PLAN §8.11 の表の順に実行する。DR-09 は含まない（別のボタン）。
     public func run(loginItemStatus: LoginItemStatus) async -> [DiagnosticResult] {
         let config = await deps.config.current()
         let violations = await deps.config.violations()

@@ -46,7 +46,7 @@ struct DiagnosticsNoWriteTests {
         let (w, _) = try await Self.populated()
         let before = try FileTree.listing(w.layout.root)
         let results = await Diagnostics(deps: w.deps).run(loginItemStatus: .enabled)
-        #expect(results.count == 15)
+        #expect(results.count == 16)
         let after = try FileTree.listing(w.layout.root)
         #expect(after == before)
         #expect(before.contains { $0.hasPrefix("voicedock.sqlite ") })

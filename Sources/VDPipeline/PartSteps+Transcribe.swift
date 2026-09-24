@@ -19,10 +19,17 @@ extension PartSteps {
         let pk = row.partkey
         let slug = KeySlug.of(pk)
         let deps = ctx.deps
-        // 1. ガード（遷移しない）
+        // 話者分離（PLAN §8.4.1。F-89）。オフなら渡さない。部品の欠けはガードに入れない（文字起こしは進む）
+        let diarizer =
+            cfg.transcription.diarization.enabled
+            ? Diarizer(
+                runner: deps.runner, paths: deps.paths, layout: layout,
+                maxTimeoutSeconds: cfg.transcription.maxTimeoutSeconds)
+            : nil
         let transcriber = Transcriber(
             runner: deps.runner, paths: deps.paths, layout: layout, config: cfg.transcription, catalog: deps.catalog,
-            clock: clock)
+            clock: clock, diarizer: diarizer)
+        // 1. ガード（遷移しない）
         let missing = transcriber.missingPrerequisites()
         if !missing.isEmpty {
             for m in missing {
@@ -71,6 +78,20 @@ extension PartSteps {
                     (.elapsedS, .double(PyRound.round(metrics.elapsedSeconds, digits: 1))),
                     (.chars, .of(metrics.chars)), (.rtf, .of(metrics.rtf)), (.speechRatio, .of(metrics.speechRatio)),
                 ])
+            // 話者分離の結果（PLAN §8.4.1・付録 A.4）。16 kHz を消す前に出す
+            switch metrics.diarization {
+            case .completed(let speakers, let elapsed):
+                log.info(
+                    .diarizationCompleted,
+                    [
+                        (.recordingKey, .string(pk)), (.speakers, .of(speakers)),
+                        (.elapsedS, .double(PyRound.round(elapsed, digits: 1))),
+                    ])
+            case .failed(let reason):
+                log.warning(.diarizationFailed, [(.recordingKey, .string(pk)), (.reason, .string(reason))])
+            case nil:
+                break
+            }
             if cfg.cleanup.deleteNormalizedAfterTranscribe {
                 do {
                     try SafeUnlink.remove(input, under: .staging, layout: layout)

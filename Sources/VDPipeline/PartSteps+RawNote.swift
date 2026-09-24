@@ -31,7 +31,7 @@ extension PartSteps {
                         AbsoluteSegment(
                             at: started.adding(milliseconds: SecondsToMillis.fromWhisperSeconds($0.start)),
                             endAt: started.adding(milliseconds: SecondsToMillis.fromWhisperSeconds($0.end)),
-                            text: $0.text)
+                            text: $0.text, speaker: $0.speaker)
                     }, zone: zone))
         }
         return parts
