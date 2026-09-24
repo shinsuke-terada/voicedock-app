@@ -62,7 +62,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
                     enabled: true, modelID: "silero-v5.1.2", threshold: 0.5,
                     minSpeechDurationMs: 250, minSilenceDurationMs: 1000, speechPadMs: 200)),
             llm: LLMConfig(
-                modelID: nil, contextSize: 32_768, temperature: 0.1, topP: 0.9, maxOutputTokens: 4096,
+                modelID: nil, contextSize: 32_768, temperature: 0.1, topP: 0.9, maxOutputTokens: 8192,
                 requestTimeoutSeconds: 1800, maxCharsPerRequest: 20_000, maxSecondsPerRequest: 3600,
                 chunkOverlapChars: 500, repairAttempts: 1,
                 analysis: AnalysisConfig(

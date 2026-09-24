@@ -872,7 +872,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
              "minSpeechDurationMs": 250, "minSilenceDurationMs": 1000, "speechPadMs": 200 }
   },
   "llm": {
-    "modelID": null, "contextSize": 32768, "temperature": 0.1, "topP": 0.9, "maxOutputTokens": 4096,
+    "modelID": null, "contextSize": 32768, "temperature": 0.1, "topP": 0.9, "maxOutputTokens": 8192,
     "requestTimeoutSeconds": 1800, "maxCharsPerRequest": 20000, "maxSecondsPerRequest": 3600,
     "chunkOverlapChars": 500, "repairAttempts": 1,
     "analysis": {
@@ -1516,7 +1516,7 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
 - 本体（voicedock と同じキーと値。符号化は `JSONSerialization` でよい。サーバが読むだけなのでバイト一致は不要）:
   ```json
   {"model": "<modelID>", "messages": [{"role": "system", "content": "<prompt>"}, {"role": "user", "content": "<body>"}],
-   "temperature": 0.1, "top_p": 0.9, "max_tokens": 4096, "response_format": {"type": "json_object"}}
+   "temperature": 0.1, "top_p": 0.9, "max_tokens": 8192, "response_format": {"type": "json_object"}}
   ```
 - タイムアウト `requestTimeoutSeconds`（1800 秒。`timeoutIntervalForRequest` と `timeoutIntervalForResource` の両方）。リクエストごとに新しい `URLSession`（`.ephemeral`）。**クライアントを使い回さない**（LLM-10）。
   `URLSessionConfiguration` は注入されたファクトリから作る（テストで差し替える。§10.1）
@@ -3631,6 +3631,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | X-41 | whisper の生 JSON を `json.loads(path.read_text(encoding="utf-8"))` で読む（transcribe.py:447-452）。生の制御文字（U+0000〜U+001F）や区間の境目で割れた多バイト文字（不正な UTF-8）が 1 つあると全体が読めず、Part が毎回 `WHISPER_FAILED` | whisper の生 JSON に限り、読む前に不正な UTF-8 を U+FFFD に置き換え、文字列の中の生の制御文字を `\u00XX` にする（文字列の外は触らない。正常な JSON は 1 バイトも変えない。§8.4 手順 7）。`PyJSON.decode` は変えない。直した transcript は、直した文字（U+FFFD と U+0000〜U+001F）を除いた文字数が minChars に届かなければ無音（NO_SPEECH_DETECTED の SKIPPED。根拠 B で元の録音を消しうる）にせず `WHISPER_FAILED`（消さない側。§8.4 手順 6・9）。エスケープした制御文字は文字として残るので、NUL などを含む transcript と Raw ノート（`.md`）ができうる | 利用者の決定（2026-09-23。寛容に読む。F-82）。1 区間の不良で Part の全文を失わない |
 | X-42 | `INCLUDE_VOLUMES` の既定は空（「改名した瞬間に無言で検出されなくなるのを避けるため」。helper/helper.example.conf:4-8） | `device.includeVolumes` の既定は `["DJIMIC3"]`（既存の `config.json` の値は変えない。§6.2）。名前が合わないが録音のフォルダがあるボリュームは取り込まずに「はじめに」の⑤で改名を案内する（§8.1 規則 1） | 利用者の決定（2026-09-23。F-81）。ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすと、録音の写しを入れたバックアップ用のメモリが DUPLICATE_CONTENT → 根拠 B で消されうる。voicedock が避けた「無言で検出されなくなる」は案内で補う |
 | X-43 | `reduce_phase` は本文の文字数だけで単一パス Reduce にするか決める（`_bundles` も文字数だけで束ねる） | 本文の文字数に加えて、件数が `reduceMaxItems`（4）を超えたら束ねる（単一パスは文字数以下**かつ**件数 4 以下のときだけ。`_bundles` も文字数か件数のどちらかで区切る） | 2026-09-24。4B・30B の受け入れ試験（10 時間・220,000 文字）で、18 個の中間結果を 1 回でまとめる最終 Reduce が壊れた JSON になった（`max_tokens=4096` に収まらず切れる。修復も同じ枠なので直らない）。voicedock にも同じ弱点があるが（`git show d3d595e:src/voicedock/llm.py` の `reduce_phase`・`strip_think` のコメント「`max_tokens` で切られた場合にこうなる」）、実機で確かめたのは今回が初めて。3 個の Reduce（s09-allhands）は壊れておらず、4 を上限にする
+| X-44 | `max_output_tokens: 4096`（config/config.example.yaml:98） | `maxOutputTokens` の既定を **8192** に | 2026-09-24。30B の受け入れ試験（220,000 文字）で、X-43 の畳み込みとは別に、1 チャンク（約 1〜1.5 万文字）を要約するだけの map 呼び出しが `LLM_INVALID_JSON` で落ちた（18 個中 15 個目あたり）。スキーマの上限（タスク最大 50 件×500 文字など）を素直に計算すると 4096 では足りないことがある。`CV-51`（`contextSize >= maxCharsPerRequest + maxOutputTokens + 2048`）の範囲で、既定の `contextSize`（32768）・`maxCharsPerRequest`（20000）のまま上げられる上限は 10720。倍の 8192 にする（利用者の決定）。内容が特に濃いチャンクでは、上げても稀に失敗しうることは許容する（利用者の決定。§8.5 の `LLM_INVALID_JSON` は次の再評価まで待つ既定のまま変えない） |
 
 **意図して変えないもの**（voicedock の実装どおりにする。SPEC の記述と違っても）: frontmatter の文字列を常に引用、Timeline の区切り（Map-Reduce はチャンク単位）、
 Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を確かめない、`recorded` は除外 Part を含む、重複除去は Reduce 経路だけ、
@@ -3751,3 +3752,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-85 | 誤 | 付録 B.3 | （2026-09-23。利用者の決定。T-43 の README の作成中に見つかった）取り下げた E2E-15（F-61）・E2E-18（F-60）の行に `~~` の打ち消しが付いておらず、`SpecDocument.ids(.e2e)` が取り下げ済みの 2 件を数えて E2E を 18 件としていた（生きているのは 16 件）。DR-13 と同じく `~~E2E-15~~` の形にして数えない。番号は詰めない。`make spec` で SPEC を同期し、README の「実機試験 **16 件**」と突き合わせる |
 | F-86 | 誤 | §10.6・付録 B.3・P0-07・P0-09 | （2026-09-24。利用者の決定。4B の受け入れ試験の後）「1 日分」の想定を **16 時間・約 350,000 文字から 10 時間・約 220,000 文字**に下げた。音声は 30 分ごとに区切られ、16 時間しゃべり続ける使い方は無い。比率は変えない（P0-09 の見積式 10 × 3600 × 4.6 ＝ 165,600 字の約 1.33 倍。以前は 16 時間の 264,960 字の約 1.32 倍）。30 分の上限は変えない。E2E-06 は 10 時間・約 20 本（30 分 × 20）。LLM 受け入れ試験の長文 fixture は 220,000 スカラーに達したところで止める。**この基準の変更は 4B の不合格（J3 は短い会話 4 本で出ている）とは無関係で、変更後も 4B は合格しない**。POC.md の章 15 の 4B の記録（350,000 文字で 26.4 分）は変更前の基準での結果として残す |
 | F-87 | 誤 | §8.5・付録 D | （2026-09-24。利用者の決定「2で進めて」を受けての実装）X-43。単一パス Reduce の判定に件数の上限（`reduceMaxItems`＝4）を足した。4B・30B のどちらも、10 時間分の受け入れ試験の最後の 1 要求（18 個の中間結果を 1 回でまとめる Reduce）が `LLM_INVALID_JSON` で落ちていた（§10.6 の J1・J2 が✗）。F-86（10 時間への変更）とは無関係の、Map-Reduce の実装そのものの穴 |
+| F-88 | 誤 | §6.2（既定値の JSON）・§8.5・付録 D | （2026-09-24。利用者の決定「上げて良い」）X-44。`maxOutputTokens` の既定を 4096 → 8192。F-87（X-43）とは別の失敗（1 チャンクの map 呼び出し単体が切れる）への対応 |

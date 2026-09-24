@@ -171,7 +171,7 @@ public static func defaults(timeZone: String) -> AppConfig {
                                            timeoutFactor: 3.0, minTimeoutSeconds: 600, maxTimeoutSeconds: 21_600, minChars: 1,
                                            vad: VADConfig(enabled: true, modelID: "silero-v5.1.2", threshold: 0.5,
                                                           minSpeechDurationMs: 250, minSilenceDurationMs: 1000, speechPadMs: 200)),
-        llm: LLMConfig(modelID: nil, contextSize: 32_768, temperature: 0.1, topP: 0.9, maxOutputTokens: 4096,
+        llm: LLMConfig(modelID: nil, contextSize: 32_768, temperature: 0.1, topP: 0.9, maxOutputTokens: 8192,
                        requestTimeoutSeconds: 1800, maxCharsPerRequest: 20_000, maxSecondsPerRequest: 3600,
                        chunkOverlapChars: 500, repairAttempts: 1,
                        analysis: AnalysisConfig(
@@ -641,7 +641,7 @@ public enum TestCatalogs {
 | CV-48 | `"RO"` → `ro か rw であること（RO）` | `rw` |
 | CV-49 | 4 つを 1 つずつ `0` → keyPath がそれぞれの名前 | `1` |
 | CV-50 | `59` → `60 以上であること（59）` | `60`（snapshotMaxAge 900 > 60 なので CV-46 も通る） |
-| CV-51 | `contextSize = 26143` → `maxCharsPerRequest + maxOutputTokens + 2048（26144）以上であること（26143）` | `26144` |
+| CV-51 | `contextSize = 30239` → `maxCharsPerRequest + maxOutputTokens + 2048（30240）以上であること（30239）` | `30240`（F-88） |
 | CV-52 | backoff `[]` → `空にできない`、`[60, -1]` → keyPath `….1`、timeout `59` → `60 以上であること（59）` | `[0]`・`60` |
 | CV-53 | maxAttempts `0` → 違反（CV-09 は `3 >= 0` で通る）、backoff `[3,-1,30]` → keyPath `retry.backoffSeconds.1` | `maxAttempts 1` |
 | CV-54 | `"info"` → 違反（大小区別） | `"DEBUG"` |
@@ -716,7 +716,7 @@ public enum TestCatalogs {
 | CV-14 と CV-13 の評価の順を入れ替える | `evaluationOrderFollowsTable` |
 | CV-14 に該当したテンプレートを CV-13 から外す処理を消す | CV-14 のテスト（「CV-13 は出ない」） |
 | CV-30 で `.missing` のときも比較する（missing を false 扱い） | CV-30 の「評価しない」のテスト |
-| CV-51 の `+ 2048` を消す | CV-51 の違反の例（境界で通る例 `26144` は条件を緩めても通るので落ちない） |
+| CV-51 の `+ 2048` を消す | CV-51 の違反の例（境界で通る例 `30240` は条件を緩めても通るので落ちない） |
 | `ModelCatalog.load` の `bad_url` の 40 桁検査を消す | `rejectsEachRule`（resolve/main） |
 | `ConfigEffectPending.owners` から `device.mountMode` を消す | `everyKeyIsCoveredOrPending` |
 | `GoldenConfig.set` の `path.count == 1` の分岐で `object[key] = value` を消す | `overridesLandOnKeyPaths` |

@@ -317,7 +317,7 @@ echo "fake llama-server attempt $N" 1>&2
 | `timeoutComesFromTheConfiguration` / 「CE llm.requestTimeoutSeconds がタイムアウトになる」 | 既定と `requestTimeoutSeconds = 60` | `makeConfiguration()` の request / resource がそれぞれ 1800 / 60 |
 | `ceTemperature` / 「CE llm.temperature が本文に入る」 | `temperature = 0.7`、200 の stub | 受けた本文の `temperature` が 0.7（既定なら 0.1） |
 | `ceTopP` / 「CE llm.topP が本文の top_p に入る」 | `topP = 0.5` | 本文の `top_p` が 0.5（既定なら 0.9） |
-| `ceMaxOutputTokens` / 「CE llm.maxOutputTokens が本文の max_tokens に入る」 | `maxOutputTokens = 256` | 本文の `max_tokens` が 256（既定なら 4096） |
+| `ceMaxOutputTokens` / 「CE llm.maxOutputTokens が本文の max_tokens に入る」 | `maxOutputTokens = 256` | 本文の `max_tokens` が 256（既定なら 8192。F-88） |
 | `validResponseIsParsed` / 「content を取り出す」 | 200 `{"choices":[{"message":{"content":"{\"a\":1}"}}],"usage":{"total_tokens":42}}` | `.content("{\"a\":1}")` |
 | `contentKeepsLeadingBOM` / 「content の先頭の U+FEFF を落とさない（PyJSON.decode）」 | 200 `{"choices":[{"message":{"content":"\ufeff{}"}}]}` | `.content("\u{FEFF}{}")` |
 | `malformedEnvelopeIsEmpty(body:)` / 「外形が壊れた応答は空文字（修復へ回す）」 | 200 で本文が `{"choices":[]}`・`{"choices":[{}]}`・`{"choices":[{"message":{}}]}`・`{"choices":"nope"}`・`{}`・`[]`・`<html>nope</html>`・`{"choices":[{"message":{"content":5}}]}`・空の本文 `""`（TEST-28） | どれも `.content("")` |
