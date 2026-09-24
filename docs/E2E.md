@@ -138,7 +138,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-01 | 1 本を通しで | OFF | ✅ PASS | §3.1 |
 | E2E-02 | コピー中に抜く | OFF | ⬜ 未実施 | §3.2 |
 | E2E-03 | 文字起こし中に抜く | OFF | ⬜ 未実施 | §3.3 |
-| E2E-04 | Vault を利用不可にする | OFF | ⬜ 未実施 | §3.4 |
+| E2E-04 | Vault を利用不可にする | OFF | ✅ PASS | §3.4 |
 | E2E-05 | 抜き挿しを 6 回以上 | OFF | ✅ PASS | §3.5 |
 | E2E-06 | 1 日分を 1 セッションに | OFF | ⬜ 未実施 | §3.6 |
 | E2E-07 | 無音の Part を混ぜる | OFF | ⬜ 未実施 | §3.7 |
@@ -349,13 +349,68 @@ Daily ノート `## Timeline` の見出し（単一チャンクの代替経路�
 7: **再起動なしで** `pipeline_resumed reason=vault_unavailable` が出て、Raw / Daily が書かれる。
 
 #### 記録
-5 の `diff /tmp/e2e04-before.txt <(…)` の全文、`pipeline_paused` と `pipeline_resumed` の行（`grep -E 'pipeline_paused|pipeline_resumed' "$VD_HOME/logs/app.log"`）、4 と 8 の [C-10]。
 
+実施: 2026-09-24 夜。DEV=DJIMIC3。約 1 分の新しい録音 1 本。Obsidian は途中で起動したが、VoiceDock 自体は再起動していない。
+
+1（前。[C-9]）:
 ```text
+1168 1790088062 .../Raw/20260922/2026-09-22 raw.md
+1775 1790089210 .../Wiki/20260922/2026-09-22 Voice.md
+3133 1790252213 .../Wiki/20260924/2026-09-24 Voice.md
+36252 1790172830 .../Raw/20260923/2026-09-23 raw.md
+4673 1790250559 .../Wiki/20260923/2026-09-23 Voice.md
+5922 1790252122 .../Raw/20260924/2026-09-24 raw.md
 ```
 
+2:
+```text
+$ mv "$VAULT/.obsidian" "$VAULT/.obsidian.bak"
+```
+
+4（[C-10]。要対応）:
+```text
+状態: 停止中: Vault が使えません
+要対応: Vault が使えません
+  /Users/terada/VoiceDockTestVault に .obsidian/ がありません
+  （Vault が未マウントか、別の場所を指しています）
+  [Vault を選び直す]
+はじめに: 3/4（「Vault を選ぶ」が未完了に戻った）
+```
+
+5（[C-9] の diff と、新しく作られたフォルダの確認）:
+```text
+$ diff /tmp/e2e04-before.txt /tmp/e2e04-during.txt
+（差分なし）
+$ find "$VAULT/Daily" -type d
+（Vault 停止中に新しいフォルダは作られなかった。Daily/Voice/Wiki/Raw の既存 3 日分だけ）
+```
+`pipeline_paused reason=vault_unavailable` が 1 件出た。**Vault に何も書かれず、空のディレクトリも作られなかった**（voicedock #134 の空振りは再現しなかった）。
+
+6〜7（`.obsidian` を戻して待つ。実施の途中で `$VAULT` が空になったまま `mv` を打ってしまい 1 回失敗したが、環境変数を再設定してやり直した。`.obsidian` のタイムスタンプは Sep 22 のままで、正しく元のフォルダに戻っている）:
+```text
+$ mv "$VAULT/.obsidian.bak" "$VAULT/.obsidian"
+$ ls -la "$VAULT" | grep -i obsidian
+drwxr-xr-x@ 2 terada staff 64 Sep 22 23:22 .obsidian
+```
+
+8（[C-1]・[C-9]・[C-10]）:
+```text
+recordings: COMPLETED|15 SKIPPED|1     （TRANSCRIBED で止まっていた 1 件が COMPLETED まで進んだ）
+sessions:   COMPLETED|3                （既存の Session が再オープン→自動で再度 COMPLETED まで一巡）
+
+2026-09-24T21:29:20+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260924 parts=3 bytes=6905
+2026-09-24T21:29:33+09:00 INFO  pipeline_resumed reason=vault_unavailable
+
+Daily/Voice の一覧（更新後）:
+6905 1790252960 .../Raw/20260924/2026-09-24 raw.md      （5922 → 6905。追いついた）
+3204 1790252972 .../Wiki/20260924/2026-09-24 Voice.md   （3133 → 3204。ボタンを押さずに自動で更新）
+
+パネル: 待機中。要対応なし。「はじめに」カードも消えた（4/4）。
+```
+再起動なしで `pipeline_resumed` が出て、Raw・Daily とも自動で書かれた（ログの順は `raw_note_saved` → `pipeline_resumed` だったが、両方とも再起動なしで観測された）。
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.5 E2E-05 — 抜き挿しを 6 回以上
 
