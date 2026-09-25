@@ -43,16 +43,16 @@ struct IconStateTests {
     }
 
     /// SPEC 同期は issue #18 で足した（T-30 §8。PLAN F-68）
-    @Test("記号名が SPEC S21 の表と同じ（case ごとの記号と、並べて出す trash）")
+    @Test("記号名が SPEC S21 の表と同じ（削除が有効な印は記号ではなく赤い点。F-91）")
     func symbolsMatchSpec() throws {
         let rows = try SpecDocument.load().iconRows()
-        let caseRows = rows.filter { $0.state != nil }
-        #expect(caseRows.compactMap(\.state) == IconState.allCases.map(\.rawValue))
-        for row in caseRows {
+        #expect(rows.compactMap(\.state) == IconState.allCases.map(\.rawValue))
+        for row in rows {
             let state = try #require(IconState(rawValue: row.state ?? ""), "\(row.label) の case が無い")
             #expect(state.symbolName == row.symbol, "\(row.label)")
         }
-        // case でない行は並べて出す記号 1 つだけ
-        #expect(rows.filter { $0.state == nil }.map(\.symbol) == [IconState.trashSymbolName])
+        // 記号を持つ行は case の行だけ（trash を並べない。F-91）
+        #expect(rows.allSatisfy { $0.state != nil })
+        #expect(!rows.map(\.symbol).contains(IconState.trashSymbolName))
     }
 }

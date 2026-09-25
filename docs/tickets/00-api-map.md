@@ -275,9 +275,10 @@
 | `AppDelegate.swift` | 起動手順（§8.15）、終了（`.terminateLater`） |
 | `Bootstrap.swift` | 依存の組み立て（本番の実装を注入する唯一の場所） |
 | `StatusItemController.swift` | `NSStatusItem` と `NSPopover` |
+| `StatusIconBadge.swift` | 削除が有効な間、状態の記号の右上に重ねる赤い点（F-91） |
 | `AppServices.swift` | `protocol AppServices: Sendable`（AppModel が外に触れる唯一の口。T-30 が `read(lastConnectedAt:)` / `requeueManual()` / `reloadConfig()` / `scanNow()` / `updates()` を作り、**T-31 が `importGGUF(from:)`**（UI の語。委譲先は `ModelManager.importCustomLLM(from:)`）・`download` 系、**T-32 が `enqueue(_:)`**、**T-40 が有効化・無効化の口**を足す）と `struct LiveServices: AppServices { let context: AppContext }` |
 | `AppModel.swift` | `@MainActor @Observable final class AppModel` |
-| `IconState.swift` | `enum IconState { idle, ingesting, processing, attention }` と `trash` の表示 |
+| `IconState.swift` | `enum IconState { idle, ingesting, processing, attention }` と削除が有効な印の表示（メニューバーは `StatusIconBadge` の赤い点、パネルは `trash`。F-91） |
 | `Strings.swift` | 文言 |
 | `LoginItem.swift` | `SMAppService.mainApp` の包み |
 | `UIState.swift` | `ui-state.json` の読み書き（`UIState`・`UIStateStore`）。F-70 で `UIState.lastConnectedAt`（最終接続。鍵 `lastConnectedAt` は epoch ミリ秒の整数、任意）と、最終接続の決め方と書く頻度の純関数 `enum LastConnected { resolve(device:carried:persisted:); valueToSave(current:connected:written:) }` を足した（作り手 T-31 のファイル。使い手 T-30 の `LiveServices.read`・`AppModel.refresh`） |

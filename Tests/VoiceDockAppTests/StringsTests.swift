@@ -55,6 +55,11 @@ struct StringsTests {
         ("iconDescription.processing", Strings.iconDescription(.processing), "処理中"),
         ("iconDescription.attention", Strings.iconDescription(.attention), "要対応"),
         ("iconTrashDescription", Strings.iconTrashDescription, "元音声の削除が有効です"),
+        ("iconDescriptionWithDeletion.idle", Strings.iconDescriptionWithDeletion(.idle), "待機中。元音声の削除が有効です"),
+        (
+            "iconDescriptionWithDeletion.attention", Strings.iconDescriptionWithDeletion(.attention),
+            "要対応。元音声の削除が有効です"
+        ),
         // F-65: 長押しの有効化とカード型のパネル（T-30 §4.12 の F-65 の表）
         ("holdSeconds", Strings.holdSeconds, "3"),
         ("holdToEnableHint", Strings.holdToEnableHint, "赤いボタンを 3 秒長押しすると有効になります。途中で離すと取り消します"),

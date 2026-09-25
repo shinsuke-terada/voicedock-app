@@ -441,7 +441,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | 取り込み中 | `ingesting` | `arrow.down.circle` |
 | 文字起こし・要約中 | `processing` | `text.bubble` |
 | 要対応あり（上の 3 つより優先） | `attention` | `exclamationmark.triangle` |
-| 削除が有効（上記に**並べて**常時表示） | — | `trash` |
+| 削除が有効（上記の記号の右上に**赤い点**を常時表示。F-91） | — | — |
 
 ## S22. はじめに（PLAN §8.12）
 

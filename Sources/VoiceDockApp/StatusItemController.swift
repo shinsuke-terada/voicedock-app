@@ -8,6 +8,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let item: NSStatusItem
     private let popover: NSPopover
     private let model: AppModel
+    /// 削除が有効な間の赤い点（F-91）
+    private let badge = StatusIconBadge()
     private var iconObserver: Task<Void, Never>?
     /// 状態の 1 行が変わったらツールチップを書き直す（F-84。アイコンが変わらない間も古いまま残さない）
     private var statusLineObserver: Task<Void, Never>?
@@ -29,6 +31,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         item.button?.target = self
         item.button?.action = #selector(toggle(_:))
         item.button?.setButtonType(.momentaryChange)
+        if let button = item.button { badge.attach(to: button) }
         applyIcon()
         iconObserver = Task { @MainActor [weak self] in
             for await _ in model.iconChanges { self?.applyIcon() }
@@ -76,7 +79,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func applyIcon() {
-        item.button?.image = StatusIconImage.make(state: model.iconState, showsTrash: model.showsTrash)
+        let image = StatusIconImage.make(state: model.iconState, showsDeletionBadge: model.showsTrash)
+        item.button?.image = image
+        badge.update(visible: model.showsTrash, imageSize: image.size)
         applyToolTip()
     }
 

@@ -13,9 +13,10 @@ enum IconState: String, Equatable, CaseIterable, Sendable {
         case .attention: "exclamationmark.triangle"
         }
     }
+    /// パネルの状態の見出しに並べる記号。メニューバーは記号ではなく赤い点を重ねる（StatusIconBadge。F-91）
     static let trashSymbolName = "trash"
 
-    /// `trash` を出すか（PLAN §8.9.8 の常時表示）。設定が読めていれば `DeletionPanelState.showsTrash` の 1 か所
+    /// 削除が有効な印（メニューバーの赤い点とパネルの `trash`）を出すか（PLAN §8.9.8 の常時表示）。設定が読めていれば `DeletionPanelState.showsTrash` の 1 か所
     /// （式を書き直さない。T-40）。設定エラー中は消す能力が残っているか（`residual`）
     static func showsTrash(_ deletion: DeletionPanelState?, residual: Bool) -> Bool {
         guard let deletion else { return residual }

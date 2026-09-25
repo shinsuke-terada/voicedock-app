@@ -2388,7 +2388,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 
 **有効化の書き込み順**（§8.9.8 の 3）は「reaper を複製 → reaper.conf を true → config を `update(_, reaperConfObservation: true)` で有効」。途中で落ちて片方だけ有効になった場合は、次の読み込みで reconcileLock1 が無効側へ揃える
 
-**常時表示**: 削除が有効な間（`config.cleanup.deleteSourceAudio` が真 **または** reaper.conf が有効。片方だけ有効な中途の状態でも出す）は、メニューバーのアイコンの横に `trash` シンボルを常に出す。パネルの「元音声の削除」には 3 つのロックを**個別に**、設定値と観測値を並べて出す（voicedock の起動時警告と voicedock doctor の D-17 に相当。DR-14 と同じ `LockEvaluator` を使い、式を書き直さない）:
+**常時表示**: 削除が有効な間（`config.cleanup.deleteSourceAudio` が真 **または** reaper.conf が有効。片方だけ有効な中途の状態でも出す）は、メニューバーのアイコン（状態の記号）の右上に赤い点（`NSColor.systemRed`）を常に重ねる（テンプレート画像は色を持てないので、画像には描かず `NSStatusBarButton` に重ねたビューで描く。`NSStatusItem` は 1 つのまま。読み上げの説明は「<状態>。元音声の削除が有効です」。パネルの `trash` は変えない。F-91）。パネルの「元音声の削除」には 3 つのロックを**個別に**、設定値と観測値を並べて出す（voicedock の起動時警告と voicedock doctor の D-17 に相当。DR-14 と同じ `LockEvaluator` を使い、式を書き直さない）:
 
 ```text
 ロック 1  : アプリ=有効, reaper.conf=有効
@@ -2563,7 +2563,7 @@ SwiftUI の `PanelView` をホストする。`MenuBarExtra` は使わない（�
 パネルを開くとき `NSApp.activate()`（パネルの操作に最初のクリックから反応させるため）。
 popover の高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の高さを持たない。F-65）
 
-**アイコン**（SF Symbols、テンプレート画像。`IconState` を AppModel が計算する。SPEC S21。「IconState」の列は case、`trash` は case ではなく並べて出す記号）:
+**アイコン**（SF Symbols、テンプレート画像。`IconState` を AppModel が計算する。SPEC S21。「IconState」の列は case。削除が有効な印は記号ではなく、記号の右上に重ねる赤い点（§8.9.8。F-91））:
 
 | 状態 | IconState | シンボル |
 |---|---|---|
@@ -2571,7 +2571,7 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
 | 取り込み中 | `ingesting` | `arrow.down.circle` |
 | 文字起こし・要約中 | `processing` | `text.bubble` |
 | 要対応あり（上の 3 つより優先） | `attention` | `exclamationmark.triangle` |
-| 削除が有効（上記に**並べて**常時表示） | — | `trash` |
+| 削除が有効（上記の記号の右上に**赤い点**を常時表示。F-91） | — | — |
 
 メニューバーのツールチップは 1 の状態の 1 行。アイコンが変わらなくても、1 行が変われば書き直す（コピーの進み具合など。`AppModel.statusLineChanges`。F-84）
 
@@ -3830,3 +3830,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-88 | 誤 | §6.2（既定値の JSON）・§8.5・付録 D | （2026-09-24。利用者の決定「上げて良い」）X-44。`maxOutputTokens` の既定を 4096 → 8192。F-87（X-43）とは別の失敗（1 チャンクの map 呼び出し単体が切れる）への対応 |
 | F-89 | 事 | §1.2・§1.3・§3.3・§6.1・§6.2・§6.3・§6.4（CV-39）・§8.4.1（新設）・§8.5・§8.6・§8.11（DR-18）・§8.12・§11.2・§12.3・付録 A.4・付録 D | （2026-09-24。利用者の依頼 issue #104 と決定: v1.0 に含める・パネルでオン／オフ・既定オフ・単語単位の時刻は使わない・表示は行頭の `**話者A**: `・精度は利用者が使って判断する）X-45。話者分離を足した。方式は pyannote community-1 の CoreML 版（Argmax SpeakerKit の `argmax-cli`）を whisper-cli と同じく子プロセスで起動する（SwiftPM の依存は増やさない。モデル 13 MB は同梱）。PoC は docs/POC.md の 16 章（P0-13。オフラインで動く・約 69 倍速・whisper の区間の時刻と揃う。合成音声では話者の取り違えが約 5 割で、人の声では未測定）。設定 `transcription.diarization.enabled` を足し `schemaVersion` を 2 に（1 → 2 の移行）。ログのイベント `diarization_completed`・`diarization_failed` とフィールド `speakers`、診断 DR-18、チケット T-46〜T-51 を足した。**失敗しても Part を失敗させない**（話者なしで進む）。エラーコード・遷移の辺・削除の条件は変えない |
 | F-90 | 誤 | §2（ディレクトリ）・§5.3・§8.4.1・§8.5・§8.9（後始末）・§11.2 | （2026-09-24。話者分離（F-89）のコードレビューを受けた利用者の決定: 話者の前置きは付けたまま LLM に渡す、ほかの指摘もすべて直す）(1) チャンクの切り方と重なりを、LLM に送る行（`話者A: ` の前置きを含む）の文字数で数える（text だけを数えると送る量が 2〜5 割増え `contextSize` を超えうる。話者なしは行 = text なので voicedock と同じ）。(2) 話者分離の途中で落ちたときの `staging/<slug>/diarization.rttm` を、起動時の復旧（TRANSCRIBING の後片付け）と Session の後始末（CLEANUP）でも消す（`HomeLayout.diarizationRTTM(slug:)`。それまでは次の話者分離が起動したときにしか消えず、オフに戻すと staging のフォルダごと残った）。(3) 部品の確かめを `Diarizer.missingParts(paths:)`（static）にし、診断 DR-18 とパネルが仮のタイムアウトの `Diarizer` を作らないようにした。(4) `build-argmax.sh` のフラグの判定を Swift 側（`containsFlag`）と同じ区切りに（後ろに `<` を足した）。(5) `fetch-speaker-models.sh` の「取得済み」は、一覧の全ファイルの sha256 が合い、一覧と NOTICE.txt のほかにファイルが無いときだけ（紛れ込んだファイルを同梱しない）。(6) `RTTMParser` の `\r` の手での除去を消した（`PyText.strip` が落とす）。設定キー・ログのイベント・エラーコード・遷移の辺は変えない |
+| F-91 | 事 | §8.9.8・§8.12 | （2026-09-25。利用者の依頼「ゴミ箱アイコンはダサいので、削除 ON なら波のアイコンに赤ポチを付けるくらいに。他は変えなくて良い」）削除が有効な間のメニューバーの印を、状態の記号の横に並べる `trash` から、状態の記号の右上に重ねる赤い点（`StatusIconBadge`。直径 6pt・`NSColor.systemRed`）に変えた。アイコンの画像はテンプレートのまま 1 枚（明暗・開いている間の強調・非アクティブなディスプレイの減光は AppKit に任せる）で、赤い点は `NSStatusBarButton` に重ねたビューが描く。読み上げの説明は「<状態>。元音声の削除が有効です」。表示の条件（`DeletionPanelState.showsTrash`）とパネルの `trash` は変えない |

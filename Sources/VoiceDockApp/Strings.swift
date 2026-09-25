@@ -99,6 +99,10 @@ enum Strings {
         }
     }
     static let iconTrashDescription = "元音声の削除が有効です"
+    /// 削除が有効な間のメニューバーのアイコンの説明（赤い点は読み上げられないので説明に足す。F-91）
+    static func iconDescriptionWithDeletion(_ state: IconState) -> String {
+        iconDescription(state) + "。" + iconTrashDescription
+    }
 
     // T-31: はじめに（PLAN §8.12 の 3）
     static let onboardingVault = "Vault を選ぶ"
