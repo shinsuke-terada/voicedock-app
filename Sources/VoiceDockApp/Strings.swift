@@ -126,8 +126,8 @@ enum Strings {
         }
     }
     static let promptEditorHint =
-        "{schema_block}（JSON の形の見本）と {custom_instructions}（追加の指示）は消さないでください。"
-        + "変更は次に要約する日から使います（要約済みの日は作り直しません）"
+        "\(PromptOverrides.schemaPlaceholder)（JSON の形の見本）と \(PromptOverrides.customPlaceholder)（追加の指示）は"
+        + "消さないでください。変更は次に要約する日から使います（要約済みの日は作り直しません）"
     static let buttonResetPrompt = "既定に戻す"
     static let buttonSavePrompts = "保存"
     static let promptsSaved = "保存しました"

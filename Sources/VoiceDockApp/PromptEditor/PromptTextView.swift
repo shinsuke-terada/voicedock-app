@@ -23,11 +23,12 @@ struct PromptTextView: NSViewRepresentable {
         textView.textContainerInset = NSSize(width: 4, height: 6)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
-        textView.string = text
         textView.delegate = context.coordinator
-        let scroll = NSScrollView()
+        Self.replaceText(text, in: textView)
+        let scroll = PromptScrollView()
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
         scroll.documentView = textView
@@ -39,42 +40,30 @@ struct PromptTextView: NSViewRepresentable {
         guard let textView = scroll.documentView as? NSTextView else { return }
         // 同じなら書き戻さない（カーソルと Undo の履歴を保つ）
         if !textView.string.unicodeScalars.elementsEqual(text.unicodeScalars) {
-            textView.string = text
+            Self.replaceText(text, in: textView)
         }
     }
 
-    /// 編集を binding に写す
+    /// プログラムから本文を差し替える（種類の切り替え・既定に戻す）。前の本文への Undo の履歴を捨てる
+    /// （残すと ⌘Z が古い範囲を新しい本文に当て、範囲外で落ちるか本文を壊す）
+    static func replaceText(_ text: String, in textView: NSTextView) {
+        textView.string = text
+        textView.undoManager?.removeAllActions()
+    }
+
+    /// 編集を binding に写す。Undo の履歴は窓ではなくこの欄だけで持つ
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
+        let undo = UndoManager()
 
         init(text: Binding<String>) { self.text = text }
+
+        func undoManager(for view: NSTextView) -> UndoManager? { undo }
 
         func textDidChange(_ notification: Notification) {
             guard let textView = notification.object as? NSTextView else { return }
             text.wrappedValue = textView.string
         }
-    }
-}
-
-/// ⌘X・⌘C・⌘V・⌘A・⌘Z・⇧⌘Z を自分で受ける NSTextView（.accessory のアプリにはメニューバーの「編集」が無く、
-/// キーの組み合わせがどこにも届かないため。F-92）
-final class PromptNSTextView: NSTextView {
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        // Caps Lock などは見ない（⌘・⇧・⌥・⌃ だけで比べる）
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        guard flags == .command || flags == [.command, .shift],
-            let key = event.charactersIgnoringModifiers?.lowercased()
-        else { return super.performKeyEquivalent(with: event) }
-        switch (key, flags == .command) {
-        case ("x", true): cut(nil)
-        case ("c", true): copy(nil)
-        case ("v", true): paste(nil)
-        case ("a", true): selectAll(nil)
-        case ("z", true): undoManager?.undo()
-        case ("z", false): undoManager?.redo()
-        default: return super.performKeyEquivalent(with: event)
-        }
-        return true
     }
 }

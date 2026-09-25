@@ -4,7 +4,7 @@ import VDLLM
 
 /// 要約プロンプトの編集の窓の中身（F-92）。値は AppModel.promptEditor だけを見る。
 struct PromptEditorView: View {
-    @Bindable var model: AppModel
+    let model: AppModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {

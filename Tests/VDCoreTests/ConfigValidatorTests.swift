@@ -622,8 +622,6 @@ struct ConfigValidatorTests {
         #expect(Self.check { $0.obsidian.wiki.maxLinks = 0 }.isEmpty)
     }
 
-    // MARK: - 全体
-
     // MARK: - CV-60（F-92）
 
     /// 要る 2 つのプレースホルダを含む上書き
@@ -696,6 +694,8 @@ struct ConfigValidatorTests {
                         message: "{custom_instructions} を含むこと"),
                 ])
     }
+
+    // MARK: - 全体
 
     @Test("既定値は違反 0 件")
     func defaultsHaveNoViolations() {

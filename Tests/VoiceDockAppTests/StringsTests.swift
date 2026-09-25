@@ -66,6 +66,19 @@ struct StringsTests {
         ("buttonSavePrompts", Strings.buttonSavePrompts, "保存"),
         ("promptsSaved", Strings.promptsSaved, "保存しました"),
         ("promptsUnsaved", Strings.promptsUnsaved, "未保存の変更があります"),
+        ("promptKindPicker", Strings.promptKindPicker, "プロンプトの種類"),
+        ("promptsNote", Strings.promptsNote, "LLM に渡す指示の本文を変えられます。未編集なら同梱の既定の本文を使います"),
+        (
+            "promptEditorHint", Strings.promptEditorHint,
+            "{schema_block}（JSON の形の見本）と {custom_instructions}（追加の指示）は消さないでください。"
+                + "変更は次に要約する日から使います（要約済みの日は作り直しません）"
+        ),
+        ("promptKindNote.analyze", Strings.promptKindNote(.analyze), "1 日分の文字起こしが 1 回の要求に収まるときに使います"),
+        (
+            "promptKindNote.map", Strings.promptKindNote(.map),
+            "長い日を分割したそれぞれの部分に使います（まとめきれないときの中間のまとめにも使います）"
+        ),
+        ("promptKindNote.reduce", Strings.promptKindNote(.reduce), "分割して要約した結果を 1 日分にまとめるときに使います"),
         ("iconDescriptionWithDeletion.idle", Strings.iconDescriptionWithDeletion(.idle), "待機中。元音声の削除が有効です"),
         (
             "iconDescriptionWithDeletion.attention", Strings.iconDescriptionWithDeletion(.attention),
