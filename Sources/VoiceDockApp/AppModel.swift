@@ -103,6 +103,15 @@ final class AppModel {
     /// この起動で loginItemDecided = true を書いたか（F-70。重なった refresh の古い ui-state で「今はしない」を消さない。
     /// 書くのは AppModel+LoginItem の markLoginItemDecided だけ）
     @ObservationIgnored var loginItemDecidedWritten = false
+    // F-92（書くのは AppModel+PromptEditor だけ）
+    /// 要約プロンプトの編集の窓の中身（nil = 窓を開いていない）
+    var promptEditor: PromptEditorState?
+    /// 編集の窓の保存の結果（「保存しました」）
+    var promptEditorMessage: String?
+    /// 編集の窓を開けない・保存できない理由
+    var promptEditorError: String?
+    /// 編集の窓を前に出す（AppDelegate が StatusItemController.showPromptEditor を入れる）
+    @ObservationIgnored var presentPromptEditor: @MainActor () -> Void = {}
 
     @ObservationIgnored let services: any AppServices
     /// ModelSlot.llm(id) の項目を引く（T-31）

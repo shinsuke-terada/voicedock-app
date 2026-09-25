@@ -1,7 +1,8 @@
 // system プロンプトの読み込みと差し込み（PLAN §8.5「プロンプト」）。format 相当を使わず文字列置換だけで行う。
 import Foundation
+import VDCore
 
-public enum PromptKind: Sendable, Equatable { case analyze, map, reduce }
+public enum PromptKind: Sendable, Hashable, CaseIterable { case analyze, map, reduce }
 
 public enum PromptsError: Error, Equatable, Sendable {
     /// ファイル名（例 "analyze_ja.txt"）。
@@ -61,6 +62,22 @@ public struct Prompts: Equatable, Sendable {
         Self.fill(reduceTemplate, schema: schema, custom: custom)
     }
 
+    /// F-92: 3 つのテンプレートの本文（差し込み前）。編集の窓が既定の本文として出す。
+    public func template(_ kind: PromptKind) -> String {
+        switch kind {
+        case .analyze: return analyzeTemplate
+        case .map: return mapTemplate
+        case .reduce: return reduceTemplate
+        }
+    }
+
+    /// F-92: `llm.analysis.prompts` の上書きを当てたもの。nil の種類は同梱の本文のまま。修復のプロンプトは替えない。
+    public func overriding(_ o: PromptOverrides) -> Prompts {
+        Prompts(
+            analyze: o.analyze ?? analyzeTemplate, map: o.map ?? mapTemplate, reduce: o.reduce ?? reduceTemplate,
+            repair: repairTemplate)
+    }
+
     /// 上の 3 つへ振り分ける。
     public func system(_ kind: PromptKind, schema: AnalysisSchema, custom: String) -> String {
         switch kind {
@@ -72,15 +89,16 @@ public struct Prompts: Equatable, Sendable {
 
     /// X-12: 修復プロンプトにもスキーマを渡す。信用できない入力（previousOutput）を最後に差し込む（PLAN §8.5）。
     public func repair(schema: AnalysisSchema, errors: String, previousOutput: String) -> String {
-        let withSchema = PromptText.replaceAll(repairTemplate, "{schema_block}", SchemaBlock.render(schema))
+        let withSchema = PromptText.replaceAll(
+            repairTemplate, PromptOverrides.schemaPlaceholder, SchemaBlock.render(schema))
         let withErrors = PromptText.replaceAll(withSchema, "{errors}", errors)
         return PromptText.replaceAll(withErrors, "{previous_output}", previousOutput)
     }
 
     /// `{schema_block}` → `{custom_instructions}` の順に 1 回ずつ。
     private static func fill(_ template: String, schema: AnalysisSchema, custom: String) -> String {
-        let withSchema = PromptText.replaceAll(template, "{schema_block}", SchemaBlock.render(schema))
-        return PromptText.replaceAll(withSchema, "{custom_instructions}", custom)
+        let withSchema = PromptText.replaceAll(template, PromptOverrides.schemaPlaceholder, SchemaBlock.render(schema))
+        return PromptText.replaceAll(withSchema, PromptOverrides.customPlaceholder, custom)
     }
 }
 

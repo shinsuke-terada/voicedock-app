@@ -26,8 +26,10 @@ public struct Analyzer: Sendable {
         self.config = config
         finalSchema = AnalysisSchema(config: .init(sections: config.analysis.sections), kind: .final)
         partialSchema = AnalysisSchema(config: .init(sections: config.analysis.sections), kind: .partial)
+        // F-92: 設定の上書き（null は同梱のまま）を当てる。map の上書きは Reduce の中間の束ねにも効く
         call = AnalysisCall(
-            transport: transport, prompts: prompts, customInstructions: config.analysis.customInstructions,
+            transport: transport, prompts: prompts.overriding(config.analysis.prompts),
+            customInstructions: config.analysis.customInstructions,
             repairAttempts: config.repairAttempts)
     }
 

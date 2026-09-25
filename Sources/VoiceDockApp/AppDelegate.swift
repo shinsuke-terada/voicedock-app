@@ -52,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 },
                 now: ctx.clock.now(), quit: { [weak self] in self?.requestTerminate() })
             let controller = StatusItemController(model: model)
+            model.presentPromptEditor = { [weak controller] in controller?.showPromptEditor() }
             model.start()
             // 初回起動だけ自動で開く（PLAN §8.12）
             if await ctx.config.didCreateDefaults() { controller.open() }

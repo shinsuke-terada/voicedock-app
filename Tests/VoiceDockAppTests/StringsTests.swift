@@ -1,5 +1,6 @@
 // Strings（パネルの文言）が T-30 §4.12 の表と逐語で一致することのテスト。
 import Testing
+import VDLLM
 import VDPipeline
 
 @testable import VoiceDockApp
@@ -55,6 +56,16 @@ struct StringsTests {
         ("iconDescription.processing", Strings.iconDescription(.processing), "処理中"),
         ("iconDescription.attention", Strings.iconDescription(.attention), "要対応"),
         ("iconTrashDescription", Strings.iconTrashDescription, "元音声の削除が有効です"),
+        ("sectionPrompts", Strings.sectionPrompts, "要約プロンプト"),
+        ("buttonEditPrompts", Strings.buttonEditPrompts, "要約プロンプトを編集…"),
+        ("promptEditorTitle", Strings.promptEditorTitle, "要約プロンプトの編集"),
+        ("promptKindLabel.analyze", Strings.promptKindLabel(.analyze), "1 回で要約"),
+        ("promptKindLabel.map", Strings.promptKindLabel(.map), "分割して要約（Map）"),
+        ("promptKindLabel.reduce", Strings.promptKindLabel(.reduce), "まとめ（Reduce）"),
+        ("buttonResetPrompt", Strings.buttonResetPrompt, "既定に戻す"),
+        ("buttonSavePrompts", Strings.buttonSavePrompts, "保存"),
+        ("promptsSaved", Strings.promptsSaved, "保存しました"),
+        ("promptsUnsaved", Strings.promptsUnsaved, "未保存の変更があります"),
         ("iconDescriptionWithDeletion.idle", Strings.iconDescriptionWithDeletion(.idle), "待機中。元音声の削除が有効です"),
         (
             "iconDescriptionWithDeletion.attention", Strings.iconDescriptionWithDeletion(.attention),

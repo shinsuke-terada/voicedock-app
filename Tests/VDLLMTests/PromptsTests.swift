@@ -184,4 +184,34 @@ struct PromptsTests {
             as: UTF8.self)
         #expect(!repair.contains("[["))
     }
+
+    // MARK: - F-92 の上書き
+
+    @Test("template は同梱のファイルの本文そのもの（3 つ）")
+    func templateIsTheBundledText() throws {
+        let prompts = try Prompts.load(directory: Self.promptsDirectory)
+        let files: [(PromptKind, String)] = [
+            (.analyze, "analyze_ja.txt"), (.map, "map_ja.txt"), (.reduce, "reduce_ja.txt"),
+        ]
+        for (kind, name) in files {
+            let data = try Data(contentsOf: Self.promptsDirectory.appendingPathComponent(name))
+            #expect(Data(prompts.template(kind).utf8) == data, "\(name)")
+        }
+    }
+
+    @Test("overriding の nil は同梱のまま（3 つとも nil なら元と等しい。TEST-28）")
+    func overridingWithNilsIsIdentity() throws {
+        let prompts = try Prompts.load(directory: Self.promptsDirectory)
+        #expect(prompts.overriding(PromptOverrides(analyze: nil, map: nil, reduce: nil)) == prompts)
+    }
+
+    @Test("overriding は指定した種類だけを替え、修復のプロンプトは替えない")
+    func overridingReplacesOnlyGivenKinds() throws {
+        let prompts = Prompts(analyze: "A", map: "M", reduce: "R", repair: "P {schema_block}")
+        let o = prompts.overriding(PromptOverrides(analyze: nil, map: "M2", reduce: nil))
+        #expect(o == Prompts(analyze: "A", map: "M2", reduce: "R", repair: "P {schema_block}"))
+        #expect(o.template(.analyze) == "A")
+        #expect(o.template(.map) == "M2")
+        #expect(o.template(.reduce) == "R")
+    }
 }

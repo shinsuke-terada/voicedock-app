@@ -1,4 +1,4 @@
-// ConfigValidator（PLAN §6.4 の CV-08〜59）のテスト（T-09）。既定値を 1 か所だけ変えて、違反の例と境界で通る例を見る。
+// ConfigValidator（PLAN §6.4 の CV-08〜60）のテスト（T-09）。既定値を 1 か所だけ変えて、違反の例と境界で通る例を見る。
 import Foundation
 import TestSupport
 import Testing
@@ -623,6 +623,79 @@ struct ConfigValidatorTests {
     }
 
     // MARK: - 全体
+
+    // MARK: - CV-60（F-92）
+
+    /// 要る 2 つのプレースホルダを含む上書き
+    static let validPrompt = "指示 {custom_instructions}\n\n{schema_block}"
+
+    @Test("CV-60 {schema_block} が無い上書きは違反")
+    func cv60MissingSchemaBlock() {
+        #expect(
+            Self.check { $0.llm.analysis.prompts.analyze = "指示 {custom_instructions}" }
+                == Self.one("CV-60", "llm.analysis.prompts.analyze", "{schema_block} を含むこと"))
+    }
+
+    @Test("CV-60 {custom_instructions} が無い上書きは違反")
+    func cv60MissingCustomInstructions() {
+        #expect(
+            Self.check { $0.llm.analysis.prompts.map = "指示\n{schema_block}" }
+                == Self.one("CV-60", "llm.analysis.prompts.map", "{custom_instructions} を含むこと"))
+    }
+
+    @Test("CV-60 空文字の上書きは違反（TEST-28）")
+    func cv60EmptyOverride() {
+        #expect(
+            Self.check { $0.llm.analysis.prompts.reduce = "" }
+                == Self.one("CV-60", "llm.analysis.prompts.reduce", "{schema_block} を含むこと"))
+    }
+
+    @Test("CV-60 null（既定）と、2 つを含む上書きは通る")
+    func cv60NullAndValidPass() {
+        #expect(Self.check { $0.llm.analysis.prompts = PromptOverrides(analyze: nil, map: nil, reduce: nil) }.isEmpty)
+        #expect(
+            Self.check {
+                $0.llm.analysis.prompts = PromptOverrides(
+                    analyze: Self.validPrompt, map: Self.validPrompt, reduce: Self.validPrompt)
+            }.isEmpty)
+    }
+
+    @Test("CV-60 1500 スカラーは通り 1501 は違反（Unicode スカラーで数える）")
+    func cv60Length() {
+        // validPrompt は 40 スカラー（指示・空白 3 + {custom_instructions} 21 + 改行 2 + {schema_block} 14）
+        let at1500 = Self.validPrompt + String(repeating: "あ", count: 1460)
+        let at1501 = at1500 + "e\u{301}"
+        #expect(Self.check { $0.llm.analysis.prompts.analyze = at1500 }.isEmpty)
+        #expect(
+            Self.check { $0.llm.analysis.prompts.analyze = at1500 + "a" }
+                == Self.one("CV-60", "llm.analysis.prompts.analyze", "1500 以下であること（1501）"))
+        // 書記素では 1501 でもスカラーでは 1502
+        #expect(
+            Self.check { $0.llm.analysis.prompts.analyze = at1501 }
+                == Self.one("CV-60", "llm.analysis.prompts.analyze", "1500 以下であること（1502）"))
+    }
+
+    @Test("CV-60 {schema_block} の直後に結合文字が続いてもスカラー列で見つける（F-83 と同じ照らし方）")
+    func cv60ScalarMatch() {
+        #expect(
+            Self.check { $0.llm.analysis.prompts.analyze = "{custom_instructions}{schema_block}\u{301}" }.isEmpty)
+    }
+
+    @Test("CV-60 1 キーに 1 件（両方無ければ {schema_block} だけ）で、キーは analyze → map → reduce の順")
+    func cv60OnePerKeyInOrder() {
+        #expect(
+            Self.check {
+                $0.llm.analysis.prompts = PromptOverrides(analyze: "x", map: nil, reduce: "{schema_block}")
+            }
+                == [
+                    ConfigViolation(
+                        rule: "CV-60", code: .configInvalidValue, keyPath: "llm.analysis.prompts.analyze",
+                        message: "{schema_block} を含むこと"),
+                    ConfigViolation(
+                        rule: "CV-60", code: .configInvalidValue, keyPath: "llm.analysis.prompts.reduce",
+                        message: "{custom_instructions} を含むこと"),
+                ])
+    }
 
     @Test("既定値は違反 0 件")
     func defaultsHaveNoViolations() {

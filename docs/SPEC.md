@@ -212,7 +212,7 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | CV-30 | ロック 1 が食い違っていない: reaper.conf が読めるとき（`.valid`）、`cleanup.deleteSourceAudio == reaperConf.deleteSourceAudio`（どちら向きの食い違いも違反）。reaper.conf が無い・読めないときはこの規則を評価しない（不明は §8.9.2 が「要求を書かない」側に倒す）。違反は §6.1 の修復を先に試す | CONFIG_LOCK_MISMATCH | V-30 |
 | CV-32 | `TimeZone(identifier: timeZone) != nil` | CONFIG_INVALID_VALUE | V-32 |
 | CV-33 | `!(cleanup.deleteSourceAudio == true && device.mountMode == "ro")` | CONFIG_LOCK_MISMATCH | V-33 |
-| CV-39 | JSON として読め、全階層で必要なキーがすべて在り、型が合う（`schemaVersion` が 2 であること（1 は §6.1 の移行で 2 にする）を含む） | CONFIG_INVALID_VALUE | voicedock の規則 ID `-` |
+| CV-39 | JSON として読め、全階層で必要なキーがすべて在り、型が合う（`schemaVersion` が 3 であること（1・2 は §6.1 の移行で 3 にする）を含む） | CONFIG_INVALID_VALUE | voicedock の規則 ID `-` |
 | CV-40 | `vault.path` が null か、`/` で始まる絶対パスの文字列（**存在は検査しない**。未接続の外付けは実行時のガード。§8.7） | CONFIG_INVALID_VALUE | 新規 |
 | CV-41 | `vault.marker` が空でなく、`/` を含まず、`.` でも `..` でもない（Unicode スカラー単位で見る） | CONFIG_INVALID_VALUE | 新規（X-18） |
 | CV-42 | `llm.modelID` が null か、カタログの LLM の ID か、`custom:<64 桁の小文字 16 進>` | CONFIG_INVALID_VALUE | 新規 |
@@ -233,6 +233,7 @@ reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く�
 | CV-57 | session の数値: `1 <= idleCloseSeconds <= 31,536,000`、`maxParts >= 1`、`maxDurationSeconds >= 1` | CONFIG_INVALID_VALUE | 新規 |
 | CV-58 | audio の数値: `timeoutFactor > 0`、`1 <= minTimeoutSeconds <= 31,536,000`、`durationToleranceSeconds >= 0`、`freeSpaceMultiplier >= 1`、`freeSpaceMarginBytes >= 0`、`4096 <= hashChunkBytes <= 67,108,864` | CONFIG_INVALID_VALUE | 新規 |
 | CV-59 | obsidian の数値: `0 <= raw.timestampIntervalSeconds <= 31,536,000`（0 は「見出しを入れない」。voicedock と同じ）、`wiki.vaultIndexCacheSeconds >= 0`、`wiki.maxLinks >= 0`、`defaultTags` の各要素が空でない | CONFIG_INVALID_VALUE | 新規 |
+| CV-60 | `llm.analysis.prompts` の `analyze` / `map` / `reduce` は null か、`{schema_block}` と `{custom_instructions}` を含み 1,500 Unicode スカラー以下の文字列（空文字は `{schema_block}` の違反）。1 キーに 1 件で、`{schema_block}` → `{custom_instructions}` → 長さの順に最初の違反だけ（文言 `{schema_block} を含むこと` / `{custom_instructions} を含むこと` / `1500 以下であること（<スカラー数>）`）。プレースホルダはスカラー列で照らす（F-83 と同じ） | CONFIG_INVALID_VALUE | 新規（F-92） |
 
 - 各 CV にテストを 1 本以上（違反の例で落ちる・境界値で通る）。テストの表示名は `CV-nn` で始める（§10.3 の SPEC 同期が SPEC の表とテストを結ぶ）
 - **上限と桁あふれ（F-71。CR-16）**: 掛け算（`Int64(秒) × 1000` のミリ秒・`Instant.adding(seconds:)`）や待ち（`Task.sleep`）に使う秒のキーは **31,536,000（365 日）以下**、`audio.hashChunkBytes` は **67,108,864（64 MiB）以下**（読み取りのたびにこの大きさのバッファを確保する）、

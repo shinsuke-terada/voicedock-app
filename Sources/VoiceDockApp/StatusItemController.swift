@@ -14,6 +14,8 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     /// 状態の 1 行が変わったらツールチップを書き直す（F-84。アイコンが変わらない間も古いまま残さない）
     private var statusLineObserver: Task<Void, Never>?
     private var reopenAfterModal = false
+    /// 要約プロンプトの編集の窓（F-92。初めて開くときに作る）
+    private var promptEditor: PromptEditorWindowController?
 
     init(model: AppModel) {
         self.model = model
@@ -52,6 +54,14 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     func close() {
         // popoverDidClose が model.panelDidClose() を呼ぶ
         popover.performClose(nil)
+    }
+
+    /// 要約プロンプトの編集の窓を出す（F-92）。パネルは閉じる（transient の popover は窓の前に残らない）
+    func showPromptEditor() {
+        close()
+        let editor = promptEditor ?? PromptEditorWindowController(model: model)
+        promptEditor = editor
+        editor.show()
     }
 
     /// NSOpenPanel など modal を出す前後で使う（PLAN §8.12「popover が閉じたら、終わった後に開き直す」）。

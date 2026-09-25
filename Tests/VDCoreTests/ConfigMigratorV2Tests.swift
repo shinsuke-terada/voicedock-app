@@ -1,4 +1,4 @@
-// schemaVersion 1 → 2 の移行の検査（PLAN §6.1。F-89。T-47）。
+// schemaVersion 1 → 2 の移行の検査（PLAN §6.1。F-89。T-47）。F-92 からは 1 → 2 → 3 と続けて上げる。
 import Foundation
 import TestSupport
 import Testing
@@ -8,16 +8,9 @@ import VDContract
 
 @Suite("ConfigMigratorV2")
 struct ConfigMigratorV2Tests {
-    /// 既定値（timeZone は Asia/Tokyo）を符号化した JSON の辞書。
-    static func defaults() throws -> [String: Any] {
-        let object = try JSONSerialization.jsonObject(
-            with: ConfigLoader.encode(AppConfig.defaults(timeZone: "Asia/Tokyo")))
-        return try #require(object as? [String: Any])
-    }
-
-    /// F-89 の前の既定値: schemaVersion を 1 にし、transcription.diarization を消した辞書。
+    /// F-89 の前の既定値: schemaVersion を 1 にし、transcription.diarization と llm.analysis.prompts（F-92）を消した辞書。
     static func v1() throws -> [String: Any] {
-        var object = try defaults()
+        var object = try ConfigMigratorV3Tests.v2()
         object["schemaVersion"] = 1
         var transcription = try #require(object["transcription"] as? [String: Any])
         transcription["diarization"] = nil
@@ -53,11 +46,12 @@ struct ConfigMigratorV2Tests {
         ConfigViolation(rule: "CV-39", code: .configInvalidValue, keyPath: "schemaVersion", message: message)
     }
 
-    @Test("1 の設定は diarization.enabled=false を足して 2 にする")
+    @Test("1 の設定は diarization.enabled=false を足して 2 にし、続けて 3 まで上げる（F-92）")
     func v1GetsDiarizationOff() throws {
         let result = try Self.migrated(try Self.v1())
-        #expect(Self.schemaVersion(result) == 2)
+        #expect(Self.schemaVersion(result) == 3)
         #expect(Self.diarizationEnabled(result) == false)
+        #expect(ConfigMigratorV3Tests.promptsAreNull(result))
     }
 
     @Test("1 でも diarization が在れば触らない")
@@ -67,7 +61,7 @@ struct ConfigMigratorV2Tests {
         transcription["diarization"] = ["enabled": true]
         object["transcription"] = transcription
         let result = try Self.migrated(object)
-        #expect(Self.schemaVersion(result) == 2)
+        #expect(Self.schemaVersion(result) == 3)
         #expect(Self.diarizationEnabled(result) == true)
     }
 
@@ -76,7 +70,7 @@ struct ConfigMigratorV2Tests {
         var object = try Self.v1()
         object["transcription"] = 3
         let result = try Self.migrated(object)
-        #expect(Self.schemaVersion(result) == 2)
+        #expect(Self.schemaVersion(result) == 3)
         #expect((result["transcription"] as? NSNumber)?.intValue == 3)
         let data = try JSONSerialization.data(withJSONObject: object)
         guard case .invalid(let violations) = ConfigLoader.decodeStructure(data: data) else {
@@ -90,22 +84,6 @@ struct ConfigMigratorV2Tests {
             ])
     }
 
-    @Test("2 はそのまま")
-    func v2PassesThrough() throws {
-        let object = try Self.defaults()
-        let result = try Self.migrated(object)
-        #expect(NSDictionary(dictionary: result).isEqual(to: object))
-        #expect(Self.schemaVersion(result) == 2)
-        #expect(Self.diarizationEnabled(result) == false)
-    }
-
-    @Test("3 は新しすぎる")
-    func v3IsTooNew() throws {
-        var object = try Self.defaults()
-        object["schemaVersion"] = 3
-        #expect(Self.violation(object) == Self.cv39("この版のアプリより新しい設定です（schemaVersion 3）。アプリを更新してください"))
-    }
-
     @Test("1 の config.json（F-89 の前の既定値）が ConfigLoader で読める")
     func v1FileLoadsThroughLoader() throws {
         let data = try JSONSerialization.data(withJSONObject: try Self.v1())
@@ -114,7 +92,7 @@ struct ConfigMigratorV2Tests {
             Issue.record("読めない: \(result)")
             return
         }
-        #expect(config.schemaVersion == 2)
+        #expect(config.schemaVersion == 3)
         #expect(config.transcription.diarization.enabled == false)
         #expect(config == AppConfig.defaults(timeZone: "Asia/Tokyo"))
     }

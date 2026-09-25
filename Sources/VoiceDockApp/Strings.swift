@@ -1,6 +1,7 @@
 // パネルの文言（日本語のみ。PLAN §8.12「文言は Strings.swift に集める」）。
 // 後続のチケット（T-31 / T-32 / T-40 / T-41）はこのファイルに自分の節の文言を足す。
 import VDCore
+import VDLLM
 import VDModels
 import VDPipeline
 
@@ -103,6 +104,35 @@ enum Strings {
     static func iconDescriptionWithDeletion(_ state: IconState) -> String {
         iconDescription(state) + "。" + iconTrashDescription
     }
+
+    // F-92: 要約プロンプトの編集
+    static let sectionPrompts = "要約プロンプト"
+    static let buttonEditPrompts = "要約プロンプトを編集…"
+    static let promptsNote = "LLM に渡す指示の本文を変えられます。未編集なら同梱の既定の本文を使います"
+    static let promptEditorTitle = "要約プロンプトの編集"
+    static let promptKindPicker = "プロンプトの種類"
+    static func promptKindLabel(_ kind: PromptKind) -> String {
+        switch kind {
+        case .analyze: "1 回で要約"
+        case .map: "分割して要約（Map）"
+        case .reduce: "まとめ（Reduce）"
+        }
+    }
+    static func promptKindNote(_ kind: PromptKind) -> String {
+        switch kind {
+        case .analyze: "1 日分の文字起こしが 1 回の要求に収まるときに使います"
+        case .map: "長い日を分割したそれぞれの部分に使います（まとめきれないときの中間のまとめにも使います）"
+        case .reduce: "分割して要約した結果を 1 日分にまとめるときに使います"
+        }
+    }
+    static let promptEditorHint =
+        "{schema_block}（JSON の形の見本）と {custom_instructions}（追加の指示）は消さないでください。"
+        + "変更は次に要約する日から使います（要約済みの日は作り直しません）"
+    static let buttonResetPrompt = "既定に戻す"
+    static let buttonSavePrompts = "保存"
+    static let promptsSaved = "保存しました"
+    static let promptsUnsaved = "未保存の変更があります"
+    static let promptsUnavailable = "設定または同梱のプロンプトを読めません。「詳細・診断」の「設定を読み直す」を試してください"
 
     // T-31: はじめに（PLAN §8.12 の 3）
     static let onboardingVault = "Vault を選ぶ"

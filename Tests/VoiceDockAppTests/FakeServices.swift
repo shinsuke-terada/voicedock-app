@@ -3,6 +3,7 @@ import Foundation
 import Synchronization
 import VDContract
 import VDCore
+import VDLLM
 import VDModels
 import VDPipeline
 
@@ -45,6 +46,9 @@ final class FakeServices: AppServices {
         var openSettingsCount = 0
         var saveResult = true
         var savedStates: [UIState] = []
+        // F-92
+        var promptSources: (bundled: Prompts, saved: PromptOverrides)?
+        var promptSourcesCount = 0
         // T-32
         var diagnosticsResult: [DiagnosticResult] = []
         var diagnosticsCount = 0
@@ -207,6 +211,21 @@ final class FakeServices: AppServices {
     var openSettingsCount: Int { state.withLock { $0.openSettingsCount } }
     func setSaveResult(_ ok: Bool) { state.withLock { $0.saveResult = ok } }
     var savedStates: [UIState] { state.withLock { $0.savedStates } }
+
+    // MARK: F-92
+
+    /// promptSources が返す値（nil なら読めない）
+    func setPromptSources(_ value: (bundled: Prompts, saved: PromptOverrides)?) {
+        state.withLock { $0.promptSources = value }
+    }
+    var promptSourcesCount: Int { state.withLock { $0.promptSourcesCount } }
+
+    func promptSources() async -> (bundled: Prompts, saved: PromptOverrides)? {
+        state.withLock {
+            $0.promptSourcesCount += 1
+            return $0.promptSources
+        }
+    }
 
     func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult {
         state.withLock {
