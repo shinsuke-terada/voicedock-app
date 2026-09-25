@@ -377,6 +377,26 @@ struct ReleaseBundleTests {
         #expect(makeDmg.contains("hdiutil convert"))
     }
 
+    @Test("F-99 dmg のボリューム名に版を付け（実機の VOICEDOCK とマウント先をぶつけない）、ウィンドウの背景と表示設定を入れる")
+    func makeDmgLaysOutTheWindow() throws {
+        let makeDmg = try Self.text("scripts/make-dmg.sh")
+        for word in [
+            #"volname="VoiceDock $version""#, #"-volname "$volname""#, "tiffutil -cathidpicheck", "write-ds-store.py",
+            #"ln -s /Applications "$mnt/Applications""#, "tools/dmg/requirements.txt",
+        ] {
+            #expect(makeDmg.contains(word), "\(word) が無い")
+        }
+        #expect(!makeDmg.contains("-volname VoiceDock "))
+        // 背景は 1 倍と 2 倍の両方がある
+        for name in ["background.png", "background@2x.png"] {
+            let path = PackageRoot.file("Resources/dmg/" + name).path(percentEncoded: false)
+            #expect(FileManager.default.fileExists(atPath: path), "\(name) が無い")
+        }
+        // 部品の版は固定する
+        let requirements = try Self.text("tools/dmg/requirements.txt")
+        #expect(requirements.contains("ds_store==") && requirements.contains("mac_alias=="))
+    }
+
     @Test("公証はプロファイルを使い `--wait` する")
     func notarizeWaitsAndUsesTheProfile() throws {
         let notarize = try Self.text("scripts/notarize.sh")

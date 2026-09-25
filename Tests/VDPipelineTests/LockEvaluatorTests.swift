@@ -127,7 +127,7 @@ struct LockEvaluatorTests {
             config = f.config
             want = "reaper_invalid"
         case "f":
-            f = try Self.makeEvaluator(results: [ScriptedProcessRunner.version("0.9.0\n")])
+            f = try Self.makeEvaluator(results: [ScriptedProcessRunner.version("0.0.1\n")])
             config = f.config
             want = "reaper_invalid"
         case "g":
@@ -257,10 +257,10 @@ struct LockEvaluatorTests {
 
     @Test("版の不一致をログに出す")
     func versionMismatchIsLogged() async throws {
-        let f = try Self.makeEvaluator(results: [ScriptedProcessRunner.version("0.9.0\n")])
+        let f = try Self.makeEvaluator(results: [ScriptedProcessRunner.version("0.0.1\n")])
         _ = await f.evaluator.readiness(config: f.config)
         #expect(f.reaperFailedLines("version_mismatch").count == 1)
-        #expect(await f.evaluator.reaperStatus() == .versionMismatch(found: "0.9.0"))
+        #expect(await f.evaluator.reaperStatus() == .versionMismatch(found: "0.0.1"))
     }
 
     /// 二重の防御: 消えた時点で cache を空にし（手順 1）、置き直したファイルは (inode, size, mtime) の鍵も変わる。

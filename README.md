@@ -59,7 +59,11 @@ VoiceDock が取り込むのは、名前が `VOICEDOCK` のデバイスだけで
 
 ### 1. dmg から入れる
 
-`VoiceDock-<版>.dmg` を開き、`VoiceDock` を `Applications` へドラッグします。
+**[最新版の dmg をダウンロード（GitHub の Releases）](https://github.com/shinsuke-terada/voicedock-app/releases/latest)** から `VoiceDock-<版>.dmg` を落とします。
+このリポジトリは非公開なので、リンクを開けるのは招待されて GitHub にサインインしている人だけです。
+
+`VoiceDock-<版>.dmg` を開くと、左に `VoiceDock`、右に `Applications` が並んだウィンドウが出ます。`VoiceDock` を `Applications` へドラッグします。
+コピーが終わったらウィンドウを閉じ、Finder のサイドバーでディスクイメージ（`VoiceDock <版>`）を取り出します。
 配布物は Apple の公証を受けています。初回起動で警告が出る場合は、いったん dmg を閉じて開き直してください。
 
 ### 2. 最初の起動と、許可の出し方
