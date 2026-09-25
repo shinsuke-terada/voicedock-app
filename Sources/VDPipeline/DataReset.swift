@@ -8,39 +8,55 @@ import VDContract
 import VDCore
 
 public enum DataReset {
-    /// 実行の結果
+    /// 実行の結果（次の起動のパネルに出す。F-95・レビューの #4）
     public enum Outcome: Equatable, Sendable {
         /// 予約が無い
         case notRequested
-        /// 予約はあったが初期化しなかった（reason はログの `reason=` と同じ語）
-        case refused(reason: String)
+        /// 予約はあったが初期化しなかった
+        case refused(RefusalReason)
         /// 初期化した。removed は消したファイルの数、failed は消せなかったもの・確かめられなかったルートの数
         case completed(removed: Int, failed: Int)
     }
 
-    // ログの `reason=` の語（PLAN 付録 A.4）
+    /// 初期化しなかった理由（ログの `reason=` の語。PLAN 付録 A.4）
+    public enum RefusalReason: String, Equatable, Sendable {
+        /// 消す能力が残っていた（予約の時と実行の時）
+        case deletionEnabled = "deletion_enabled"
+        /// 予約を取り下げられなかった（取り下げられないまま消すと、起動のたびに消し直す）
+        case requestNotRemoved = "request_not_removed"
+        /// DB を消しきれず、ほかを消さずに止めた（DB の行と、行が指すファイルを食い違わせない）
+        case databaseNotRemoved = "database_not_removed"
+        /// DB を消した後の続きの予約が残っていたが、新しい DB がすでに在った（前回の初期化の後に使い始めている）。
+        /// 消さずに予約だけ取り下げる
+        case staleRequest = "stale_request"
+    }
+
+    // 予約の時のログの `reason=` の語（PLAN 付録 A.4）
     /// 予約した
     static let reasonRequested = "requested"
     /// 予約を書けなかった
     static let reasonRequestNotWritten = "request_not_written"
-    /// 消す能力が残っていて断った（予約の時と実行の時）
-    static let reasonDeletionEnabled = "deletion_enabled"
-    /// 予約を取り下げられず断った（取り下げられないまま消すと、起動のたびに消し直す）
-    static let reasonRequestNotRemoved = "request_not_removed"
-    /// DB を消しきれず、ほかを消さずに止めた（DB の行と、行が指すファイルを食い違わせない）
-    static let reasonDatabaseNotRemoved = "database_not_removed"
 
-    /// 予約の中身（在ることだけが意味を持つ）
-    static let requestBody = Data("data-reset\n".utf8)
+    /// 予約の中身。初めは requested、DB を消した後は dbRemoved に書き換える（途中で落ちても次の起動で続きを行う。レビューの #3）
+    enum Phase: Equatable {
+        case requested, dbRemoved
+
+        var body: Data {
+            switch self {
+            case .requested: Data("data-reset\n".utf8)
+            case .dbRemoved: Data("data-reset db-removed\n".utf8)
+            }
+        }
+    }
 
     /// 予約を書く。消す能力が残っていれば書かない。結果はどれもログに 1 行出す。書けたら真
     public static func request(layout: HomeLayout, deletionCapable: Bool, log: AppLog) -> Bool {
         guard !deletionCapable else {
-            log.warning(.dataReset, [(.reason, .string(reasonDeletionEnabled))])
+            log.warning(.dataReset, [(.reason, .string(RefusalReason.deletionEnabled.rawValue))])
             return false
         }
         do {
-            try AtomicFile.write(requestBody, to: layout.dataResetRequest)
+            try AtomicFile.write(Phase.requested.body, to: layout.dataResetRequest)
         } catch {
             log.warning(.dataReset, [(.reason, .string(reasonRequestNotWritten))])
             return false
@@ -55,6 +71,15 @@ public enum DataReset {
         return lstat(layout.dataResetRequest.path(percentEncoded: false), &info) == 0
     }
 
+    /// 予約の段階。通常ファイルでなければ nil（symlink は辿らない）。中身が dbRemoved の本文でなければ requested
+    static func phase(layout: HomeLayout) -> Phase? {
+        let path = layout.dataResetRequest.path(percentEncoded: false)
+        var info = stat()
+        guard lstat(path, &info) == 0, (info.st_mode & S_IFMT) == S_IFREG else { return nil }
+        let data = FileManager.default.contents(atPath: path)
+        return data == Phase.dbRemoved.body ? .dbRemoved : .requested
+    }
+
     /// DB の 3 つのファイル（本体・-wal・-shm）。名前は HomeLayout.database から作る（CR-06）
     static func databaseFiles(_ layout: HomeLayout) -> (main: URL, sidecars: [URL]) {
         let name = layout.database.lastPathComponent
@@ -62,28 +87,45 @@ public enum DataReset {
     }
 
     /// 予約が在れば実行する。DB を開く前（Bootstrap の手順 9 より前）に呼ぶ。この順で、断ったら何も消さない:
-    /// 1. 予約を取り下げる（できなければ断る）。2. 消す能力が残っていれば断る。
-    /// 3. DB の 3 つが通常ファイルか無いことを確かめ、-wal・-shm → 本体の順に消す。消しきれなければ、ほかを消さずに止める
-    ///    （古い WAL を新しい DB に当てない。DB の行が指すファイルだけを消さない）。
+    /// 1. 予約が通常ファイルでなければ取り下げを試み、断る（取り下げられなければ request_not_removed）。
+    /// 2. 消す能力が残っていれば予約を取り下げて断る。
+    /// 3. 予約が requested なら、DB の 3 つが通常ファイルか無いことを確かめ、-wal・-shm → 本体の順に消す。消しきれなければ
+    ///    予約を取り下げ、ほかを消さずに止める（古い WAL を新しい DB に当てない。DB の行が指すファイルだけを消さない）。
+    ///    消せたら予約を dbRemoved に書き換える。予約が dbRemoved で DB の本体が在れば（前回の初期化の後に使い始めている）
+    ///    消さずに予約を取り下げる（stale_request）。
     /// 4. inbox・staging・transcripts/parts・analysis・queue/delete・queue/result の中身を消す。ルートそのものが
-    ///    <HOME> の中の本物のディレクトリでなければ（symlink を含む）触らない
+    ///    <HOME> の中の本物のディレクトリでなければ（symlink を含む）触らない。
+    /// 5. 最後に予約を取り下げる。途中で落ちたら次の起動が 3 か 4 から続きを行う。取り下げに失敗しても、次の起動は
+    ///    dbRemoved の予約と新しい DB を見て消し直さない
     public static func performIfRequested(layout: HomeLayout, deletionCapable: Bool, log: AppLog) -> Outcome {
         guard isRequested(layout: layout) else { return .notRequested }
-        do {
-            try SafeUnlink.remove(layout.dataResetRequest, under: .run, layout: layout)
-        } catch {
-            return refuse(reasonRequestNotRemoved, log: log)
+        guard let phase = phase(layout: layout) else {
+            _ = withdraw(layout)
+            return refuse(.requestNotRemoved, log: log)
         }
-        guard !deletionCapable else { return refuse(reasonDeletionEnabled, log: log) }
+        guard !deletionCapable else {
+            return refuse(withdraw(layout) ? .deletionEnabled : .requestNotRemoved, log: log)
+        }
         var tally = Tally()
-        guard removeDatabase(layout: layout, tally: &tally) else {
-            log.warning(
-                .dataReset,
-                [
-                    (.reason, .string(reasonDatabaseNotRemoved)), (.count, .int(Int64(tally.removed))),
-                    (.failed, .int(Int64(tally.failed))),
-                ])
-            return .refused(reason: reasonDatabaseNotRemoved)
+        switch phase {
+        case .requested:
+            guard removeDatabase(layout: layout, tally: &tally) else {
+                _ = withdraw(layout)
+                log.warning(
+                    .dataReset,
+                    [
+                        (.reason, .string(RefusalReason.databaseNotRemoved.rawValue)),
+                        (.count, .int(Int64(tally.removed))), (.failed, .int(Int64(tally.failed))),
+                    ])
+                return .refused(.databaseNotRemoved)
+            }
+            // 書けなくても続ける（最後の取り下げまで落ちなければ同じ。落ちたら次の起動が DB の無いまま 3 からやり直す）
+            try? AtomicFile.write(Phase.dbRemoved.body, to: layout.dataResetRequest)
+        case .dbRemoved:
+            var info = stat()
+            if lstat(layout.database.path(percentEncoded: false), &info) == 0 {
+                return refuse(withdraw(layout) ? .staleRequest : .requestNotRemoved, log: log)
+            }
         }
         for (directory, root) in contentRoots(layout) {
             guard isContainedDirectory(directory, layout: layout) else {
@@ -92,14 +134,25 @@ public enum DataReset {
             }
             removeContents(of: directory, under: root, layout: layout, tally: &tally)
         }
+        if !withdraw(layout) { tally.failed += 1 }
         let fields: [(LogKey, LogValue)] = [(.count, .int(Int64(tally.removed))), (.failed, .int(Int64(tally.failed)))]
         if tally.failed > 0 { log.warning(.dataReset, fields) } else { log.info(.dataReset, fields) }
         return .completed(removed: tally.removed, failed: tally.failed)
     }
 
-    static func refuse(_ reason: String, log: AppLog) -> Outcome {
-        log.warning(.dataReset, [(.reason, .string(reason))])
-        return .refused(reason: reason)
+    /// 予約を取り下げる（SafeUnlink の .run）。取り下げられた（か初めから無い）なら真
+    static func withdraw(_ layout: HomeLayout) -> Bool {
+        do {
+            try SafeUnlink.remove(layout.dataResetRequest, under: .run, layout: layout)
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    static func refuse(_ reason: RefusalReason, log: AppLog) -> Outcome {
+        log.warning(.dataReset, [(.reason, .string(reason.rawValue))])
+        return .refused(reason)
     }
 
     /// 中身を消すディレクトリ（ディレクトリそのものは残す）。queue の 2 つは直下の *.json だけ（SafeUnlink の規則）

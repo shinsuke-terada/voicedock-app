@@ -89,6 +89,8 @@ final class AppModel {
     var dataResetBusy = false
     /// 直近の予約に失敗したか（Strings.dataResetRequestFailed を出す）
     var dataResetFailed = false
+    /// 起動時の初期化の結果を一度出して閉じたか（閉じたら出さない）
+    var dataResetNoticeDismissed = false
     // T-41（書くのは下の extension だけ）
     /// 後追いの 2 つのボタンの状態（PLAN §8.9.9。画面にだけ在る値）
     private(set) var backlogState: BacklogPanelState = .idle
@@ -321,6 +323,8 @@ final class AppModel {
         reloadResult = nil
         vaultError = nil
         dataResetFailed = false
+        // 起動時の初期化の結果は、出したまま閉じたら二度と出さない（F-95・レビューの #4）
+        if dataResetNotice != nil { dataResetNoticeDismissed = true }
         modelNotice = nil
         // 閉じた後に届いた DR-09 の返事は捨てる（receiveProbe が .running のときだけ受け取る）
         probe = .idle

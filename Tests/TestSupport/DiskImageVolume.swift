@@ -70,7 +70,8 @@ public final class DiskImageVolume: Sendable {
         guard DeviceID.isValid(deviceID) else {
             throw DiskImageError(description: "DiskImageVolume: 不正な deviceID: \(deviceID)")
         }
-        guard !["VOICEDOCK", "DJIMIC3"].contains(deviceID) else {
+        // macOS のボリューム名は大文字小文字を区別しないので、区別せずに比べる（レビューの #8）
+        guard !["VOICEDOCK", "DJIMIC3"].contains(where: { $0.caseInsensitiveCompare(deviceID) == .orderedSame }) else {
             throw DiskImageError(description: "DiskImageVolume: 実機と同じ名前 \(deviceID) は使わない")
         }
         guard let root = realpath(tmp.path(percentEncoded: false)) else {

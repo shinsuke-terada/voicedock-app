@@ -1,5 +1,9 @@
 # T-30 UI: メニューバーとパネルの骨組み・AppModel
 
+> （F-97。2026-09-25。コードレビューの指摘）`applicationShouldTerminate` は後始末を `Task.detached` で回し、返事を `replyOnMainRunLoop`（`CFRunLoopPerformBlock` で main run loop の全モードへ）で返す。`AppContext.dataResetOutcome` を足し、予約があった起動はパネルを自動で開いて結果を状態の見出しの下に 1 回だけ出す（`AppModel.dataResetNotice`）。予約できたら `dataResetBusy` を戻さない。テストは `TerminateDeferralTests`・`AppModelDataResetTests`。
+
+> （F-96。2026-09-25）`AppDelegate.requestTerminate` は `terminate` を run loop の次の周回で呼ぶ（`NSApp.perform(_:with:afterDelay: 0)`。メインアクターの Task の中から直に呼ぶと固まった）。テストは `TerminateDeferralTests`（PolicyTests）。
+
 > （F-95。2026-09-25。利用者の決定）`Bootstrap.build()` は手順 8 の後・手順 9（DB）の前に `DataReset.performIfRequested` を呼ぶ（消す能力が残っているか設定の `deleteSourceAudio` が真なら消さない）。
 > `AppServices` に `requestDataReset() async -> Bool` を足した（PLAN §8.15）。テストは `DataResetTests`（VDPipeline）・`AppModelDataResetTests`・`DataResetWiringTests`（PolicyTests。起動の順と LiveServices の確かめ）。`LiveServices.read` は設定が読めている間も `deletionResidual` を読む（初期化のボタンの判定）。
 

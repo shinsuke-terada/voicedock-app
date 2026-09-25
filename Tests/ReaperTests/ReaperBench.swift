@@ -59,7 +59,8 @@ struct ReaperBench {
     /// 実機に触れ得る舞台を拒む: volumesRoot の realpath（無ければ標準化したパス）が `/Volumes` かその下、
     /// または deviceID が実機と同じ `VOICEDOCK`・`DJIMIC3`（F-94）。hdiutil を使わずに確かめられるよう static に分ける
     static func refuseUnsafe(volumesRoot: URL, deviceID: String) throws {
-        guard !["VOICEDOCK", "DJIMIC3"].contains(deviceID) else {
+        // macOS のボリューム名は大文字小文字を区別しないので、区別せずに比べる（レビューの #8）
+        guard !["VOICEDOCK", "DJIMIC3"].contains(where: { $0.caseInsensitiveCompare(deviceID) == .orderedSame }) else {
             throw BenchError(description: "ReaperBench: 実機と同じ名前 \(deviceID) は使わない")
         }
         let raw = volumesRoot.standardizedFileURL.path(percentEncoded: false)

@@ -74,6 +74,25 @@ enum Strings {
     static let holdToResetHint = "赤いボタンを " + holdSeconds + " 秒長押しすると、初期化を予約して終了します。途中で離すと取り消します"
     static let dataResetNeedsDeletionOff = "元音声の削除が有効な間（または無効化が終わっていない間）は初期化できません。先に「元音声の削除」で無効にしてください"
     static let dataResetRequestFailed = "初期化を予約できませんでした。ログを確かめてください"
+    /// 起動時の初期化の結果（状態の見出しの下に 1 回だけ。予約が無ければ nil。レビューの #4）
+    static func dataResetOutcome(_ outcome: DataReset.Outcome) -> String? {
+        switch outcome {
+        case .notRequested:
+            return nil
+        case .completed(let removed, 0):
+            return "データを初期化しました（" + String(removed) + " 件のファイルを消しました）"
+        case .completed(_, let failed):
+            return "データを初期化しましたが、消せなかったものが " + String(failed) + " 件あります。ログを確かめてください"
+        case .refused(.deletionEnabled):
+            return "データを初期化しませんでした。元音声の削除が有効でした。無効にしてから、もう一度初期化してください"
+        case .refused(.databaseNotRemoved):
+            return "データを初期化しませんでした。データベースを消せませんでした。ログを確かめてください"
+        case .refused(.requestNotRemoved):
+            return "データを初期化しませんでした。初期化の予約を取り下げられませんでした。ログを確かめてください"
+        case .refused(.staleRequest):
+            return "前回の初期化の残りの予約を取り下げました（データは消していません）"
+        }
+    }
 
     // 読み直しの結果
     static let reloadOK = "設定を読み直しました"

@@ -110,7 +110,7 @@ struct DataResetTests {
         let (gone, kept) = try s.populate()
         #expect(s.reserve())
         let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: true, log: s.log)
-        #expect(outcome == .refused(reason: "deletion_enabled"))
+        #expect(outcome == .refused(.deletionEnabled))
         #expect((gone + kept).allSatisfy { s.exists($0) })
         #expect(!DataReset.isRequested(layout: s.layout))
         #expect(s.sink.lines.count == 1)
@@ -126,7 +126,7 @@ struct DataResetTests {
             atPath: s.layout.dataResetRequest.path(percentEncoded: false),
             withDestinationPath: target.path(percentEncoded: false))
         let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
-        #expect(outcome == .refused(reason: "request_not_removed"))
+        #expect(outcome == .refused(.requestNotRemoved))
         #expect(gone.allSatisfy { s.exists($0) })
         #expect(s.exists(target))
         #expect(s.sink.lines.first?.hasSuffix("WARNING data_reset reason=request_not_removed") == true)
@@ -166,7 +166,7 @@ struct DataResetTests {
         let transcript = try s.put(s.layout.transcriptsParts.appendingPathComponent("a5d046dce76cfedc.json"))
         #expect(s.reserve())
         let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
-        #expect(outcome == .refused(reason: "database_not_removed"))
+        #expect(outcome == .refused(.databaseNotRemoved))
         #expect(s.exists(s.layout.database))
         #expect(s.exists(shm))
         #expect(s.exists(staged))
@@ -225,6 +225,44 @@ struct DataResetTests {
         try s.put(s.layout.url(relative: "run"))
         #expect(DataReset.request(layout: s.layout, deletionCapable: false, log: s.log) == false)
         #expect(s.sink.lines.first?.hasSuffix("WARNING data_reset reason=request_not_written") == true)
+    }
+
+    @Test("DB を消した後に落ちた（予約が db-removed で DB が無い）なら、次の起動は残りの中身を消して予約を取り下げる")
+    func interruptedResetResumesTheContentStep() throws {
+        let s = try Scene()
+        let staged = try s.put(s.layout.normalizedAudio(slug: "a5d046dce76cfedc"))
+        let analysis = try s.put(s.layout.analysis.appendingPathComponent("43a71bce144be7a7.json"))
+        try AtomicFile.write(Data("data-reset db-removed\n".utf8), to: s.layout.dataResetRequest)
+        let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
+        #expect(outcome == .completed(removed: 2, failed: 0))
+        #expect(!s.exists(staged))
+        #expect(!s.exists(analysis))
+        #expect(!DataReset.isRequested(layout: s.layout))
+        #expect(s.sink.lines.first?.hasSuffix("INFO  data_reset count=2 failed=0") == true)
+    }
+
+    @Test("予約が db-removed でも DB が在れば（前回の初期化の後に使い始めている）何も消さず、予約だけ取り下げる")
+    func staleRequestDoesNotWipeAgain() throws {
+        let s = try Scene()
+        let db = try s.put(s.layout.database)
+        let staged = try s.put(s.layout.normalizedAudio(slug: "a5d046dce76cfedc"))
+        try AtomicFile.write(Data("data-reset db-removed\n".utf8), to: s.layout.dataResetRequest)
+        let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
+        #expect(outcome == .refused(.staleRequest))
+        #expect(s.exists(db))
+        #expect(s.exists(staged))
+        #expect(!DataReset.isRequested(layout: s.layout))
+        #expect(s.sink.lines.first?.hasSuffix("WARNING data_reset reason=stale_request") == true)
+    }
+
+    @Test("予約の中身が読めない・知らない形でも requested として扱う（初めからやり直す）")
+    func unknownRequestBodyIsTreatedAsRequested() throws {
+        let s = try Scene()
+        let db = try s.put(s.layout.database)
+        try AtomicFile.write(Data("something else".utf8), to: s.layout.dataResetRequest)
+        let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
+        #expect(outcome == .completed(removed: 1, failed: 0))
+        #expect(!s.exists(db))
     }
 
     @Test("対照: 予約は run/data-reset-requested に書き、在るかどうかだけを見る")

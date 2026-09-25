@@ -155,8 +155,8 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | LLM モデル | `<HOME>/models/llm/custom-3605803b982cb64a.gguf`（2.5 GB。4B と同一。`verified: false`）と `Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`（18.6 GB。カタログから取り込み。**`verified: true`**。2026-09-24） |
 | 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
-| 削除 | **有効**（2026-09-25 18:32 に R-02 のためパネルの 3 秒長押しで有効化し、利用者の決定でそのままにした。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` 導入済み）。**有効な間は、デバイスを抜く前に Finder で取り出す**。無効に戻すときは削除の画面の「無効にする」をクリック 1 回（E2E-17）。E2E-13 のやり直しと E2E-06 は削除 OFF で行う |
-| 取り込むデバイスの名前 | **F-94（2026-09-25）で既定を `["VOICEDOCK"]` にした。利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直す（未。直すまでは改名した実機を取り込まない）。改名前の `DJIMIC3` の Part は削除の対象から外れる。デバイスに残っている録音は改名後の最初の接続で `VOICEDOCK/…` として全件を再コピーし `DUPLICATE_CONTENT` になり、`deleteSkippedSource` が真なら根拠 B で元音声が消える（2026-09-25 の時点の config.json は `false`）（RK-28・PLAN §6.2）。** それまでは `["DJIMIC3"]`（F-81 の既定に合わせて 2026-09-23 に利用者が手で直した。控えは `config.json.bak`） |
+| 削除 | **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
+| 取り込むデバイスの名前 | **`VOICEDOCK`**。2026-09-25 に利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直して「設定を読み直す」を押した（F-94。アプリの既定も `["VOICEDOCK"]`）。その前にデータを初期化した（F-95。`data_reset count=79 failed=0`）ので、`DJIMIC3` として取り込んだ行は残っていない。控えの `config.json.bak` は F-81 の時点のもの |
 | 実機 | E2E の試験でたびたび `/Volumes/VOICEDOCK`（F-94 の改名の前は `/Volumes/DJIMIC3`）に接続する（削除 OFF の間は読み取り専用でマウント）。次のセッションはまず `ls /Volumes` で確かめる |
 
 ## 4. 2026-09-22〜23 に利用者が決めたこと・直したこと
@@ -197,6 +197,8 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | F-93 | **（利用者の決定）** 本体のライセンスを Apache License 2.0 に（`LICENSE`・`NOTICE`）。同梱物（whisper.cpp・llama.cpp とその部品・argmax-oss-swift・GRDB・Yams・話者分離のモデル）の著作権表示とライセンス文を `THIRD_PARTY_NOTICES.md` にまとめ、`make-app.sh` が 3 つを `.app` の `Contents/Resources/` に入れる。README を利用者向けに書き直し、`## 開発`・`## 状態` を `docs/DEVELOPMENT.md` へ移した（T-43・T-44 のチケットも合わせた）。issue #139 の残り（実機未確認の文言）は E2E の記録で裏付けが取れた | #176（issue #139） |
 | F-94 | **（利用者の依頼と決定）** 取り込むデバイスの名前の既定（`device.includeVolumes`）を `["DJIMIC3"]` から `["VOICEDOCK"]` に。改名は利用者が Finder で行う（アプリは改名しない）。既存の `config.json` は手で直す（移行なし）。⑤と `deviceNameInvalid` の文言、テストの実機の名前の拒否（`VOICEDOCK` も）、セッション開始のフックの実機の検出も合わせた | #179（issue #178） |
 | F-95 | **（利用者の依頼と決定）** 「詳細・診断」にデータの初期化。3 秒の長押しで `run/data-reset-requested` を書いて終了し、次の起動で DB を開く前に DB・inbox・staging・transcripts・analysis・queue の要求と結果を消す（設定・モデル・ログ・reaper・Vault は残す）。元音声の削除が有効な間・消す能力が残っている間は押せない。削除は `SafeUnlink`（ルート `database` を足した）だけ | #181（issue #180。#179 の上に積んだ） |
+| F-96 | **（F-95 の実機の確認で発見）** 「初期化して終了」で予約の後にアプリが固まった（Task の中から `NSApp.terminate` を直に呼ぶと `.terminateLater` の待ちでデッドロック）。`requestTerminate` を run loop の次の周回で呼ぶように。2026-09-25 の初期化は、固まったアプリを SIGTERM で終えた後の起動で行われた（`data_reset count=79 failed=0`） | （この PR。issue #182） |
+| F-97 | **（F-94〜F-96 のコードレビュー。利用者の決定）** 予約後は終了まで押せない・予約に段階（途中で落ちても続きを行い、消し直さない）・初期化の結果を次の起動のパネルに 1 回出す・終了の返事を main run loop から返す（固まる原因を根本から）・テストの実機の名前の拒否を大文字小文字を問わずに・テストの規則の文言 | （この PR。issue #182） |
 
 ## 5. 残っている作業
 

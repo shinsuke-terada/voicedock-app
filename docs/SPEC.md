@@ -185,7 +185,7 @@ model_downloaded model_download_failed diagnostics_completed data_reset
   - `normalize_failed` の `reason=input`（16 kHz も inbox の原本も無い）
   - `model_download_failed` の `reason=sha256_mismatch|size_mismatch|http_<code>|network|cancelled|bad_url|bad_file_name|io`
   - `data_reset reason=requested`（INFO。予約した）/ `data_reset reason=deletion_enabled|request_not_written`（WARNING。予約しなかった）、
-    起動時: `data_reset count=<消したファイルの数> failed=<消せなかった・確かめられなかった数>`（failed が 0 なら INFO、1 以上なら WARNING）/ `data_reset reason=deletion_enabled|request_not_removed`（WARNING。何も消さなかった）/
+    起動時: `data_reset count=<消したファイルの数> failed=<消せなかった・確かめられなかった数>`（failed が 0 なら INFO、1 以上なら WARNING）/ `data_reset reason=deletion_enabled|request_not_removed|stale_request`（WARNING。何も消さなかった。stale_request は DB を消した後の予約が残っていたが新しい DB が在った。F-97）/
     `data_reset reason=database_not_removed count=<n> failed=<n>`（WARNING。DB を消しきれず、ほかは消さなかった）（F-95。§8.15）
 
 reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く（§8.9.4）。`LogEvent` には含めない。

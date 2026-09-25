@@ -184,7 +184,9 @@ struct ReaperBenchSafetyTests {
         }
     }
 
-    @Test("deviceID が実機の名前（VOICEDOCK・改名前の DJIMIC3）なら舞台を作らない", arguments: ["VOICEDOCK", "DJIMIC3"])
+    @Test(
+        "deviceID が実機の名前（VOICEDOCK・改名前の DJIMIC3。大文字小文字を問わない）なら舞台を作らない",
+        arguments: ["VOICEDOCK", "VoiceDock", "DJIMIC3", "djimic3"])
     func realDeviceNameIsRefused(_ deviceID: String) throws {
         let tmp = try TempDirectory()
         let root = tmp.url.appendingPathComponent("Volumes", isDirectory: true)
