@@ -184,9 +184,10 @@ enum Bootstrap {
             category: "app")
         // 8 の後. データの初期化の予約（F-95）。DB を開く前に行う。消す能力が残っているか、読めた設定で元音声の削除が
         // 有効なら消さない（予約だけ取り下げる）
-        let deletionCapable = await enabler.hasRemainingCapability() || loadedConfig?.cleanup.deleteSourceAudio == true
+        let residual = await enabler.hasRemainingCapability()
+        let appEnabled = loadedConfig?.cleanup.deleteSourceAudio == true
         _ = DataReset.performIfRequested(
-            layout: layout, deletionCapable: deletionCapable, log: log.withCategory("pipeline"))
+            layout: layout, deletionCapable: residual || appEnabled, log: log.withCategory("pipeline"))
         // 9. DB
         let store: Store
         do { store = try Store(url: layout.database, clock: clock, zone: zone) } catch {

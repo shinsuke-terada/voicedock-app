@@ -1,7 +1,7 @@
 # T-30 UI: メニューバーとパネルの骨組み・AppModel
 
 > （F-95。2026-09-25。利用者の決定）`Bootstrap.build()` は手順 8 の後・手順 9（DB）の前に `DataReset.performIfRequested` を呼ぶ（消す能力が残っているか設定の `deleteSourceAudio` が真なら消さない）。
-> `AppServices` に `requestDataReset() async -> Bool` を足した（PLAN §8.15）。テストは `DataResetTests`（VDPipeline）と `AppModelDataResetTests`。
+> `AppServices` に `requestDataReset() async -> Bool` を足した（PLAN §8.15）。テストは `DataResetTests`（VDPipeline）・`AppModelDataResetTests`・`DataResetWiringTests`（PolicyTests。起動の順と LiveServices の確かめ）。`LiveServices.read` は設定が読めている間も `deletionResidual` を読む（初期化のボタンの判定）。
 
 > （F-83・issue #119、2026-09-23。統合での配線）終了の後始末の段に、取り込みを止めた後・`llama.stop` の前の `keepDownloadResumeData`（`ModelDownloader.stopAllKeepingResumeData()`。ダウンロードの再開データを残す）を足した（`AppDelegate.ShutdownParts`・`shutdownSteps`。PLAN §8.15）。起動は単一起動のロックを取った後・Worker と取り込みを始める前に `ModelManager.discardStaleImports()` を呼ぶ（`Bootstrap.build` の手順 14 の後。PLAN §8.10）。テストは `AppDelegateShutdownTests` の段の順と PolicyTests の `ModelLifecycleWiringTests`（配線の字句と自己テスト）。
 

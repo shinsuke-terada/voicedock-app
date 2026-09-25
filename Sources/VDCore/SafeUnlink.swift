@@ -5,12 +5,9 @@ import VDContract
 
 public enum SafeUnlinkRoot: Sendable, Equatable {
     case inbox, staging, transcripts, analysis, queueDelete, queueResult, models, run
-    /// <HOME> 直下の DB の 3 つのファイルだけ（データの初期化。F-95）
+    /// <HOME> 直下の DB の 3 つのファイル（HomeLayout.database とその -wal・-shm）だけ（データの初期化。F-95）
     case database
     case vaultTmp(vault: URL)
-
-    /// `database` で消してよい名前（<HOME> 直下のこの 3 つだけ。F-95）
-    public static let databaseFileNames = ["voicedock.sqlite", "voicedock.sqlite-wal", "voicedock.sqlite-shm"]
 
     /// ルートのディレクトリ。
     func directory(_ layout: HomeLayout) -> URL {
@@ -46,7 +43,9 @@ public enum SafeUnlink {
         case .queueDelete, .queueResult:
             guard located.parentIsRoot, located.name.hasSuffix(".json") else { throw .nameNotAllowed }
         case .database:
-            guard located.parentIsRoot, SafeUnlinkRoot.databaseFileNames.contains(located.name) else {
+            // 名前は HomeLayout.database から作る（CR-06。同じ名前を 2 か所に書かない）
+            let base = layout.database.lastPathComponent
+            guard located.parentIsRoot, [base, base + "-wal", base + "-shm"].contains(located.name) else {
                 throw .nameNotAllowed
             }
         case .vaultTmp:

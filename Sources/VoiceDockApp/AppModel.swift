@@ -320,6 +320,7 @@ final class AppModel {
         // 次に開いたときに古い結果を出さない
         reloadResult = nil
         vaultError = nil
+        dataResetFailed = false
         modelNotice = nil
         // 閉じた後に届いた DR-09 の返事は捨てる（receiveProbe が .running のときだけ受け取る）
         probe = .idle

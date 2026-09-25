@@ -91,4 +91,31 @@ struct AppModelDataResetTests {
         #expect(fake.dataResetCount == 0)
         #expect(quit.value == 0)
     }
+
+    @Test("設定が読めていて削除が無効でも、消す能力が残っていれば（無効化の段の失敗で reaper が残った）押せない")
+    func residualWithConfigBlocksTheReset() async {
+        var s = Self.snapshot(appEnabled: false)
+        s.deletionResidual = true
+        let fake = FakeServices(s)
+        let quit = QuitCounter()
+        let model = Self.makeModel(fake, quit: quit)
+        await model.refresh()
+        #expect(model.showsTrash == false)
+        #expect(model.dataResetBlockedByDeletion == true)
+        await model.requestDataReset()
+        #expect(fake.dataResetCount == 0)
+        #expect(quit.value == 0)
+    }
+
+    @Test("予約の失敗の表示はパネルを閉じたら消す（F-84 と同じ）")
+    func failureIsClearedWhenThePanelCloses() async {
+        let fake = FakeServices(Self.snapshot(appEnabled: false))
+        fake.setDataResetResult(false)
+        let model = Self.makeModel(fake, quit: QuitCounter())
+        await model.refresh()
+        await model.requestDataReset()
+        #expect(model.dataResetFailed == true)
+        model.panelDidClose()
+        #expect(model.dataResetFailed == false)
+    }
 }

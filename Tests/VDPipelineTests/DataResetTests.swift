@@ -27,6 +27,15 @@ struct DataResetTests {
                 clock: FixedClock(epochMillis: 1_788_040_812_000))
         }
 
+        /// 予約を書く（予約のログは別の箱に出し、実行のログと混ぜない）
+        func reserve() -> Bool {
+            DataReset.request(
+                layout: layout, deletionCapable: false,
+                log: AppLog(
+                    sink: CapturingLogSink(), level: .debug, unsafeContent: false, zone: PipelineFixtures.zone,
+                    clock: FixedClock(epochMillis: 1_788_040_812_000)))
+        }
+
         @discardableResult
         func put(_ url: URL, _ text: String = "x") throws -> URL {
             try FileManager.default.createDirectory(
@@ -45,8 +54,8 @@ struct DataResetTests {
             let gone = [
                 try put(layout.database), try put(layout.url(relative: "voicedock.sqlite-wal")),
                 try put(layout.url(relative: "voicedock.sqlite-shm")),
-                try put(layout.inbox.appendingPathComponent("VOICEDOCK/TX_MIC001_20260912_120950/a_orig.wav")),
-                try put(layout.inbox.appendingPathComponent("VOICEDOCK/TX_MIC001_20260912_120950/.a_orig.wav.partial")),
+                try put(layout.inbox.appendingPathComponent("VDT0095/TX_MIC001_20260912_120950/a_orig.wav")),
+                try put(layout.inbox.appendingPathComponent("VDT0095/TX_MIC001_20260912_120950/.a_orig.wav.partial")),
                 try put(layout.normalizedAudio(slug: "a5d046dce76cfedc")),
                 try put(layout.transcriptsParts.appendingPathComponent("a5d046dce76cfedc.json")),
                 try put(layout.analysis.appendingPathComponent("43a71bce144be7a7.json")),
@@ -77,14 +86,14 @@ struct DataResetTests {
     func requestedResetRemovesDataAndKeepsSettings() throws {
         let s = try Scene()
         let (gone, kept) = try s.populate()
-        #expect(DataReset.request(layout: s.layout))
+        #expect(s.reserve())
         #expect(DataReset.isRequested(layout: s.layout))
         let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
         #expect(outcome == .completed(removed: 10, failed: 0))
         for url in gone { #expect(!s.exists(url), "残った: \(url.path(percentEncoded: false))") }
         for url in kept { #expect(s.exists(url), "消えた: \(url.path(percentEncoded: false))") }
         // 下位のディレクトリは消え、ルートのディレクトリは残る
-        #expect(!s.exists(s.layout.inbox.appendingPathComponent("VOICEDOCK")))
+        #expect(!s.exists(s.layout.inbox.appendingPathComponent("VDT0095")))
         #expect(!s.exists(s.layout.stagingDirectory(slug: "a5d046dce76cfedc")))
         #expect(s.exists(s.layout.inbox))
         #expect(s.exists(s.layout.staging))
@@ -99,7 +108,7 @@ struct DataResetTests {
     func deletionCapabilityRefusesTheReset() throws {
         let s = try Scene()
         let (gone, kept) = try s.populate()
-        #expect(DataReset.request(layout: s.layout))
+        #expect(s.reserve())
         let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: true, log: s.log)
         #expect(outcome == .refused(reason: "deletion_enabled"))
         #expect((gone + kept).allSatisfy { s.exists($0) })
@@ -128,15 +137,15 @@ struct DataResetTests {
         let s = try Scene()
         let outside = try s.put(s.tmp.url.appendingPathComponent("outside/keep.wav"))
         try FileManager.default.createDirectory(
-            at: s.layout.inbox.appendingPathComponent("VOICEDOCK"), withIntermediateDirectories: true)
-        let link = s.layout.inbox.appendingPathComponent("VOICEDOCK/link")
+            at: s.layout.inbox.appendingPathComponent("VDT0095"), withIntermediateDirectories: true)
+        let link = s.layout.inbox.appendingPathComponent("VDT0095/link")
         try FileManager.default.createSymbolicLink(
             atPath: link.path(percentEncoded: false),
             withDestinationPath: outside.deletingLastPathComponent().path(percentEncoded: false))
         try s.put(s.layout.database)
-        #expect(DataReset.request(layout: s.layout))
+        #expect(s.reserve())
         let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
-        // DB 1 件を消し、symlink 1 件と、それが残ったので空にならない VOICEDOCK のディレクトリ 1 件は数えない（rmdir は
+        // DB 1 件を消し、symlink 1 件と、それが残ったので空にならない VDT0095 のディレクトリ 1 件は数えない（rmdir は
         // 中身があれば何もしない）→ failed は symlink の 1 件
         #expect(outcome == .completed(removed: 1, failed: 1))
         #expect(s.exists(outside))
@@ -145,28 +154,85 @@ struct DataResetTests {
         #expect(s.sink.lines.first?.hasSuffix("WARNING data_reset count=1 failed=1") == true)
     }
 
-    @Test("DB の -wal を消せなければ本体を残す（古い WAL を新しい DB に当てない）")
-    func databaseIsKeptWhenTheWALCannotBeRemoved() throws {
+    @Test("DB の -wal が通常ファイルでなければ DB を 1 つも消さず、ほかのディレクトリにも触れない（古い WAL を新しい DB に当てない）")
+    func databaseNotRemovableStopsTheWholeReset() throws {
         let s = try Scene()
         try s.put(s.layout.database)
-        // -wal をディレクトリにして消せなくする（SafeUnlink は通常ファイルしか消さない）
+        // -wal をディレクトリにする（SafeUnlink は通常ファイルしか消さない）
         try FileManager.default.createDirectory(
             at: s.layout.url(relative: "voicedock.sqlite-wal"), withIntermediateDirectories: true)
-        try s.put(s.layout.url(relative: "voicedock.sqlite-shm"))
-        #expect(DataReset.request(layout: s.layout))
+        let shm = try s.put(s.layout.url(relative: "voicedock.sqlite-shm"))
+        let staged = try s.put(s.layout.normalizedAudio(slug: "a5d046dce76cfedc"))
+        let transcript = try s.put(s.layout.transcriptsParts.appendingPathComponent("a5d046dce76cfedc.json"))
+        #expect(s.reserve())
         let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
-        // -shm を消し、-wal の失敗 1 と本体を残した 1
-        #expect(outcome == .completed(removed: 1, failed: 2))
+        #expect(outcome == .refused(reason: "database_not_removed"))
         #expect(s.exists(s.layout.database))
-        #expect(!s.exists(s.layout.url(relative: "voicedock.sqlite-shm")))
+        #expect(s.exists(shm))
+        #expect(s.exists(staged))
+        #expect(s.exists(transcript))
+        #expect(!DataReset.isRequested(layout: s.layout))
+        let expected = "WARNING data_reset reason=database_not_removed count=0 failed=1"
+        #expect(s.sink.lines.first?.hasSuffix(expected) == true)
     }
 
-    @Test("対照: 予約は run/ の下に書き、在るかどうかだけを見る")
+    @Test("ルートのディレクトリ（inbox）が <HOME> の外への symlink なら辿らず、外の中身を残す")
+    func symlinkedRootIsNotFollowed() throws {
+        let s = try Scene()
+        let outside = try s.put(s.tmp.url.appendingPathComponent("outside/VDT0095/a_orig.wav"))
+        // inbox を外のディレクトリへの symlink に差し替える（createDirectories は既存の symlink を受け入れる）
+        let inbox = s.layout.root.appendingPathComponent("inbox", isDirectory: false)
+        try FileManager.default.removeItem(at: inbox)
+        try FileManager.default.createSymbolicLink(
+            atPath: inbox.path(percentEncoded: false),
+            withDestinationPath: s.tmp.url.appendingPathComponent("outside").path(percentEncoded: false))
+        let staged = try s.put(s.layout.normalizedAudio(slug: "a5d046dce76cfedc"))
+        #expect(s.reserve())
+        let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
+        // staging の 1 件を消し、inbox のルートを確かめられなかった 1
+        #expect(outcome == .completed(removed: 1, failed: 1))
+        #expect(s.exists(outside))
+        #expect(!s.exists(staged))
+    }
+
+    @Test("予約はあるが消すものが無い（空の <HOME>）なら 0 件で INFO（TEST-28）")
+    func emptyHomeCompletesWithZero() throws {
+        let s = try Scene()
+        #expect(s.reserve())
+        let outcome = DataReset.performIfRequested(layout: s.layout, deletionCapable: false, log: s.log)
+        #expect(outcome == .completed(removed: 0, failed: 0))
+        #expect(s.sink.lines == s.sink.lines.filter { $0.hasSuffix("INFO  data_reset count=0 failed=0") })
+        #expect(s.sink.lines.count == 1)
+    }
+
+    @Test("予約: 消す能力が残っていれば書かずに WARNING、書けたら INFO requested")
+    func requestRefusesWhileDeletionIsCapable() throws {
+        let s = try Scene()
+        #expect(DataReset.request(layout: s.layout, deletionCapable: true, log: s.log) == false)
+        #expect(!DataReset.isRequested(layout: s.layout))
+        #expect(DataReset.request(layout: s.layout, deletionCapable: false, log: s.log) == true)
+        #expect(DataReset.isRequested(layout: s.layout))
+        #expect(s.sink.lines.count == 2)
+        #expect(s.sink.lines.first?.hasSuffix("WARNING data_reset reason=deletion_enabled") == true)
+        #expect(s.sink.lines.last?.hasSuffix("INFO  data_reset reason=requested") == true)
+    }
+
+    @Test("予約: run/ が書けなければ偽で WARNING request_not_written")
+    func requestReportsWriteFailure() throws {
+        let s = try Scene()
+        // run をファイルに差し替えて書けなくする
+        try FileManager.default.removeItem(at: s.layout.runDirectory)
+        try s.put(s.layout.url(relative: "run"))
+        #expect(DataReset.request(layout: s.layout, deletionCapable: false, log: s.log) == false)
+        #expect(s.sink.lines.first?.hasSuffix("WARNING data_reset reason=request_not_written") == true)
+    }
+
+    @Test("対照: 予約は run/data-reset-requested に書き、在るかどうかだけを見る")
     func requestIsAFileUnderRun() throws {
         let s = try Scene()
         #expect(!DataReset.isRequested(layout: s.layout))
-        #expect(DataReset.request(layout: s.layout))
-        #expect(s.layout.dataResetRequest.deletingLastPathComponent().lastPathComponent == "run")
+        #expect(s.reserve())
+        #expect(s.layout.relativePath(of: s.layout.dataResetRequest) == "run/data-reset-requested")
         #expect(DataReset.isRequested(layout: s.layout))
     }
 }

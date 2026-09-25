@@ -61,7 +61,7 @@ struct DetailsSection: View {
         SectionBox(title: Strings.sectionDataReset) {
             Text(Strings.dataResetExplanation).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-            if model.showsTrash {
+            if model.dataResetBlockedByDeletion {
                 Text(Strings.dataResetNeedsDeletionOff).font(.caption).foregroundStyle(.orange)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -66,12 +66,13 @@ enum Strings {
     // F-95: データの初期化（PLAN §8.12 の 8）
     static let sectionDataReset = "データの初期化"
     static let dataResetExplanation =
-        "取り込みの記録（データベース）と、取り込み・文字起こし・要約の途中のファイルを消します。"
+        "取り込みの記録（データベース）と、文字起こし・要約の結果と作業中のファイルを消します。"
         + "設定・モデル・ログ・Vault のノートは消しません。デバイスには触れません。"
-        + "VoiceDock は終了し、次に起動したときに消します。デバイスに残っている録音は、次につないだときにもう一度取り込みます"
+        + "VoiceDock は終了し、次に起動したときに消します。デバイスに残っている録音は、次の起動・接続で取り込み直し、"
+        + "文字起こしと要約をやり直します。同じ日のノートは書き直されるか（ノートでの編集は失われます）、別の名前で増えます"
     static let buttonDataReset = "初期化して終了"
     static let holdToResetHint = "赤いボタンを " + holdSeconds + " 秒長押しすると、初期化を予約して終了します。途中で離すと取り消します"
-    static let dataResetNeedsDeletionOff = "元音声の削除が有効な間は初期化できません。先に「元音声の削除」で無効にしてください"
+    static let dataResetNeedsDeletionOff = "元音声の削除が有効な間（または無効化が終わっていない間）は初期化できません。先に「元音声の削除」で無効にしてください"
     static let dataResetRequestFailed = "初期化を予約できませんでした。ログを確かめてください"
 
     // 読み直しの結果
