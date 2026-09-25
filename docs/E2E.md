@@ -1304,6 +1304,11 @@ $ grep "part_discovered" "$VD_HOME/logs/app.log" | grep -c "MIC020_20260924_2212
 
 #### 前提
 削除 OFF。数分の録音を 2 本以上（処理が数分続く状態）。
+**スリープの直前に `pmset -g assertions | grep -E '^ *PreventSystemSleep '` が `PreventSystemSleep 0` であることを確かめる。**
+ほかのプロセスが `PreventSystemSleep` を持っていると（Claude Code は自分の子プロセスとして `caffeinate -ims` を動かす）、明示的なスリープが **DarkWake** になり、CPU が止まらないまま処理が進んで試験が空振りする（2026-09-25 に 2 回。下の記録）。
+Claude Code などを終了し、`pmset -g assertions | grep -c "on behalf of 'claude'"` が `0` になってから行う。
+眠ったかどうかは、後で `pmset -g log | grep -E ' (Sleep|Wake|DarkWake) '` の行が `Entering Sleep state`（`Entering DarkWake state` ではない）であることで確かめる。
+ふたの無い Mac（Mac mini など）では、手順 4 の「ふたを開けて復帰」をキーボードかマウスで起こすと読み替える。
 
 #### 手順
 【利用者が行う】
@@ -1322,7 +1327,230 @@ $ grep "part_discovered" "$VD_HOME/logs/app.log" | grep -c "MIC020_20260924_2212
 #### 記録
 2 と（待機中に戻ったあとの）`pmset -g assertions` の 2 回分、[C-3]、スリープと復帰の時刻。
 
+**2026-09-25 に 2 回行い、2 回とも空振り（Mac が眠らなかった）。判定は未実施のまま。**
+2 回とも、アップルメニューのスリープが `Entering DarkWake state` になり、CPU が止まらずに処理が進み続けた。
+原因は、エージェントの Claude Code（pid 57888）が子プロセスとして動かしていた `caffeinate -ims`（pid 57889）の `PreventSystemSleep`（1 回目は別の Claude Code のセッションの pid 21078 も）。
+VoiceDock が持っていたのは `PreventUserIdleSystemSleep` だけである。
+2 回とも完走し（`source_delete_skipped` まで）、`FAILED` は 0。
+
+2 回の試行で確かめられたこと・確かめられなかったこと:
+- 期待 2（処理中だけ `PreventUserIdleSystemSleep` を持つ）: **確認できた**。1 回目の 15:56:54 の一覧に `pid 77118(VoiceDock) … PreventUserIdleSystemSleep` が在り、待機中の 15:54:34・16:13:40・16:39:18 の一覧には VoiceDock の行が無い。`pmset -g assertions` の一覧では名前が `named: ""` と空に出るが、`pmset -g log` には `"VoiceDock が録音を処理しています"` と出る（一覧の表示が日本語の名前を出せないだけ）
+- 期待 4 の後半（アイドル時にアサーションが消えている）: **確認できた**（上の待機中の一覧）
+- 期待 3・4 の前半（明示的なスリープが掛かり、本当に眠ってから復帰した後も処理が続いて完走する）: **確かめられていない**。前提に足した `PreventSystemSleep 0` の確認をしてからやり直す
+
+1 回目（15:54〜16:13。削除 OFF。新しい録音 2 本 MIC030 14.3 分・MIC031 20.1 分）
+
+挿す前（[C-1]・待機中のアサーション）:
 ```text
+terada@teramacminim4 voicedock_app % export VD_HOME="$HOME/Library/Application Support/VoiceDock"
+export VD_DB="$VD_HOME/voicedock.sqlite"
+export VAULT="/Users/terada/VoiceDockTestVault"
+export DEV="DJIMIC3"
+export BACKUP="$HOME/VoiceDockE2E-ON"
+date
+sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;" ; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions GROUP BY status ORDER BY status;"
+pmset -g assertions | sed -n '/Listed by owning process/,/Kernel Assertions/p'
+Fri Sep 25 15:54:34 JST 2026
+COMPLETED|50
+SKIPPED|5
+COMPLETED|4
+Listed by owning process:
+   pid 57889(caffeinate): [0x000ec2280001862e] 01:05:43 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 57889(caffeinate): [0x000ec2280007862f] 01:05:43 PreventSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 57889(caffeinate): [0x000ec228000f8630] 01:05:43 PreventDiskIdle named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 403(WindowServer): [0x000ecc8b00098b76] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:1000eb098 service:AppleUserHIDEventService product:HHKB-Studio1 eventType:3"
+        Timeout will fire in 600 secs Action=TimeoutActionRelease
+   pid 395(bluetoothd): [0x000ed17700018e43] 00:00:23 PreventUserIdleSystemSleep named: "com.apple.BTStack"
+   pid 395(bluetoothd): [0x000ecfac00098c6b] 00:04:00 UserIsActive named: "Bluetooth LE HID Activity"
+        Timeout will fire in 359 secs Action=TimeoutActionRelease
+   pid 21078(caffeinate): [0x000dee150001975c] 16:10:34 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 21077)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 21078(caffeinate): [0x000dee150007975d] 16:10:34 PreventSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 21077)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 21078(caffeinate): [0x000dee15000f975e] 16:10:34 PreventDiskIdle named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 21077)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 630(sharingd): [0x000ed18300018e4f] 00:00:12 PreventUserIdleSystemSleep named: "Handoff"
+   pid 344(powerd): [0x000ecc8b00018b78] 00:21:24 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"
+   pid 344(powerd): [0x000ecfa1001083f4] 00:03:57 InternalPreventDisplaySleep named: "com.apple.powermanagement.delayDisplayOff"
+        Timeout will fire in 62 secs Action=TimeoutActionTurnOff
+   pid 752(useractivityd): [0x000ed18d00018e52] 00:00:02 PreventUserIdleSystemSleep named: "BTLEAdvertisement.BDEB205E-04D6-49EA-B0E8-20B5A46EE380"
+        Timeout will fire in 58 secs Action=TimeoutActionTurnOff
+   pid 57051(caffeinate): [0x000ed16a00018e3e] 00:00:37 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting for 300 secs
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+        Timeout will fire in 263 secs Action=TimeoutActionRelease
+Kernel Assertions: 0x104=USB,MAGICWAKE
+terada@teramacminim4 voicedock_app % 
+```
+
+合図（最初の `llm_server_started`）で自動で取ったアサーション。この直後にアップルメニューからスリープした:
+```text
+terada@teramacminim4 voicedock_app % L="$VD_HOME/logs/app.log"; n=$(wc -l < "$L"); until tail -n +$((n+1)) "$L" | grep -q llm_server_started; do sleep 0.5; done; date; pmset -g assertions | grep -A3 'Listed byowning process'; echo ----; pmset -g assertions | sed -n '/Listed by owning process/,/Kernel Assertions/p'
+Fri Sep 25 15:56:54 JST 2026
+Listed by owning process:
+   pid 57889(caffeinate): [0x000ec2280001862e] 01:08:03 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+----
+Listed by owning process:
+   pid 57889(caffeinate): [0x000ec2280001862e] 01:08:03 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 57889(caffeinate): [0x000ec2280007862f] 01:08:03 PreventSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 57889(caffeinate): [0x000ec228000f8630] 01:08:03 PreventDiskIdle named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 403(WindowServer): [0x000ecc8b00098b76] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:1000eb0ae service:AppleUserHIDEventService product:MX Master 3S eventType:17"
+        Timeout will fire in 600 secs Action=TimeoutActionRelease
+   pid 395(bluetoothd): [0x000ed21b00018e7f] 00:00:00 PreventUserIdleSystemSleep named: "com.apple.BTStack"
+   pid 395(bluetoothd): [0x000ecfac00098c6b] 00:06:20 UserIsActive named: "Bluetooth LE HID Activity"
+        Timeout will fire in 219 secs Action=TimeoutActionRelease
+   pid 21078(caffeinate): [0x000dee150001975c] 16:12:54 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 21077)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 21078(caffeinate): [0x000dee150007975d] 16:12:54 PreventSystemSleep named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 21077)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 21078(caffeinate): [0x000dee15000f975e] 16:12:54 PreventDiskIdle named: "caffeinate command-line tool"
+        Details: caffeinate asserting on behalf of 'claude' (pid 21077)
+        Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 630(sharingd): [0x000ed18300018e4f] 00:02:32 PreventUserIdleSystemSleep named: "Handoff"
+   pid 77118(VoiceDock): [0x000ed21800018e7e] 00:00:03 PreventUserIdleSystemSleep named: ""
+   pid 344(powerd): [0x000ecc8b00018b78] 00:23:44 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"
+   pid 344(powerd): [0x000ed1ff00088e74] 00:00:28 ExternalMedia named: "com.apple.powermanagement.externalmediamounted"
+   pid 359(mds): [0x000ed200000b8e75] 00:00:27 BackgroundTask named: "com.apple.metadata.mds.power"
+Kernel Assertions: 0x104=USB,MAGICWAKE
+terada@teramacminim4 voicedock_app % 
+```
+
+スリープの時点の `pmset -g log`（`[System: …]` 以降は省いた）:
+```text
+2026-09-25 15:57:27 +0900 Sleep               	Entering DarkWake state due to 'Software Sleep pid=406':TCPKeepAlive=active Using AC (Charge:0%)
+2026-09-25 15:57:27 +0900 Assertions          	PID 395(bluetoothd) Summary PreventUserIdleSystemSleep "com.apple.BTStack" 00:00:06  id:0x0x100008e86
+2026-09-25 15:57:27 +0900 Assertions          	PID 77118(VoiceDock) Summary PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:00:36  id:0x0x100008e7e
+2026-09-25 15:57:27 +0900 Assertions          	PID 57889(caffeinate) Summary PreventUserIdleSystemSleep "caffeinate command-line tool" 01:08:36  id:0x0x10000862e
+2026-09-25 15:57:27 +0900 Assertions          	PID 21078(caffeinate) Summary PreventUserIdleSystemSleep "caffeinate command-line tool" 16:13:27  id:0x0x10000975c
+2026-09-25 15:57:27 +0900 Assertions          	PID 57889(caffeinate) Summary PreventSystemSleep "caffeinate command-line tool" 01:08:36  id:0x0x70000862f
+2026-09-25 15:57:27 +0900 Assertions          	PID 21078(caffeinate) Summary PreventSystemSleep "caffeinate command-line tool" 16:13:27  id:0x0x70000975d
+```
+
+後（[C-1]・待機中のアサーション・スリープと復帰の時刻）:
+```text
+2026年 9月25日 金曜日 16時13分40秒 JST
+COMPLETED|52
+SKIPPED|5
+COMPLETED|4
+Listed by owning process:
+   pid 630(sharingd): [0x000ed3a000018f5d] 00:10:17 PreventUserIdleSystemSleep named: "Handoff"
+   pid 395(bluetoothd): [0x000ed60700019015] 00:00:02 PreventUserIdleSystemSleep named: "com.apple.BTStack"
+   pid 57889(caffeinate): [0x000ec2280001862e] 01:24:49 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+----
+Listed by owning process:
+   pid 630(sharingd): [0x000ed3a000018f5d] 00:10:17 PreventUserIdleSystemSleep named: "Handoff"
+   pid 395(bluetoothd): [0x000ed60700019015] 00:00:02 PreventUserIdleSystemSleep named: "com.apple.BTStack"
+   pid 57889(caffeinate): [0x000ec2280001862e] 01:24:49 PreventUserIdleSystemSleep named: "caffeinate command-line tool"
+    Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+    Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 57889(caffeinate): [0x000ec2280007862f] 01:24:49 PreventSystemSleep named: "caffeinate command-line tool"
+    Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+    Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 57889(caffeinate): [0x000ec228000f8630] 01:24:49 PreventDiskIdle named: "caffeinate command-line tool"
+    Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+    Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 359(mds): [0x000ed200000b8e75] 00:17:12 BackgroundTask named: "com.apple.metadata.mds.power"
+   pid 344(powerd): [0x000ed39900018ef6] 00:10:24 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"
+   pid 403(WindowServer): [0x000ecc8b00098b76] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:1000eb098 service:AppleUserHIDEventService product:HHKB-Studio1 eventType:3"
+    Timeout will fire in 600 secs Action=TimeoutActionRelease
+Kernel Assertions: 0x104=USB,MAGICWAKE
+----
+2026-09-25 15:57:27 +0900 Sleep                   Entering DarkWake state due to 'Software Sleep pid=406':TCPKeepAlive=active Using AC (Charge:0%)
+2026-09-25 16:03:15 +0900 Wake                    DarkWake to FullWake from Deep Idle [CDNVA] : due to HID Activity Using AC (Charge:0%)
+```
+
+2 回目（16:31〜16:39。削除 OFF。新しい録音 2 本 MIC032 12.3 分・MIC033 11.2 分。手順 2 の `PreventSystemSleep` の確認を飛ばしたまま行った）
+
+見張り（`app.log` の工程の行。スリープの 16:31:57〜復帰の 16:39:05 の間も進んでいる）:
+```text
+2026-09-25T16:31:20+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC032_20260925_160641_orig.wav duration_s=739.97
+2026-09-25T16:31:20+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC032_20260925_160641_orig.wav bytes=106588456 recopy=false
+2026-09-25T16:31:28+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC033_20260925_161903_orig.wav duration_s=673.31
+2026-09-25T16:31:28+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC033_20260925_161903_orig.wav bytes=96989416 recopy=false
+2026-09-25T16:31:52+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC032_20260925_160641_orig.wav elapsed_s=29.6 chars=3543 rtf=0.04 speech_ratio=0.808
+2026-09-25T16:31:52+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=22 bytes=38975
+2026-09-25T16:31:53+09:00 INFO  llm_server_started port=51161 elapsed_s=1.0
+2026-09-25T16:34:56+09:00 INFO  llm_completed session_key=DJIMIC3:20260925 chunks=5 elapsed_s=183.4
+2026-09-25T16:34:56+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=13785
+2026-09-25T16:34:56+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260925 reason=delete_source_audio_disabled
+2026-09-25T16:34:56+09:00 INFO  llm_server_stopped port=51161
+2026-09-25T16:35:27+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC033_20260925_161903_orig.wav elapsed_s=28.0 chars=2874 rtf=0.042 speech_ratio=0.995
+2026-09-25T16:35:27+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=23 bytes=48143
+2026-09-25T16:35:28+09:00 INFO  llm_server_started port=51204 elapsed_s=1.0
+2026-09-25T16:38:57+09:00 INFO  llm_completed session_key=DJIMIC3:20260925 chunks=6 elapsed_s=209.6
+2026-09-25T16:38:57+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=16247
+2026-09-25T16:38:57+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260925 reason=delete_source_audio_disabled
+2026-09-25T16:38:58+09:00 INFO  llm_server_stopped port=51204
+```
+
+スリープの時点の `pmset -g log`（`[System: …]` 以降は省いた）:
+```text
+2026-09-25 16:31:57 +0900 Sleep               	Entering DarkWake state due to 'Software Sleep pid=406':TCPKeepAlive=active Using AC (Charge:0%)
+2026-09-25 16:31:57 +0900 Assertions          	PID 395(bluetoothd) Summary PreventUserIdleSystemSleep "com.apple.BTStack" 00:00:00  id:0x0x10000910a
+2026-09-25 16:31:57 +0900 Assertions          	PID 77118(VoiceDock) Summary PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:00:05  id:0x0x100009109
+2026-09-25 16:31:57 +0900 Assertions          	PID 57889(caffeinate) Summary PreventUserIdleSystemSleep "caffeinate command-line tool" 01:43:05  id:0x0x10000862e
+2026-09-25 16:31:57 +0900 Assertions          	PID 57889(caffeinate) Summary PreventSystemSleep "caffeinate command-line tool" 01:43:05  id:0x0x70000862f
+```
+
+後（[C-1]・待機中のアサーション・スリープと復帰の時刻）:
+```text
+2026年 9月25日 金曜日 16時39分18秒 JST
+COMPLETED|54
+SKIPPED|5
+COMPLETED|4
+Listed by owning process:
+   pid 424(coreaudiod): [0x000edc050001965d] 00:00:05 PreventUserIdleSystemSleep named: "com.apple.audio.AppleUSBAudioEngine:ACTIONS:Pebble V3:㉕捤稰眷㕳愳㤷湲:1.context.preventuseridlesleep"  
+	Created for PID: 35821. 
+	Resources: audio-out  
+----
+Listed by owning process:
+   pid 424(coreaudiod): [0x000edc050001965d] 00:00:05 PreventUserIdleSystemSleep named: "com.apple.audio.AppleUSBAudioEngine:ACTIONS:Pebble V3:㉕捤稰眷㕳愳㤷湲:1.context.preventuseridlesleep"  
+	Created for PID: 35821. 
+	Resources: audio-out  
+   pid 395(bluetoothd): [0x000edbfe0001917f] 00:00:13 PreventUserIdleSystemSleep named: "com.apple.BTStack"  
+   pid 57889(caffeinate): [0x000ec2280001862e] 01:50:26 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 57889(caffeinate): [0x000ec2280007862f] 01:50:26 PreventSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 57889(caffeinate): [0x000ec228000f8630] 01:50:26 PreventDiskIdle named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 57888)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 359(mds): [0x000ed200000b8e75] 00:42:50 BackgroundTask named: "com.apple.metadata.mds.power"  
+   pid 344(powerd): [0x000edbfe000191cb] 00:00:12 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 344(powerd): [0x000eda20000890fd] 00:08:10 ExternalMedia named: "com.apple.powermanagement.externalmediamounted"  
+   pid 403(WindowServer): [0x000ecc8b00098b76] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:1000eb098 service:AppleUserHIDEventService product:HHKB-Studio1 eventType:3"  
+	Timeout will fire in 600 secs Action=TimeoutActionRelease
+Kernel Assertions: 0x104=USB,MAGICWAKE
+----
+2026-09-25 15:46:29 +0900 Assertions          	PID 35723(Google Chrome) Released NoDisplaySleepAssertion "Video Wake Lock" 00:00:06  id:0x0x500008c60 [System: PrevIdle PrevDisp PrevSleep DeclUser IntPrevDisp kCPU kDisp]          
+2026-09-25 15:50:32 +0900 Assertions          	PID 35723(Google Chrome) Created NoDisplaySleepAssertion "Video Wake Lock" 00:00:00  id:0x0x500008d78 [System: PrevIdle PrevDisp PrevSleep DeclUser IntPrevDisp kCPU kDisp]          
+2026-09-25 15:50:37 +0900 Assertions          	PID 35723(Google Chrome) Released NoDisplaySleepAssertion "Video Wake Lock" 00:00:04  id:0x0x500008d78 [System: PrevIdle PrevSleep DeclUser IntPrevDisp kCPU kDisp]          
+2026-09-25 15:57:27 +0900 Sleep               	Entering DarkWake state due to 'Software Sleep pid=406':TCPKeepAlive=active Using AC (Charge:0%)           
+2026-09-25 16:03:15 +0900 Wake                	DarkWake to FullWake from Deep Idle [CDNVA] : due to HID Activity Using AC (Charge:0%)           
+Sleep/Wakes since boot:0   Dark Wake Count in this sleep cycle:0
+2026-09-25 16:31:57 +0900 Sleep               	Entering DarkWake state due to 'Software Sleep pid=406':TCPKeepAlive=active Using AC (Charge:0%)           
+2026-09-25 16:39:05 +0900 Wake                	DarkWake to FullWake from Deep Idle [CDNVA] : due to HID Activity Using AC (Charge:0%)           
 ```
 
 #### 判定
