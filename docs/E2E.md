@@ -37,7 +37,7 @@
 export VD_HOME="$HOME/Library/Application Support/VoiceDock"
 export VD_DB="$VD_HOME/voicedock.sqlite"
 export VAULT="<Obsidian の Vault の絶対パス>"
-export DEV="<デバイスのボリューム名。例 DJIMIC3>"
+export DEV="<デバイスのボリューム名。例 VOICEDOCK>"
 export BACKUP="<デバイスの退避先の絶対パス。利用者が決める。/Volumes の外・空か新規>"
 ```
 

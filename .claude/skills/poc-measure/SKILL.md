@@ -36,7 +36,7 @@ hdiutil create -quiet -size 64m -fs "MS-DOS FAT32" -volname PoCDJI ~/VoiceDockPo
 hdiutil attach -nobrowse -mountpoint ~/VoiceDockPoC/mnt/PoCDJI ~/VoiceDockPoC/img.dmg
 ```
 
-`-mountpoint` を落とすと `/Volumes` に出る。ボリューム名に `DJIMIC3` を使わない。
+`-mountpoint` を落とすと `/Volumes` に出る。ボリューム名に `VOICEDOCK`・`DJIMIC3` を使わない。
 
 ### 3. 実機の部分は「渡して止まる」
 

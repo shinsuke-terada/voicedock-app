@@ -57,10 +57,10 @@ struct ReaperBench {
     }
 
     /// 実機に触れ得る舞台を拒む: volumesRoot の realpath（無ければ標準化したパス）が `/Volumes` かその下、
-    /// または deviceID が実機と同じ `DJIMIC3`。hdiutil を使わずに確かめられるよう static に分ける
+    /// または deviceID が実機と同じ `VOICEDOCK`・`DJIMIC3`（F-94）。hdiutil を使わずに確かめられるよう static に分ける
     static func refuseUnsafe(volumesRoot: URL, deviceID: String) throws {
-        guard deviceID != "DJIMIC3" else {
-            throw BenchError(description: "ReaperBench: 実機と同じ名前 DJIMIC3 は使わない")
+        guard !["VOICEDOCK", "DJIMIC3"].contains(deviceID) else {
+            throw BenchError(description: "ReaperBench: 実機と同じ名前 \(deviceID) は使わない")
         }
         let raw = volumesRoot.standardizedFileURL.path(percentEncoded: false)
         var resolved = raw

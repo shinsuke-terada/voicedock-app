@@ -89,6 +89,8 @@ struct IngestServiceTests {
             sink = CapturingLogSink()
             let log = AppLog(sink: sink, level: .debug, unsafeContent: false, zone: zone, clock: clock)
             var config = AppConfig.defaults(timeZone: "Asia/Tokyo")
+            // 舞台のデバイス名を明示する（既定の include は ["VOICEDOCK"]。F-94。本番の既定に頼らない）
+            config.device.includeVolumes = [IngestServiceTests.deviceID]
             config.device.mountMode = options.mountMode
             if let seconds = options.scanIntervalSeconds { config.device.scanIntervalSeconds = seconds }
             let provided: AppConfig? = options.configMissing ? nil : config

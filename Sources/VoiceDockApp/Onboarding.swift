@@ -47,8 +47,8 @@ enum OnboardingEvaluator {
     }
 
     /// 改名の案内が要る名前（バイト順・重複なし）。次の 2 つを合わせる。
-    /// - unavailable の not_included: 名前が include（既定は ["DJIMIC3"]）に合わないが、録音のフォルダがあるボリューム
-    ///   （出荷時名 `NO NAME` の新品・名前を変えた機器・古いマウント点が残って `DJIMIC3 1` にマウントされた実機・写しを入れたメモリ。
+    /// - unavailable の not_included: 名前が include（既定は ["VOICEDOCK"]）に合わないが、録音のフォルダがあるボリューム
+    ///   （出荷時名 `NO NAME` の新品・名前を変えた機器・古いマウント点が残って `VOICEDOCK 1` にマウントされた実機・写しを入れたメモリ。
     ///   取り込まず削除もしない。F-81。PLAN §8.1 の規則 1）
     /// - devices と unavailable の鍵のうち `NO NAME`（include が空の設定で検出された出荷時名。DEV-10。
     ///   unavailable も見るのは、invalid_device_id や mount_name_mismatch で devices に載らない場合があるため。規則 8・9）

@@ -1,5 +1,8 @@
 # T-13 VDDevice: デバイス判定・マウント情報・共存ガード
 
+> （F-94。2026-09-25。利用者の決定）既定の `includeVolumes` は `["VOICEDOCK"]`（T-09 の注記）。判定の規則は変えない。`DeviceDetectorNetworkTests` の既定の include の舞台は `VOICEDOCK`・`VOICEDOCK 1` に直し、
+> `defaultIncludeDetectsRenamedDevice`（改名した実機を検出する）と `unrenamedDJIMIC3IsNotIncludedButHinted`（改名前の `DJIMIC3` は `not_included` で案内の対象）を足した。
+
 > （F-81 のレビュー・issue #119。2026-09-23。利用者の決定）`detect()` は規則 1 で `notIncluded` にした名前だけに、続けて規則 2（exclude・ネットワークの FS）・3・4・5・6 を当て（規則 8・9 は見ない）、
 > 全部通れば `DetectionResult.notIncludedDevices`（名前の UTF-8 バイト順。internal の init の既定値は `[]`）に入れる（internal の `looksLikeDevice(name:path:remote:)`）。取り込みにも削除にも使わず、
 > 走査が snapshot の `unavailable` に `not_included` で載せて「はじめに」の⑤が改名を案内する（T-15・T-31 の注記）。テストは `DeviceDetectorNetworkTests`（バックアップのメモリ・`NO NAME`・`DJIMIC3 1`・対象にしないもの・ネットワークの FS・include が空）。

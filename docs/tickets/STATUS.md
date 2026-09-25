@@ -156,8 +156,8 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
 | 削除 | **有効**（2026-09-25 18:32 に R-02 のためパネルの 3 秒長押しで有効化し、利用者の決定でそのままにした。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` 導入済み）。**有効な間は、デバイスを抜く前に Finder で取り出す**。無効に戻すときは削除の画面の「無効にする」をクリック 1 回（E2E-17）。E2E-13 のやり直しと E2E-06 は削除 OFF で行う |
-| 取り込むデバイスの名前 | `config.json` の `device.includeVolumes` は `["DJIMIC3"]`（F-81 の既定に合わせて 2026-09-23 に利用者が手で直した。控えは `config.json.bak`） |
-| 実機 | E2E の試験でたびたび `/Volumes/DJIMIC3` に接続する（削除 OFF の間は読み取り専用でマウント）。次のセッションはまず `ls /Volumes` で確かめる |
+| 取り込むデバイスの名前 | **F-94（2026-09-25）で既定を `["VOICEDOCK"]` にした。利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直す（未。直すまでは改名した実機を取り込まない）。改名前の `DJIMIC3` の Part は削除の対象から外れる。デバイスに残っている録音は改名後の最初の接続で `VOICEDOCK/…` として全件を再コピーし `DUPLICATE_CONTENT` になり、`deleteSkippedSource` が真なら根拠 B で元音声が消える（2026-09-25 の時点の config.json は `false`）（RK-28・PLAN §6.2）。** それまでは `["DJIMIC3"]`（F-81 の既定に合わせて 2026-09-23 に利用者が手で直した。控えは `config.json.bak`） |
+| 実機 | E2E の試験でたびたび `/Volumes/VOICEDOCK`（F-94 の改名の前は `/Volumes/DJIMIC3`）に接続する（削除 OFF の間は読み取り専用でマウント）。次のセッションはまず `ls /Volumes` で確かめる |
 
 ## 4. 2026-09-22〜23 に利用者が決めたこと・直したこと
 
@@ -195,6 +195,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | F-91 | **（利用者の依頼）** 削除が有効な間のメニューバーの印を、横に並ぶ `trash` から状態の記号の右上の赤い点（`StatusIconBadge`）に。画像はテンプレートのまま、パネルの `trash` と表示の条件は変えない | #172 |
 | F-92 | **X-46。（利用者の依頼）** 要約プロンプト（analyze / map / reduce）を ⚙ → 「要約プロンプトを編集…」の別の窓で編集できるように。`llm.analysis.prompts.*`（null = 同梱）、`schemaVersion` 3（2 → 3 の移行）、CV-60。D-7 に編集の窓 1 つだけの例外 | #172 |
 | F-93 | **（利用者の決定）** 本体のライセンスを Apache License 2.0 に（`LICENSE`・`NOTICE`）。同梱物（whisper.cpp・llama.cpp とその部品・argmax-oss-swift・GRDB・Yams・話者分離のモデル）の著作権表示とライセンス文を `THIRD_PARTY_NOTICES.md` にまとめ、`make-app.sh` が 3 つを `.app` の `Contents/Resources/` に入れる。README を利用者向けに書き直し、`## 開発`・`## 状態` を `docs/DEVELOPMENT.md` へ移した（T-43・T-44 のチケットも合わせた）。issue #139 の残り（実機未確認の文言）は E2E の記録で裏付けが取れた | #176（issue #139） |
+| F-94 | **（利用者の依頼と決定）** 取り込むデバイスの名前の既定（`device.includeVolumes`）を `["DJIMIC3"]` から `["VOICEDOCK"]` に。改名は利用者が Finder で行う（アプリは改名しない）。既存の `config.json` は手で直す（移行なし）。⑤と `deviceNameInvalid` の文言、テストの実機の名前の拒否（`VOICEDOCK` も）、セッション開始のフックの実機の検出も合わせた | #179（issue #178） |
 
 ## 5. 残っている作業
 
@@ -263,7 +264,7 @@ T-44（v1.0 リリース）は T-46〜T-51 の後。
 
 - URL からパス文字列を取るのは `url.path(percentEncoded: false)` だけ（00-api-map §0）。ディレクトリの URL は末尾に `/` が付く
 - 環境変数は `TestEnvironment.value(_:)` を通して読む（PLAN §10.1）
-- テスト用のディスクイメージのボリューム名に `DJIMIC3` を使わない（`DiskImageVolume` がコードで拒む）
+- テスト用のディスクイメージのボリューム名に実機の名前 `VOICEDOCK`・`DJIMIC3` を使わない（`DiskImageVolume` がコードで拒む）
 - macOS の `/bin/bash` は 3.2。全角文字の直前の変数は `${var}` と書く（`$var（` は `set -u` で落ちる）
 - チケットの逐語コードが `swift format` で落ちるときは整形に合わせ、チケットも直す
 - SPEC に節を足す順: PLAN の該当節に表 → `make spec` → `SpecDocument` の extension に読み取り口 → 照合のテストは実装を import できる各モジュールのテストへ（PolicyTests は TestSupport にしか依存しない）。SPEC と PLAN の一致は `SpecExtendedSectionsTests`（F-68）

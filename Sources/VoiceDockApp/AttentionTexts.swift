@@ -52,7 +52,7 @@ enum AttentionTexts {
         case .deviceNotListable: "システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム"
         case .deviceNeedsReplug: "同じ名前のボリュームがあるか、マウント先の名前が変わっています。取り外して、もう一度つなぎ直してください"
         case .deviceNameInvalid:
-            "Finder でデバイスの名前を「DJIMIC3」などに変えてから、つなぎ直してください（VoiceDock はデバイスに書き込みません）"
+            "Finder でデバイスの名前を「VOICEDOCK」に変えてから、つなぎ直してください（VoiceDock はデバイスに書き込みません）"
         case .ingestSilent: "デバイスはつながっていますが、しばらく何も起きていません。ログを確かめてください"
         case .diskSpaceLow: "不要なファイルを消すか、staging の上限を上げてください"
         case .lockMismatch: "アプリと reaper.conf の設定が合いません。「元音声の削除」を開いて無効化し直してください"

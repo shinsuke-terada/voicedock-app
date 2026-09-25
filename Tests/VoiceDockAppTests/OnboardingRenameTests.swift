@@ -1,4 +1,4 @@
-// 「はじめに」の⑤（改名の案内）を、既定の include（["DJIMIC3"]）に合わない録音のボリュームにも出す（PLAN §8.12・F-81・issue #119）。
+// 「はじめに」の⑤（改名の案内）を、既定の include（["VOICEDOCK"]）に合わない録音のボリュームにも出す（PLAN §8.12・F-81・issue #119・F-94）。
 import Foundation
 import TestSupport
 import Testing
@@ -45,7 +45,7 @@ struct OnboardingRenameTests {
         #expect(try OnboardingTests.item(app, .deviceName).visible == false)
     }
 
-    @Test("F-81 ⑤の案内は既定の include と食い違わない（DJIMIC3 に変えるか、device.includeVolumes に名前を足す）")
+    @Test("F-94 ⑤の案内は既定の include と食い違わない（VOICEDOCK に変えるか、device.includeVolumes に名前を足す）")
     func instructionsMatchDefaultInclude() throws {
         var app = AppSnapshot(now: OnboardingTests.fixed)
         app.renameCandidates = OnboardingEvaluator.renameCandidates(
@@ -56,12 +56,12 @@ struct OnboardingRenameTests {
         #expect(
             item.detail
                 == "BACKUP という名前のデバイスがつながっています。VoiceDock が取り込むのは、名前が設定の device.includeVolumes"
-                + "（既定は DJIMIC3 だけ。空なら全部）に合うデバイスです。VoiceDock はデバイスに一切書き込みません。"
+                + "（既定は VOICEDOCK だけ。空なら全部）に合うデバイスです。VoiceDock はデバイスに一切書き込みません。"
                 + "DJI Mic 3 なら、次のどちらかを利用者が行ってください。\n"
-                + "1. Finder のサイドバーでデバイスを選び、名前をゆっくり 2 回クリックして「DJIMIC3」に変えます。"
+                + "1. Finder のサイドバーでデバイスを選び、名前をゆっくり 2 回クリックして「VOICEDOCK」に変えます。"
                 + "変えたらデバイスを取り外して、もう一度つなぎ直してください\n"
                 + "2. 名前を変えずに使うなら、config.json の device.includeVolumes にこの名前を足して、「設定を読み直す」を押してください\n"
-                + "名前が「DJIMIC3 1」のように番号付きなら、名前は変えずに取り外して、もう一度つなぎ直してください。"
+                + "名前が「VOICEDOCK 1」のように番号付きなら、名前は変えずに取り外して、もう一度つなぎ直してください。"
                 + "録音の写しを入れたメモリなど DJI Mic 3 でなければ、何もしなくてかまいません（取り込みも削除もしません）")
         #expect(item.detail?.contains("などに変えます") == false)
     }

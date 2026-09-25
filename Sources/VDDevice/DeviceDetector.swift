@@ -107,7 +107,7 @@ public struct DeviceDetector: Sendable {
     }
 
     /// 規則 1 で外した名前が、名前のほかはデバイスに見えるか（F-81）。規則 2（exclude・ネットワークの FS）・3・4・5・6 を
-    /// 同じ順に当てる（規則 8・9 は見ない。古いマウント点が残って `DJIMIC3 1` にマウントされた実機も案内するため）。
+    /// 同じ順に当てる（規則 8・9 は見ない。古いマウント点が残って `VOICEDOCK 1` にマウントされた実機も案内するため）。
     /// stat が増えるのは not_included の名前だけ（include が空なら呼ばれない）。取り込みにも削除にも使わない
     private func looksLikeDevice(name: String, path: String, remote: Set<String>) -> Bool {
         if config.excludeVolumes.contains(where: { fnmatch($0, name, 0) == 0 }) { return false }

@@ -1,5 +1,7 @@
 # T-31 UI: はじめに・保存先（Vault）・モデル・ログイン項目
 
+> （F-94。2026-09-25。利用者の決定）⑤の文言（`Strings.renameInstructions`）の名前を、既定の include（`["VOICEDOCK"]`）に合わせて `VOICEDOCK`（番号付きの例は `VOICEDOCK 1`）にした（逐語は PLAN §8.12）。テストは `OnboardingRenameTests`。
+
 > （F-81 のレビュー・issue #119。2026-09-23。利用者の決定）`OnboardingEvaluator.renameCandidates` は、snapshot の `unavailable` の `not_included`（名前が `device.includeVolumes` に合わないが録音のフォルダがあるボリューム）と、
 > 従来の `NO NAME` を合わせる。⑤の文言（`Strings.renameInstructions`）は既定の include（`["DJIMIC3"]`）と食い違わないように直した（逐語は PLAN §8.12。下の表の `renameInstructions(_:)` の旧い文言は記録として残す）。テストは `OnboardingRenameTests`。
 

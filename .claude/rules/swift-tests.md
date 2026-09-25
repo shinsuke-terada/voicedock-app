@@ -44,7 +44,7 @@ paths:
 
 - ディスクイメージは `/Volumes` **以外**に attach した `DiskImageVolume` だけを使う
 - それ以外は一時ディレクトリの `volumesRoot`（`FakeVolume`）
-- ボリューム名に `DJIMIC3` を使わない
+- ボリューム名に `VOICEDOCK`・`DJIMIC3`（実機の名前）を使わない
 
 ## ネットワーク
 
