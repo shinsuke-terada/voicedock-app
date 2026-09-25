@@ -1,0 +1,425 @@
+swift build --build-tests
+Building for debugging...
+[Computing dependencies]
+[Using on-disk description]
+[1 / 1]
+[1 / 72] VDAudioTests-product
+[1 / 15] VoiceDockAppTests-product
+[3 / 12] VDLLMTests-product
+[7 / 16] PolicyTests-product
+[7 / 16] VDLLMTests-product
+[12 / 19] VDLLMTests-product
+[12 / 18] PolicyTests-product
+Build complete! (3.28秒)
+swift test --skip-build --filter "NoDeleteTests|ReaperTests"
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite "runReaperIfNeeded" started.
+􀟈  Test "0 以外は reaper_failed exit_<n>（4 は busy。パラメータ化: 4・2・3）" started.
+􀟈  Test "起動の直前は署名と版を検証し直す" started.
+􀟈  Test "走査が見送られたら「今の generation + 1」を待つ" started.
+􀟈  Test "ReaperRunner.run は起動の直前に署名を見る（ND-41 の 2 層目）" started.
+􀟈  Test "タイムアウトは reason=timeout" started.
+􀟈  Test "要求が無ければ起動しない" started.
+􀟈  Test "要求と書き込み可能なデバイスがあれば起動し、走査の後に回収する" started.
+􀟈  Test "シグナルは 128+s、起動失敗は 127（パラメータ化）" started.
+􀟈  Test "書き込み可能なデバイスが無ければ起動しない（パラメータ化: readOnly true・nil・0 台・snapshot nil）" started.
+􀟈  Test "準備が崩れていれば起動しない" started.
+􀟈  Test case passing 1 argument code → 4 to "0 以外は reaper_failed exit_<n>（4 は busy。パラメータ化: 4・2・3）" started.
+􀟈  Test case passing 1 argument code → 3 to "0 以外は reaper_failed exit_<n>（4 は busy。パラメータ化: 4・2・3）" started.
+􀟈  Test case passing 1 argument code → 2 to "0 以外は reaper_failed exit_<n>（4 は busy。パラメータ化: 4・2・3）" started.
+􀟈  Test case passing 1 argument kind → "spawnFailed(errno: 2)" to "シグナルは 128+s、起動失敗は 127（パラメータ化）" started.
+􀟈  Test case passing 1 argument kind → "readOnly nil" to "書き込み可能なデバイスが無ければ起動しない（パラメータ化: readOnly true・nil・0 台・snapshot nil）" started.
+􀟈  Test case passing 1 argument kind → "readOnly true" to "書き込み可能なデバイスが無ければ起動しない（パラメータ化: readOnly true・nil・0 台・snapshot nil）" started.
+􀟈  Test case passing 1 argument kind → "signaled(9)" to "シグナルは 128+s、起動失敗は 127（パラメータ化）" started.
+􀟈  Test case passing 1 argument kind → "0 台" to "書き込み可能なデバイスが無ければ起動しない（パラメータ化: readOnly true・nil・0 台・snapshot nil）" started.
+􀟈  Test case passing 1 argument kind → "snapshot nil" to "書き込み可能なデバイスが無ければ起動しない（パラメータ化: readOnly true・nil・0 台・snapshot nil）" started.
+􁁛  Test "ReaperRunner.run は起動の直前に署名を見る（ND-41 の 2 層目）" passed after 0.262 seconds.
+􁁛  Test "準備が崩れていれば起動しない" passed after 0.262 seconds.
+􁁛  Test "タイムアウトは reason=timeout" passed after 0.269 seconds.
+􁁛  Test "走査が見送られたら「今の generation + 1」を待つ" passed after 0.274 seconds.
+􁁛  Test "要求と書き込み可能なデバイスがあれば起動し、走査の後に回収する" passed after 0.276 seconds.
+􁁛  Test "起動の直前は署名と版を検証し直す" passed after 0.276 seconds.
+􁁛  Test "シグナルは 128+s、起動失敗は 127（パラメータ化）" with 2 test cases passed after 0.276 seconds.
+􁁛  Test "要求が無ければ起動しない" passed after 0.277 seconds.
+􁁛  Test "0 以外は reaper_failed exit_<n>（4 は busy。パラメータ化: 4・2・3）" with 3 test cases passed after 0.278 seconds.
+􁁛  Test "書き込み可能なデバイスが無ければ起動しない（パラメータ化: readOnly true・nil・0 台・snapshot nil）" with 4 test cases passed after 0.309 seconds.
+􁁛  Suite "runReaperIfNeeded" passed after 0.309 seconds.
+􁁛  Test run with 10 tests in 1 suite passed after 0.309 seconds.
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite "ReaperLog の行" started.
+􀙟  Suite "voicedock-reaper の走行中の無効化 × FAT32（層 R3。F-73）" skipped.
+􀙟  Suite "voicedock-reaper × FAT32（層 R3）" skipped.
+􀟈  Suite "voicedock-reaper の走査と要求（層 R1）" started.
+􀟈  Suite "reaper.conf とロック 1（層 R1）" started.
+􀟈  Suite "reaper の要求ファイルの名前のスカラー単位の判定（F-81）" started.
+􀟈  Suite "voicedock-reaper の防御（F-73）" started.
+􀟈  Suite "voicedock-reaper の引数と置き場所（層 R1）" started.
+􀟈  Suite "ProcessedLog" started.
+􀟈  Suite "ReaperBench は実機に触れ得る舞台を拒む" started.
+􀟈  Test "値は §8.15 のとおりに引用される" started.
+􀟈  Test "フィールドは順に k=v で足される" started.
+􀟈  Test "INFO は 5 桁左寄せ（INFO と 2 つの空白の後に event）" started.
+􀙟  Test "RV-13 [R3] 対照: 走行中も reaper.conf が true のままなら、同じ準備で本当に消える" skipped.
+􀙟  Test "RV-09 経路の途中が無ければ target_missing" skipped.
+􀙟  Test "RV-10 対象がディレクトリなら not_regular_file" skipped.
+􀙟  Test "RV-09 対象が無ければ target_missing" skipped.
+􀙟  Test "ND-24 [R3] relpath に ../ があれば relpath_unsafe" skipped.
+􀙟  Test "ND-23 [R3] 読み取り専用で再マウントされていたら要求を残す（RV-07）" skipped.
+􀙟  Test "ND-19 [R3] 削除直前に mtime が変わると mtime_mismatch" skipped.
+􀙟  Test "FAT の mtime は 2 秒刻み（実物の値を使う）" skipped.
+􀙟  Test "ND-29 [R3] ボリューム直下のファイルは常に folder_rule" skipped.
+􀙟  Test "ND-25 [R3] 経路の途中が symlink なら path_contains_symlink" skipped.
+􀙟  Test "RV-13 unlink の後に不在を確かめる" skipped.
+􀙟  Test "ND-31 [R3] device_id だけが違う同名ファイルは消さない" skipped.
+􀙟  Test "ND-20 [R3] 対象自身が symlink なら target_is_symlink" skipped.
+􀙟  Test "正の対照: 通る要求は本当に消える" skipped.
+􀙟  Test "ND-28 [R3] . で始まる要素があれば relpath_unsafe" skipped.
+􀙟  Test "対照: mtime の差が 2 秒未満なら消える" skipped.
+􀙟  Test "ND-29 [R3] 親フォルダ名が規則外なら folder_rule" skipped.
+􀙟  Test "2 件の要求が両方とも消える（走査の続き）" skipped.
+􀙟  Test "ND-39 [R3] HFS+ のイメージは unexpected_fs" skipped.
+􀙟  Test "ND-37 [R3] _orig の無いファイルは filename_rule" skipped.
+􀙟  Test "ND-18 [R3] 削除直前にサイズが変わると size_mismatch" skipped.
+􀟈  Test "SIGTERM は処理中の 1 件を終えてから止まる" started.
+􀟈  Test "ND-39 [R1] <VOLUMES_ROOT>/<device_id> がただのディレクトリなら not_a_mount_point" started.
+􀟈  Test "書いた後がちょうど 5 MiB になる行では回さない（境界）" started.
+􀟈  Test "要求が 0 件でも正常に終わる（TEST-28）" started.
+􀟈  Test "ロックが取れなければ何もせず 4" started.
+􀟈  Test "RV-03 schema が小数の表記なら malformed_request" started.
+􀟈  Test "RV-02 ファイル名が <request_id>.json の形でなければ rejected/ へ（02a）" started.
+􀟈  Test "RV-06 デバイスが無ければ要求を残す" started.
+􀟈  Test "手書きの要求 JSON は壊さなければ not_a_mount_point まで進む（RV-03 の対照）" started.
+􀟈  Test "RV-05 device_id/relpath が partkey と違えば partkey_mismatch、原本は残る" started.
+􀟈  Test "RV-03 schema が真偽値なら malformed_request" started.
+􀙟  Test "RV-01 [R3] 走行中に reaper.conf が false になれば unlink の直前で止まり、要求を残して何も書かない" skipped.
+􀟈  Test "RV-03 size が真偽値なら malformed_request" started.
+􀟈  Test "実行が終わればロックは外れる（対照）" started.
+􀟈  Test "RV-02 ファイル名と中の request_id が一致すれば not_a_mount_point まで進む（対照）" started.
+􀟈  Test "ND-44 [R1] device_id/relpath が partkey と違えば partkey_mismatch" started.
+􀟈  Test "RV-03 schema が 1 以外なら malformed_request" started.
+􀟈  Test "ND-27 [R1] 同じ request_id の 2 回目は replayed" started.
+􀟈  Test "ログは 5 MiB を超える書き込みの前に .1 へ回る" started.
+􀟈  Test "RV-03 余分なキーがあれば malformed_request" started.
+􀟈  Test "RV-04 processed.log が読めなければ replayed（fail-closed）" started.
+􀟈  Test "RV-02 JSON の request_id がファイル名の stem と違えば rejected/ へ（02b）" started.
+􀟈  Test "64 KiB を超える要求は malformed_request" started.
+􀟈  Test "ND-38 [R1] JSON の request_id がファイル名と違えば rejected/ へ（RV-02b）" started.
+􀟈  Test "ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ" started.
+􀟈  Test case passing 1 argument name → "evil.json" to "ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ" started.
+􀟈  Test case passing 1 argument name → "20260912T090000Z-a5d046dce76cfedc-a1b2c3..json" to "ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ" started.
+􀟈  Test case passing 1 argument name → "20260912T090000Z-a5d046dce76cfedc-A1B2C3.json" to "ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ" started.
+􀟈  Test case passing 1 argument name → "20260912T090000Z-a5d046dce76cfedc-a1b2c3.JSON" to "ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ" started.
+􀟈  Test case passing 1 argument name → "20260912T090000Z-a5d046dce76cfedc-a1b2c3.json.bak" to "ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ" started.
+􀟈  Test case passing 1 argument deviceID → ".hidden" to "RV-06 device_id が不正なら not_a_mount_point" started.
+􀟈  Test case passing 1 argument deviceID → "a:b" to "RV-06 device_id が不正なら not_a_mount_point" started.
+􀟈  Test "/Volumes を指す symlink も realpath で拒む" started.
+􀟈  Test case passing 1 argument count → 0 to "RV-03 targets がちょうど 1 要素でなければ malformed_request" started.
+􀟈  Test case passing 1 argument count → 2 to "RV-03 targets がちょうど 1 要素でなければ malformed_request" started.
+􀟈  Test "deviceID が DJIMIC3 なら舞台を作らない" started.
+􀟈  Test "volumesRoot が /Volumes かその下なら舞台を作らない" started.
+􀟈  Test "一時ディレクトリの下で VDT0037 なら通る（対照）" started.
+􀟈  Test case passing 1 argument text → "SCHEMA=1
+DELETE_SOURCE_AUDIO=yes
+VOLUMES_ROOT=<ROOT>
+" to "ND-43 [R1] 不正な値は無効側" started.
+􀟈  Test case passing 1 argument text → "SCHEMA=2
+DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=<ROOT>
+" to "ND-43 [R1] 不正な値は無効側" started.
+􀟈  Test case passing 1 argument text → "SCHEMA=1
+DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=rel
+" to "ND-43 [R1] 不正な値は無効側" started.
+􀟈  Test case passing 1 argument text → "SCHEMA=1
+delete_source_audio=true
+VOLUMES_ROOT=<ROOT>
+" to "ND-43 [R1] 書式に合わない行は無効側" started.
+􀟈  Test case passing 1 argument text → "SCHEMA = 1
+DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=<ROOT>
+" to "ND-43 [R1] 書式に合わない行は無効側" started.
+􀟈  Test case passing 1 argument text → "SCHEMA=1
+VOLUMES_ROOT=<ROOT>
+" to "ND-43 [R1] 必須のキーが欠けていたら無効側" started.
+􀟈  Test case passing 1 argument text → "DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=<ROOT>
+" to "ND-43 [R1] 必須のキーが欠けていたら無効側" started.
+􀟈  Test case passing 1 argument targetExists → true to "F-73 reaper.log が symlink なら辿った先に書かない（無い先を作らない）" started.
+􀟈  Test case passing 1 argument targetExists → false to "F-73 reaper.log が symlink なら辿った先に書かない（無い先を作らない）" started.
+􀟈  Test case passing 2 arguments text → "SCHEMA=1
+DELETE_SOURCE_AUDIO=false
+VOLUMES_ROOT=/x
+", expected → "lock1" to "RV-01 unlink の直前に読み直した reaper.conf でロック 1 が閉じていれば消さない（走行中の無効化）" started.
+􀟈  Test case passing 2 arguments text → "<none>", expected → "conf_invalid" to "RV-01 unlink の直前に読み直した reaper.conf でロック 1 が閉じていれば消さない（走行中の無効化）" started.
+􀟈  Test case passing 2 arguments text → "SCHEMA=1
+DELETE_SOURCE_AUDIO=true
+EXTRA=1
+", expected → "conf_invalid" to "RV-01 unlink の直前に読み直した reaper.conf でロック 1 が閉じていれば消さない（走行中の無効化）" started.
+􀟈  Test case passing 2 arguments text → "SCHEMA=1
+DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=/x
+", expected → "open" to "RV-01 ロック 1 の判定: true は開き、false は lock1、無い・空・不正は conf_invalid" started.
+􀟈  Test case passing 2 arguments text → "SCHEMA=1
+DELETE_SOURCE_AUDIO=false
+VOLUMES_ROOT=/x
+", expected → "lock1" to "RV-01 ロック 1 の判定: true は開き、false は lock1、無い・空・不正は conf_invalid" started.
+􀟈  Test case passing 2 arguments text → "<none>", expected → "conf_invalid" to "RV-01 ロック 1 の判定: true は開き、false は lock1、無い・空・不正は conf_invalid" started.
+􀟈  Test case passing 2 arguments text → "", expected → "conf_invalid" to "RV-01 ロック 1 の判定: true は開き、false は lock1、無い・空・不正は conf_invalid" started.
+􀟈  Test case passing 2 arguments text → "SCHEMA=1
+DELETE_SOURCE_AUDIO=yes
+", expected → "conf_invalid" to "RV-01 ロック 1 の判定: true は開き、false は lock1、無い・空・不正は conf_invalid" started.
+􀟈  Test case passing 1 argument targetExists → true to "F-73 processed.log が symlink なら辿った先に追記しない（無い先を作らない）" started.
+􀟈  Test case passing 1 argument targetExists → false to "F-73 processed.log が symlink なら辿った先に追記しない（無い先を作らない）" started.
+􀟈  Test case passing 1 argument arguments → [] to "引数が不正なら 2（キューに触らない）" started.
+􀟈  Test case passing 1 argument arguments → ["--help"] to "引数が不正なら 2（キューに触らない）" started.
+􀟈  Test case passing 1 argument arguments → ["-h"] to "引数が不正なら 2（キューに触らない）" started.
+􀟈  Test case passing 1 argument arguments → ["--home"] to "引数が不正なら 2（キューに触らない）" started.
+􀟈  Test case passing 1 argument arguments → ["--home", "<HOME>", "--x"] to "引数が不正なら 2（キューに触らない）" started.
+􀟈  Test case passing 1 argument arguments → ["--version", "x"] to "引数が不正なら 2（キューに触らない）" started.
+􀟈  Test case passing 3 arguments line → "A", processed → true, deleted → false to "F-80 processed.log の行を読む（パラメータ化: ID だけ・<ID> DELETED・<ID> SOURCE_IDENTITY_MISMATCH・区切りが 2 つ・DELETED の小文字）" started.
+􀟈  Test case passing 3 arguments line → "A DELETED", processed → true, deleted → true to "F-80 processed.log の行を読む（パラメータ化: ID だけ・<ID> DELETED・<ID> SOURCE_IDENTITY_MISMATCH・区切りが 2 つ・DELETED の小文字）" started.
+􀟈  Test case passing 3 arguments line → "A SOURCE_IDENTITY_MISMATCH", processed → true, deleted → false to "F-80 processed.log の行を読む（パラメータ化: ID だけ・<ID> DELETED・<ID> SOURCE_IDENTITY_MISMATCH・区切りが 2 つ・DELETED の小文字）" started.
+􀟈  Test case passing 3 arguments line → "A DELETED x", processed → true, deleted → false to "F-80 processed.log の行を読む（パラメータ化: ID だけ・<ID> DELETED・<ID> SOURCE_IDENTITY_MISMATCH・区切りが 2 つ・DELETED の小文字）" started.
+􀟈  Test case passing 3 arguments line → "A deleted", processed → true, deleted → false to "F-80 processed.log の行を読む（パラメータ化: ID だけ・<ID> DELETED・<ID> SOURCE_IDENTITY_MISMATCH・区切りが 2 つ・DELETED の小文字）" started.
+􀟈  Test case passing 1 argument suffix → "" to "F-80 RV-04 DELETED と記録していない行（ID だけ・MISMATCH）は従来どおり replayed（パラメータ化）" started.
+􀟈  Test case passing 1 argument suffix → " SOURCE_IDENTITY_MISMATCH" to "F-80 RV-04 DELETED と記録していない行（ID だけ・MISMATCH）は従来どおり replayed（パラメータ化）" started.
+􁁛  Test "値は §8.15 のとおりに引用される" with 9 test cases passed after 7.143 seconds.
+􁁛  Test "フィールドは順に k=v で足される" passed after 7.240 seconds.
+􁁛  Test "INFO は 5 桁左寄せ（INFO と 2 つの空白の後に event）" passed after 7.240 seconds.
+􁁛  Test "要求が 0 件でも正常に終わる（TEST-28）" passed after 7.441 seconds.
+􁁛  Test "RV-03 schema が小数の表記なら malformed_request" passed after 7.441 seconds.
+􁁛  Test "手書きの要求 JSON は壊さなければ not_a_mount_point まで進む（RV-03 の対照）" passed after 7.441 seconds.
+􁁛  Test "ND-39 [R1] <VOLUMES_ROOT>/<device_id> がただのディレクトリなら not_a_mount_point" passed after 7.441 seconds.
+􁁛  Test "RV-03 schema が真偽値なら malformed_request" passed after 7.441 seconds.
+􁁛  Test "RV-03 size が真偽値なら malformed_request" passed after 7.441 seconds.
+􁁛  Test "RV-02 ファイル名と中の request_id が一致すれば not_a_mount_point まで進む（対照）" passed after 7.441 seconds.
+􁁛  Test "RV-05 device_id/relpath が partkey と違えば partkey_mismatch、原本は残る" passed after 7.441 seconds.
+􁁛  Test "RV-02 ファイル名が <request_id>.json の形でなければ rejected/ へ（02a）" passed after 7.441 seconds.
+􁁛  Test "実行が終わればロックは外れる（対照）" passed after 7.441 seconds.
+􁁛  Test "RV-06 デバイスが無ければ要求を残す" passed after 7.441 seconds.
+􁁛  Test "ロックが取れなければ何もせず 4" passed after 7.441 seconds.
+􁁛  Test "書いた後がちょうど 5 MiB になる行では回さない（境界）" passed after 7.441 seconds.
+􁁛  Test "SIGTERM は処理中の 1 件を終えてから止まる" passed after 7.441 seconds.
+􁁛  Test "ND-44 [R1] device_id/relpath が partkey と違えば partkey_mismatch" passed after 7.441 seconds.
+􁁛  Test "RV-03 schema が 1 以外なら malformed_request" passed after 7.441 seconds.
+􁁛  Test "ND-27 [R1] 同じ request_id の 2 回目は replayed" passed after 7.441 seconds.
+􁁛  Test "ログは 5 MiB を超える書き込みの前に .1 へ回る" passed after 7.441 seconds.
+􁁛  Test "RV-03 余分なキーがあれば malformed_request" passed after 7.441 seconds.
+􁁛  Test "RV-04 processed.log が読めなければ replayed（fail-closed）" passed after 7.441 seconds.
+􁁛  Test "RV-02 JSON の request_id がファイル名の stem と違えば rejected/ へ（02b）" passed after 7.441 seconds.
+􁁛  Test "64 KiB を超える要求は malformed_request" passed after 7.441 seconds.
+􁁛  Test "ND-38 [R1] JSON の request_id がファイル名と違えば rejected/ へ（RV-02b）" passed after 7.441 seconds.
+􁁛  Test "ND-38 [R1] ファイル名が request_id の形でなければ rejected/ へ" with 5 test cases passed after 7.441 seconds.
+􁁛  Test "要求は名前のバイト順に処理される" passed after 7.444 seconds.
+􀟈  Test case passing 1 argument path → "/Volumes" to "volumesRoot が /Volumes かその下なら舞台を作らない" started.
+􀟈  Test case passing 1 argument path → "/Volumes/" to "volumesRoot が /Volumes かその下なら舞台を作らない" started.
+􀟈  Test case passing 1 argument path → "/Volumes/VDT0037" to "volumesRoot が /Volumes かその下なら舞台を作らない" started.
+􁁛  Test "RV-06 device_id が不正なら not_a_mount_point" with 2 test cases passed after 7.444 seconds.
+􁁛  Test "要求が symlink なら malformed_request" passed after 7.450 seconds.
+􁁛  Test "RV-04 replayed は既に在る結果を上書きしない" passed after 7.450 seconds.
+􁁛  Test "RV-03 キーが欠けていれば malformed_request" passed after 7.451 seconds.
+􁁛  Test "ND-44 [R1] partkey の device_id だけが違えば partkey_mismatch" passed after 7.450 seconds.
+􁁛  Test "RV-03 JSON オブジェクトでなければ malformed_request" passed after 7.450 seconds.
+􁁛  Test "RV-03 size が負なら malformed_request" passed after 7.450 seconds.
+􁁛  Test "正規化で順が変わる名前もバイト順に処理される（rejected/ へ退避する名前）" passed after 7.450 seconds.
+􁁛  Test "RV-03 targets がちょうど 1 要素でなければ malformed_request" with 2 test cases passed after 7.450 seconds.
+􁁛  Test "RV-03 mtime が数でなければ malformed_request" passed after 7.450 seconds.
+􁁛  Test ".json で終わらない名前は rejected/ へ" passed after 7.450 seconds.
+􁁛  Test "reaper.conf が 64 KiB を超えたら無効側" passed after 7.450 seconds.
+􁁛  Test "RV-01 DELETE_SOURCE_AUDIO=true なら要求の処理へ進む（対照）" passed after 7.450 seconds.
+􁁛  Test "ND-22 [R1] reaper.conf の DELETE_SOURCE_AUDIO=false なら要求に触らない" passed after 7.450 seconds.
+􁁛  Test "F-81 「.」の直後に結合文字が来る名前も列挙しない（書記素では「.」始まりに見えない）" passed after 7.450 seconds.
+􁁛  Test "F-81 removeRequest は「/」の直後に結合文字が来る名前を消さない（サブディレクトリの中の .json に届かない）" passed after 7.450 seconds.
+􁁛  Test "F-81 ASCII の名前の列挙は変わらない（. 始まりを除き、UTF-8 のバイト順）" passed after 7.450 seconds.
+􁁛  Test "RV-01 DELETE_SOURCE_AUDIO=false なら reaper_disabled reason=lock1 で 0、要求に触らない" passed after 7.450 seconds.
+􁁛  Test "F-81 queue/delete が空なら列挙は 0 件（TEST-28）" passed after 7.450 seconds.
+􁁛  Test "F-81 removeRequest は直下の ASCII の .json を従来どおり消す" passed after 7.450 seconds.
+􁁛  Test "F-73 reaper.log が symlink なら辿った先に書かない（無い先を作らない）" with 2 test cases passed after 7.450 seconds.
+􁁛  Test "F-81 removeRequest は空の名前・「.」・「..」・.json でない名前を消さない（TEST-28）" passed after 7.450 seconds.
+􁁛  Test "F-73 走査は列挙の後に消えていた要求を数えずに次へ進む" passed after 7.450 seconds.
+􁁛  Test "F-73 列挙の後に消えた要求（ENOENT）は何も書かずに飛ばす（partkey の無い結果を書かない）" passed after 7.450 seconds.
+􁁛  Test "RV-01 unlink の直前に読み直した reaper.conf でロック 1 が閉じていれば消さない（走行中の無効化）" with 3 test cases passed after 7.450 seconds.
+􁁛  Test "F-73 processed.log が FIFO でも追記は開くところで止まらずに失敗する" passed after 7.450 seconds.
+􁁛  Test "RV-01 ロック 1 の判定: true は開き、false は lock1、無い・空・不正は conf_invalid" with 5 test cases passed after 7.450 seconds.
+􁁛  Test "reaper.conf が symlink なら無効側" passed after 7.450 seconds.
+􁁛  Test "F-73 対照: 在るのに読めない要求（ディレクトリ）はこれまでどおり malformed_request" passed after 7.450 seconds.
+􁁛  Test "RV-01 走査は unlink の直前でロック 1 が閉じたら残りの要求に進まずに終える（lock1 は 0、それ以外は 2）" passed after 7.450 seconds.
+􁁛  Test "F-73 reaper.log が FIFO でも開くところで止まらない" passed after 7.450 seconds.
+􁁛  Test "RV-13 対照: unlink の直前の読み直しでロック 1 が開いていれば本当に消える" passed after 7.450 seconds.
+􁁛  Test "F-73 processed.log が FIFO なら開くところで止まらずに読めない扱い（どの ID もリプレイ）" passed after 7.450 seconds.
+􁁛  Test "F-73 processed.log が symlink なら辿った先に追記しない（無い先を作らない）" with 2 test cases passed after 7.449 seconds.
+􁁛  Test "RV-01 reaper.conf が FIFO なら開くところで止まらずに conf_invalid（消さない）" passed after 7.450 seconds.
+􁁛  Test "F-73 要求が FIFO なら開くところで止まらずに malformed_request" passed after 7.449 seconds.
+􁁛  Test "ND-43 [R1] 不正な値は無効側" with 3 test cases passed after 7.451 seconds.
+􁁛  Test "F-73 要求が 0 件の走査は 0 件で終了コード 0（TEST-28）" passed after 7.449 seconds.
+􁁛  Test "ND-43 [R1] 書式に合わない行は無効側" with 2 test cases passed after 7.450 seconds.
+􁁛  Test "reaper.conf が無ければ無効側" passed after 7.450 seconds.
+􁁛  Test "ND-43 [R1] 未知のキーは無効側" passed after 7.450 seconds.
+􁁛  Test "ND-43 [R1] 重複したキーは無効側" passed after 7.450 seconds.
+􁁛  Test "RV-01 reaper.conf が不正なら reaper_disabled reason=conf_invalid で 2、要求に触らない" passed after 7.450 seconds.
+􁁛  Test "ND-43 [R1] 必須のキーが欠けていたら無効側" with 2 test cases passed after 7.450 seconds.
+􁁛  Test "RV-00 --version は置き場所の検査より前" passed after 7.449 seconds.
+􁁛  Test "RV-04 replayed の結果を書けなければ要求を残し、拒否のログも出さない" passed after 7.450 seconds.
+􁁛  Test "F-80 append(deleted: true) は <request_id> DELETED を書き、同じ実行の中でも DELETED と分かる（拒否は ID だけ）" passed after 7.449 seconds.
+􁁛  Test "F-80 processed.log が読めなければ、どの ID も DELETED として扱わない（fail-closed は replayed のまま）" passed after 7.449 seconds.
+􁁛  Test "F-80 TEST-28 processed.log が無い・空なら、どの ID も処理済みでも DELETED でもない" passed after 7.449 seconds.
+􁁛  Test "F-80 processed.log の行を読む（パラメータ化: ID だけ・<ID> DELETED・<ID> SOURCE_IDENTITY_MISMATCH・区切りが 2 つ・DELETED の小文字）" with 5 test cases passed after 7.449 seconds.
+􁁛  Test "--version は版だけを出す" passed after 7.450 seconds.
+􁁛  Test "RV-00 --home が無いディレクトリなら 3" passed after 7.450 seconds.
+􁁛  Test "ND-40 [R1] <HOME>/bin 以外の場所からの起動は 3" passed after 7.450 seconds.
+􁁛  Test "/Volumes を指す symlink も realpath で拒む" passed after 4.414 seconds.
+􁁛  Test "deviceID が DJIMIC3 なら舞台を作らない" passed after 4.101 seconds.
+􁁛  Test "volumesRoot が /Volumes かその下なら舞台を作らない" with 3 test cases passed after 3.990 seconds.
+􁁛  Test "一時ディレクトリの下で VDT0037 なら通る（対照）" passed after 3.865 seconds.
+􁁛  Suite "ReaperLog の行" passed after 7.454 seconds.
+􁁛  Suite "reaper の要求ファイルの名前のスカラー単位の判定（F-81）" passed after 7.453 seconds.
+􁁛  Suite "voicedock-reaper の防御（F-73）" passed after 7.453 seconds.
+􁁛  Suite "ReaperBench は実機に触れ得る舞台を拒む" passed after 7.453 seconds.
+􁁛  Test "引数が不正なら 2（キューに触らない）" with 6 test cases passed after 7.517 seconds.
+􁁛  Test "RV-00 <HOME>/bin/voicedock-reaper が symlink なら 3" passed after 7.652 seconds.
+􁁛  Test "RV-00 <HOME> が .app/Contents/ の下なら 3" passed after 7.749 seconds.
+􁁛  Test "RV-00 別の --home を渡すと 3" passed after 7.856 seconds.
+􁁛  Test "ND-40 [R1] バンドル内の reaper を起動しても何も消えず何も書かれない" passed after 8.000 seconds.
+􁁛  Suite "voicedock-reaper の引数と置き場所（層 R1）" passed after 8.004 seconds.
+􁁛  Test "F-80 RV-04 DELETED を書き直せなければ要求を残して次へ（結果も processed.log の追記もログも無い・消し直さない）" passed after 8.018 seconds.
+􁁛  Test "F-80 RV-04 前回 DELETED と記録した要求が残っていれば、結果 DELETED（detail = relpath）を書き直して要求を消す（消し直さない・拒否のログを出さない）" passed after 8.247 seconds.
+􁁛  Test "F-80 RV-04 DELETED の書き直しでも、同じ名前の結果が既に在れば上書きしない（要求だけ消す）" passed after 8.350 seconds.
+􁁛  Test "F-80 RV-04 DELETED と記録していない行（ID だけ・MISMATCH）は従来どおり replayed（パラメータ化）" with 2 test cases passed after 8.484 seconds.
+􁁛  Suite "ProcessedLog" passed after 8.488 seconds.
+􁁛  Test "空行と # の行は無視される（対照）" passed after 8.582 seconds.
+􁁛  Suite "reaper.conf とロック 1（層 R1）" passed after 8.585 seconds.
+􁁛  Test "RV-02 request_id が文字列でなければ rejected/ へ（02b）" passed after 8.716 seconds.
+􁁛  Test ". で始まる名前は無視する" passed after 8.807 seconds.
+􁁛  Suite "voicedock-reaper の走査と要求（層 R1）" passed after 8.813 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 8.813 seconds.
+􀟈  Test run started.
+􀄵  Testing Library Version: 2084
+􀄵  Target Platform: arm64e-apple-macos14.0
+􀟈  Suite "DeletionPolicy の ND（層 A）" started.
+􀟈  Suite "削除の流れの ND（層 A）" started.
+􀟈  Suite "根拠 B の ND（層 A）" started.
+􀟈  Test "ND-08 [A] 保存後に Raw ノートが消えた・改変されたら消さない（パラメータ化: 削除・追記）" started.
+􀟈  Test "ND-32 [A] Part の transcript が無いか壊れていれば消さない（パラメータ化: 列が NULL・ファイルが無い・JSON が壊れている）" started.
+􀟈  Test "ND-31 [A] device_id だけが違う鍵では消さない" started.
+􀟈  Test "ND-36 [A] Vault の .obsidian が無ければ（空の Vault）消さない" started.
+􀟈  Test "ND-01 [A] 変換中（NORMALIZING）の Part は消さない" started.
+􀟈  Test "ND-21 [A] Part 0 件の Session では消さない（番犬）" started.
+􀟈  Test "ND-07 [A] Raw ノートの書き込みに失敗（raw_output_path が NULL）なら消さない" started.
+􀟈  Test "ND-46 [A] reaper の後の走査が無い・デバイスが snapshot に無ければ DELETED でも完了にしない（パラメータ化）" started.
+􀟈  Test "ND-23 [A] 事前確認で開いたボリュームが読み取り専用なら消さない（二重確認）" started.
+􀟈  Test "層 A の故障の一覧が空でない" started.
+􀟈  Test "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test "ND-03 [A] 重複は deleteSkippedSource が偽なら消さない" started.
+􀟈  Test "正の対照 [A] 三重ロックを外し本文が揃えば要求ファイルが書かれ RAW_SAVED→SOURCE_DELETING が記録される" started.
+􀟈  Test "ND-21 [A] source_path が nil か空なら消さない（パラメータ化）" started.
+􀟈  Test "ND-42 [A] 古い試行の DELETED 結果（request_id 不一致）は捨て、消えたと判定しない" started.
+􀟈  Test "ND-22 [A] ロック 1 の片方だけ偽でも消さない（パラメータ化: アプリ・reaper.conf）" started.
+􀟈  Test "正の対照 [A] 三重ロックを外し本文が 2 か所に在れば削除条件が真" started.
+􀟈  Test "ND-02 [A] 変換結果の長さがずれて FAILED の Part は消さない" started.
+􀟈  Test "ND-23 [A] デバイスが読み取り専用（観測）なら消さない" started.
+􀟈  Test "ND-45 [A] reaper.conf が無い・不正・symlink なら消さない（不明は安全側。パラメータ化）" started.
+􀟈  Test "ND-41 [A] reaper の署名が不正・版が違えば条件が偽（パラメータ化）" started.
+􀟈  Test "ND-41 [A] 署名が不正・版が違えば reaper を起動しない（パラメータ化）" started.
+􀟈  Test "ND-47 [A] 接続中で readOnly が nil（観測できない）なら要求を書かない" started.
+􀟈  Test "ND-04 [A] whisper の失敗で FAILED の Part は消さない" started.
+􀟈  Test "正の対照 [A] 無音の SKIPPED はロック B を開けると要求が 1 件書かれ SKIPPED のまま" started.
+􀟈  Test "ND-34 [A] 無音でも transcript が無いか壊れていれば消さない（パラメータ化）" started.
+􀟈  Test "ND-26 [A] bin/voicedock-reaper が無ければ要求の条件が偽" started.
+􀟈  Test case passing 1 argument change → "削除" to "ND-08 [A] 保存後に Raw ノートが消えた・改変されたら消さない（パラメータ化: 削除・追記）" started.
+􀟈  Test "ND-33 [A] SOURCE_MISSING の SKIPPED はロックを開けても消さない" started.
+􀟈  Test case passing 1 argument fault → "列が NULL" to "ND-32 [A] Part の transcript が無いか壊れていれば消さない（パラメータ化: 列が NULL・ファイルが無い・JSON が壊れている）" started.
+􀟈  Test case passing 1 argument change → "追記" to "ND-08 [A] 保存後に Raw ノートが消えた・改変されたら消さない（パラメータ化: 削除・追記）" started.
+􀟈  Test "ND-06 [A] 無音は deleteSkippedSource が偽なら消さない" started.
+􀟈  Test "ND-09 [A] Raw ノートの鍵に当該 Part が無ければ消さない" started.
+􀟈  Test case passing 1 argument fault → "ファイルが無い" to "ND-32 [A] Part の transcript が無いか壊れていれば消さない（パラメータ化: 列が NULL・ファイルが無い・JSON が壊れている）" started.
+􀟈  Test "ND-05 [A] whisper のタイムアウトで FAILED の Part は消さない" started.
+􀟈  Test "正の対照 [A] 重複は双子の本文が揃えばロック B で要求が 1 件（重複の側に）" started.
+􀟈  Test "ND-35 [A] 重複は双子の本文が Vault で確認できなければ消さない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → "走査が古い" to "ND-46 [A] reaper の後の走査が無い・デバイスが snapshot に無ければ DELETED でも完了にしない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → "デバイスが無い" to "ND-46 [A] reaper の後の走査が無い・デバイスが snapshot に無ければ DELETED でも完了にしない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → "JSON が壊れている" to "ND-32 [A] Part の transcript が無いか壊れていれば消さない（パラメータ化: 列が NULL・ファイルが無い・JSON が壊れている）" started.
+􀟈  Test case passing 1 argument fault → "snapshot が無い" to "ND-46 [A] reaper の後の走査が無い・デバイスが snapshot に無ければ DELETED でも完了にしない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → .normalizing to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .normalizeVerifyFailed to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .whisperFailed to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument value → nil to "ND-21 [A] source_path が nil か空なら消さない（パラメータ化）" started.
+􀟈  Test case passing 1 argument side → "アプリ" to "ND-22 [A] ロック 1 の片方だけ偽でも消さない（パラメータ化: アプリ・reaper.conf）" started.
+􀟈  Test case passing 1 argument side → "reaper.conf" to "ND-22 [A] ロック 1 の片方だけ偽でも消さない（パラメータ化: アプリ・reaper.conf）" started.
+􀟈  Test case passing 1 argument fault → .whisperTimeout to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument value → "" to "ND-21 [A] source_path が nil か空なら消さない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → .noSpeechLockB to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .rawOutputPathNil to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → "署名" to "ND-41 [A] 署名が不正・版が違えば reaper を起動しない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → "署名" to "ND-41 [A] reaper の署名が不正・版が違えば条件が偽（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → "無い" to "ND-45 [A] reaper.conf が無い・不正・symlink なら消さない（不明は安全側。パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → .rawNoteRemoved to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → "版" to "ND-41 [A] 署名が不正・版が違えば reaper を起動しない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → "版" to "ND-41 [A] reaper の署名が不正・版が違えば条件が偽（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → "不正" to "ND-45 [A] reaper.conf が無い・不正・symlink なら消さない（不明は安全側。パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → .rawNoteTampered to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .keyMissing to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → "symlink" to "ND-45 [A] reaper.conf が無い・不正・symlink なら消さない（不明は安全側。パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → .sourcePathNil to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .sourcePathEmpty to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .appLockOff to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .confLockOff to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .readOnlyObserved to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument change → "消す" to "ND-34 [A] 無音でも transcript が無いか壊れていれば消さない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → .readOnlyHandle to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .reaperMissing to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument change → "壊す" to "ND-34 [A] 無音でも transcript が無いか壊れていれば消さない（パラメータ化）" started.
+􀟈  Test case passing 1 argument fault → .otherDeviceKey to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .transcriptPathNil to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .transcriptMissing to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .transcriptBroken to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .emptyVault to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .signatureInvalid to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .versionMismatch to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .confMissing to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .confInvalid to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .emptySession to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument fault → .staleSnapshot to "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" started.
+􀟈  Test case passing 1 argument change → "Raw ノートを消す" to "ND-35 [A] 重複は双子の本文が Vault で確認できなければ消さない（パラメータ化）" started.
+􀟈  Test case passing 1 argument change → "鍵を置き換える" to "ND-35 [A] 重複は双子の本文が Vault で確認できなければ消さない（パラメータ化）" started.
+􀟈  Test case passing 1 argument change → "transcript を消す" to "ND-35 [A] 重複は双子の本文が Vault で確認できなければ消さない（パラメータ化）" started.
+􁁛  Test "層 A の故障の一覧が空でない" passed after 1.283 seconds.
+􁁛  Test "ND-07 [A] Raw ノートの書き込みに失敗（raw_output_path が NULL）なら消さない" passed after 1.283 seconds.
+􁁛  Test "ND-01 [A] 変換中（NORMALIZING）の Part は消さない" passed after 1.283 seconds.
+􁁛  Test "ND-36 [A] Vault の .obsidian が無ければ（空の Vault）消さない" passed after 1.283 seconds.
+􁁛  Test "ND-21 [A] Part 0 件の Session では消さない（番犬）" passed after 1.283 seconds.
+􁁛  Test "ND-32 [A] Part の transcript が無いか壊れていれば消さない（パラメータ化: 列が NULL・ファイルが無い・JSON が壊れている）" with 3 test cases passed after 1.283 seconds.
+􁁛  Test "ND-31 [A] device_id だけが違う鍵では消さない" passed after 1.283 seconds.
+􁁛  Test "ND-23 [A] 事前確認で開いたボリュームが読み取り専用なら消さない（二重確認）" passed after 1.283 seconds.
+􁁛  Test "ND-08 [A] 保存後に Raw ノートが消えた・改変されたら消さない（パラメータ化: 削除・追記）" with 2 test cases passed after 1.283 seconds.
+􁁛  Test "ND-46 [A] reaper の後の走査が無い・デバイスが snapshot に無ければ DELETED でも完了にしない（パラメータ化）" with 3 test cases passed after 1.283 seconds.
+􁁛  Test "正の対照 [A] 三重ロックを外し本文が揃えば要求ファイルが書かれ RAW_SAVED→SOURCE_DELETING が記録される" passed after 1.283 seconds.
+􁁛  Test "ND-22 [A] ロック 1 の片方だけ偽でも消さない（パラメータ化: アプリ・reaper.conf）" with 2 test cases passed after 1.283 seconds.
+􁁛  Test "ND-42 [A] 古い試行の DELETED 結果（request_id 不一致）は捨て、消えたと判定しない" passed after 1.283 seconds.
+􁁛  Test "ND-02 [A] 変換結果の長さがずれて FAILED の Part は消さない" passed after 1.283 seconds.
+􁁛  Test "ND-21 [A] source_path が nil か空なら消さない（パラメータ化）" with 2 test cases passed after 1.283 seconds.
+􁁛  Test "正の対照 [A] 三重ロックを外し本文が 2 か所に在れば削除条件が真" passed after 1.283 seconds.
+􁁛  Test "ND-03 [A] 重複は deleteSkippedSource が偽なら消さない" passed after 1.283 seconds.
+􁁛  Test "ND-23 [A] デバイスが読み取り専用（観測）なら消さない" passed after 1.283 seconds.
+􁁛  Test "ND-41 [A] reaper の署名が不正・版が違えば条件が偽（パラメータ化）" with 2 test cases passed after 1.283 seconds.
+􁁛  Test "ND-41 [A] 署名が不正・版が違えば reaper を起動しない（パラメータ化）" with 2 test cases passed after 1.283 seconds.
+􁁛  Test "ND-45 [A] reaper.conf が無い・不正・symlink なら消さない（不明は安全側。パラメータ化）" with 3 test cases passed after 1.283 seconds.
+􁁛  Test "ND-47 [A] 接続中で readOnly が nil（観測できない）なら要求を書かない" passed after 1.283 seconds.
+􁁛  Test "ND-04 [A] whisper の失敗で FAILED の Part は消さない" passed after 1.283 seconds.
+􁁛  Test "正の対照 [A] 無音の SKIPPED はロック B を開けると要求が 1 件書かれ SKIPPED のまま" passed after 1.283 seconds.
+􁁛  Test "ND-34 [A] 無音でも transcript が無いか壊れていれば消さない（パラメータ化）" with 2 test cases passed after 1.283 seconds.
+􁁛  Test "ND-26 [A] bin/voicedock-reaper が無ければ要求の条件が偽" passed after 1.283 seconds.
+􁁛  Test "ND-33 [A] SOURCE_MISSING の SKIPPED はロックを開けても消さない" passed after 1.283 seconds.
+􁁛  Test "ND-05 [A] whisper のタイムアウトで FAILED の Part は消さない" passed after 1.340 seconds.
+􁁛  Test "層 A の全故障で要求ファイルが書かれない（パラメータ化: 下の `LayerAFault.allCases`）" with 27 test cases passed after 1.343 seconds.
+􁁛  Suite "削除の流れの ND（層 A）" passed after 1.343 seconds.
+􁁛  Test "ND-06 [A] 無音は deleteSkippedSource が偽なら消さない" passed after 1.344 seconds.
+􁁛  Test "ND-09 [A] Raw ノートの鍵に当該 Part が無ければ消さない" passed after 1.344 seconds.
+􁁛  Suite "DeletionPolicy の ND（層 A）" passed after 1.344 seconds.
+􁁛  Test "正の対照 [A] 重複は双子の本文が揃えばロック B で要求が 1 件（重複の側に）" passed after 1.356 seconds.
+􁁛  Test "ND-35 [A] 重複は双子の本文が Vault で確認できなければ消さない（パラメータ化）" with 3 test cases passed after 1.356 seconds.
+􁁛  Suite "根拠 B の ND（層 A）" passed after 1.357 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.357 seconds.

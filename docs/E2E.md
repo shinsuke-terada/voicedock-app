@@ -136,7 +136,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | # | シナリオ | 削除 | 判定 | 記録 |
 |---|---|---|---|---|
 | E2E-01 | 1 本を通しで | OFF | ✅ PASS | §3.1 |
-| E2E-02 | コピー中に抜く | OFF | ⬜ 未実施 | §3.2 |
+| E2E-02 | コピー中に抜く | OFF | ✅ PASS | §3.2 |
 | E2E-03 | 文字起こし中に抜く | OFF | ✅ PASS | §3.3 |
 | E2E-04 | Vault を利用不可にする | OFF | ✅ PASS | §3.4 |
 | E2E-05 | 抜き挿しを 6 回以上 | OFF | ✅ PASS | §3.5 |
@@ -287,11 +287,197 @@ Daily ノート `## Timeline` の見出し（単一チャンクの代替経路�
 #### 記録
 6 の `diff` の**全文**（空なら `（差分なし）` と書いてコマンドと終了コードを貼る）、[C-5] の前後、`copy_failed` の行（`grep copy_failed "$VD_HOME/logs/app.log"`）、[C-10] の inbox の 2 つの件数。
 
+実施: 2026-09-25 15:02〜15:11。DEV=DJIMIC3。削除 OFF（14:57:40 `deletion_disabled`。ロック 1・2-A・2-B とも掛かった状態）。`$BACKUP=$HOME/VoiceDockE2E-ON`、`$VAULT=<HOME>/VoiceDockTestVault`。アプリは `make app` のビルド 407（develop `ed0fba4`）。
+新しい録音は **5 本**（利用者が今回のために録ったもの。約 30 分 ×2・28 分・7.4 分・3.6 分。合計約 855 MB）。
+
+**抜いた時機（手順書からの逸脱）**: 手順 4 の「コピーが始まってから 30 秒待って抜く」ではなく、**最初の `copy_completed` が出た直後に抜いた**（利用者の決定）。
+過去のログで 84 MB の 1 本を含む走査が 7.3 秒で終わっており、30 秒待つと全部コピーし終えて空振りするおそれがあったため。
+実際のコピーは毎秒約 12 MB（30 分・259 MB の 1 本に約 20 秒）で、抜いたのは 2 本目（MIC026）のコピーが始まって約 1 秒後。「コピー中に抜く」の条件は満たしている。
+[C-7]（前）は、手順 3 を自動にした: 挿す前に `until … read-only …; find … | tee "$BACKUP/e2e02-before.txt"` を待たせ、マウントの直後に取った（抜く瞬間にログだけを見ていられるように）。
+
+手順 1（挿す前の [C-1]・[C-5]。`zsh: command not found: #` はコメント行によるもので結果に影響しない）:
+
 ```text
+terada@teramacminim4 voicedock_app % export VD_HOME="$HOME/Library/Application Support/VoiceDock"
+export VD_DB="$VD_HOME/voicedock.sqlite"
+export VAULT="/Users/terada/VoiceDockTestVault"
+export DEV="DJIMIC3"
+export BACKUP="$HOME/VoiceDockE2E-ON"
+date
+# [C-1]
+sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;" ; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions GROUP BY status ORDER BY status;"
+# [C-5]
+find "$VD_HOME/inbox" "$VD_HOME/staging" -type f | sort ; du -sh "$VD_HOME/inbox" "$VD_HOME/staging"
+Fri Sep 25 14:58:46 JST 2026
+zsh: command not found: #
+COMPLETED|45
+SKIPPED|5
+COMPLETED|4
+zsh: command not found: #
+  0B    /Users/terada/Library/Application Support/VoiceDock/inbox
+  0B    /Users/terada/Library/Application Support/VoiceDock/staging
 ```
 
+見張り（別のターミナル。挿してから抜くまで）:
+```text
+terada@teramacminim4 voicedock_app % tail -n 0 -f "$HOME/Library/Application Support/VoiceDock/logs/app.log" | grep --line-buffered -E 'part_discovered|copy_completed|copy_failed'
+2026-09-25T15:02:40+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav duration_s=1800.15
+2026-09-25T15:02:40+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav bytes=259254376 recopy=false
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav reason=read_error
+```
+
+手順 3 の [C-7]（前。`$BACKUP/e2e02-before.txt` をエージェントが `cat` した内容）:
+```text
+242289736 1790310126 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav
+259254376 1790307880 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav
+259254376 1790311810 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav
+31047496 1790313610 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav
+63852136 1790309680 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav
+84317416 1790260494 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC024_20260924_233455_orig.wav
+```
+
+手順 5（抜いた直後の [C-5]・[C-2]。[C-2] の `tail -n 200` のうち、14:57:40 より前の行（前日の試験の行）は省いた）:
+```text
+date; find "$VD_HOME/inbox" "$VD_HOME/staging" -type f | sort ; du -sh "$VD_HOME/inbox" "$VD_HOME/staging"; tail -n 200 "$VD_HOME/logs/app.log"
+Fri Sep 25 15:03:57 JST 2026
+  0B    /Users/terada/Library/Application Support/VoiceDock/inbox
+  0B    /Users/terada/Library/Application Support/VoiceDock/staging
+…（14:57:40 より前の行は省略）
+2026-09-25T14:57:40+09:00 INFO  deletion_disabled
+2026-09-25T15:02:40+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav duration_s=1800.15
+2026-09-25T15:02:40+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav bytes=259254376 recopy=false
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 INFO  scan_completed devices=1 copied=1 elapsed_s=24.9
+2026-09-25T15:02:41+09:00 WARNING volume_skipped name=DJIMIC3 reason=not_listable
+2026-09-25T15:02:43+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav in_bytes=259254376 out_bytes=57608896 elapsed_s=3.4
+2026-09-25T15:02:58+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav elapsed_s=8.5 chars=376 rtf=0.005 speech_ratio=0.499
+2026-09-25T15:02:58+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav speakers=2 elapsed_s=6.6
+2026-09-25T15:02:58+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=15 bytes=13017
+2026-09-25T15:02:58+09:00 INFO  session_reopened session_key=DJIMIC3:20260925 regenerated_count=16
+2026-09-25T15:02:58+09:00 INFO  session_merged session_key=DJIMIC3:20260925 parts=15 excluded=1 chars=3966
+2026-09-25T15:03:01+09:00 INFO  llm_server_started port=64848 elapsed_s=2.1
+2026-09-25T15:03:51+09:00 INFO  llm_completed session_key=DJIMIC3:20260925 chunks=3 elapsed_s=50.3
+2026-09-25T15:03:51+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=8120
+2026-09-25T15:03:51+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260925 reason=delete_source_audio_disabled
+2026-09-25T15:03:51+09:00 INFO  llm_server_stopped port=64848
+```
+
+手順 6（挿し直し → [C-8]・[C-7]（後）→ `diff`）。**`diff` は（差分なし）、`exit=0`**。貼り付けの際に `/sbin/mount|` と `'*.wav'-exec` の空白が 1 つ落ちているが、打ったコマンドは手順 1 と同じ形:
+```text
+terada@teramacminim4 voicedock_app % until /sbin/mount | grep -F "/Volumes/$DEV" | grep -q read-only; do sleep 0.3; done; date; /sbin/mount| grep -F "/Volumes/$DEV"; find "/Volumes/$DEV" -type f -name '*.wav'-exec stat -f '%z %m %N' {} \; | sort | tee "$BACKUP/e2e02-after.txt"; diff "$BACKUP/e2e02-before.txt" "$BACKUP/e2e02-after.txt"; echo "exit=$?"
+Fri Sep 25 15:05:35 JST 2026
+/dev/disk20 on /Volumes/DJIMIC3 (msdos, local, nodev, nosuid, read-only, noowners, noatime, fskit)
+242289736 1790310126 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav
+259254376 1790307880 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav
+259254376 1790311810 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav
+31047496 1790313610 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav
+63852136 1790309680 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav
+84317416 1790260494 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC024_20260924_233455_orig.wav
+exit=0
+terada@teramacminim4 voicedock_app % 
+```
+
+手順 7（最後まで待つ。挿し直した後の `app.log`。エージェントが `grep` で取った）:
+```text
+2026-09-25T15:05:40+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav duration_s=443.19
+2026-09-25T15:05:40+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav bytes=63852136 recopy=false
+2026-09-25T15:05:41+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav in_bytes=63852136 out_bytes=14186176 elapsed_s=0.9
+2026-09-25T15:05:43+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav elapsed_s=2.0 chars=92 rtf=0.005 speech_ratio=0.884
+2026-09-25T15:05:43+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav speakers=3 elapsed_s=0.8
+2026-09-25T15:05:43+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=16 bytes=13488
+2026-09-25T15:05:43+09:00 INFO  session_reopened session_key=DJIMIC3:20260925 regenerated_count=17
+2026-09-25T15:05:43+09:00 INFO  session_merged session_key=DJIMIC3:20260925 parts=16 excluded=1 chars=4058
+2026-09-25T15:05:44+09:00 INFO  llm_server_started port=64929 elapsed_s=1.0
+2026-09-25T15:05:59+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav duration_s=1682.34
+2026-09-25T15:05:59+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav bytes=242289736 recopy=false
+2026-09-25T15:06:19+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav duration_s=1800.15
+2026-09-25T15:06:19+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav bytes=259254376 recopy=false
+2026-09-25T15:06:21+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav duration_s=215.38
+2026-09-25T15:06:21+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav bytes=31047496 recopy=false
+2026-09-25T15:06:21+09:00 INFO  scan_completed devices=1 copied=4 elapsed_s=50.5
+2026-09-25T15:06:39+09:00 INFO  llm_completed session_key=DJIMIC3:20260925 chunks=3 elapsed_s=54.9
+2026-09-25T15:06:39+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=8676
+2026-09-25T15:06:39+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260925 reason=delete_source_audio_disabled
+2026-09-25T15:06:39+09:00 INFO  llm_server_stopped port=64929
+2026-09-25T15:06:43+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav in_bytes=242289736 out_bytes=53838976 elapsed_s=3.4
+2026-09-25T15:07:01+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav elapsed_s=15.8 chars=1229 rtf=0.009 speech_ratio=0.692
+2026-09-25T15:07:01+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav speakers=5 elapsed_s=2.5
+2026-09-25T15:07:01+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=17 bytes=17412
+2026-09-25T15:07:01+09:00 INFO  session_reopened session_key=DJIMIC3:20260925 regenerated_count=18
+2026-09-25T15:07:05+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav in_bytes=259254376 out_bytes=57608896 elapsed_s=3.5
+2026-09-25T15:07:24+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav elapsed_s=16.3 chars=1616 rtf=0.009 speech_ratio=0.999
+2026-09-25T15:07:24+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav speakers=5 elapsed_s=2.7
+2026-09-25T15:07:24+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=18 bytes=22471
+2026-09-25T15:07:24+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav in_bytes=31047496 out_bytes=6896256 elapsed_s=0.4
+2026-09-25T15:07:30+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav elapsed_s=5.0 chars=587 rtf=0.023 speech_ratio=0.882
+2026-09-25T15:07:30+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav speakers=1 elapsed_s=0.5
+2026-09-25T15:07:30+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=19 bytes=24411
+2026-09-25T15:07:30+09:00 INFO  session_merged session_key=DJIMIC3:20260925 parts=19 excluded=1 chars=7490
+2026-09-25T15:07:31+09:00 INFO  llm_server_started port=64968 elapsed_s=1.0
+2026-09-25T15:09:03+09:00 INFO  llm_completed session_key=DJIMIC3:20260925 chunks=4 elapsed_s=92.1
+2026-09-25T15:09:03+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=9691
+2026-09-25T15:09:03+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260925 reason=delete_source_audio_disabled
+2026-09-25T15:09:03+09:00 INFO  llm_server_stopped port=64968
+```
+
+手順 8（[C-1]・[C-5]・[C-7]・`copy_failed`）:
+```text
+date
+sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;" ; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions GROUP BY status ORDER BY status;"
+find "$VD_HOME/inbox" "$VD_HOME/staging" -type f | sort ; du -sh "$VD_HOME/inbox" "$VD_HOME/staging"
+find "/Volumes/$DEV" -type f -name '*.wav' -exec stat -f '%z %m %N' {} \; | sort
+grep copy_failed "$VD_HOME/logs/app.log"
+
+Fri Sep 25 15:09:37 JST 2026
+COMPLETED|50
+SKIPPED|5
+COMPLETED|4
+  0B    /Users/terada/Library/Application Support/VoiceDock/inbox
+  0B    /Users/terada/Library/Application Support/VoiceDock/staging
+242289736 1790310126 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav
+259254376 1790307880 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav
+259254376 1790311810 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav
+31047496 1790313610 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav
+63852136 1790309680 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav
+84317416 1790260494 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC024_20260924_233455_orig.wav
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav reason=read_error
+terada@teramacminim4 voicedock_app %
+```
+
+[C-10]（15:10〜15:11。パネルの写し）:
+```text
+待機中
+最終接続 接続中 (DJIMIC3) · 未処理なし
+デバイスの空き容量 DJIMIC3 27.1 GiB
+元音声の削除: 無効
+
+（詳細・診断 → 状態の詳細）
+Part: DISCOVERED 0 / NORMALIZING 0 / NORMALIZED 0 / TRANSCRIBING 0 / TRANSCRIBED 0 / RAW_WRITING 0 / RAW_SAVED 0 / SOURCE_DELETING 0 / SOURCE_DELETE_PENDING 0 / COMPLETED 50 / SKIPPED 5 / FAILED 0（次回接続時に再試行）
+Session: OPEN 0 / READY 0 / MERGING 0 / MERGED 0 / ANALYZING 0 / ANALYZED 0 / WRITING 0 / SAVED 0 / SOURCE_DELETING 0 / SOURCE_DELETE_PENDING 0 / CLEANUP 0 / COMPLETED 4 / FAILED 0
+未処理: 未処理なし
+削除キュー: 要求 0 件、結果待ち 0 件
+staging: 0.0 GiB / 5.0 GiB
+inbox: 処理待ち 0 件 0.0 GiB、取り残し 0 件 0.0 GiB
+デバイス: DJIMIC3 読み取り専用 空き 27.1 GiB
+```
+
+所見:
+- 抜いた直後: inbox・staging にファイルが無い（`.partial` は消えた）。`copy_failed reason=read_error` が 4 件（コピー中だった MIC026 と、未着手の MIC027〜029）。クラッシュせず、抜く前にコピーを終えていた MIC025 は `raw_note_saved` → `obsidian_saved` → `source_delete_skipped reason=delete_source_audio_disabled` まで進んだ
+- デバイス: 手順 6 の `diff` が空（`exit=0`）。手順 8 の [C-7] も前と同じ 6 行。**全ファイルのサイズと mtime が変わっていない**
+- 再接続: 残りの 4 本を最初からコピーし直し（`copy_completed … recopy=false` が 4 件、`scan_completed copied=4`）、4 本とも `raw_note_saved` を経て Session が `obsidian_saved`・`source_delete_skipped` まで通った。`copy_failed` は抜いた 15:02:41 の 4 件だけで、再接続の後は 0 件。`ERROR` の行は 0
+- [C-10] の inbox は「処理待ち 0 件、取り残し 0 件」
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.3 E2E-03 — 文字起こし中に抜く
 
@@ -1402,9 +1588,9 @@ PLAN 付録 B.3 の E2E-18 の行（取り下げ）。
 
 | # | 条件 | 判定 | 記録 |
 |---|---|---|---|
-| G-1 | 付録 B.1 の ND が全件 PASS（アプリ層・reaper 層とも。正の対照を含む） | ⬜ 未実施 | §4.1 |
+| G-1 | 付録 B.1 の ND が全件 PASS（アプリ層・reaper 層とも。正の対照を含む） | ✅ PASS | §4.1 |
 | G-2 | 付録 B.3 の E2E が全件 PASS（E2E-06 は運用の中で確認してよいが、確認が済むまでゲートは開かない） | ⬜ 未実施 | §2 |
-| G-3 | `.diskImage` のテストが CI か手元で PASS し、その記録が PR にある | ⬜ 未実施 | §4.3 |
+| G-3 | `.diskImage` のテストが CI か手元で PASS し、その記録が PR にある | ✅ PASS | §4.3 |
 | G-4 | 実機で「三重ロックを全部外して 1 日流す」を行った | ⬜ 未実施 | §5 |
 | G-5 | 削除 ON で E2E-01〜09 を再実行した（本書 §6） | ⬜ 未実施 | §6 |
 
@@ -1419,14 +1605,47 @@ PLAN 付録 B.3 の E2E-18 の行（取り下げ）。
 【利用者が行う】リポジトリのルートで `make test-nd` を実行し、全出力を貼る。
 reaper 層のうち R3（ディスクイメージ）の ND は `.diskImage` のテストなので `make test-nd` では走らない。§4.3 の `make test-disk` の出力と合わせて、両方が緑のときに G-1 を `✅` にする。
 
+実施: 2026-09-25（14:52 終了）。develop `ed0fba4`。実機は接続されていない（`ls /Volumes` が `Macintosh HD` だけ）。利用者の許可を得てエージェントが実行した。
+全出力（425 行）は `docs/e2e-logs/2026-09-25-make-test-nd.txt`（出力が長いので、利用者の決定で本文には集計の行だけを貼る）。終了コードは 0、失敗 0。
+R3（ディスクイメージ）の 24 件は `make test-nd` では仕様どおり skip され、§4.3 の `make test-disk` で走って PASS した。
+
 ```text
+$ make test-nd; echo "exit=$?"
+􁁛  Test run with 10 tests in 1 suite passed after 0.309 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 8.813 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.357 seconds.
+exit=0
 ```
 
 ### 4.3 G-3 の記録
 
 【利用者が行う】**実機を物理的に抜いてから**、リポジトリのルートで `make test-disk` を実行し、全出力を貼る（ディスクイメージは `/Volumes` の外に attach される）。同じ出力を PR の本文にも貼る。
 
+実施: 2026-09-25（14:55 終了）。develop `ed0fba4`。実機は接続されていない（実行の直前に `ls /Volumes` が `Macintosh HD` だけであることを確かめた）。利用者の許可を得てエージェントが実行した。
+全出力（9,643 行・約 970 KB）は `docs/e2e-logs/2026-09-25-make-test-disk.txt`（本文と PR の本文には入らない大きさなので、利用者の決定で集計の行だけを貼る）。終了コードは 0、失敗 0。
+`VOICEDOCK_DISK_TESTS=1` なので R3 の Suite（`voicedock-reaper × FAT32（層 R3）`・`… 走行中の無効化 × FAT32（層 R3。F-73）`）も走り、skip は 0 件（`版を直書きしない` の `No test cases found.` の 1 行だけで、これは R3 と無関係）。
+`with 3 known issues` は `GoldenSupportTests` が「違えば記録する」ことを `withKnownIssue` で確かめている 3 件で、想定どおり。
+
 ```text
+$ make test-disk; echo "exit=$?"
+􁁛  Test run with 10 tests in 1 suite passed after 0.313 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 63.484 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.478 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.784 seconds.
+􀢂  Test run with 284 tests in 32 suites passed after 9.704 seconds with 3 known issues.
+􁁛  Test run with 308 tests in 38 suites passed after 0.495 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 31.398 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.486 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 9.311 seconds.
+􁁛  Test run with 847 tests in 88 suites passed after 19.775 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.635 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.685 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 13.482 seconds.
+􁁛  Test run with 203 tests in 19 suites passed after 7.053 seconds.
+􁁛  Test run with 392 tests in 45 suites passed after 1.711 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 9.903 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.730 seconds.
+exit=0
 ```
 
 ## 5. 三重ロックを全部外して 1 日（G-4 の記録）
