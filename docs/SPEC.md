@@ -155,7 +155,7 @@ delete_requested source_deleted source_delete_skipped source_delete_pending disk
 scan_completed volume_skipped file_not_stable copy_completed copy_failed remount_failed
 inbox_orphans_removed imported_keys_added pipeline_paused pipeline_resumed
 llm_server_started llm_server_stopped reaper_run reaper_failed deletion_enabled deletion_disabled
-model_downloaded model_download_failed diagnostics_completed
+model_downloaded model_download_failed diagnostics_completed data_reset
 ```
 
 主な reason / フィールド（逐語。新しい語を足すときはここに足す）:
@@ -184,6 +184,7 @@ model_downloaded model_download_failed diagnostics_completed
   - `deletion_enabled [reason=skipped_source]`（根拠 B の有効化のときだけ reason を付ける）、`deletion_disabled [reason=<失敗した段>]`
   - `normalize_failed` の `reason=input`（16 kHz も inbox の原本も無い）
   - `model_download_failed` の `reason=sha256_mismatch|size_mismatch|http_<code>|network|cancelled|bad_url|bad_file_name|io`
+  - `data_reset count=<消したファイルの数> failed=<消せなかった数>`（起動時のデータの初期化。failed が 0 なら INFO、1 以上なら WARNING）/ `data_reset reason=deletion_enabled|request_not_removed`（WARNING。何も消さなかった。F-95。§8.15）
 
 reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く（§8.9.4）。`LogEvent` には含めない。
 

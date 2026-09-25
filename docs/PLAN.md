@@ -210,6 +210,7 @@ bash 3.2 互換、C ランチャ（ただし「responsible process を保つに�
 ├── state/reaper.lock                # reaper の実行中ロック（flock。§2.1）
 ├── state/app.lock                   # アプリの単一起動のロック（flock。起動の最初に取り、生きている間持つ。reaper.lock とは別。§8.15。F-76）
 ├── run/llama-api-key                # llama-server の起動ごとの API キー（0600。起動のたびに書き直す。§8.5）
+├── run/data-reset-requested         # データの初期化の予約（「詳細・診断」の長押しで書き、次の起動で DB を開く前に消す。§8.12 の 8・§8.15。F-95）
 ├── ui-state.json                    # パネルの状態（「はじめに」のログイン項目の選択・最終接続。§8.12。F-70）
 ├── bin/voicedock-reaper, bin/reaper.conf   # **既定では存在しない**（ロック 2-A）
 ├── models/whisper/, models/vad/, models/llm/, models/.<file>.resume, models/<kind>/.<file>.part
@@ -2613,7 +2614,7 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
    窓は種類（1 回で要約 / 分割して要約（Map）/ まとめ（Reduce））の切り替え・本文の欄（引用符・ダッシュの自動置換を切った `NSTextView`。⌘X・⌘C・⌘V・⌘A・⌘Z を自分で受ける）・「既定に戻す」（下書きだけ）・「保存」を持つ。
    「保存」は変えた種類だけを `ConfigStore.update` で書き、同梱と同じ本文は null にする。違反（CV-60 など）なら書かずに「設定に書けませんでした: …」を出す。閉じたら下書きを捨てる（未保存の確認は出さない）
 7. **元音声の削除**（主画面は「› 元音声の削除  有効／無効」の行。押すと別の画面）: §8.9.8 のロック表示・事前確認・有効化（赤いボタンの 3 秒長押し）・無効化（確認なしの 1 クリック）・無音と重複の削除（同じ長押し）
-8. **詳細・診断**（主画面は行。押すと別の画面。状態の詳細はこの画面にいる間だけ読む）: 状態の詳細（下記）、診断を実行・LLM の疎通確認、過去分の削除・手動で消した分（§8.9.9）、ログと設定ファイルを Finder で表示、設定を読み直す、版。
+8. **詳細・診断**（主画面は行。押すと別の画面。状態の詳細はこの画面にいる間だけ読む）: 状態の詳細（下記）、診断を実行・LLM の疎通確認、過去分の削除・手動で消した分（§8.9.9）、ログと設定ファイルを Finder で表示、設定を読み直す、データの初期化（F-95。赤いボタンの 3 秒の長押しで予約して終了し、次の起動で消す。元音声の削除が有効な間は押せない。§8.15）、版。
    状態の詳細は画面に入ったときと、同じ画面での「設定を読み直す」・後追いの実行の返事の後に読み直す。「再試行」は Worker に要求を積むだけで DB を書き換えるのは次の tick なので、
    押した後に始まった refresh で Worker が idle と観測できたとき（処理中なら終わるのを待つ）に 1 回読み直す（画面を出たら・閉じたら待つのをやめる）。読み込みが重なったら、後から始まった読み込みの結果を残す（F-84）。
    「設定を読み直す」の下には、起動したときの値のまま動いている設定（下の「再起動で反映される設定」）を出す
@@ -2699,12 +2700,21 @@ T-11・T-14 で実装済みの `imported_keys` の表と IngestService の除外
 
 ### 8.15 ライフサイクル・電源・ログ
 
-- **起動**: `<HOME>` と下位ディレクトリを作る（`HomeLayout.createDirectories()`。`bin/` は作らない）→ **単一起動のロック**（F-76）→ 設定を読む（無ければ既定を書く）→ DB を開く（マイグレーション）→ Worker.start()（復旧）→ IngestService.start() → UI
+- **起動**: `<HOME>` と下位ディレクトリを作る（`HomeLayout.createDirectories()`。`bin/` は作らない）→ **単一起動のロック**（F-76）→ 設定を読む（無ければ既定を書く）→ **データの初期化の予約があれば初期化する**（F-95。下記）→ DB を開く（マイグレーション）→ Worker.start()（復旧）→ IngestService.start() → UI
 - **単一起動のロック**（F-76）: 設定・DB・復旧・Worker より前に `<HOME>/state/app.lock`（`HomeLayout.appLock`。reaper.lock とは別）を `FileLock.tryAcquireResult`（待たない。F-84）で取り、アプリが生きている間持つ（fd は O_CLOEXEC なので子プロセスは受け継がない。落ちれば外れる）。
   ほかが持っていれば（`flock` が `EWOULDBLOCK`。`FileLock.Failure.held`）別のインスタンスが動いている（`open -n`、dist/ と /Applications の両方の起動など）: `service_stopping version=… reason=already_running` を 1 行出し、**ほかは何もせず、何も表示せずに**終了する（パネルは先に起動したほうにある。D-7）。
   2 つ目の起動の復旧が 1 つ目の処理中の行を戻すこと・二重の取り込み・whisper と llama-server の同時実行を防ぐ。
   開けない（`open` の `EACCES`・`EISDIR`・`ENOSPC`・`EROFS`・`ELOOP`（symlink）など。`.openFailed(errno:)`）・`flock` が `EWOULDBLOCK` 以外で失敗した（`.lockFailed(errno:)`）ときは、別のインスタンスが動いているとは限らないので黙って終わらず、
   下の「起動に失敗したとき」として本文「単一起動のロック（state/app.lock）を開けません: <段>: errno <n> (<strerror>)」（段は `open` / `flock`）の NSAlert を出して終了する（F-84。ログの行は出さない。DB を開けないときと同じ）
+- **データの初期化**（F-95。利用者の依頼と決定）: 「詳細・診断」の赤いボタン「初期化して終了」の 3 秒の長押し（`HoldToConfirmButton`）で `run/data-reset-requested`（`HomeLayout.dataResetRequest`）を
+  `AtomicFile` で書いて終了する。**元音声の削除が有効な間は押せず**（`showsTrash`。設定エラー中は消す能力が残っていれば）、予約も書かない（`LiveServices.requestDataReset` が消す能力と設定の `deleteSourceAudio` を確かめ直す）。
+  DB は開いたまま消せず（`Store` に閉じる口が無い）、Worker の停止は戻せないので、その場では消さない。自動では再起動しない（利用者が起動し直す）。
+  次の起動は設定を読んだ後・DB を開く前に `DataReset.performIfRequested` を呼ぶ: 予約を `SafeUnlink`（`.run`）で消し（消せなければ何も消さない。起動のたびに消し直さないため）→
+  消す能力が残っているか（`DeletionEnabler.hasRemainingCapability()`）、読めた設定の `deleteSourceAudio` が真なら何も消さない →
+  DB の `-wal`・`-shm` → 本体（`-wal`・`-shm` のどちらかが残れば本体を残す。古い WAL を新しい DB に当てない）→ `inbox`・`staging`・`transcripts/parts`・`analysis` の中身（下位のディレクトリは空になれば消す。symlink は辿らず消さない）→
+  `queue/delete`・`queue/result` の直下の `*.json`。すべて `SafeUnlink` で消す（PT-01 の許可場所は増やさない）。ログは `data_reset`（付録 A.4）。
+  **消さないもの**: `config.json`（Vault・モデルの選択・要約プロンプトを含む）・`ui-state.json`・`models/`・`logs/`・`bin/`・`state/`（reaper の `processed.log` を含む）・`queue/rejected`・`run/` のほかのファイル・Vault のノート。デバイスには触れない。
+  初期化の後は DB に行が無いので、デバイスに残っている録音は次の接続で新しい録音として取り込み直す（同じ日のノートは上書きせず、§8.8 の規則で別の名前に書く）
 - **起動に失敗したとき**（`<HOME>` を作れない・DB を開けない・単一起動のロックを開けない（F-84））: `NSAlert` を 1 枚出して終了する（メニューバーに出さない。パネルからは直せないため）
 - **既知の制限: 時刻帯とログの設定は再起動で反映される**（F-84・issue #119 の G10）: Store・IngestService の時刻帯（Part の開始時刻の解釈・DB の時刻の文字列）と、各部品に配った AppLog（レベル・`unsafeLogContent`・時刻の表記）は起動の手順 8 の値で作り、
   「設定を読み直す」では変わらない（起動時に設定が読めなければ `TimeZone.current`・INFO・本文を出さないのまま）。Worker は tick ごとに今の設定の時刻帯を使う（Session の日付など）。
@@ -2780,7 +2790,7 @@ voicedock の欠陥はほぼ 2 つの形に収まった。**設計・実装・�
 **`SafeUnlink`**（`VDCore/SafeUnlink.swift`。voicedock paths.py:335-421 の強化版）:
 
 ```swift
-public enum SafeUnlinkRoot: Sendable { case inbox, staging, transcripts, analysis, queueDelete, queueResult, models, run, vaultTmp(vault: URL) }
+public enum SafeUnlinkRoot: Sendable { case inbox, staging, transcripts, analysis, queueDelete, queueResult, models, run, database, vaultTmp(vault: URL) }
 public enum SafeUnlink {
     static func remove(_ target: URL, under root: SafeUnlinkRoot, layout: HomeLayout, missingOK: Bool = true) throws
     static func removeEmptyDirectory(_ target: URL, under root: SafeUnlinkRoot, layout: HomeLayout) throws   // rmdir。中身があれば何もしない
@@ -2789,7 +2799,8 @@ public enum SafeUnlink {
 - 検査の順: 対象が絶対パスで `..` を含まない → 親ディレクトリの realpath がルートの realpath の**真の配下か同じ**、かつ対象そのものはルートでない
   （root 自身は消させない。接頭辞だけ一致する兄弟 `data-old` は配下ではない）→ 無ければ `missingOK` なら何もしない → `lstat` で symlink なら拒否（リンクも消さない）→ 通常ファイルでなければ拒否 → `unlink`。
   「`..` を含まない」は Unicode スカラーの `/`（UTF-8 の 0x2F。カーネルと同じ区切り）で分けた要素がちょうど `..` のものが無いこと（書記素で分けると `/` の直後の結合文字で区切りを見落とし、`a/../\u{301}b` の `..` を見逃す。F-81）
-- `queueDelete` / `queueResult` はそのディレクトリ直下の `*.json` だけ（reaper は `SafeUnlink` を使えないので、同じ規則を `voicedock-reaper/Unlinker.swift` の `removeRequest(named:)` が持つ）。`vaultTmp` は名前が `.` で始まり `.tmp` で終わり長さが 5 より大きいものだけ（Vault 内の symlink 経由のディレクトリは許す。voicedock どおり）
+- `queueDelete` / `queueResult` はそのディレクトリ直下の `*.json` だけ（reaper は `SafeUnlink` を使えないので、同じ規則を `voicedock-reaper/Unlinker.swift` の `removeRequest(named:)` が持つ）。`vaultTmp` は名前が `.` で始まり `.tmp` で終わり長さが 5 より大きいものだけ（Vault 内の symlink 経由のディレクトリは許す。voicedock どおり）。
+  `database`（F-95。データの初期化だけが使う）は `<HOME>` 直下の `voicedock.sqlite`・`voicedock.sqlite-wal`・`voicedock.sqlite-shm` の 3 つだけ（`SafeUnlinkRoot.databaseFileNames`）
 - 拒否は `SafeUnlinkError`（プログラムの誤りであり ErrorCode を持たない）。呼び手が文脈に応じて写す
 
 ### 9.3 実装上の禁止事項（PR。voicedock の N を本アプリ向けに引き直した。PolicyTests で検査する）
@@ -3398,7 +3409,7 @@ delete_requested source_deleted source_delete_skipped source_delete_pending disk
 scan_completed volume_skipped file_not_stable copy_completed copy_failed remount_failed
 inbox_orphans_removed imported_keys_added pipeline_paused pipeline_resumed
 llm_server_started llm_server_stopped reaper_run reaper_failed deletion_enabled deletion_disabled
-model_downloaded model_download_failed diagnostics_completed
+model_downloaded model_download_failed diagnostics_completed data_reset
 ```
 
 主な reason / フィールド（逐語。新しい語を足すときはここに足す）:
@@ -3427,6 +3438,7 @@ model_downloaded model_download_failed diagnostics_completed
   - `deletion_enabled [reason=skipped_source]`（根拠 B の有効化のときだけ reason を付ける）、`deletion_disabled [reason=<失敗した段>]`
   - `normalize_failed` の `reason=input`（16 kHz も inbox の原本も無い）
   - `model_download_failed` の `reason=sha256_mismatch|size_mismatch|http_<code>|network|cancelled|bad_url|bad_file_name|io`
+  - `data_reset count=<消したファイルの数> failed=<消せなかった数>`（起動時のデータの初期化。failed が 0 なら INFO、1 以上なら WARNING）/ `data_reset reason=deletion_enabled|request_not_removed`（WARNING。何も消さなかった。F-95。§8.15）
 
 reaper は別のログ（`logs/reaper.log`）に固定のイベントを書く（§8.9.4）。`LogEvent` には含めない。
 
@@ -3846,3 +3858,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-92 | 事 | D-7・§1.2・§6.1・§6.2・§6.3・§6.4（CV-39・CV-60）・§8.5・§8.12・付録 D | （2026-09-25。利用者の依頼と決定: analyze・map・reduce の 3 本を編集できる・アプリ内の別の窓で編集する・保存先は config.json で null は既定）X-46。設定 `llm.analysis.prompts.{analyze,map,reduce}`（既定はすべて null）を足し `schemaVersion` を 3 に（2 → 3 の移行。移行器は 1 段ずつ続けて上げる）。`Analyzer` が `Prompts.overriding(_:)` で上書きを当てる（差し込みの順・修復プロンプト・golden は変えない）。検証 CV-60 を足した（`{custom_instructions}` を必須にするのは、追加の指示が黙って効かなくなるのを防ぐため。長さの上限 1,500 は CV-51 の余白 2048 トークンに system を収めるため）。D-7 の「それ以外の画面は作らない」に、要約プロンプトの編集の窓 1 つだけの例外を足した（`PromptEditorWindowController`。本文の欄は自動置換を切った `NSTextView`）。ログのイベント・エラーコード・遷移の辺・削除の条件は変えない |
 | F-93 | 事 | §10.8・§11.1・付録 F | （2026-09-25。利用者の決定: 本体のライセンスは Apache License 2.0・README は利用者向けに書き直す・同梱物の表示はリポジトリと `.app` の両方に入れる）ライセンスを置いた: `LICENSE`（Apache License 2.0 の全文）・`NOTICE`（Copyright 2026 Shinsuke Terada）・`THIRD_PARTY_NOTICES.md`（whisper.cpp・llama.cpp とその `vendor/` の部品・argmax-oss-swift と swift-argument-parser・GRDB.swift・Yams と LibYAML の MIT / BSD-2-Clause / Apache-2.0 の文を上流からそのまま、話者分離のモデルの CC-BY-4.0 の出典）。MIT などは配布物に著作権表示を含めることを求めるので、`make-app.sh` が 3 つを `Contents/Resources/` に入れ、`Resources/bundle-manifest.txt` に足した（§11.1）。版を上げて表が古くなるのを `LicenseFilesTests` が落とす。README（T-43）は利用者向けだけにし、`## 開発`・`## 状態` を `docs/DEVELOPMENT.md` へ移した（§10.8 の「CI の ND は層 1・2 だけ」「削除に触れる PR では手元の `make test-disk` の結果を貼る」の記述もそちら。T-44 が更新する `## 状態` の表もそちら）。`## 出典`（T-49）は `## ライセンス` にまとめた。ダウンロードするモデル（Whisper・VAD・LLM）は同梱しないので表示の対象外で、README に配布元のライセンスを書く。コード・設定キー・ログ・遷移・削除の条件は変えない |
 | F-94 | 事 | §6.2・§8.1・§8.12・§10.2・付録 D | （2026-09-25。利用者の依頼「デバイスを接続した時のボリュームの名前を VOICEDOCK で固定したい」と決定: 改名は利用者が Finder で行う・変えるのは既定値だけ・既存の config.json は手で直す）`device.includeVolumes` の既定を `["DJIMIC3"]` から `["VOICEDOCK"]` にした（F-81 の既定の名前だけを替える。規則 1 の照合・案内の仕組みは変えない）。「はじめに」の⑤（`Strings.renameInstructions`）と要対応の `deviceNameInvalid` の文言の名前も `VOICEDOCK` にした（後者は既定が 1 つなので「など」を落とした）。**アプリは改名しない**（PR-11・DEV-10 は変えない）。既定値は `config.json` が無いときだけ書くので既存の値は変わらず、利用者が手で `["VOICEDOCK"]` にする（schemaVersion は上げない・移行は足さない）。改名すると device_id が変わる（RK-28）ので、改名前の `DJIMIC3` の Part は削除の対象から外れ、デバイスに残っている録音は改名後の最初の接続で全件を再コピーして `DUPLICATE_CONTENT` になり、`deleteSkippedSource` が真なら双子の本文を確かめた上で根拠 B で消える（§6.2 の説明。判定の式は変えない）。名前は大文字小文字も含めて `VOICEDOCK` と一致させる（`fnmatch` は大文字小文字を区別する）。テストの `DiskImageVolume`・`ReaperBench` は実機の名前として `VOICEDOCK` も拒む（§10.2）。device_id・partkey の例とテストの固定データの `DJIMIC3` は例なので変えない。ログのイベント・エラーコード・遷移の辺・削除の条件は変えない |
+| F-95 | 事 | §2.3・§8.12（8）・§8.15・§9.2・付録 A.4 | （2026-09-25。利用者の依頼「アプリの設定で、データ初期化機能を追加したい。詳細・診断の所に」と決定: 初期化の後は終了して利用者が起動し直す・ログは残す・元音声の削除が有効な間は押せない）「詳細・診断」に「データの初期化」の箱と赤いボタン「初期化して終了」（`HoldToConfirmButton` の 3 秒の長押し）を足した。押すと `run/data-reset-requested`（`HomeLayout.dataResetRequest`）を書いて終了し、次の起動が設定を読んだ後・DB を開く前に `DataReset.performIfRequested` で DB（`-wal`・`-shm` → 本体）と `inbox`・`staging`・`transcripts/parts`・`analysis`・`queue/delete`・`queue/result` の中身を消す（§8.15）。その場で消さないのは、`Store` に閉じる口が無く Worker の停止を戻せないため。削除は `SafeUnlink` だけで行い、ルート `database`（`<HOME>` 直下の DB の 3 つのファイルだけ）を足した（§9.2。PT-01 の許可場所は増やさない）。設定・モデル・ログ・`bin/`・`state/`・`queue/rejected`・Vault のノートは消さない。消す能力が残っているか設定の `deleteSourceAudio` が真なら、予約の時も実行の時も消さない（ログ `data_reset reason=deletion_enabled`）。ログのイベント `data_reset` を足した（付録 A.4）。エラーコード・遷移の辺・削除の条件・設定キーは変えない |

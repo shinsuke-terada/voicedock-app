@@ -67,6 +67,9 @@ final class FakeServices: AppServices {
         var skippedConfirmations: [String] = []
         var disableResult: [String] = []
         var disableCount = 0
+        // F-95
+        var dataResetResult = true
+        var dataResetCount = 0
         var holdDisable = false
         var disableGates: [AsyncStream<Void>.Continuation] = []
         // F-84
@@ -460,6 +463,19 @@ final class FakeServices: AppServices {
             _ = await it.next()
         }
         return state.withLock { $0.disableResult }
+    }
+
+    // MARK: F-95 の差し替えと記録
+
+    /// requestDataReset が返す値
+    func setDataResetResult(_ ok: Bool) { state.withLock { $0.dataResetResult = ok } }
+    var dataResetCount: Int { state.withLock { $0.dataResetCount } }
+
+    func requestDataReset() async -> Bool {
+        state.withLock {
+            $0.dataResetCount += 1
+            return $0.dataResetResult
+        }
     }
 
     /// DB も snapshot も無い <HOME> の状態の詳細（存在しないパスを読むだけ。何も作らない）

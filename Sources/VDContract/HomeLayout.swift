@@ -69,6 +69,8 @@ public struct HomeLayout: Equatable, Sendable {
     public var appLock: URL { stateDirectory.appendingPathComponent("app.lock", isDirectory: false) }
     public var runDirectory: URL { directory("run") }
     public var llamaAPIKeyFile: URL { runDirectory.appendingPathComponent("llama-api-key", isDirectory: false) }
+    /// データの初期化の予約（F-95）。在れば次の起動で DB を開く前に初期化する
+    public var dataResetRequest: URL { runDirectory.appendingPathComponent("data-reset-requested", isDirectory: false) }
     /// ロック 2-A: createDirectories() では作らない。
     public var binDirectory: URL { directory("bin") }
     public var reaperExecutable: URL {

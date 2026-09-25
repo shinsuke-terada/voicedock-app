@@ -1,5 +1,7 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-95。2026-09-25。利用者の決定）「詳細・診断」の「後追い」の下に「データの初期化」の箱（説明・削除が有効な間の注意・赤いボタン「初期化して終了」の 3 秒の長押し・予約の失敗）を足した（`DetailsSection`・`AppModel+DataReset`。PLAN §8.12 の 8・§8.15）。
+
 > （F-94。2026-09-25。利用者の決定）`deviceNameInvalid` の対処の文言を `Finder でデバイスの名前を「VOICEDOCK」に変えてから、つなぎ直してください（VoiceDock はデバイスに書き込みません）` にした（既定の include が `["VOICEDOCK"]` だけなので「など」を落とした。下の表も直した）。テストは `AttentionTextsTests`。
 
 > （F-80・issue #119、2026-09-23。マージ後の追記）(1) 「一覧に在るか」は `SourcePresence.of(_:in:)`（internal）の 1 か所にまとめ、`AttentionEvaluator.sourcePresence` を置き換えた（削除の段と共有。PLAN §8.9.5）。

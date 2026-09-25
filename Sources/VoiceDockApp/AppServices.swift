@@ -56,6 +56,9 @@ protocol AppServices: Sendable {
     // F-92
     /// 要約プロンプトの編集の窓の元（同梱の本文と config.json の上書き）。どちらか読めなければ nil
     func promptSources() async -> (bundled: Prompts, saved: PromptOverrides)?
+    // F-95
+    /// 「データを初期化」の予約（DataReset.request）。元音声の削除が有効な間は予約せず偽。書けなければ偽
+    func requestDataReset() async -> Bool
 }
 
 /// 本番の AppServices（Bootstrap が作った AppContext を読むだけ）。
@@ -145,6 +148,13 @@ struct LiveServices: AppServices {
     func requeueManual() async { await context.worker.requeue(.manual) }
 
     func reloadConfig() async -> ConfigLoadResult { await context.config.load() }
+
+    func requestDataReset() async -> Bool {
+        // 元音声の削除が有効な間は予約しない（F-95。次の起動の実行でも確かめ直す）
+        if await context.enabler.hasRemainingCapability() { return false }
+        if await context.config.current()?.cleanup.deleteSourceAudio == true { return false }
+        return DataReset.request(layout: context.layout)
+    }
 
     func scanNow() async { _ = await context.ingest.scanNow() }
 

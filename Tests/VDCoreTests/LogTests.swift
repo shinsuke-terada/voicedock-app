@@ -43,9 +43,9 @@ struct LogTests {
             "inbox_orphans_removed", "imported_keys_added", "pipeline_paused", "pipeline_resumed",
             "llm_server_started", "llm_server_stopped", "reaper_run", "reaper_failed", "deletion_enabled",
             "deletion_disabled",
-            "model_downloaded", "model_download_failed", "diagnostics_completed",
+            "model_downloaded", "model_download_failed", "diagnostics_completed", "data_reset",
         ]
-        #expect(expected.count == 49)
+        #expect(expected.count == 50)
         #expect(LogEvent.allCases.map(\.rawValue) == expected)
     }
 
