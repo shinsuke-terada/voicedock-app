@@ -7,7 +7,9 @@ Contents/Helpers/whisper-cli
 Contents/Info.plist
 Contents/MacOS/VoiceDock
 Contents/Resources/AppIcon.icns
+Contents/Resources/LICENSE
 Contents/Resources/ModelCatalog.json
+Contents/Resources/NOTICE
 Contents/Resources/SpeakerModels/NOTICE.txt
 Contents/Resources/SpeakerModels/speaker_clusterer/pyannote-v4/W32A32/PldaProjector.mlmodelc/analytics/coremldata.bin
 Contents/Resources/SpeakerModels/speaker_clusterer/pyannote-v4/W32A32/PldaProjector.mlmodelc/coremldata.bin
@@ -29,6 +31,7 @@ Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegm
 Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegmenter.mlmodelc/metadata.json
 Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegmenter.mlmodelc/model.mil
 Contents/Resources/SpeakerModels/speaker_segmenter/pyannote-v3/W8A16/SpeakerSegmenter.mlmodelc/weights/weight.bin
+Contents/Resources/THIRD_PARTY_NOTICES.md
 Contents/Resources/prompts/analyze_ja.txt
 Contents/Resources/prompts/map_ja.txt
 Contents/Resources/prompts/reduce_ja.txt

@@ -7,6 +7,8 @@ import Testing
 /// README.md の読み取り。
 struct Readme: Sendable {
     static let path = "README.md"
+    /// 開発者向けの節の置き場所（F-93 で README から分けた）。
+    static let developmentPath = "docs/DEVELOPMENT.md"
 
     let document: MarkdownDocument
     let text: String
@@ -139,7 +141,7 @@ struct ReadmeTests {
     /// §4.1 の見出しの表（順序込み）。
     static let expectedHeadings: [String] = [
         "# VoiceDock for Mac",
-        "## 何が動いているか",
+        "## できること",
         "## 必要なもの",
         "## インストール",
         "### 1. dmg から入れる",
@@ -148,21 +150,28 @@ struct ReadmeTests {
         "## 使い方",
         "### できあがるもの",
         "### 状況を見る",
+        "### 設定を変える",
         "## 元音声の削除",
         "### 三重ロック",
         "### 削除の根拠",
         "### 有効にする",
         "### 元に戻す",
-        "## 既知の制約",
         "## 困ったとき",
-        "## データの置き場所",
-        "## 保守",
-        "## 開発",
-        "## 状態",
-        "## 出典",
+        "## 既知の制約",
+        "## データと更新",
+        "### データの置き場所",
+        "### バックアップ",
+        "### 更新",
+        "### アンインストール",
+        "## ライセンス",
+        "## 開発者の方へ",
     ]
 
     static func currentPaths() -> [String] { Readme.referencedPaths(Readme.loadedText()).sorted() }
+    static func developmentGuidePaths() -> [String] {
+        let guide = (try? String(contentsOf: PackageRoot.file(Readme.developmentPath), encoding: .utf8)) ?? ""
+        return Readme.referencedPaths(guide).sorted()
+    }
     static func currentMakeTargets() -> [String] { Readme.makeTargets(Readme.loadedText()).sorted() }
     static func currentDiagnosticIDs() -> [String] { Readme.diagnosticIDs(Readme.loadedText()).sorted() }
     static func currentRiskIDs() -> [String] { Readme.riskIDs(Readme.loadedText()).sorted() }
@@ -303,12 +312,31 @@ struct ReadmeTests {
         #expect(!readme.text.contains(word))
     }
 
-    @Test(
-        "主要な文書へのリンクが在る",
-        arguments: ["docs/PLAN.md", "docs/SPEC.md", "docs/E2E.md", "docs/POC.md", "docs/tickets/README.md"])
-    func theReadmeLinksTheKeyDocuments(_ path: String) throws {
+    @Test("README が開発者向けの文書を指す")
+    func theReadmeLinksTheDevelopmentGuide() throws {
         let readme = try Readme.load()
-        #expect(Readme.referencedPaths(readme.text).contains(path))
+        #expect(Readme.referencedPaths(readme.text).contains(Readme.developmentPath))
+    }
+
+    @Test(
+        "主要な文書へのリンクが開発者向けの文書に在る（F-93）",
+        arguments: ["docs/PLAN.md", "docs/SPEC.md", "docs/E2E.md", "docs/POC.md", "docs/tickets/README.md"])
+    func theDevelopmentGuideLinksTheKeyDocuments(_ path: String) throws {
+        let guide = try String(contentsOf: PackageRoot.file(Readme.developmentPath), encoding: .utf8)
+        #expect(Readme.referencedPaths(guide).contains(path))
+    }
+
+    @Test("開発者向けの文書が指すファイルが実在", arguments: ReadmeTests.developmentGuidePaths())
+    func everyPathInTheDevelopmentGuideExists(_ path: String) {
+        #expect(FileManager.default.fileExists(atPath: PackageRoot.file(path).path))
+    }
+
+    @Test("ライセンスの章が本体と同梱物のライセンスを指す（F-93）", arguments: ["LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md"])
+    func theLicenseChapterLinksTheLicenseFiles(_ name: String) throws {
+        let readme = try Readme.load()
+        let body = try readme.document.section("ライセンス").joined(separator: "\n")
+        #expect(body.contains("(" + name + ")"))
+        #expect(body.contains("Apache License 2.0"))
     }
 
     @Test("元に戻す手順が在る")
