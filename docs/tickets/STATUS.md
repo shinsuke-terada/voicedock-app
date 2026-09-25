@@ -195,7 +195,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | F-91 | **（利用者の依頼）** 削除が有効な間のメニューバーの印を、横に並ぶ `trash` から状態の記号の右上の赤い点（`StatusIconBadge`）に。画像はテンプレートのまま、パネルの `trash` と表示の条件は変えない | #172 |
 | F-92 | **X-46。（利用者の依頼）** 要約プロンプト（analyze / map / reduce）を ⚙ → 「要約プロンプトを編集…」の別の窓で編集できるように。`llm.analysis.prompts.*`（null = 同梱）、`schemaVersion` 3（2 → 3 の移行）、CV-60。D-7 に編集の窓 1 つだけの例外 | #172 |
 | F-93 | **（利用者の決定）** 本体のライセンスを Apache License 2.0 に（`LICENSE`・`NOTICE`）。同梱物（whisper.cpp・llama.cpp とその部品・argmax-oss-swift・GRDB・Yams・話者分離のモデル）の著作権表示とライセンス文を `THIRD_PARTY_NOTICES.md` にまとめ、`make-app.sh` が 3 つを `.app` の `Contents/Resources/` に入れる。README を利用者向けに書き直し、`## 開発`・`## 状態` を `docs/DEVELOPMENT.md` へ移した（T-43・T-44 のチケットも合わせた）。issue #139 の残り（実機未確認の文言）は E2E の記録で裏付けが取れた | #176（issue #139） |
-| F-94 | **（利用者の依頼と決定）** 取り込むデバイスの名前の既定（`device.includeVolumes`）を `["DJIMIC3"]` から `["VOICEDOCK"]` に。改名は利用者が Finder で行う（アプリは改名しない）。既存の `config.json` は手で直す（移行なし）。⑤と `deviceNameInvalid` の文言、テストの実機の名前の拒否（`VOICEDOCK` も）、セッション開始のフックの実機の検出も合わせた | （この PR） |
+| F-94 | **（利用者の依頼と決定）** 取り込むデバイスの名前の既定（`device.includeVolumes`）を `["DJIMIC3"]` から `["VOICEDOCK"]` に。改名は利用者が Finder で行う（アプリは改名しない）。既存の `config.json` は手で直す（移行なし）。⑤と `deviceNameInvalid` の文言、テストの実機の名前の拒否（`VOICEDOCK` も）、セッション開始のフックの実機の検出も合わせた | #179（issue #178） |
 
 ## 5. 残っている作業
 
