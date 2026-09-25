@@ -3006,7 +3006,7 @@ jobs:
   CI では `sudo` を使わず、Xcode の版は `make check-toolchain` で確かめるだけにする（`.xcode-version` と開発機の Xcode を利用者がそろえる）
 - `main` のブランチ保護で `check` を必須にする（**非公開リポジトリで GitHub の無料プランだとブランチ保護が使えない**（API が 403）。その場合は T-02 に記録し、「保護した」とは書かない）
 - `.diskImage` のテストは **CI で走らせない**（`VOICEDOCK_DISK_TESTS` を付けない）。ランナーが開発機なので、CI が走るたびに実機が抜いてあることを保証できないため（P0-10 は行わない）。
-  CI の ND は層 1・2 だけになることを README に書き、**削除に触れる PR では、実機を抜いたことを利用者が確かめてから手元で `make test-disk` を回した結果を PR 本文に貼る**ことを必須にする
+  CI の ND は層 1・2 だけになることを `docs/DEVELOPMENT.md` に書き（F-93 で README から移した）、**削除に触れる PR では、実機を抜いたことを利用者が確かめてから手元で `make test-disk` を回した結果を PR 本文に貼る**ことを必須にする
 - `.app` の組み立て・署名・公証は CI で行わない（手元の `make release`。証明書を CI に置かない）
 
 ---
@@ -3019,8 +3019,8 @@ jobs:
 VoiceDock.app/Contents/
 ├── Info.plist          # Resources/Info.plist.template から生成（版は VERSION、ビルド番号は git のコミット数）
 ├── MacOS/VoiceDock     # swift build -c release --arch arm64 --product VoiceDockApp（debug は -c debug）
-├── Helpers/whisper-cli, llama-server, voicedock-reaper    # voicedock-reaper も swift build --product voicedock-reaper
-└── Resources/prompts/*, ModelCatalog.json, AppIcon.icns
+├── Helpers/whisper-cli, llama-server, argmax-cli, voicedock-reaper    # voicedock-reaper も swift build --product voicedock-reaper。argmax-cli は F-89
+└── Resources/prompts/*, ModelCatalog.json, AppIcon.icns, SpeakerModels/, LICENSE, NOTICE, THIRD_PARTY_NOTICES.md    # SpeakerModels/ は F-89、3 つの文書は F-93
 ```
 
 Info.plist の必須キー: `CFBundleIdentifier`、`CFBundleName = VoiceDock`、`CFBundleExecutable = VoiceDock`、`CFBundlePackageType = APPL`、`CFBundleIconFile = AppIcon`、`CFBundleDevelopmentRegion = ja`、`CFBundleShortVersionString`、`CFBundleVersion`、
@@ -3841,3 +3841,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-90 | 誤 | §2（ディレクトリ）・§5.3・§8.4.1・§8.5・§8.9（後始末）・§11.2 | （2026-09-24。話者分離（F-89）のコードレビューを受けた利用者の決定: 話者の前置きは付けたまま LLM に渡す、ほかの指摘もすべて直す）(1) チャンクの切り方と重なりを、LLM に送る行（`話者A: ` の前置きを含む）の文字数で数える（text だけを数えると送る量が 2〜5 割増え `contextSize` を超えうる。話者なしは行 = text なので voicedock と同じ）。(2) 話者分離の途中で落ちたときの `staging/<slug>/diarization.rttm` を、起動時の復旧（TRANSCRIBING の後片付け）と Session の後始末（CLEANUP）でも消す（`HomeLayout.diarizationRTTM(slug:)`。それまでは次の話者分離が起動したときにしか消えず、オフに戻すと staging のフォルダごと残った）。(3) 部品の確かめを `Diarizer.missingParts(paths:)`（static）にし、診断 DR-18 とパネルが仮のタイムアウトの `Diarizer` を作らないようにした。(4) `build-argmax.sh` のフラグの判定を Swift 側（`containsFlag`）と同じ区切りに（後ろに `<` を足した）。(5) `fetch-speaker-models.sh` の「取得済み」は、一覧の全ファイルの sha256 が合い、一覧と NOTICE.txt のほかにファイルが無いときだけ（紛れ込んだファイルを同梱しない）。(6) `RTTMParser` の `\r` の手での除去を消した（`PyText.strip` が落とす）。設定キー・ログのイベント・エラーコード・遷移の辺は変えない |
 | F-91 | 事 | §8.9.8・§8.12 | （2026-09-25。利用者の依頼「ゴミ箱アイコンはダサいので、削除 ON なら波のアイコンに赤ポチを付けるくらいに。他は変えなくて良い」）削除が有効な間のメニューバーの印を、状態の記号の横に並べる `trash` から、状態の記号の右上に重ねる赤い点（`StatusIconBadge`。直径 6pt・`NSColor.systemRed`）に変えた。アイコンの画像はテンプレートのまま 1 枚（明暗・開いている間の強調・非アクティブなディスプレイの減光は AppKit に任せる）で、赤い点は `NSStatusBarButton` に重ねたビューが描く。読み上げの説明は「<状態>。元音声の削除が有効です」。表示の条件（`DeletionPanelState.showsTrash`）とパネルの `trash` は変えない |
 | F-92 | 事 | D-7・§1.2・§6.1・§6.2・§6.3・§6.4（CV-39・CV-60）・§8.5・§8.12・付録 D | （2026-09-25。利用者の依頼と決定: analyze・map・reduce の 3 本を編集できる・アプリ内の別の窓で編集する・保存先は config.json で null は既定）X-46。設定 `llm.analysis.prompts.{analyze,map,reduce}`（既定はすべて null）を足し `schemaVersion` を 3 に（2 → 3 の移行。移行器は 1 段ずつ続けて上げる）。`Analyzer` が `Prompts.overriding(_:)` で上書きを当てる（差し込みの順・修復プロンプト・golden は変えない）。検証 CV-60 を足した（`{custom_instructions}` を必須にするのは、追加の指示が黙って効かなくなるのを防ぐため。長さの上限 1,500 は CV-51 の余白 2048 トークンに system を収めるため）。D-7 の「それ以外の画面は作らない」に、要約プロンプトの編集の窓 1 つだけの例外を足した（`PromptEditorWindowController`。本文の欄は自動置換を切った `NSTextView`）。ログのイベント・エラーコード・遷移の辺・削除の条件は変えない |
+| F-93 | 事 | §10.8・§11.1・付録 F | （2026-09-25。利用者の決定: 本体のライセンスは Apache License 2.0・README は利用者向けに書き直す・同梱物の表示はリポジトリと `.app` の両方に入れる）ライセンスを置いた: `LICENSE`（Apache License 2.0 の全文）・`NOTICE`（Copyright 2026 Shinsuke Terada）・`THIRD_PARTY_NOTICES.md`（whisper.cpp・llama.cpp とその `vendor/` の部品・argmax-oss-swift と swift-argument-parser・GRDB.swift・Yams と LibYAML の MIT / BSD-2-Clause / Apache-2.0 の文を上流からそのまま、話者分離のモデルの CC-BY-4.0 の出典）。MIT などは配布物に著作権表示を含めることを求めるので、`make-app.sh` が 3 つを `Contents/Resources/` に入れ、`Resources/bundle-manifest.txt` に足した（§11.1）。版を上げて表が古くなるのを `LicenseFilesTests` が落とす。README（T-43）は利用者向けだけにし、`## 開発`・`## 状態` を `docs/DEVELOPMENT.md` へ移した（§10.8 の「CI の ND は層 1・2 だけ」「削除に触れる PR では手元の `make test-disk` の結果を貼る」の記述もそちら。T-44 が更新する `## 状態` の表もそちら）。`## 出典`（T-49）は `## ライセンス` にまとめた。ダウンロードするモデル（Whisper・VAD・LLM）は同梱しないので表示の対象外で、README に配布元のライセンスを書く。コード・設定キー・ログ・遷移・削除の条件は変えない |

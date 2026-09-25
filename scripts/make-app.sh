@@ -47,6 +47,10 @@ install -m 0755 "$root/Vendor/build/bin/llama-server" "$app/Contents/Helpers/lla
 install -m 0755 "$root/Vendor/build/bin/argmax-cli" "$app/Contents/Helpers/argmax-cli"
 install -m 0644 "$root/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 install -m 0644 "$root/Resources/ModelCatalog.json" "$app/Contents/Resources/ModelCatalog.json"
+# ライセンス（F-93）: 本体の LICENSE・NOTICE と、同梱物の著作権表示とライセンス文
+install -m 0644 "$root/LICENSE" "$app/Contents/Resources/LICENSE"
+install -m 0644 "$root/NOTICE" "$app/Contents/Resources/NOTICE"
+install -m 0644 "$root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
 for prompt in "$root"/Resources/prompts/*.txt; do
   install -m 0644 "$prompt" "$app/Contents/Resources/prompts/$(basename "$prompt")"
 done

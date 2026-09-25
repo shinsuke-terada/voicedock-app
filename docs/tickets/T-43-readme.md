@@ -27,6 +27,12 @@ T-01 が置いた仮の `README.md` を、**利用者向けの正本**に置き�
 |---|---|
 | `README.md` | T-01 の仮版を**全面的に置き換える**（下記 §4） |
 | `Tests/PolicyTests/ReadmeTests.swift` | 下記 §5 の全文 |
+| `docs/DEVELOPMENT.md` | （F-93）README から分けた開発者向けの節（コマンド・文書・ディスクイメージのテスト・ライセンスの表示・状態） |
+| `LICENSE`・`NOTICE` | （F-93）本体のライセンス（Apache License 2.0 の全文）と著作権表示 |
+| `THIRD_PARTY_NOTICES.md` | （F-93）同梱物の著作権表示とライセンス文（上流のものをそのまま） |
+| `Tests/PolicyTests/LicenseFilesTests.swift` | （F-93）上の 3 つと、`make-app.sh`・`Resources/bundle-manifest.txt` の同梱の検査（§5 の 2 つ目の表） |
+| `scripts/make-app.sh`（変更。F-93） | 3 つの文書を `Contents/Resources/` に入れる 3 行を足す（§4.18）。ファイルの持ち主は T-34 |
+| `Resources/bundle-manifest.txt`（変更。F-93） | 許可リストに 3 行を足す（§4.18）。ファイルの持ち主は T-34 |
 
 ## 4. `README.md` の章立てと中身
 
@@ -38,14 +44,17 @@ T-01 が置いた仮の `README.md` を、**利用者向けの正本**に置き�
 4. 参照するファイルは**リポジトリからの相対パス**（`docs/E2E.md`）。存在しないパスを書かない
 5. `make <ターゲット>` は `Makefile` に在るものだけ
 6. **voicedock（参照実装）の語を持ち込まない**: `docker` / `Docker` / `Helper` / `LaunchAgent` / `compose` を書かない（voicedock からの乗り換えの章は置かない。PLAN §8.13・F-60）
-7. 日本語。利用者は「Mac を普通に使える人」。**シェルを開かなくても導入が終わる**ように書く（トラブルシュートと保守だけシェルを使う）
+7. 日本語。利用者は「Mac を普通に使える人」。**シェルを開かなくても導入が終わる**ように書く（トラブルシュートと「データと更新」だけシェルを使う。F-93）
 
 ### 4.1 見出し（この順・この文字列）
+
+> **F-93（2026-09-25。利用者の決定）**: README を利用者向けだけにした。`## 何が動いているか` を `## できること` に、`## データの置き場所`・`## 保守` を `## データと更新` にまとめ、使い方に `### 設定を変える`、末尾に `## ライセンス` と `## 開発者の方へ` を置いた。
+> `## 開発`・`## 状態` は `docs/DEVELOPMENT.md` へ移し、`## 出典`（T-49）は `## ライセンス` にまとめた。下の §4.3・§4.12〜§4.17 はこの形で読む。
 
 | # | 見出し | 深さ |
 |---|---|---|
 | 1 | `# VoiceDock for Mac` | 1 |
-| 2 | `## 何が動いているか` | 2 |
+| 2 | `## できること` | 2 |
 | 3 | `## 必要なもの` | 2 |
 | 4 | `## インストール` | 2 |
 | 5 | `### 1. dmg から入れる` | 3 |
@@ -54,17 +63,21 @@ T-01 が置いた仮の `README.md` を、**利用者向けの正本**に置き�
 | 8 | `## 使い方` | 2 |
 | 9 | `### できあがるもの` | 3 |
 | 10 | `### 状況を見る` | 3 |
-| 11 | `## 元音声の削除` | 2 |
-| 12 | `### 三重ロック` | 3 |
-| 13 | `### 削除の根拠` | 3 |
-| 14 | `### 有効にする` | 3 |
-| 15 | `### 元に戻す` | 3 |
-| 16 | `## 既知の制約` | 2 |
+| 11 | `### 設定を変える` | 3 |
+| 12 | `## 元音声の削除` | 2 |
+| 13 | `### 三重ロック` | 3 |
+| 14 | `### 削除の根拠` | 3 |
+| 15 | `### 有効にする` | 3 |
+| 16 | `### 元に戻す` | 3 |
 | 17 | `## 困ったとき` | 2 |
-| 18 | `## データの置き場所` | 2 |
-| 19 | `## 保守` | 2 |
-| 20 | `## 開発` | 2 |
-| 21 | `## 状態` | 2 |
+| 18 | `## 既知の制約` | 2 |
+| 19 | `## データと更新` | 2 |
+| 20 | `### データの置き場所` | 3 |
+| 21 | `### バックアップ` | 3 |
+| 22 | `### 更新` | 3 |
+| 23 | `### アンインストール` | 3 |
+| 24 | `## ライセンス` | 2 |
+| 25 | `## 開発者の方へ` | 2 |
 
 ### 4.2 `# VoiceDock for Mac`（導入）
 
@@ -79,9 +92,9 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 - **逐語 V-1**: `**クラウドの AI は使いません。音声もテキストも外部へ出ません。**`
   - 続けて「外部へ出さないことは方針としてだけでなく、テストで強制しています（ネットワークを使うのはモデルのダウンロードだけで、そこ以外の経路が無いことを静的検査が見ています）」
 
-### 4.3 `## 何が動いているか`
+### 4.3 `## できること`
 
-表（工程 / 使うもの）。**すべて Mac の中で動くことが分かる形**にする:
+できることの箇条書き（取り込み・文字起こし・要約・元音声の削除（任意））に続けて、表（工程 / 使うもの）。**すべて Mac の中で動くことが分かる形**にする:
 
 | 工程 | 使うもの |
 |---|---|
@@ -102,6 +115,7 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 | メモリ | 選べる LLM がメモリ量で決まる。既定のモデルは 32 GB 以上 |
 | ディスク | モデルに 3〜20 GB、作業領域に数 GB |
 | Obsidian | Vault を 1 つ作り、**一度 Obsidian で開いておく**（`.obsidian` が作られる） |
+| 録音デバイス | DJI Mic 3（USB で Mac につなげること。F-93） |
 
 - **逐語 V-2**: `**使い始める前に、デバイスのボリューム名を決めてください。**`（RK-28）
   - 続けて「取り込みの後にボリューム名を変えると、それ以前に取り込んだ録音は削除の対象から永久に外れます（録音が消えない側なので事故にはなりませんが、後から名前を戻しても戻りません）。`NO NAME` のままなら、Finder かディスクユーティリティで改名してから使い始めてください。**アプリはデバイスに書き込まないので、改名はアプリからは行えません。**」
@@ -162,9 +176,11 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 
 メニューバーのアイコン（待機中 / 取り込み中 / 文字起こし・要約中 / 要対応 / 削除が有効）と、パネルの「状態」「要対応」「詳細・診断 → 状態の詳細」を説明する。
 
-### 4.7 （欠番）
+### 4.7 `### 設定を変える`（F-93。旧 4.7 は欠番だった）
 
-`## voicedock からの乗り換え` の章は置かない（2026-09-22、利用者の決定。PLAN §8.13・F-60）。節の番号と逐語の番号（V-7）は詰めない。
+- パネルの ⚙ から変えられること、変えなくても使えること
+- 話者分離（⚙ →「一般」。既定はオフ。`**話者A**: …` の行。名前は付けず録音ごとに振り直す。T-51 の文）
+- 要約の指示（⚙ →「要約プロンプトを編集…」。3 本・`{schema_block}` と `{custom_instructions}` は消さない・次に要約する日から・「既定に戻す」。F-92 の文）
 
 ### 4.8 `## 元音声の削除`
 
@@ -198,7 +214,7 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 - パネルの「元音声の削除」で行うこと、事前確認が出ること、**赤い「有効にする」を 3 秒押し続ける**こと（クリック 1 回・チェックボックスでは有効にならない。途中で離すと取り消し。F-65）
 - **逐語 V-10**: `**消した録音は戻りません。**`
 - 「**読み書きできるようになるのはデバイスを挿し直した後です**（それまでは消えません）」
-- 有効な間はメニューバーのアイコンの横にゴミ箱の印が**常に**出ること
+- 有効な間はメニューバーのアイコンの右上に赤い点が**常に**出ること（F-91 で `trash` の印から変えた）。抜く前に Finder で取り出すこと（F-93）
 - 「有効にする前に溜まっていた録音は、パネルの「詳細・診断 → 過去分を削除対象にする」で後から対象にできます（**先に件数のプレビューが出ます**）」
 
 #### `### 元に戻す`
@@ -245,43 +261,59 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 |---|---|---|
 | 困ったとき | `診断は **<n> 件**（うち **<k> 件** は LLM への実リクエストで、別のボタンから実行します）。` | `S6` の生きた ID の数 `n`、「順」の列が `別` の行の数 `k` |
 | 三重ロック | `実行側が判断を信用せず **<r> 項目**を独立に再検証します。` | `S8`（RV）の生きた ID の数 `r` |
-| 状態 | `削除禁止テスト **<d> 件**（ND）・実機試験 **<e> 件**（E2E）で守っています。` | `S7`（ND）の生きた ID の数 `d`、`S9`（E2E）の数 `e` |
+| 元音声の削除（F-93。旧 `## 状態`） | `削除禁止テスト **<d> 件**（ND）・実機試験 **<e> 件**（E2E）で守っています。` | `S7`（ND）の生きた ID の数 `d`、`S9`（E2E）の数 `e` |
 
 - **この 3 文はテストが SPEC から組み立てて `contains` で照合する。**実装者は SPEC を数えて書く（PLAN v1.1 の時点では `n=16`（F-61 で DR-13 を取り下げた後）・`k=1`・`r=14`・`d=38`・`e=16`（F-85 で取り下げた E2E-15・18 を数えない）。**この数字をチケットから写さず、必ず `docs/SPEC.md` を数える**）
 
-### 4.12 `## データの置き場所`
+### 4.12 `## データと更新`
 
-```text
-~/Library/Application Support/VoiceDock/
+- `### データの置き場所`: `~/Library/Application Support/VoiceDock/` をフェンスで示し、中身の説明（設定・DB・作業領域・文字起こし・ログ・モデル）を 1 行で。**パスを 1 つずつ列挙しない**（1 つずつのパスは `docs/DEVELOPMENT.md` から `docs/PLAN.md` §2.3 を指す）。「アプリはここと Obsidian の Vault 以外には書きません」
+- `### バックアップ`: DB は SQLite を WAL で開いているので**単純なファイルコピーをしない**。Vault のノートと `transcripts/` があれば Raw ノートは作り直せること
+- `### 更新`: 新しい dmg を開いて `Applications` へ上書きする。許可は引き継がれる。**削除が有効なときは、削除モジュールの版もアプリに合わせて更新が要る**
+  （版が違うと削除が止まり、パネルに「削除モジュールの更新が必要です」と出る。有効化の操作をもう一度通す）
+- `### アンインストール`: `/Applications` からアプリを消し、このフォルダを消す（**先に削除を無効にしてから**）
+
+### 4.13 （F-93 で §4.12 に統合。旧 `## 保守`）
+
+### 4.14 `docs/DEVELOPMENT.md`（F-93。旧 `## 開発`・`## 状態`）
+
+- コマンドの表（`make test` / `make lint` / `make vendor` / `make app` / `make release` / `make test-disk`。**`Makefile` に在るものだけ**）
+- 文書へのリンク: `docs/PLAN.md`（設計）、`docs/SPEC.md`（規範の表）、`docs/E2E.md`（実機試験）、`docs/POC.md`（実測）、`docs/tickets/README.md`（タスク）。「矛盾する場合は `docs/PLAN.md` を優先します」（**版番号は書かない**）
+- ディスクイメージのテストは CI で走らないので「削除に触れる PR では手元で回した結果を PR に貼る」旨（PLAN §10.8）
+- ライセンスの表示の直し方（版を上げたら `THIRD_PARTY_NOTICES.md` も直す）
+- `## 状態` の表（Phase 0〜9）。T-44 が Phase 9 の行を更新する
+
+### 4.15 （F-93 で §4.14 に移した。旧 `## 状態`）
+
+### 4.16 `## ライセンス`（F-93）
+
+- 本体は Apache License 2.0（`LICENSE` へのリンク、著作権表示は `NOTICE`）
+- 同梱物の表（whisper.cpp・llama.cpp とその部品・argmax-oss-swift・GRDB.swift と Yams・話者分離のモデル）と、全文は `THIRD_PARTY_NOTICES.md`（アプリの `Contents/Resources/` にも同梱）
+- 話者分離のモデルの出典（旧 `## 出典`。T-49 の文をそのまま）
+- 「はじめに」でダウンロードするモデルは同梱せず、それぞれの配布元のライセンスに従うこと（Whisper・VAD は MIT、LLM は Apache-2.0。`Resources/ModelCatalog.json` の `license`）。**版番号は書かない**
+
+### 4.17 `## 開発者の方へ`（F-93）
+
+- `docs/DEVELOPMENT.md` へのリンクだけを置く
+
+### 4.18 `make-app.sh` と許可リストの変更（F-93）
+
+`scripts/make-app.sh` の `ModelCatalog.json` の `install` の行の直後に、次の注釈と 3 行を足す（`makeAppInstallsEveryManifestEntry` が `"$app/<行>"` の形で探すので、ループにしない）:
+
+```bash
+# ライセンス（F-93）: 本体の LICENSE・NOTICE と、同梱物の著作権表示とライセンス文
+install -m 0644 "$root/LICENSE" "$app/Contents/Resources/LICENSE"
+install -m 0644 "$root/NOTICE" "$app/Contents/Resources/NOTICE"
+install -m 0644 "$root/THIRD_PARTY_NOTICES.md" "$app/Contents/Resources/THIRD_PARTY_NOTICES.md"
 ```
 
-- 中身の説明（設定・DB・作業領域・文字起こし・ログ・モデル）を 1 行ずつ。**パスを 1 つずつ列挙しない**（`docs/PLAN.md` §2.3 を指す）
-- 「アプリはここと Obsidian の Vault 以外には書きません」
-- アンインストール: `/Applications` からアプリを消し、このフォルダを消す（**先に削除を無効にしてから**）
+`Resources/bundle-manifest.txt` に次の 3 行を足す（並びは `LC_ALL=C` の辞書順）:
 
-### 4.13 `## 保守`
-
-- **バックアップ**: DB は SQLite を WAL で開いているので**単純なファイルコピーをしない**。Vault のノートと `transcripts/` があれば Raw ノートは作り直せること
-- **更新**: 新しい dmg を開いて `Applications` へ上書きする。許可は引き継がれる。**削除が有効なときは、削除モジュールの版もアプリに合わせて更新が要る**
-  （版が違うと削除が止まり、パネルに「削除モジュールの更新が必要です」と出る。有効化の操作をもう一度通す）
-
-### 4.14 `## 開発`
-
-- `make test` / `make lint` / `make app` / `make release` の 4 つを表で（**`Makefile` に在るものだけ**）
-- 文書へのリンク: `docs/PLAN.md`（設計）、`docs/SPEC.md`（規範の表）、`docs/E2E.md`（実機試験）、`docs/POC.md`（実測）、`docs/tickets/README.md`（タスク）
-- 「矛盾する場合は `docs/PLAN.md` を優先します」（**版番号は書かない**）
-- ディスクイメージのテストは `make test-disk`。CI で走らないなら「削除に触れる PR では手元で回した結果を PR に貼る」旨（PLAN §10.8）
-
-### 4.15 `## 状態`
-
-| Phase | 状態 |
-|---|---|
-| 0 PoC | 一部実施（`docs/POC.md`。未実施の章はその表に。P0 の受け入れ条件は全章が埋まった時点で満たす） |
-| 1〜7 取り込み・変換・文字起こし・ノート生成・配布 | 実装済み。実機試験は `docs/E2E.md` |
-| 8 削除 | 実装済み。`docs/E2E.md` の「削除のゲート」を参照 |
-| 9 v1.0 | — |
-
-- 最後に §4.11 の 3 つ目の文（`削除禁止テスト … 実機試験 … で守っています。`）を置く
+```text
+Contents/Resources/LICENSE
+Contents/Resources/NOTICE
+Contents/Resources/THIRD_PARTY_NOTICES.md
+```
 
 ## 5. 文書テスト
 
@@ -407,7 +439,7 @@ struct DocumentedCounts: Sendable {
 | `theExtractionFindsAVersionNumber()` | **陽性対照**: 版の抽出が効く | 同上 | `"VoiceDock-1.0.0.dmg"` から `["1.0.0"]`（末尾の `.dmg` の `.` は版の続きと見ない）、`"macOS 15.0 以上"` からは空、`"約 18.6 GB"` からは空、`"1.2.3.4"`（4 つ組）からは空 |
 | `theExtractionOfEmptyTextFindsNothing()` | 空の文字列からは何も抽出しない（TEST-28） | 空文字を直に渡す | `referencedPaths`・`makeTargets`・`versionLikeNumbers`・`diagnosticIDs`・`riskIDs` がすべて空 |
 | `theReadmeExists()` | README.md が在る | — | `Readme.load()` が投げない |
-| `theHeadingsAreInOrder()` | 見出しが §4.1 の表のとおり | `headings()` | 深さと本文の列が §4.1 の 21 行と完全一致 |
+| `theHeadingsAreInOrder()` | 見出しが §4.1 の表のとおり | `headings()` | 深さと本文の列が §4.1 の 25 行（F-93）と完全一致 |
 | `everyVerbatimSentenceIsPresent(_:)` | 逐語の文が在る | V-1〜V-14（V-7 は欠番）で parametrize | `text.contains(_)` |
 | `theUsageDescriptionsMatchTheInfoPlist(_:)` | TCC の説明文が Info.plist と一字一句同じ | V-13・V-14 | `Resources/Info.plist.template` にも同じ文字列が在る（**2 か所の文言がずれない**。T-34） |
 | `theDiagnosticsCountMatchesTheSpec()` | 診断の件数が SPEC と一致 | `DocumentedCounts.load()` | `text.contains(counts.diagnosticsSentence)` |
@@ -422,14 +454,33 @@ struct DocumentedCounts: Sendable {
 | `theReadmeDoesNotPinAnyVersion(_:)` | 版を直書きしない | `versionLikeNumbers(text)` で parametrize | その数が `Vendor/versions.env` に現れる（= whisper.cpp / llama.cpp の版だけが書ける） |
 | `theReadmeDoesNotNameTheSpecVersion()` | SPEC・計画書の版を書かない | `text` | `計画書 v<数>.<数>` / `SPEC v<数>` / `詳細仕様書 v<数>` に一致しない |
 | `theReadmeCarriesNoDockerLeftovers(_:)` | voicedock（Docker 版）の語を持ち込まない | `docker`・`Docker`・`compose`・`LaunchAgent`・`launchctl`・`ffmpeg` で parametrize | `text` に含まれない |
-| `theReadmeLinksTheKeyDocuments(_:)` | 主要な文書へのリンクが在る | `docs/PLAN.md`・`docs/SPEC.md`・`docs/E2E.md`・`docs/POC.md`・`docs/tickets/README.md` | `referencedPaths(text)` に含まれる |
+| `theReadmeLinksTheDevelopmentGuide()` | README が開発者向けの文書を指す（F-93） | `referencedPaths(text)` | `docs/DEVELOPMENT.md` を含む |
+| `theDevelopmentGuideLinksTheKeyDocuments(_:)` | 主要な文書へのリンクが開発者向けの文書に在る（F-93） | `docs/PLAN.md`・`docs/SPEC.md`・`docs/E2E.md`・`docs/POC.md`・`docs/tickets/README.md` で parametrize | `docs/DEVELOPMENT.md` の `referencedPaths` に含まれる |
+| `everyPathInTheDevelopmentGuideExists(_:)` | 開発者向けの文書が指すファイルが実在（F-93） | `docs/DEVELOPMENT.md` の `referencedPaths` で parametrize | `PackageRoot.file(_)` が在る |
+| `theLicenseChapterLinksTheLicenseFiles(_:)` | ライセンスの章が本体と同梱物のライセンスを指す（F-93） | `LICENSE`・`NOTICE`・`THIRD_PARTY_NOTICES.md` で parametrize。`## ライセンス` の節 | `(<名前>)` のリンクを含む |
+| `theLicenseChapterNamesTheLicense()` | ライセンスの章が本体のライセンスの名前を書く（F-93） | `## ライセンス` の節 | `Apache License 2.0` を含む |
 | `theReadmeTellsYouHowToTurnDeletionOff()` | 元に戻す手順が在る | `## 元に戻す` の節 | 「確認は求められません」と「読み取り専用」を含む |
 | `theInstallChapterExplainsTCC()` | インストールの章が TCC を説明する | `### 2. 最初の起動と、許可の出し方` の節 | V-3（システム設定の経路）と V-13 を含む |
 
 - **`MarkdownDocument.section(_:)` は「見出しの本文が鍵で始まる最初の節」を返す**（T-04）。`## 元に戻す` は数字でも英大文字でも「付録」でも始まらないので**節の境界にならない**。
   `section("元に戻す")` は「`### 元に戻す` の次の行から、次の `^#{1,6} (?:[0-9A-Z]|付録)` まで」＝ **ファイルの終わりまで**、になる（`## 既知の制約` 以降の見出しもどれも数字・英大文字・「付録」で始まらないので、節の境界にならない）。**この振る舞いでよい**。
-  節の切り出しに依存するテストは **`theReadmeTellsYouHowToTurnDeletionOff` と `theInstallChapterExplainsTCC` の 2 本だけ**にし、残りは全文を見る（境界の揺れで落ちないようにする）
+  節の切り出しに依存するテストは **`theReadmeTellsYouHowToTurnDeletionOff`・`theInstallChapterExplainsTCC`・`theLicenseChapterLinksTheLicenseFiles`・`theLicenseChapterNamesTheLicense` の 4 本だけ**にし（後ろの 2 本は F-93。`## ライセンス` の後ろは `## 開発者の方へ` だけなので揺れない）、残りは全文を見る（境界の揺れで落ちないようにする）
 - `theCountsAreNotZero` を必ず置く（**parametrize の元を空にすると全部緑になる**形を防ぐ。TEST-01）
+
+テストの表（`@Suite("LicenseFiles") struct LicenseFilesTests`。F-93）:
+
+| 関数名 | 表示名 | 準備 | 期待 |
+|---|---|---|---|
+| `nothingIsMissingFromAnEmptyList()` | 空の必須語からは何も欠けない（TEST-28） | `missingMentions(in: "", required: [])` | 空 |
+| `aMissingWordIsReported()` | **陽性対照**: 無い語を欠けとして返す | `"whisper.cpp v1.9.4"` と `["v1.9.4", "b11033"]` | `["b11033"]` |
+| `theLicenseIsApache2()` | LICENSE が Apache License 2.0 の全文 | `LICENSE` | `Apache License`・`Version 2.0, January 2004`・`END OF TERMS AND CONDITIONS` を含む |
+| `theNoticeNamesTheHolderAndTheThirdPartyFile()` | NOTICE が著作権者と THIRD_PARTY_NOTICES.md を示す | `NOTICE` | `Copyright 2026 Shinsuke Terada` と `THIRD_PARTY_NOTICES.md` を含む |
+| `theNoticesCarryTheVendorVersions()` | THIRD_PARTY_NOTICES.md が versions.env の版とコミットを載せている | `Vendor/versions.env` の whisper.cpp・llama.cpp・argmax-oss-swift の `_REF` と `_SHA` の先頭 7 桁、`SPEAKER_MODELS_SHA` の先頭 7 桁 | 全部を含む |
+| `theNoticesCarryThePackageVersions()` | THIRD_PARTY_NOTICES.md が GRDB と Yams の版を載せている | `Package.resolved` の `grdb.swift`・`yams` の `version` | 全部を含む |
+| `theNoticesCarryEveryLicenseText()` | THIRD_PARTY_NOTICES.md が同梱物ごとのライセンス文を載せている | 固定の語: The ggml authors・argmax, inc.・Mozilla Foundation（sgemm）・Jeffrey Quesnelle and Bowen Peng（YaRN）・Gwendal Roué・JP Simard・Kirill Simonov・Yann Collet・Runtime Library Exception・Creative Commons Attribution 4.0 International | 全部を含む |
+| `theAppBundlesTheDocument(_:)` | make-app.sh が 3 つの文書を Resources に入れる | `LICENSE`・`NOTICE`・`THIRD_PARTY_NOTICES.md` で parametrize | `make-app.sh` に §4.18 の `install` の行、許可リストに `Contents/Resources/<名前>`、リポジトリにファイルが在る |
+
+- swift-argument-parser の版（argmax-oss-swift の `Package.resolved`）は `Vendor/work/` にしか無く CI では読めないので照合しない。argmax-oss-swift の版を上げたときは手で確かめる（`docs/DEVELOPMENT.md` の「ライセンスの表示」）
 
 ## 6. 破壊による証明
 
@@ -451,10 +502,13 @@ struct DocumentedCounts: Sendable {
 | 14 | `### 元に戻す` から「確認は求められません」を消す | `theReadmeTellsYouHowToTurnDeletionOff` |
 | 15 | `DocumentedCounts.load()` の `.dr` を `.cv` に変える | `theDiagnosticsCountMatchesTheSpec`（README の 16 と CV の件数が合わない） |
 | 16 | `Readme.versionLikeNumbers` の正規表現から後読み `(?<![0-9.])` を外す（`1.2.3.4` から `2.3.4` を拾うようにする。`18.6` は 2 つ組なので後読みの有無に関係なく拾われない） | `theExtractionFindsAVersionNumber`（`"1.2.3.4"` の行） |
+| 17 | `Vendor/versions.env` の `LLAMA_CPP_REF` を `b12000` に上げ、`THIRD_PARTY_NOTICES.md` を直さない（F-93） | `theNoticesCarryTheVendorVersions` |
+| 18 | README の `## ライセンス` の `[Apache License 2.0](LICENSE)` のリンクを外す（F-93） | `theLicenseChapterLinksTheLicenseFiles("LICENSE")` |
+| 19 | `make-app.sh` の `NOTICE` の `install` の行を消す（F-93） | `theAppBundlesTheDocument("NOTICE")`、`makeAppInstallsEveryManifestEntry`（T-34） |
 
 ## 7. 受け入れ条件
 
-- [ ] `README.md` が §4.1 の 21 見出しをその順で持ち、T-01 の仮版の文（`利用者向けの説明は T-43 で書く。`）が残っていない
+- [ ] `README.md` が §4.1 の 25 見出し（F-93）をその順で持ち、T-01 の仮版の文（`利用者向けの説明は T-43 で書く。`）が残っていない
 - [ ] 13 個の逐語の文（V-1〜V-14。V-7 は欠番）がすべて在る
 - [ ] 件数の 3 文が `docs/SPEC.md` から数えた値と一致する（**チケットの数字を写していない**ことを、`docs/SPEC.md` を数えて確かめた）
 - [ ] TCC の 2 つの説明文が `Resources/Info.plist.template` と一字一句同じ
@@ -464,6 +518,8 @@ struct DocumentedCounts: Sendable {
 - [ ] **陽性対照 2 本**（`theExtractionFindsAPath`・`theExtractionFindsAVersionNumber`）と**土台 1 本**（`theCountsAreNotZero`）が在る
 - [ ] 【利用者が行う】README のとおりに、**新しいユーザアカウント**（または `~/Library/Application Support/VoiceDock` が無い状態）で最初から導入してみて、詰まった箇所が無い。詰まったら README を直す
 - [ ] 破壊による証明の結果が PR 本文にある
+- [ ] （F-93）`LICENSE`・`NOTICE`・`THIRD_PARTY_NOTICES.md` が在り、`make app` の `.app` の `Contents/Resources/` に 3 つが入る（`verify-bundle.sh --files-only` が通る）
+- [ ] （F-93）`THIRD_PARTY_NOTICES.md` のライセンス文が上流のファイルと一字一句同じ
 
 ## 8. SPEC の変更
 
@@ -471,7 +527,7 @@ struct DocumentedCounts: Sendable {
 
 ## 9. マージ後にやること
 
-- T-44 が `## 状態` の表を v1.0 の内容に更新する（`theHeadingsAreInOrder` はそのまま通る）
+- T-44 が `docs/DEVELOPMENT.md` の `## 状態` の表を v1.0 の内容に更新する（F-93。`theHeadingsAreInOrder` はそのまま通る）
 - 診断を足す・減らす PR は、**同じ PR で** PLAN §8.11 → `make spec` → README の 3 か所を直す（`theDiagnosticsCountMatchesTheSpec` が落ちて気づく）
 
 ## 10. API 地図への変更提案

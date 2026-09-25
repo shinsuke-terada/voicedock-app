@@ -69,7 +69,7 @@ jobs:
         run: swift test --skip-build --skip "NoDeleteTests|ReaperTests|PolicyTests|LLMAcceptance"
 ```
 
-- `env: VOICEDOCK_DISK_TESTS: "1"` は**足さない**（上の安全の規則）。README（T-43）に「CI の ND は層 R1・R2 だけ。R3 は手元の `make test-disk`」と書き、**削除に触れる PR は、実機を抜いたことを利用者が確かめたうえで手元の `make test-disk` を回し、その結果を PR 本文に貼る**（PLAN §10.8）
+- `env: VOICEDOCK_DISK_TESTS: "1"` は**足さない**（上の安全の規則）。README（T-43。F-93 からは `docs/DEVELOPMENT.md`）に「CI の ND は層 R1・R2 だけ。R3 は手元の `make test-disk`」と書き、**削除に触れる PR は、実機を抜いたことを利用者が確かめたうえで手元の `make test-disk` を回し、その結果を PR 本文に貼る**（PLAN §10.8）
 - `runs-on:` はセルフホストランナーの既定のラベル 3 つ（`self-hosted`・`macOS`・`ARM64`）で固定する（`latest` を使わない。PT-13）
 - `make check-toolchain` は `.xcode-version` と開発機の Xcode が食い違ったら落ちる。`xcode-select` の切り替えは CI でしない
 
