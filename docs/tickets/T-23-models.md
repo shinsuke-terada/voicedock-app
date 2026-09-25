@@ -1,5 +1,11 @@
 # T-23 VDModels: モデルのダウンロード・取り込み・状態
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）使える `.resume` は読んだ後も結末まで残す（成功・HTTP の誤り・照合の失敗・新しい再開データの無い失敗で消す）。再開データの URL がカタログの URL と違えば捨てて最初から、
+> 再開の要求が HTTP の誤りで終わったら最初から 1 回だけやり直す（代理は始めたタスクの知らせだけを受ける）。`ModelDownloader.stopAllKeepingResumeData()` を足した（終了の後始末の口。統合で `AppDelegate` の終了の段に配線した）。
+> 照合した `.part` は rename の前に F_FULLFSYNC、後に親ディレクトリも書き出す（`ModelFileSync.swift`）。`ModelManager.discardStaleImports()`（起動時の口。統合で `Bootstrap.build` から配線した）と取り込みの前に、取り込みが走っていなければ
+> `models/llm/.custom-import-<16 hex>.gguf.part` の残りを消す（数えるのは actor、消すのは BlockingIO）。読みを `autoreleasepool` で包み、書き出しの失敗を `.io("fsync")` で返す。`meetsMemory` は `ModelMemory.hasEnough` を使う。
+> PLAN §8.10。テストは `ModelDownloaderResumeTests.swift`・`ModelImporterStalePartsTests.swift`・PolicyTests の `DurableWriteCallTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-23 |
@@ -122,7 +128,9 @@ enum ModelSource {
 2. `isSafeFileName(file)` が真
 3. `text` に `resolveMarker` が現れる（**最初の出現**をとる）。その直後の 40 スカラーがすべて `0-9a-f`、41 番目が `/`
 4. `text` のスカラー列が `"/" + file` で終わる
-5. `URL(string: text)` が nil でなく、`scheme == "https"`、`host() == "huggingface.co"` → その URL
+5. `URL(string: text)` が nil でなく、`scheme == "https"`、`host() == "huggingface.co"`
+6. `url.query == nil`、`url.fragment == nil`、`url.path(percentEncoded: false)` が `"/" + file` で終わる → その URL
+   （`…/ggml-t.bin?x=/ggml-t.bin` や `…/x?a=/ggml-t.bin` のように、文字列の末尾だけが合う URL を拒む）
 
 （`URL(string:)` の禁止は `VDLLM/LoopbackHTTP.swift` の中だけ。VDModels では使ってよい。PT-02）
 
@@ -193,14 +201,15 @@ final class ModelDownloadDelegate: NSObject, URLSessionDownloadDelegate, Sendabl
 1. `guard ModelSource.isSafeFileName(file) else { return fail(e, .badFileName) }`
 2. `guard let remote = ModelSource.url(e.url, file: file) else { return fail(e, .badHost) }`
 3. **既に在る**: `ModelFiles.isPresent(e, kind: kind, layout: layout)` が真 → `.success(final)`（ログを出さない。ネットワークに出ない）
-4. `guard running[e.id] == nil else { return .failure(.io(ModelDownloader.alreadyRunningMessage)) }`
+4. `guard running[e.id] == nil else { return .failure(.io(ModelDownloader.alreadyRunningMessage)) }`、続けて `defer { running[e.id] = nil }`
+   （**`running` は戻る直前に 1 か所で消す**。照合（数十秒）から rename までの間に同じ ID の 2 本目が通ると、2 本目が 1 本目の `.part` を消したり、照合していない中身を rename したりしうる）
 5. 再開データ: `resume = ResumeStore.load(e, layout: layout)`。`ResumeStore.discard(e, layout: layout)`（**読んだら必ず消す。1 回きり**）
 6. `resume == nil` なら `try? SafeUnlink.remove(part, under: .models, layout: layout, missingOK: true)`（古い `.part` を捨てる）
 7. `delegate = ModelDownloadDelegate(partURL: part, layout: layout, expectedBytes: e.bytes, progress: progress)`
    `session = URLSession(configuration: factory.configuration(), delegate: delegate, delegateQueue: nil)`
 8. `task = resume.map { session.downloadTask(withResumeData: $0) } ?? session.downloadTask(with: URLRequest(url: remote))`
    `running[e.id] = task`、`task.resume()`
-9. `outcome = await delegate.wait()`、`running[e.id] = nil`、`session.finishTasksAndInvalidate()`
+9. `outcome = await delegate.wait()`、`session.finishTasksAndInvalidate()`（`running` はここでは消さない。手順 4 の `defer`）
 10. `outcome` ごとに:
     - `.http(let code)` → `.part` を消す・`ResumeStore.discard` → `fail(e, .http(code))`
     - `.failed(.cancelled)` → `saveResume(delegate, e)` → `.failure(.cancelled)`（**ログを出さない**。利用者の操作）
@@ -240,9 +249,9 @@ public enum ModelImporter {
 3. `tmpName = "custom-import-" + RandomHex.hex16() + ".gguf"`、`tmp = layout.modelPart(kind: ModelKind.llm.rawValue, file: tmpName)`
    （= `models/llm/.custom-import-<16 hex>.gguf.part`）
 4. 読み書き（**1 回しか読まない**）:
-   - `guard let input = try? FileHandle(forReadingFrom: source)`。`defer { try? input.close() }`
+   - `guard let input = try? FileHandle(forReadingFrom: source)`（開けなければ `.io("read")`）。`defer { try? input.close() }`
    - `FileManager.default.createFile(atPath: tmp.path(percentEncoded: false), contents: nil, attributes: [.posixPermissions: 0o644])` が偽 → `.failure(.io("create"))`
-   - `guard let output = try? FileHandle(forWritingTo: tmp)`。`defer { try? output.close() }`
+   - `guard let output = try? FileHandle(forWritingTo: tmp)`（開けなければ `.io("create")`）。`defer { try? output.close() }`
    - `var hasher = SHA256()`（`import CryptoKit`）
    - `while let d = try? input.read(upToCount: chunkBytes), !d.isEmpty { hasher.update(data: d); try? output.write(contentsOf: d) }`
      **読みと書きの失敗は握りつぶさない**: `read` が投げたら `.io("read")`、`write` が投げたら `.io("write")` にして 7 へ（`do/catch` で書く。上の擬似コードは流れだけ）
@@ -281,7 +290,9 @@ public enum ModelState: Equatable, Sendable {
 
 public enum ModelError: Error, Equatable, Sendable {
     case badHost, badFileName, sha256Mismatch, sizeMismatch
-    case http(Int), network, cancelled, io(String)
+    case http(Int)
+    case network, cancelled
+    case io(String)
 
     /// ログの reason（付録 A.4）。
     public var logReason: String
@@ -297,9 +308,11 @@ public actor ModelManager {
     public func isPresent(_ e: ModelEntry, kind: ModelKind) -> Bool
     public func url(kind: ModelKind, id: String) -> URL?
     public func verifySHA(kind: ModelKind, id: String) async -> Bool
-    /// 落として state を動かす（UI はこれだけを呼ぶ）。
-    public func download(kind: ModelKind, id: String) async -> Result<URL, ModelError>
-    public func cancel(kind: ModelKind, id: String)
+    /// 落として state を動かす（UI はこれだけを呼ぶ）。progress は受け取った値をそのまま渡す。
+    public func download(
+        _ id: String, kind: ModelKind, progress: @escaping @Sendable (Int64, Int64) -> Void
+    ) async -> Result<URL, ModelError>
+    public func cancel(id: String) async
     /// 利用者の .gguf を取り込む。
     public func importCustomLLM(from source: URL) async -> Result<(id: String, url: URL), ModelError>
     /// physicalMemoryBytes >= minMemoryGB × 1024³（minMemoryGB が nil なら真）。T-22 のガードと同じ式。
@@ -345,15 +358,16 @@ public actor ModelManager {
   5. それ以外 → `.absent`
 - `isPresent(_:kind:)` = `ModelFiles.isPresent(e, kind: kind, layout: layout)`（**在否の判定は 1 か所**。CR-06）
 - `url(kind:id:)` = カタログに在れば `ModelFiles.url(kind:entry:layout:)`、無ければ `kind == .llm` のとき `ModelFiles.customLLMURL(id:layout:)`、それ以外 nil
-- `download(kind:id:)`:
+- `download(_:kind:progress:)`（名前と引数は 00-api-map §10 が正）:
   1. `guard let e = catalog.entry(kind: kind, id: id) else { return .failure(.badFileName) }`
+     `guard downloading[k] == nil else { return .failure(.io(ModelDownloader.alreadyRunningMessage)) }`（同じキーの 2 回目は**状態に触らずに**返す。触ると 1 本目の進捗が消え、ダウンローダが断った誤りが `failures` に入る）
   2. `failures[k] = nil`、`downloading[k] = 0.0`
   3. `let box = ProgressBox()`（`final class ProgressBox: Sendable` で `Mutex<Double>` を持つ。進捗のクロージャは actor の外から呼ばれるため）
-     `r = await downloader.download(e, kind: kind, progress: { written, total in box.set(total > 0 ? Double(written) / Double(total) : 0.0) })`
+     `r = await downloader.download(e, kind: kind, progress: { written, total in box.set(total > 0 ? Double(written) / Double(total) : 0.0); progress(written, total) })`
      **進捗は UI がポーリングで読む**（`state(kind:id:)` が `downloading[k]` の代わりに `box` の値を読む）。`downloading[k]` は `box` を指す辞書 `[Key: ProgressBox]` にする
   4. 戻りが `.failure(let err)` なら `failures[k] = err`。`downloading[k] = nil`
   5. そのまま返す
-- `cancel(kind:id:)`: `await downloader.cancel(id: id)` を呼ぶための `Task` を作らず、`cancel` を `async` にしてそのまま `await` する（actor 間の呼び出し）
+- `cancel(id:)`（00-api-map §10 が正）: `await downloader.cancel(id: id)` を呼ぶための `Task` を作らず、`cancel` を `async` にしてそのまま `await` する（actor 間の呼び出し）
 - `importCustomLLM(from:)`: `let l = layout, c = hashChunkBytes`。`(try? await BlockingIO.run { ModelImporter.importGGUF(from: source, layout: l, chunkBytes: c) }) ?? .failure(.io("blocking_io"))`
 - `verifySHA(kind:id:)`:
   1. `guard let u = url(kind: kind, id: id) else { return false }`
@@ -425,6 +439,7 @@ extension BlockingSessionFactory: DownloadSessionFactory {}
 ## 5. テスト
 
 すべて `import Testing`、`@testable import VDModels`、`import VDCore`、`import VDContract`、`import TestSupport`。
+`ModelEntry` を直に作るファイル（`ModelDownloaderTests` / `ResumeStoreTests` / `ModelManagerTests`）は `ModelEntry` の memberwise init が internal なので `@testable import VDCore` にする（公開 API は足さない）。
 各テストは `TempDirectory()` を作り `HomeLayout(root:)` の `createDirectories()` を呼ぶ。`log = AppLog(sink: sink, level: .debug, unsafeContent: false, zone: ZonedTime(timeZone: TimeZone(identifier: "Asia/Tokyo")!), clock: FixedClock(epochMillis: 1_756_000_000_000))`。
 
 共通の準備（各スイートの `private func world()` に置く）:
@@ -454,12 +469,14 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 | `badHostIsRejectedBeforeAnyRequest` / 「ホストが違えば要求を出さない」 | `entry.url = "https://example.com/x/y/resolve/<40hex>/ggml-t.bin"` | `.failure(.badHost)`、`ModelHostStub.requests(url:) == 0`、`reason=bad_url` |
 | `mainInsteadOfCommitIsRejected` / 「resolve/main は受けない（PT-13 と同じ条件）」 | url の `<40hex>` を `main` に | `.failure(.badHost)`、要求 0 件 |
 | `fileNameMismatchIsRejected` / 「url の末尾がファイル名と違えば受けない」 | url の末尾を `other.bin` に | `.failure(.badHost)`、要求 0 件 |
-| `unsafeFileNameIsRejected` / 「`..` を含むファイル名は受けない（OPS-19）」 | `file = "../x.bin"`（url も合わせる） | `.failure(.badFileName)`、要求 0 件 |
+| `unsafeFileNameIsRejected` / 「`..` を含むファイル名は受けない（OPS-19）」 | `file = "../x.bin"`（url も合わせる）。続けて `file = "ggml..t.bin"`（`.` で始まらない `..`。`..` の検査だけが止める） | どちらも `.failure(.badFileName)`、要求 0 件 |
 | `presentFileSkipsTheNetwork` / 「在って size が一致すれば落とさない」 | `models/whisper/ggml-t.bin` に `payload` を置く | `.success`、要求 0 件、`model_downloaded` を出さない |
-| `staleResumeIsRemovedWhenUnused` / 「使わない `.resume` は消える」 | 15 バイトの `.resume` を置く（短いので使わない） | 落とした後に `.resume` が無い |
-| `stalePartIsRemovedBeforeStart` / 「再開しないときは古い `.part` を捨てる」 | `.part` に 10 バイト置く | 落とした後の中身が `payload`（連結されていない） |
-| `cancelStopsAndDoesNotLog` / 「キャンセルは cancelled でログを出さない」 | `.body(大きな payload)` を流している間に `cancel(id:)`（`ModelHostStub` は 64 KiB ずつ流すので途中で止まる） | `.failure(.cancelled)`、`model_download_failed` が 0 行 |
-| `twoDownloadsOfTheSameIDAreRefused` / 「同じ ID の二重実行は断る」 | 1 本目を走らせたまま 2 本目 | 2 本目が `.failure(.io("already_downloading"))` |
+| `staleResumeIsRemovedWhenUnused` / 「使わない `.resume` は消える」 | 15 バイトの `.resume` を置く（短いので使わない）。応答の作り手の中で `.resume` の在否を記録する | 要求が届いた時点で `.resume` が無い（14 の discard では見分けられないため）、落とした後にも無い |
+| `stalePartIsRemovedBeforeStart` / 「再開しないときは古い `.part` を捨てる」 | `.part` に 10 バイト置く。応答の作り手の中で `.part` の在否を記録する | 要求が届いた時点で `.part` が無い（代理も移す前に消すため）、落とした後の中身が `payload`（連結されていない） |
+| `cancelStopsAndDoesNotLog` / 「キャンセルは cancelled でログを出さない」 | `.body(大きな payload)` を返す応答の作り手の中でセマフォを待たせ（要求が届いたまま止まる）、`requests(url:) == 1` を待ってから `cancel(id:)` → セマフォを開ける（確定的に「実行中」を作る） | `.failure(.cancelled)`、`model_download_failed` が 0 行 |
+| `twoDownloadsOfTheSameIDAreRefused` / 「同じ ID の二重実行は断る」 | 1 本目を同じ方法（応答の作り手の中でセマフォ）で止めたまま 2 本目 | 2 本目が `.failure(.io("already_downloading"))`、セマフォを開けた後 1 本目は成功 |
+| `secondDownloadWaitsForVerification` / 「照合中の同じ ID は通さない（.part を消さず、要求も出さない）」 | 64 MiB の `.body`、`hashChunkBytes: 4096` で照合を長くする。`.part` が現れた（照合の直前か照合中）ところで 2 本目 | 2 本目は `.failure(.io("already_downloading"))` か（1 本目が終わっていれば）`.success`、1 本目は `.success`、要求は 1 件だけ |
+| `queryOrFragmentIsRejected` / 「クエリ・フラグメント付きの URL は受けない」 | `…/ggml-t.bin?x=/ggml-t.bin`、`…/ggml-t.bin#/ggml-t.bin`、`…/x?a=/ggml-t.bin` | どれも `.failure(.badHost)`、要求 0 件 |
 | `emptyBodyIsASizeMismatch` / 「空の応答はサイズ違い（TEST-28）」 | `.body(Data())` | `.failure(.sizeMismatch)` |
 
 - キャンセルのテストは `.serialized` にせず、URL をテストごとに変える（`ModelHostStub` は URL で引く）
@@ -508,8 +525,9 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 | `verifySHARecomputesAfterTouch` / 「mtime が変われば読み直す」 | 1 回目の後に中身を書き換える（mtime が進む） | 2 回目は偽 |
 | `verifySHAOfCustomUsesTheID` / 「custom の期待値は ID の中の sha」 | 取り込んだファイル | 真。ID を 1 文字変えると偽 |
 | `verifySHAOfMissingIsFalse` / 「無いファイルは偽（TEST-28）」 | 置かない | 偽、キャッシュに何も入らない |
-| `failureIsShownAsAMessage` / 「失敗すると failed に日本語が出る」 | `BlockingSessionFactory` で `download` | `state` が `.failed("ネットワークに接続できませんでした")` |
+| `failureIsShownAsAMessage` / 「失敗すると failed に日本語が出る」 | `BlockingSessionFactory` で `download(_:kind:progress:)` | `state` が `.failed("ネットワークに接続できませんでした")` |
 | `downloadClearsThePreviousFailure` / 「もう一度押すと失敗表示が消える」 | 失敗の後にファイルを置いて `download` | `.success`、`state` が `.present` |
+| `secondDownloadIsRefusedWithoutTouchingState` / 「落としている最中にもう一度押しても状態を変えずに断る」 | `ModelHostSessionFactory` の downloader。1 本目を応答の作り手の中のセマフォで止めたまま 2 本目 | 2 本目が `.failure(.io("already_downloading"))`、`state` が `.downloading(0.0)` のまま、要求は 1 件 |
 | `meetsMemoryUsesGiB` / 「32 GB のモデルは 32 GiB 必要」（パラメータ化） | `minMemoryGB: 32` と `physicalMemoryBytes` = `32 × 1024³ - 1` / `32 × 1024³` | 偽 / 真 |
 | `meetsMemoryIsTrueWithoutLimit` / 「minMemoryGB が無ければ常に真」 | whisper の項目 | 真 |
 
@@ -518,7 +536,7 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|
 | `ModelSource.url` の 40 桁の検査を消す | `mainInsteadOfCommitIsRejected` |
-| `ModelSource.url` のホストの検査を消す | `badHostIsRejectedBeforeAnyRequest` |
+| `ModelSource.url` のホストの検査（手順 1 の接頭辞と手順 5 の `host()` の**両方**。どちらか一方はもう一方が止めるので、片方だけ消しても落ちない） | `badHostIsRejectedBeforeAnyRequest` |
 | `ModelSource.url` の「`/` + file で終わる」の検査を消す | `fileNameMismatchIsRejected` |
 | `ModelSource.isSafeFileName` の `..` の検査を消す | `unsafeFileNameIsRejected` |
 | §4.1.4 の 11（サイズの照合）を消す | `sizeMismatchIsDetectedBeforeHashing` |
@@ -529,6 +547,11 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 | 再開しないときに古い `.part` を消さない | `stalePartIsRemovedBeforeStart` |
 | `.cancelled` でも `model_download_failed` を出す | `cancelStopsAndDoesNotLog` |
 | `running` の二重起動の検査を消す | `twoDownloadsOfTheSameIDAreRefused` |
+| `running[e.id] = nil` を手順 9（wait の直後）に戻す | `secondDownloadWaitsForVerification` |
+| `ModelManager.download` の `downloading[k]` の検査を消す | `secondDownloadIsRefusedWithoutTouchingState` |
+| `ModelSource.url` の `query == nil` の検査を消す | `queryOrFragmentIsRejected` |
+| `ModelSource.url` の `fragment == nil` の検査を消す | `queryOrFragmentIsRejected` |
+| （参考）`ModelSource.url` の「`path` が `"/" + file` で終わる」の検査を消す | 落ちるテストは無い。手順 4（文字列の末尾）と `query` / `fragment` の検査が揃うと `path` の末尾も必ず合うので、この検査は多重の守り |
 | 既に在るときもダウンロードする | `presentFileSkipsTheNetwork` |
 | `ModelImporter` で `.part` を経由せず直接 `custom-….gguf` へ書く | `existingFileIsReused` |
 | 既存があっても上書きする | `existingFileIsReused` |
@@ -552,11 +575,12 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 1. `ModelDownloader.init` に `hashChunkBytes: Int` を足す（ストリームの SHA-256 は `audio.hashChunkBytes` ずつ。PLAN §8.10。値を 2 か所に書かないため設定から渡す）
 2. `ModelDownloader.download` の `progress` を `@escaping @Sendable (Int64, Int64) -> Void` にする（代理が持つので escaping）
 3. `ModelManager.init` を `init(layout:catalog:downloader:cache:log:hashChunkBytes:)` にする（地図は `init(layout:catalog:downloader:clock:)`。`ModelVerificationCache` は診断と共有するので**注入**が要る（PLAN §8.10）。`clock` は使わないので外す）
-4. `ModelManager` に `download(kind:id:)`・`cancel(kind:id:)`・`importCustomLLM(from:)`・`static meetsMemory(_:physicalMemoryBytes:)` を足す（`ModelState.downloading` / `.failed` を動かす者が要る。UI は ModelManager だけを見る）
+4. `ModelManager` に `download(_:kind:progress:)`・`cancel(id:)`（名前と引数は地図 §10 のとおり。当初の案 `download(kind:id:)`・`cancel(kind:id:)` は地図に合わせて改めた）・`importCustomLLM(from:)`・`static meetsMemory(_:physicalMemoryBytes:)` を足す（`ModelState.downloading` / `.failed` を動かす者が要る。UI は ModelManager だけを見る）
 5. `ModelError` に `logReason` と `displayMessage` を足す（ログの語と UI の文言を 1 か所に置く）
 6. `DownloadSessionFactory` の本番の実装 `EphemeralDownloadSessionFactory` を足す（地図はプロトコルだけ）
 7. 00-api-map §15 に `ModelHostStub`・`ModelHostURLProtocol`・`ModelHostSessionFactory`（作り手 T-23、使うのは T-23・T-32）を足す。`BlockingSessionFactory: DownloadSessionFactory` の準拠は本チケットが extension で足す（T-21 §8 の 7 のとおり）
 8. 付録 A.4 の `model_download_failed` の `reason` に `cancelled` / `bad_url` / `bad_file_name` / `io` を足す（PLAN の本文 §8.10 は `sha256_mismatch|size_mismatch|http_<code>|network` の 4 つしか挙げていないが、URL とファイル名の検査・ファイルの入出力の失敗にも語が要る。「新しい語を足すときはここに足す」に従う） → 仕様 付録 A.4 に反映済み（`sha256_mismatch|size_mismatch|http_<code>|network|cancelled|bad_url|bad_file_name|io`。整合修正 M-8）
+9. （実装で判明）地図 §10 の `ModelManager.download(_ id: String, kind: ModelKind, progress:)` の `progress:` に型が無い。`ModelDownloader.download` と同じ `@escaping @Sendable (Int64, Int64) -> Void` と書き足す。`cancel(id:)` は `ModelDownloader.cancel(id:)` を `await` するので `async` と書き足す（実装はこの形。地図の名前と引数は変えていない）
 
 ## 9. SPEC の変更
 
@@ -567,3 +591,4 @@ let entry = ModelEntry(id: "test-whisper", displayName: "T", file: "ggml-t.bin",
 - T-31（「はじめに」のモデルの画面）は `ModelManager` だけを使う（`ModelDownloader` を直接持たない）。`hashChunkBytes` は `config.audio.hashChunkBytes` を渡す
 - T-32（DR-05 / DR-08）は Bootstrap が作った**同じ** `ModelVerificationCache` を受け取る（`WorkerDependencies.verificationCache` と同一のインスタンス）
 - T-24 でカタログの値（URL のコミット SHA・sha256・bytes・license）を確かめ直したら、`Resources/ModelCatalog.json` を直す。本チケットのテストはカタログの値に依存しない（自前の `ModelEntry` を作る）
+- カタログの URL（コミット SHA）が変わったときは古い `.resume` を捨てる（再開データは元の URL へ要求するため）

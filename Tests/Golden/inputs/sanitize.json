@@ -1,0 +1,234 @@
+{
+  "schema": 1,
+  "group": "sanitize",
+  "cases": [
+    {
+      "name": "plain",
+      "input": "2026-08-29 raw",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "colon",
+      "input": "{date}:raw",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "slash_spaces",
+      "input": "  a / b  ",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "dots_around",
+      "input": "..hidden..",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "dots_inside",
+      "input": "a.b.c",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "reserved_con",
+      "input": "con",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "reserved_com1",
+      "input": "Com1",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "reserved_lpt9_dot",
+      "input": "LPT9.",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "reserved_nul_space",
+      "input": "NUL ",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "console_not_reserved",
+      "input": "CONSOLE",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "com10_not_reserved",
+      "input": "COM10",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "hash_caret_brackets",
+      "input": "a#b^c[d]e",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "wikilink",
+      "input": "[[Note]]",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "tab_del",
+      "input": "tab\there\u007f",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "empty",
+      "input": "",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "spaces_only",
+      "input": "   ",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "dots_only",
+      "input": "...",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "hashes_only",
+      "input": "###",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "controls_only",
+      "input": "\u0000\u0001",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "brackets_only",
+      "input": "[[]]",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "nfd_to_nfc",
+      "input": "か\u3099",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "combining_tail",
+      "input": "q\u0301",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "japanese_70",
+      "input": "ああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "japanese_80",
+      "input": "ああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああああ",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "ascii_180_bytes",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "ascii_181_bytes",
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaé",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "fullwidth_spaces",
+      "input": "x\u3000\u3000y",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "forbidden_chars",
+      "input": "a|b<c>d*e?f\"g\\h",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "nbsp_zwsp",
+      "input": "a\u00a0b\u200bc",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "e_acute_100",
+      "input": "éééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééééé",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "ga_5_max7",
+      "input": "ががががが",
+      "maxBytes": 7,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "ga_5_max4",
+      "input": "ががががが",
+      "maxBytes": 4,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "con_max3",
+      "input": "CON",
+      "maxBytes": 3,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "c1_nel",
+      "input": "a\u0085b",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "fs_x1c",
+      "input": "a\u001cb",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "line_separator",
+      "input": "a\u2028b",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "tabs_inside",
+      "input": "a\t\tb",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "spaces_inside",
+      "input": "  a   b  ",
+      "maxBytes": 180,
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

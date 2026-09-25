@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "group": "llm_schema_block",
+  "cases": [
+    {
+      "name": "final_default",
+      "partial": false,
+      "overrides": {},
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "partial_default",
+      "partial": true,
+      "overrides": {},
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "final_tags_ideas_disabled",
+      "partial": false,
+      "overrides": {
+        "llm.analysis.sections.tags.enabled": false,
+        "llm.analysis.sections.ideas.enabled": false
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "final_maxitems_null",
+      "partial": false,
+      "overrides": {
+        "llm.analysis.sections.key_points.maxItems": null
+      },
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "partial_tasks_disabled",
+      "partial": true,
+      "overrides": {
+        "llm.analysis.sections.tasks.enabled": false
+      },
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

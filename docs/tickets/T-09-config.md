@@ -1,5 +1,16 @@
 # T-09 VDCore: AppConfig・ConfigLoader（CV-01〜59）・ConfigMigrator・既定値・ModelCatalog
 
+> （F-94。2026-09-25。利用者の決定）`device.includeVolumes` の既定を `["DJIMIC3"]` から `["VOICEDOCK"]` にした（実機は利用者が Finder で `VOICEDOCK` に改名して使う。PLAN §6.2。下の `defaults` の逐語も直した）。
+> 既存の config.json の値は変わらない（移行は足さない。利用者が手で直す）。テストは `AppConfigTests` の §6.2 の JSON と `ConfigStoreIncludeDefaultTests`。
+
+> （F-81・issue #119。2026-09-23。利用者の決定）`device.includeVolumes` の既定を `[]` から `["DJIMIC3"]` にした（PLAN §6.2。下の `defaults` の逐語も直した）。
+> 設定キーは足さない。既定値は config.json が無いときだけ書くので、既存の config.json の値（`[]` を含む）は変わらない。
+> テストは `AppConfigTests` の §6.2 の JSON（`"includeVolumes": ["DJIMIC3"]`）と `ConfigStoreIncludeDefaultTests`（VDPipeline）。
+
+> （F-83・issue #119、2026-09-23。マージ後の追記）この本文より PLAN §6.4 が優先する。CV-13 の `{…}` の走査・CV-14 の `{title}`・CV-41 の `/`・`.`・`..` をスカラー単位で見る（書記素単位だと結合文字が続くと見逃した）。
+> CV-52・CV-53 の backoff の配列は 64 個以下（`ConfigValidator.maxBackoffCount`。超えたら `要素は 64 個以下であること（<個数>）` の 1 件だけ）。CV-54 の 4 語は `LogLevel.configValue` の 1 か所。
+> `ConfigLoader.encode` は符号化できなければ投げる（`throws`。空の Data を返さない）。`"<file>"` は `ConfigLoader.fileKeyPath`。テストは `ConfigValidatorScalarTests.swift`・`ConfigLoaderEncodeTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | Phase | 2（記録の土台） |
@@ -42,6 +53,7 @@
 | `Tests/TestSupport/TestCatalogs.swift` | テスト用の小さなカタログ |
 | `Tests/TestSupport/GoldenConfig.swift` | golden の設定の上書きから `AppConfig` を作る（00-api-map §15 の作り手はこのチケット。§10） |
 | `Tests/VDCoreTests/GoldenConfigTests.swift` | `GoldenConfig.make` のテスト |
+| `Tests/PolicyTests/SpecSync/SpecCoverage.swift`（変更） | `activated` に `.cv` を足す（T-05 §4。CV のテストが揃ったので SPEC の CV の集合 = テストの表示名の CV の集合を確かめる） |
 
 `PackageRoot`・`TempDirectory`・`TestEnvironment`（TestSupport）は T-01 が作る（このチケットでは作らない）。
 
@@ -112,7 +124,7 @@ public struct AnalysisSections {
     public func section(named name: String) -> SectionConfig? { … }   // switch で 7 つ、default は nil
     /// F-54: `summary` と `timeline` の JSON には `maxItems` が無い（`maxItems` を持つのは 5 節だけ。PLAN §6.2）。
     /// この 2 つだけ `HeadingOnlySection` で符号化・復号し、`SectionConfig.maxItems` は常に nil になる。
-    private struct HeadingOnlySection: Codable, Equatable, Sendable { var enabled: Bool; var heading: String? }
+    private struct HeadingOnlySection: Codable, Equatable, Sendable { var enabled: Bool; var heading: String?; func encode(to:) … }  // heading の nil も null で書く
     public init(from decoder: Decoder) throws { … }   // summary / timeline は HeadingOnlySection、残り 5 つは SectionConfig
     public func encode(to encoder: Encoder) throws { … } // 同上（summary / timeline に maxItems のキーを書かない）
 }
@@ -141,7 +153,7 @@ public struct LoggingConfig { public var level: String; public var unsafeLogCont
 （上は宣言の要約。各 struct に `Codable, Equatable, Sendable` と memberwise の `public init` を付ける。）
 
 - `mountMode` / `inboxRetain` / `level` を enum にしないのは、型にすると不正な値が CV-48 / CV-29 / CV-54 ではなく CV-39（型違い）になり、規則の ID が変わるため
-- **null を JSON に書き出すための `encode(to:)`**: `VaultConfig`・`LLMConfig`・`SectionConfig` の 3 つだけ手で書く。synthesized は nil を省くので、`container.encode(path, forKey: .path)` の形で**Optional をそのまま** encode する（nil は `null` になる）。decode は synthesized のまま（キーの有無は読み込みの 2 段目が先に保証する）
+- **null を JSON に書き出すための `encode(to:)`**: `VaultConfig`・`LLMConfig`・`SectionConfig` の 3 つ（と private の `HeadingOnlySection`。summary / timeline の `heading` を nil にして書き出すと、キーが消えて読み直しが CV-39 になるため）だけ手で書く。`CodingKeys` は synthesized のものを使う（`init(from:)` を synthesized のままにすると `CodingKeys` も合成される）。synthesized は nil を省くので、`container.encode(path, forKey: .path)` の形で**Optional をそのまま** encode する（nil は `null` になる）。decode は synthesized のまま（キーの有無は読み込みの 2 段目が先に保証する）
 
 `AppConfig.defaults(timeZone:)`: §6.2 の JSON と**同じ値**を 1 か所に書く:
 
@@ -151,7 +163,7 @@ public static func defaults(timeZone: String) -> AppConfig {
         schemaVersion: 1,
         timeZone: timeZone,
         vault: VaultConfig(path: nil, marker: ".obsidian"),
-        device: DeviceConfig(includeVolumes: [], excludeVolumes: ["Macintosh HD", "com.apple.TimeMachine.*", ".*"], mountMode: "ro",
+        device: DeviceConfig(includeVolumes: ["VOICEDOCK"], excludeVolumes: ["Macintosh HD", "com.apple.TimeMachine.*", ".*"], mountMode: "ro",
                              stabilityFastPathSeconds: 60, stabilityIntervalSeconds: 3, stabilityChecks: 2,
                              maxScanDepth: 3, scanIntervalSeconds: 300, snapshotMaxAgeSeconds: 900),
         audio: AudioConfig(timeoutFactor: 0.5, minTimeoutSeconds: 180, durationToleranceSeconds: 1.0,
@@ -162,7 +174,7 @@ public static func defaults(timeZone: String) -> AppConfig {
                                            timeoutFactor: 3.0, minTimeoutSeconds: 600, maxTimeoutSeconds: 21_600, minChars: 1,
                                            vad: VADConfig(enabled: true, modelID: "silero-v5.1.2", threshold: 0.5,
                                                           minSpeechDurationMs: 250, minSilenceDurationMs: 1000, speechPadMs: 200)),
-        llm: LLMConfig(modelID: nil, contextSize: 32_768, temperature: 0.1, topP: 0.9, maxOutputTokens: 4096,
+        llm: LLMConfig(modelID: nil, contextSize: 32_768, temperature: 0.1, topP: 0.9, maxOutputTokens: 8192,
                        requestTimeoutSeconds: 1800, maxCharsPerRequest: 20_000, maxSecondsPerRequest: 3600,
                        chunkOverlapChars: 500, repairAttempts: 1,
                        analysis: AnalysisConfig(
@@ -192,7 +204,7 @@ public static func defaults(timeZone: String) -> AppConfig {
 ### 2. `Config/ConfigViolation.swift`
 
 ```swift
-public struct ConfigViolation: Equatable, Sendable {
+public struct ConfigViolation: Error, Equatable, Sendable {   // Error は ConfigMigrator.migrate の Result の失敗側に置くため（投げない）
     public let rule: String      // "CV-nn"
     public let code: ErrorCode
     public let keyPath: String   // "device.stabilityChecks"、配列の要素は "device.includeVolumes.0"、ファイル全体は "<file>"
@@ -303,7 +315,8 @@ public enum ConfigLoader {
    違反の並びは「そのオブジェクトの未知キー・型（昇順、子の再帰を含む）→ そのオブジェクトの欠けたキー（昇順）」。1 件以上あれば `.invalid`
 4. **型に写す**: `JSONDecoder().decode(AppConfig.self, from: data)`（v1 では移行で値を変えないので**元の `data` を渡す**）。`DecodingError` を 1 件の違反（CV-39、configInvalidValue）に写す:
    - keyPath: `codingPath` の各キーを、`intValue` があれば `String(intValue)`、無ければ `stringValue` にして `.` でつなぐ（`keyNotFound(key, ctx)` は `ctx.codingPath + [key]`）。空なら `"<file>"`
-   - message: `typeMismatch` →「型が違います」、`valueNotFound` →「null にできません」、`keyNotFound` →「キーがありません」、`dataCorrupted` →「値が不正です」、それ以外 →「読めません」
+   - message: `typeMismatch` →「型が違います」、`valueNotFound` →「null にできません」、`keyNotFound` →「キーがありません」、`dataCorrupted` →「値が不正です」（ただし整数の位置の小数でキーのパスを補ったときは「型が違います」）、それ以外 →「読めません」
+   - **整数の位置の `1.5`**: JSONDecoder（macOS 15 以降の Foundation）は `typeMismatch` ではなく **codingPath が空の `dataCorrupted`**（「Number 1.5 is not representable in Swift.」）を投げる。PLAN §6.1「型違い → CV-39、キーのパスを添える」を満たすため、`dataCorrupted` で codingPath が空のときだけ `unrepresentableNumberPath(in: 2 段目の辞書)` でパスを補う: `ConfigKeys.allKeyPaths` の順に葉（配列なら各要素、パスは末尾に添字）を見て、bool でない浮動小数の `NSNumber` で `Int(exactly:)` が nil のものについて、既定値の JSON の同じ位置に `1.5`（配列なら `[1.5]`）を置いて `AppConfig` に復号できなければ（= 整数の位置）そのパス。見つからなければ `"<file>"`（型の情報を 2 か所に書かないため、既定値を型の見本にする）
 5. **意味の検証**: `ConfigValidator.validate(config, catalog:, reaperConfObservation:)`。空なら `.valid(config)`、そうでなければ `.invalid(violations)`
 
 `encode`: `JSONEncoder` の `outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]` で符号化し、`"\n"` を足す。符号化は失敗しない型なので、失敗したら（到達しない）空の `Data()` を返す（`try!` を使わない。PT-19）。
@@ -384,6 +397,8 @@ public enum ConfigValidator {
 | | | `defaultTags` の各要素 `i` が空でない | `obsidian.defaultTags.<i>` | `空文字にできない` |
 
 - code は CV-30・CV-33 が `configLockMismatch`、それ以外はすべて `configInvalidValue`（CV-01 は読み込みの 3 段目だけが出す）
+- **F-71（#120）の注記**: この表より PLAN §6.4 が優先する。CV-08・46・49・50・52・53・55・56・57・58・59 に上限を足した（秒 31,536,000・`hashChunkBytes` 67,108,864・文字数とトークン数 1,000,000,000。上限を超えたら `<上限> 以下であること（<v>）`。1 キー 1 件: 下限の違反と、CV-46・CV-55 の大小関係の違反が先で、そのときは同じキーの上限を出さない）。
+  CV-10 の 2 倍・CV-51 の和は桁あふれを報告する形で計算し、あふれたらその CV の違反。CV-11・CV-19 は Unicode スカラー単位で見る。テストは `ConfigValidatorBoundsTests`
 - **プレースホルダの走査**（CV-13。voicedock の正規表現 `\{([^}]*)\}` と同じ結果）: 位置 0 から `{` を探す → 見つからなければ終わり → その後ろで最初の `}` を探す → 見つからなければ終わり → 間の文字列が名前（`{` を含みうる）→ 名前が許可の 3 つに無ければそのテンプレートの違反を 1 件出して終わり → `}` の次から続ける。Swift の Regex は使わない（PT-20）
 - `(<v>)` の Double は `description`（`0.5`・`2.0`）、Int は 10 進、Bool は `true` / `false`
 
@@ -513,14 +528,14 @@ enum ConfigEffectPending {
 | `llm.analysis.sections.*.heading`（7 個）、`llm.analysis.sections.timeline.enabled`、`llm.analysis.order`、`obsidian.defaultTags`、`obsidian.wiki.*`（`vaultIndexCacheSeconds` を除く 7 個） | T-27 |
 | `obsidian.wiki.vaultIndexCacheSeconds` | T-29 |
 | `obsidian.maxTitleBytes`、`obsidian.raw.filenameTemplate`、`obsidian.raw.timestampIntervalSeconds`、`obsidian.raw.partBoundaryHeading` | T-26 |
-| `obsidian.raw.folderTemplate` | T-33 |
+| `obsidian.raw.folderTemplate` | T-33（T-33 は取り下げ） |
 | `cleanup.deleteSkippedSource` | T-39 |
 
 （表の `*` はコードでは 1 つずつ書く。`owners` は 90 個 = 93 − 3。件数はテストで直書きせず 4 条件で確かめる）
 
 **割り当ての根拠のうち、素直でないもの**:
 - `llm.analysis.sections.timeline.enabled` は LLM のスキーマに出ない節（§4.1 手順 5 の `NOT_A_SECTION`）なので、効くのは Daily ノートの描画だけ。T-19 ではなく **T-27** が書く
-- `obsidian.raw.folderTemplate` は T-33（乗り換えの取り込み元）に、`obsidian.wiki.vaultIndexCacheSeconds` は T-29（索引の作り直し）に、すでに `CE` のテストがある。二重には書かない
+- `obsidian.raw.folderTemplate` は T-33（乗り換えの取り込み元。T-33 は取り下げ）に、`obsidian.wiki.vaultIndexCacheSeconds` は T-29（索引の作り直し）に、すでに `CE` のテストがある。二重には書かない
 - **`llm.analysis.sections.summary.maxItems` と `llm.analysis.sections.timeline.maxItems` は設定から無くなった**（F-54。どちらも読む場所が 1 か所も無い「効かない設定」だったため、PLAN §6.2 の JSON からキーごと消えた）。
   この 2 つは `ConfigKeys.allKeyPaths` にも `owners` にも載せない。JSON に書いたら CV-01（未知のキー）になる（§3・§5 手順 3）。
   よって `owners` は**すべてのキーに担当チケットが付いた状態**で始まり、各チケットが自分の行を消していけば**空にできる**（T-43 の「`owners` が空」の受け入れ条件は、もう決着待ちではない）
@@ -562,6 +577,7 @@ public enum TestCatalogs {
 | `encodeEndsWithNewlineAndSortsKeys` | `符号化はキーの昇順で末尾改行 1 つ` | 先頭が `{\n  "audio" : {`、末尾が `}\n`、`\n\n` で終わらない |
 | `encodeDoesNotEscapeSlashes` | `符号化は / をエスケープしない` | `Daily/Voice/Raw/{yyyymmdd}` をそのまま含む |
 | `roundTrip` | `書いて読むと同じ値` | `load(encode(defaults))` が `.valid(defaults)` |
+| `headingOnlySectionWritesNull` | `F-54 summary の heading が nil でも null で書き、読み直せる` | order を `["timeline", "key_points"]`、`summary.heading = nil` にした設定で `load(encode(c)) == .valid(c)`（`HeadingOnlySection.encode(to:)` の検査） |
 | `sectionNamedLooksUpAllSeven` | `section(named:) は 7 つの節を引ける` | `SectionName.all` の各名前で nil でない、`"unknown"` で nil |
 | `modeAccessorsFallBackToSafeSide` | `不正な mountMode / inboxRetain は安全側に倒す` | `mountMode = "x"` の `mode == .ro`、`inboxRetain = "x"` の `retain == .rawSaved` |
 | `allKeyPathsMatchDefaultsEncoding` | `allKeyPaths は既定値の符号化の葉と一致する` | `encode(defaults)` を `JSONSerialization` で読み、オブジェクトは降り、配列・スカラー・null を葉とした「葉のパスの集合」== `Set(ConfigKeys.allKeyPaths)`、かつ `allKeyPaths` に重複が無い |
@@ -574,6 +590,7 @@ public enum TestCatalogs {
 | 関数名 | 表示名 | 期待 |
 |---|---|---|
 | `cv39NotJSON` | `CV-39 JSON でなければ読めない` | `Data("{".utf8)` → `[CV-39, "<file>", "JSON として読めません"]` |
+| `cv39EmptyData` | `CV-39 空のデータは JSON として読めない` | `Data()` → `[CV-39, "<file>", "JSON として読めません"]`（TEST-28） |
 | `cv39NotObject` | `CV-39 トップが配列なら読めない` | `Data("[]".utf8)` → `[CV-39, "<file>", "JSON のオブジェクトではありません"]` |
 | `cv39SchemaVersionMissing` | `CV-39 schemaVersion が無い` | keyPath `schemaVersion`、「キーがありません」 |
 | `cv39SchemaVersionNotInteger` | `CV-39 schemaVersion が 1.5 や true` | どちらも「整数であること」 |
@@ -582,14 +599,14 @@ public enum TestCatalogs {
 | `cv01UnknownNestedKey` | `CV-01 入れ子の未知のキー` | `llm.analysis.sections.summary2` を足す → keyPath `llm.analysis.sections.summary2` |
 | `cv01UnknownKeysAreSorted` | `CV-01 複数の未知キーは昇順` | `device.zz` と `device.aa` → `aa` が先 |
 | `cv01SummaryMaxItemsIsUnknown` | `CV-01 summary と timeline の maxItems は未知のキー（F-54）` | `llm.analysis.sections.summary.maxItems = 10` を足す → `[CV-01, configUnknownKey, "llm.analysis.sections.summary.maxItems", "未知のキーです"]`。`timeline.maxItems` も同じ。`key_points.maxItems = 10` は `.valid` |
-| `cv39MissingKey` | `CV-39 欠けたキー` | `device.stabilityChecks` を消す → `[CV-39, "device.stabilityChecks", "キーがありません"]` |
+| `cv39MissingKey` | `CV-39 欠けたキー` | `device.stabilityChecks` を消す → `[CV-39, "device.stabilityChecks", "キーがありません"]`。さらに `device.maxScanDepth` も消す → 2 件（`device.maxScanDepth`・`device.stabilityChecks` の順。1 件だけなら JSONDecoder の `keyNotFound` と同じ違反になり、3 段目の検査を消しても落ちないため） |
 | `cv39MissingOptionalKeyStillMissing` | `CV-39 null を許すキーでも欠けたら違反` | `vault.path` を消す → keyPath `vault.path`、「キーがありません」 |
 | `nullForOptionalIsValid` | `null を許すキーは null でよい` | 既定のまま（`vault.path` は null）→ `.valid` |
 | `cv39ObjectExpected` | `CV-39 オブジェクトの位置に数値` | `"vault": 1` → `[CV-39, "vault", "オブジェクトであること"]` |
 | `cv39TypeMismatch` | `CV-39 型違いはキーのパス付き` | `device.stabilityChecks = "2"` → keyPath `device.stabilityChecks`、「型が違います」 |
 | `cv39TypeMismatchInArray` | `CV-39 配列の要素の型違い` | `cleanup.deleteEvaluationBackoffSeconds = [60, "x"]` → keyPath `cleanup.deleteEvaluationBackoffSeconds.1` |
 | `cv39NullForNonOptional` | `CV-39 null にできないキー` | `device.mountMode = null` → 「null にできません」 |
-| `cv39FloatForInt` | `CV-39 整数のキーに 1.5` | `session.maxParts = 1.5` → keyPath `session.maxParts` |
+| `cv39FloatForInt` | `CV-39 整数のキーに 1.5` | `session.maxParts = 1.5` → `[CV-39, "session.maxParts", "型が違います"]`（JSONDecoder は codingPath の空の `dataCorrupted` を投げる。キーのパスを補ったときは型違いと同じ「型が違います」にする。利用者の判断 2026-09-21） |
 | `stopsBeforeValidationWhenKeysWrong` | `キーの段で違反があれば意味の検証をしない` | 未知キーと `session.blockGapSeconds = -1` を同時に入れる → 違反は CV-01 の 1 件だけ |
 | `validationCollectsAll` | `意味の検証は 1 つ目で止めない` | `session.blockGapSeconds = -1` と `obsidian.maxTitleBytes = 0` → CV-08 と CV-16 の 2 件（この順） |
 | `renderedFormat` | `違反の 1 行表記は空白 2 つ区切り` | `ConfigViolation(rule: "CV-08", code: .configInvalidValue, keyPath: "session.blockGapSeconds", message: "0 以上であること（-1）").rendered == "CV-08  CONFIG_INVALID_VALUE  session.blockGapSeconds: 0 以上であること（-1）"` |
@@ -627,7 +644,7 @@ public enum TestCatalogs {
 | CV-48 | `"RO"` → `ro か rw であること（RO）` | `rw` |
 | CV-49 | 4 つを 1 つずつ `0` → keyPath がそれぞれの名前 | `1` |
 | CV-50 | `59` → `60 以上であること（59）` | `60`（snapshotMaxAge 900 > 60 なので CV-46 も通る） |
-| CV-51 | `contextSize = 26143` → `maxCharsPerRequest + maxOutputTokens + 2048（26144）以上であること（26143）` | `26144` |
+| CV-51 | `contextSize = 30239` → `maxCharsPerRequest + maxOutputTokens + 2048（30240）以上であること（30239）` | `30240`（F-88） |
 | CV-52 | backoff `[]` → `空にできない`、`[60, -1]` → keyPath `….1`、timeout `59` → `60 以上であること（59）` | `[0]`・`60` |
 | CV-53 | maxAttempts `0` → 違反（CV-09 は `3 >= 0` で通る）、backoff `[3,-1,30]` → keyPath `retry.backoffSeconds.1` | `maxAttempts 1` |
 | CV-54 | `"info"` → 違反（大小区別） | `"DEBUG"` |
@@ -653,6 +670,7 @@ public enum TestCatalogs {
 | `bundledCatalogHasDefaultIDs` | `既定の ID がカタログに在る` | `entry(kind: .whisper, id: "large-v3-turbo-q5_0")` と `entry(kind: .vad, id: "silero-v5.1.2")` が nil でない |
 | `bundledURLsArePinned` | `URL はコミット SHA で固定されている（PT-13 と同じ条件）` | 全項目の url が `bad_url` の条件を満たさない（= 合格している）ことは `rejected` が空で示されるので、ここでは `/resolve/main/` を含まないことを直接見る |
 | `listedLLMsExcludeUnverified` | `verified が false の LLM は一覧に出ない` | 同梱（2 つとも false）で `listedLLMs.isEmpty` |
+| `emptyListsLoad` | `空のカタログは項目 0 件で読める` | 3 つの kind が `[]` → 項目も `rejected` も `listedLLMs` も空（TEST-28） |
 | `rejectsEachRule` | `不合格の理由ごとに捨てる（OPS-19）` | 1 項目ずつ壊した JSON（12 通り: not_object・unknown_key・missing_key・wrong_type（bytes が文字列）・wrong_type（verified が 1）・bad_id（大文字）・bad_file_name（`../x`）・bad_file_name（`.x`）・bad_url（`resolve/main`）・bad_url（ホスト違い）・bad_sha256（63 桁）・bad_bytes（0））→ `rejected` の reason が一致し、その項目が無い |
 | `duplicateIDKeepsFirst` | `同じ ID は先のものを残す` | reason `duplicate_id`、index 1 |
 | `catalogErrors` | `カタログ全体の不正` | `[]` → `.notJSONObject`、schema 2 → `.badSchema`、`vad` 無し → `.missingKind("vad")`、`"x": 1` → `.unknownKey("x")` |
@@ -668,6 +686,19 @@ public enum TestCatalogs {
 | `noOverridesEqualsDefaults` | `上書きの無いケースは既定値と同じ` | `sanitize` の最初のケース（`overrides` 無し） | `make(item) == AppConfig.defaults(timeZone: "Asia/Tokyo")` |
 | `someCasesHaveOverrides` | `上書きのあるケースが在る（空で緑にしない）` | 同上の全ケース | `overrides()` が空でないケースが 1 件以上 |
 | `missingPathThrows` | `途中のキーが無ければ missingPath` | `GoldenConfig.set` に `["obsidian", "nope", "x"]` のパス | `Failure.missingPath("nope.x")` |
+| `emptyPathThrows` | `空のパスは missingPath（空文字）` | `GoldenConfig.set` に空のパス | `Failure.missingPath("")`（TEST-28） |
+
+### `Tests/VDCoreTests/ModelFilesTests.swift`（`@Suite("ModelFiles") struct ModelFilesTests`）
+
+`ModelEntry` は `@testable import VDCore` の memberwise init で作る（`file: "w.bin"`、`bytes: 4`）。ファイルは `TempDirectory` の中の `HomeLayout` に置く。
+
+| 関数名 | 表示名 | 期待 |
+|---|---|---|
+| `urlIsUnderKindDirectory` | `url は models/<kind>/<file>` | root `/tmp/vd-home` で `/tmp/vd-home/models/whisper/w.bin` |
+| `customLLMURL` | `customLLMURL は custom-<先頭 16>.gguf、形が違えば nil` | `custom:0123456789abcdef…` → `models/llm/custom-0123456789abcdef.gguf`。大文字・短い・`custom:` で始まらない・空文字は nil |
+| `isPresentChecksSize` | `サイズが bytes と一致する通常ファイルだけ在る` | 無い → false、4 バイト → true、別の kind → false、3 バイト → false |
+| `zeroByteFileIsNotPresent` | `0 バイトのファイルは在ると言わない` | false |
+| `symlinkIsFollowed` | `symlink は辿って判定し、ディレクトリは在ると言わない` | 4 バイトの実体への symlink → true、同名のディレクトリ → false |
 
 ### `Tests/PolicyTests/ConfigEffectCoverageTests.swift`
 
@@ -681,17 +712,18 @@ public enum TestCatalogs {
 | 壊し方 | 落ちるべきテスト |
 |---|---|
 | `defaults` の `stabilityChecks` を 3 にする | `defaultsMatchSection62` |
+| `HeadingOnlySection.encode(to:)` を消して synthesized に戻す | `headingOnlySectionWritesNull` |
 | `VaultConfig.encode(to:)` を消して synthesized に戻す | `encodeWritesNullsExplicitly`、`allKeyPathsMatchDefaultsEncoding`、`roundTrip` |
 | `checkKeys` の欠けたキーの検査を消す | `cv39MissingKey`、`cv39MissingOptionalKeyStillMissing` |
 | `checkKeys` の再帰をやめる（トップだけ見る） | `cv01UnknownNestedKey` |
 | CV-14 と CV-13 の評価の順を入れ替える | `evaluationOrderFollowsTable` |
 | CV-14 に該当したテンプレートを CV-13 から外す処理を消す | CV-14 のテスト（「CV-13 は出ない」） |
 | CV-30 で `.missing` のときも比較する（missing を false 扱い） | CV-30 の「評価しない」のテスト |
-| CV-51 の `+ 2048` を消す | CV-51 の 2 本 |
+| CV-51 の `+ 2048` を消す | CV-51 の違反の例（境界で通る例 `30240` は条件を緩めても通るので落ちない） |
 | `ModelCatalog.load` の `bad_url` の 40 桁検査を消す | `rejectsEachRule`（resolve/main） |
 | `ConfigEffectPending.owners` から `device.mountMode` を消す | `everyKeyIsCoveredOrPending` |
 | `GoldenConfig.set` の `path.count == 1` の分岐で `object[key] = value` を消す | `overridesLandOnKeyPaths` |
-| `AnalysisSections` の `encode(to:)` / `init(from:)` を synthesized に戻す（summary と timeline にも `maxItems` を書く） | `summaryAndTimelineHaveNoMaxItems`、`allKeyPathsMatchDefaultsEncoding`、`roundTrip`、`defaultsMatchSection62` |
+| `AnalysisSections` の `encode(to:)` / `init(from:)` を synthesized に戻す（summary と timeline にも `maxItems` を書く） | `summaryAndTimelineHaveNoMaxItems`、`allKeyPathsMatchDefaultsEncoding`、`roundTrip`（`defaultsMatchSection62` は落ちない。synthesized の復号は `maxItems` の無い JSON も nil として読むので、§6.2 の JSON は読めてしまう。壊れるのは符号化の側） |
 
 ## 受け入れ条件
 
@@ -716,6 +748,7 @@ public enum TestCatalogs {
 ## API 地図への変更提案
 
 - `ModelCatalog` に `rejected: [CatalogRejection]`・`entries(kind:)`・`listedLLMs` を、`CatalogError` に `unknownKey(String)` を足す（00-api-map §2.2 には無い） → 00-api-map に反映済み（2026-09-18）。ただし地図は `rejected` をタプルの配列 `[(index: Int, kind: ModelKind, reason: String)]` と書いている。タプルは `Equatable` にならず `ModelCatalog: Equatable` の合成が壊れるので、本チケットは同じ 3 つのフィールドを持つ `CatalogRejection`（struct）のままにする（地図を `[CatalogRejection]` に直すことを提案する）
+- （実装で追記）00-api-map §2.2 の `ConfigViolation` の行は `Equatable, Sendable` だけだが、同じ地図の `ConfigMigrator.migrate` が `Result<[String: Any], ConfigViolation>` を返すので `ConfigViolation` は `Error` でなければコンパイルできない。本チケットは `ConfigViolation: Error, Equatable, Sendable` にした（投げはしない）。地図の `ConfigViolation` の行に `Error` を足すことを提案する
 - `DeviceConfig.MountMode` / `.mode`、`AudioConfig.InboxRetain` / `.retain` を足す（検証済みの値を型で使うため。不正値は安全側） → 00-api-map に反映済み（2026-09-18）
 - PolicyTests の `SourceScanner` の公開 API（「文字列リテラルの一覧」を返す関数の名前）が 00-api-map に無い。T-04 のチケットで確定したら、この網羅テストはその名前を使う。本チケットでは `SourceScanner(source: String).stringLiterals: [(line: Int, text: String)]` を仮定した → T-04 の API（`SourceTree.load(root:)` の各 `SourceFile.scanned.literals`、`SourceScanner.scan(_:)`・`StringLiteral.raw`）に合わせて §9 を直した（整合修正。PolicyTests の中の型なので地図の対象外）
 - （整合修正で追記）00-api-map §15 の `GoldenConfig.make`（作り手 T-09）を §10 に足した（全文は T-25 §4.12）

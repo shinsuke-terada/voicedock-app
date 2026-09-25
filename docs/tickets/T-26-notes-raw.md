@@ -1,5 +1,8 @@
 # T-26 VDNotes: sanitize・テンプレート・frontmatter・Raw ノート
 
+> （F-83・issue #119、2026-09-23。マージ後の追記）`Frontmatter.quote` は YAML の読み手が拒む U+0080–0084・U+0086–009F・U+FFFE・U+FFFF を `\uXXXX`（大文字 16 進 4 桁）で書く（PLAN §8.6・X-40。値は読み戻せる。
+> U+0085・U+2028・U+2029 とそれ以外の入力の出力は変わらない）。テストは `FrontmatterYAMLEscapeTests.swift`。
+
 | 項目 | 内容 |
 |---|---|
 | ID | T-26 |
@@ -33,6 +36,7 @@ Obsidian に書く**ファイル名の sanitize**、**フォルダ・ファイ�
 | `Tests/VDNotesTests/NoteTemplateTests.swift` | テンプレート |
 | `Tests/VDNotesTests/FrontmatterTests.swift` | 書き出し・読み取り・退避 |
 | `Tests/VDNotesTests/RawNoteTests.swift` | Raw ノートの固定例 |
+| `Tests/VDNotesTests/NotesFixtures.swift` | §5 の共通の準備（T-27・T-28 も使う） |
 | `Tests/VDNotesTests/RawNoteGoldenTests.swift` | golden（T-25 の `sanitize`・`frontmatter`・`raw_note`・`note_filename`（`raw` / `rawFolder`））との比較 |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | 4 キーを消す（§5.6） |
 
@@ -65,10 +69,12 @@ enum ScalarText {
     static func removing(_ s: String, _ set: Set<Unicode.Scalar>) -> String
     /// スカラーを置き換える（map に在るものを置換、他はそのまま）
     static func replacing(_ s: String, _ map: [Unicode.Scalar: Unicode.Scalar]) -> String
+    /// スカラー列から文字列を作る（`String(String.UnicodeScalarView(scalars))`）
+    static func string(_ scalars: [Unicode.Scalar]) -> String
 }
 ```
 
-- 実装はすべて `Array(s.unicodeScalars)` を作って比較・組み立てる。結果は `String(String.UnicodeScalarView(scalars))` で作る
+- 実装はすべて `Array(s.unicodeScalars)` を作って比較・組み立てる。結果は `string(_:)`（= `String(String.UnicodeScalarView(scalars))`）で作る
 
 ### 4.2 `Sanitize.swift`
 
@@ -109,7 +115,8 @@ public enum NoteTemplate {
 }
 ```
 
-- `template` の中の `{yyyymmdd}` を `day.stamp`（`20260829`）、`{date}` を `day.dashed`（`2026-08-29`）、`{time}` を `000000` に、**この順に**全部置換する（`replacingOccurrences(of:with:)`）
+- `template` の中の `{yyyymmdd}` を `day.stamp`（`20260829`）、`{date}` を `day.dashed`（`2026-08-29`）、`{time}` を `000000` に、**この順に**全部置換する（`replacingOccurrences(of:with:options: .literal)`）
+- `.literal` を必ず付ける。既定の比較は正準等価・書記素単位で、`{date}\u{301}` のように結合文字が続くプレースホルダを置換しない（Python の `str.replace` は置換する。§4.0・PLAN §5.7。Xcode 27.0 で確認）
 - それ以外の `{…}` は残す（CV-13 が起動時に弾く）。sanitize はしない
 
 ### 4.4 `PyStr.swift`（internal）
@@ -139,7 +146,7 @@ enum PyStr {
 import Foundation
 import Yams
 
-public enum FrontmatterValue: Sendable, Equatable {
+public enum FrontmatterValue: Sendable {
     case string(String)
     case bool(Bool)
     case int(Int)
@@ -168,8 +175,8 @@ public enum Frontmatter {
 ```
 
 **`quote(s)`**（notes.py:121-130）:
-1. `\`（U+005C）を `\\` に置換
-2. `"` を `\"` に置換
+1. `\`（U+005C）を `\\` に置換（`replacingOccurrences(of:with:options: .literal)`。§4.3 と同じ理由で `.literal` を付ける）
+2. `"` を `\"` に置換（同じく `.literal`）
 3. U+0000〜U+001F と U+007F を取り除く（C1・U+2028・U+2029 は残す）
 4. `"\"" + 結果 + "\""`
 
@@ -283,14 +290,14 @@ public enum RawNote {
 
 ## 5. テスト
 
-共通の準備（`Tests/VDNotesTests/NotesFixtures.swift` に置き、T-27・T-28 も使う）:
-- `NotesFixtures.jst = ZonedTime(timeZone: TimeZone(identifier: "Asia/Tokyo")!)`
-- `NotesFixtures.day = LocalDate(year: 2026, month: 8, day: 29)`、`sessionKey = "DJIMIC3:20260829"`
+共通の準備（`Tests/VDNotesTests/NotesFixtures.swift` に置き、T-27・T-28 も使う）。強制アンラップ `!` は `swift format` の NeverForceUnwrap が落とすので、失敗しうるものは `get throws` の計算プロパティ・`throws` の関数にして `try #require(…)` で取り出す（呼び手は `try NotesFixtures.day` のように書く）:
+- `NotesFixtures.jst = ZonedTime(timeZone: try #require(TimeZone(identifier: "Asia/Tokyo")))`（`get throws`）
+- `NotesFixtures.day = try #require(LocalDate(year: 2026, month: 8, day: 29))`（`get throws`）、`sessionKey = "DJIMIC3:20260829"`
 - `keyA = "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav"`、`keyB = "DJIMIC3/TX_MIC001_20260829_074201/TX01_MIC002_20260829_074210_orig.wav"`
-- `at(h, m, s) -> Instant` = `jst.parseISO(String(format: "2026-08-29T%02d:%02d:%02d+09:00", h, m, s))!`
+- `at(h, m, s) throws -> Instant` = `try #require(try jst.parseISO(String(format: "2026-08-29T%02d:%02d:%02d+09:00", h, m, s)))`
 - `seg(_ at: Instant, _ text: String, secs: Int = 10) -> AbsoluteSegment(at: at, endAt: at.adding(seconds: secs), text: text)`
-- `partA` = `RawPart(partkey: keyA, startedAt: "2026-08-29T07:12:04+09:00", endedAt: "2026-08-29T07:42:04+09:00", segments: [seg(at(7,12,4), "おはようございます。"), seg(at(7,17,4), "削除条件を整理します。")], zone: jst)`
-- `partB` = `RawPart(partkey: keyB, startedAt: "2026-08-29T07:42:10+09:00", endedAt: "2026-08-29T08:12:10+09:00", segments: [seg(at(7,42,10), "続きです。")], zone: jst)`
+- `partA`（`get throws`）= `RawPart(partkey: keyA, startedAt: "2026-08-29T07:12:04+09:00", endedAt: "2026-08-29T07:42:04+09:00", segments: [seg(at(7,12,4), "おはようございます。"), seg(at(7,17,4), "削除条件を整理します。")], zone: jst)`
+- `partB`（`get throws`）= `RawPart(partkey: keyB, startedAt: "2026-08-29T07:42:10+09:00", endedAt: "2026-08-29T08:12:10+09:00", segments: [seg(at(7,42,10), "続きです。")], zone: jst)`
 - `config()` = `AppConfig.defaults(timeZone: "Asia/Tokyo").obsidian`（変更は `var` で書き換える）
 
 ### 5.1 `SanitizeTests.swift`（`@Suite("Sanitize")`）
@@ -304,6 +311,7 @@ public enum RawNote {
 | `SN-2 タブと改行は SN-5 より先に消える` | `sn2RemovesTabsBeforeSN5` | `a\t\tb` → `ab`、`a\nb` → `ab`、`a  b` → `a b` |
 | `SN-3 パス区切りと Windows の禁止文字を - にする` | `sn3ReplacesForbiddenCharacters` | `a/b` `a\b` `a:b` `a*b` `a?b` `a"b` `a<b` `a>b` `a\|b` → `a-b`、`a/b:c*d?e"f<g>h\|i` → `a-b-c-d-e-f-g-h-i`、`a\|b<c>d*e?f"g\h` → `a-b-c-d-e-f-g-h` |
 | `SN-3 は SN-5 より先` | `sn3RunsBeforeSN5` | `a / b` → `a - b`、`  a / b  ` → `a - b` |
+| `SN-4 は SN-5 より先` | `sn4RunsBeforeSN5` | `a # b` → `a b`、`[ x ]` → `x`（逆順だと `a  b`・` x ` が残る） |
 | `SN-4 Obsidian の記法文字を取り除く` | `sn4RemovesObsidianSyntax` | `a#b` `a^b` `a[b` `a]b` → `ab`、`[[Note]]` → `Note`、`a#b^c[d]e` → `abcde` |
 | `SN-5 空白を畳んで前後を落とす` | `sn5CollapsesWhitespace` | `  a   b  ` → `a b`、`x\u{3000}\u{3000}y` → `x y`、`a\u{a0}b\u{200b}c` → `a b\u{200b}c`（ZWSP は空白でない） |
 | `SN-6 前後の . を落とす` | `sn6StripsDots` | `.hidden.` → `hidden`、`...a...` → `a`、`..hidden..` → `hidden`、`a.b.c` → `a.b.c` |
@@ -327,6 +335,7 @@ public enum RawNote {
 |---|---|---|
 | `プレースホルダを埋める` | `rendersPlaceholders` | `Daily/Voice/Raw/{yyyymmdd}` → `Daily/Voice/Raw/20260829`、`{date}` → `2026-08-29`、`x/{time}` → `x/000000`、`a/{yyyymmdd}/{date}` → `a/20260829/2026-08-29` |
 | `未知のプレースホルダは残す` | `leavesUnknownPlaceholders` | `{date} raw {part}` → `2026-08-29 raw {part}` |
+| `結合文字が続くプレースホルダも埋める（スカラー単位）` | `rendersPlaceholderBeforeCombiningMark` | `{date}\u{301}` → `2026-08-29\u{301}`（スカラー列で比べる） |
 | `CE obsidian.raw.filenameTemplate が Raw の基本名になる` | `rawFolderAndBaseName` | 既定の設定で `RawNote.folder` → `Daily/Voice/Raw/20260829`、`RawNote.baseName` → `2026-08-29 raw`、`filenameTemplate = "{date}:raw"` で `2026-08-29-raw` |
 | `CE obsidian.maxTitleBytes で基本名が切れる` | `ceMaxTitleBytes` | 既定の `filenameTemplate` のまま `maxTitleBytes = 10` → `RawNote.baseName` == `2026-08-29`（既定の 180 なら `2026-08-29 raw`） |
 
@@ -337,6 +346,7 @@ public enum RawNote {
 | `書き出しは voicedock と同じバイト列` | `renderMatchesVoicedockBytes` | `render([("s", .string("a\"b\\c\u{1}d\u{7f}e\u{85}f")), ("i", .int(3)), ("b", .bool(true)), ("n", .null), ("e", .array([])), ("l", .array(["x", "y\""]))])` == `"---\ns: \"a\\\"b\\\\cde\u{85}f\"\ni: 3\nb: true\nn: null\ne: []\nl:\n  - \"x\"\n  - \"y\\\"\"\n---\n"`（voicedock の実測から float の行を除いたもの） |
 | `文字列は必ず二重引用符で囲む` | `stringsAreAlwaysQuoted` | `a: "plain"`、`voicedock_session_key: "DJIMIC3:20260829"` を含む |
 | `制御文字は値から落とす` | `quoteStripsControlCharacters` | `quote("a\u{0}b\u{1f}c")` == `"\"abc\""` |
+| `quote はスカラー単位で置換する（結合文字が続く \ と "）` | `quoteUsesScalars` | `quote("a\\\u{301}\"\u{301}")` == `"\"a\\\\\u{301}\\\"\u{301}\""`（スカラー列で比べる） |
 | `崩れやすい値が書いて読んで戻る` | `trickyValuesRoundTrip` | `say "hi"`・`back\slash`・`colon: here`・`#hash`・`- dash`・`[bracket]`・`{brace}`・`@at` を `render([("tag", .string(v))]) + "body\n"` にして `parse(...)?["tag"] as? String == v` |
 | `配列はブロック形式` | `listsAreBlockStyle` | `voicedock_recording_keys:\n` と `  - "<keyA>"\n` を含み、`[` を含まない |
 | `空配列は []` | `emptyListIsBrackets` | `("k", .array([]))` → `k: []` |
@@ -362,7 +372,7 @@ public enum RawNote {
 | `2 Part の Raw ノートは voicedock と同じ` | `twoPartsMatchVoicedock` | `render(parts: [partB, partA], …)` == 下の「期待 A」（渡す順によらない） |
 | `終了時刻が無い Part` | `partWithoutEnd` | `RawPart(keyA, "2026-08-29T07:12:04+09:00", nil, [seg(at(7,12,4),"  x  "), seg(at(7,13,0),"   "), seg(at(7,13,4),"---"), seg(at(7,18,3),"y"), seg(at(7,18,4),"z")])` の本文が `"## 07:12–\n\n### 07:12:04\n\nx ---\n\n### 07:18:03\n\ny z\n"` で終わる |
 | `CE obsidian.raw.partBoundaryHeading false で Part の ## 見出しが消える` | `cePartBoundaryHeading` | `partBoundaryHeading = false` だけを変えて `[partA, partB]` → `^## ` の行が無く、`### ` の行は「期待 A」と同じ数だけ在る（既定の true では `## 07:12–07:42` が在る） |
-| `CE obsidian.raw.timestampIntervalSeconds を変えると ### の刻みが変わる` | `ceTimestampIntervalSeconds` | §5.4 の `timestampIntervalUsesActualTimes` と同じ入力（`07:00` から 2 分刻みの 10 区間）を `timestampIntervalSeconds = 600` で → `### ` の行が `07:00:00`・`07:12:00` の 2 つ（既定の 300 なら 4 つ）。`0` なら `### ` が 1 つも無い |
+| `CE obsidian.raw.timestampIntervalSeconds を変えると ### の刻みが変わる` | `ceTimestampIntervalSeconds` | §5.4 の `timestampIntervalUsesActualTimes` と同じ入力（`07:00` から 2 分刻みの 10 区間）を `timestampIntervalSeconds = 600` で → `### ` の行が `07:00:00`・`07:10:00` の 2 つ（`07:10:00 >= 07:00:00 + 600 秒`）（既定の 300 なら 4 つ）。`0` なら `### ` が 1 つも無い |
 | `見出しを無効にした設定` | `headingsDisabled` | `timestampIntervalSeconds = 0`、`partBoundaryHeading = false` で `[partA, partB]` → 本文が `"> 自動文字起こしの生データ。未編集。\n\nおはようございます。 削除条件を整理します。\n\n続きです。\n"` で終わる。`^## ` も `### ` も無い |
 | `Part が 0 件でも描ける` | `noPartsStillRenders` | frontmatter が `voicedock_recording_keys: []` と `parts: 0` を含み、本文が導入行で終わる（`"…\n\n> 自動文字起こしの生データ。未編集。\n"`） |
 | `本文の無い Part でも ## は出る` | `partWithoutTextKeepsHeading` | `[partA, partB の区間を "   " だけにしたもの]` → 全体が `"## 07:42–08:12\n"` で終わる |
@@ -428,13 +438,14 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 
 ### 5.6 `ConfigEffectPending.swift`（PolicyTests。T-09 §9）
 
-`obsidian.maxTitleBytes`・`obsidian.raw.filenameTemplate`・`obsidian.raw.timestampIntervalSeconds`・`obsidian.raw.partBoundaryHeading` の 4 行を消す（CE テストは §5.2・§5.4）。`obsidian.raw.folderTemplate` は T-33 が消す。
+`obsidian.maxTitleBytes`・`obsidian.raw.filenameTemplate`・`obsidian.raw.timestampIntervalSeconds`・`obsidian.raw.partBoundaryHeading` の 4 行を消す（CE テストは §5.2・§5.4）。`obsidian.raw.folderTemplate` は T-33 が消す（T-33 は取り下げ）。
 
 ## 6. 破壊による証明
 
 | 壊し方 | 落ちるべきテスト |
 |---|---|
-| SN-3 と SN-5 の順を入れ替える | `sn3RunsBeforeSN5` |
+| SN-3 と SN-5 の順を入れ替える | （落ちない。SN-3 は空白でないスカラーを `-` に 1 対 1 で置き換え、SN-5 は空白だけに作用するので、2 つは可換。実装時に確認。`sn3RunsBeforeSN5` は voicedock の docstring の例の写し） |
+| SN-4 を SN-5 の後に移す | `sn4RunsBeforeSN5` |
 | SN-7 の「削ったかどうかにかかわらず」をやめ、切り詰めたときだけ結合文字を削る | `sn7DropsTrailingCombiningMarks` |
 | SN-7 をスカラーではなく `Character` 単位で削る | `sn7DropsTrailingCombiningMarks`（`あああ\u{301}`・maxBytes 10） |
 | SN-9 を SN-7 の前に移す | `sn9RunsAfterSN7` |
@@ -443,6 +454,8 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 | `quote` で C1（U+0085）も取り除く | `renderMatchesVoicedockBytes` |
 | 空配列を `key:` だけにする | `emptyListIsBrackets` |
 | `escapeBody` を `Character` の `hasPrefix` で書く | `escapeBodyUsesScalars` |
+| `quote` の置換から `options: .literal` を外す | `quoteUsesScalars` |
+| `NoteTemplate.render` の置換から `options: .literal` を外す | `rendersPlaceholderBeforeCombiningMark` |
 | `split` で閉じ行の後ろの空白を許さない | `splitAllowsTrailingSpaces` |
 | Raw の並べ替えから `partkey` を外し、渡された順のままにする | `twoPartsMatchVoicedock` |
 | `seg.at >= nextMark` を `>` にする | `boundaryIsInclusive` |
@@ -460,7 +473,11 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 
 ## 8. SPEC の変更
 
-- `docs/SPEC.md` に SN-1〜SN-9 の表（PLAN §8.6 の表の写し。ID が先頭の列）を足し、SPEC 同期テストの対象に SN を加える（`SanitizeTests` の表示名 `SN-n` と突き合わせる）
+なし。
+
+- （実装時に変更）当初は「`docs/SPEC.md` に SN-1〜SN-9 の表を足し、SPEC 同期テストの対象に SN を加える」と書いていたが、上位の PLAN に合わせて外した。理由: (1) PLAN §10.3 の SPEC 同期の表の対象（状態・遷移・復旧写像・エラーコード・CV・ND・RV・DR・ログイベント）に SN が無い、
+  (2) `docs/SPEC.md` は `tools/spec/make-spec.py` の生成物で、SN を足すには make-spec.py・`SpecDocument`（TestSupport）・`SpecIDKind`・`TestNameIndex.pattern`・`SpecCoverage` の変更が要り、どれも §3「作るもの」に無い（T-05 の持ち物）。
+  いまの `TestNameIndex.pattern` は SN を拾わないので、表示名 `SN-n` は SPEC 同期に違反しない。SN を SPEC 同期に加えるなら、PLAN §10.3 を直したうえで別の issue にする
 
 ## 9. マージ後にやること
 
@@ -471,3 +488,6 @@ T-25 のグループを使う（グループ名・ケース・入力のキーは
 - `VDNotes`: `Frontmatter` に定数（`sessionKeyField` など 5 個）と `stringList(_:_:)` を追加（T-27・T-28・T-36 が同じ名前を使うため）→ 00-api-map に反映済み（2026-09-18）。名前は地図の `keySessionKey`・`keyRecordingKeys`・`keyFailedParts`・`keySkippedParts`・`keyType` に合わせた（`delimiter` は internal）
 - `RawNote` に `noteType` / `sourceLabel` / `intro` / `title(_:)` の定数と関数を追加（テストと T-29 の突き合わせ用）→ 00-api-map に反映済み（2026-09-18）
 - `RawPart.zone` は並べ替えのための `parseISO` にだけ使う。`###` の時刻は started_at の固定オフセットで計算する（DST のある地域で voicedock と一致させるため）→ 00-api-map に反映済み（2026-09-18）。PLAN §5.7 に合わせ `ZonedTime(fixedOffsetSeconds:)` で描く形に直した
+- （実装時）§4.5 の `FrontmatterValue` は `Sendable, Equatable` だったが、00-api-map §9 は `Sendable` だけで、使い手も無いので `Sendable` にそろえた（地図の変更は要らない）
+- （実装時・未反映）`Sanitize.fallbackName` と `Sanitize.reservedNames`（§4.2 の public 定数）が 00-api-map §9 の Sanitize の行にも §16 にも無い。§9 の行に足す（実装に不可欠ではない）
+- （実装時・利用者に確認）`recordingKeys(ofFile:)` は voicedock の `read_text(encoding="utf-8")` と違い、改行を統一しない。そのため `---\r\n` で始まる CRLF のノートは `[]` になる（削除が起きない側への差）。PLAN 付録 D の X 項目に無い差分なので、意図した差分として足すかどうかを決める

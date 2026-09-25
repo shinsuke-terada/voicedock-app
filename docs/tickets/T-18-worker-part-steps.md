@@ -1,5 +1,14 @@
 # T-18 VDPipeline: ConfigStore・Worker の枠・復旧・requeue・工程内リトライ・ガード・Part の変換と文字起こし
 
+> （F-82・issue #119。2026-09-23。マージ後の追記）(1) `renormalizeOrFail` は inbox を先に確かめ、無ければ今の状態のまま `needs_recopy = 1` を書いてから `→NORMALIZING`（PLAN §8.4 手順 2）。(2) 変換の成功で `needs_recopy = 0` を書く（§8.3 手順 7）。(3) 入力のヘッダの長さと実データの量が合わない `NORMALIZE_VERIFY_FAILED` も遷移の前に `needs_recopy = 1`（`PartSteps.needsRecopy`。契機 4 では戻さない。利用者の決定）。(4) 終了で止めた whisper（`TranscribeOutcome.stopped`）は行を動かさない。(5) ライセンスで止めた tick も待っている仕事に返事をする（`Worker.replyPaused`。`Worker+Jobs.swift`。文言「ライセンス」）。(6) inbox の孤児の relpath は列挙子の相対位置（`producesRelativePathURLs`）から作る（<HOME> の途中の symlink で partkey がずれない）。テストは `PartStepsRecopyTests`・`PartStepsTranscribeStoppedTests`・`PartStepsTranscribeRepairedTests`・`WorkerLicenseReplyTests`・`InboxMaintenanceSymlinkTests`（表示名は `F-82` で始まる）。
+
+> （F-61 で共存ガードは外した。2026-09-22、利用者の決定）Worker の `.coexistenceBlocked` による保留と `coexistenceBlockedDoesNothing` は外した。start が取り込みの `state()` を見なくなったので、`concurrentStartWaitsForTheFirst` の門は設定の actor（観測を渡した `ConfigStore.update` の mutate の中で待つ）へ移した。以下の本文の共存ガードの記述は記録として残す。
+
+> （F-83・issue #119、2026-09-23。マージ後の追記）`ConfigStore.update` は書く前に今の `config.json` を読み直し（`ConfigLoader.decodeStructure`。load と同じ厳密な経路。無ければメモリの値から作り直す）、
+> その値に mutate を当てて、渡された観測で検証して書く（手の編集を消さない・無効化の途中に偽の CV-30 を出さない）。読めない・壊れていれば書かずに違反、手で変えられた値が検証に落ちたら「設定を読み直す」への案内（CV-39）を添える。
+> 書く直前にもう一度照らし、書けたら current・violations・覚えた内容を同時に替える。CV-30 の修復も `decodeStructure` で読む。符号化できない値（`ConfigLoader.encode` が投げる）は書かずに CV-39。
+> `turnDeletionOff`・`disableDeletionInMemory` を足した（T-40）。PLAN §6.1。テストは `ConfigStoreConflictTests.swift`。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-18 |
@@ -113,43 +122,52 @@ public actor ConfigStore {
     /// GUI と有効化フローの変更。**書く前に**変更後の値と reaper.conf の観測で検証し、違反なら書かない。
     /// reaperConfObservation が nil なら今の値（observeReaperConf()）で検証する。
     public func update(_ mutate: @Sendable (inout AppConfig) -> Void,
-                       reaperConfObservation: ReaperConfObservation? = nil) async -> Result<AppConfig, [ConfigViolation]>
+                       reaperConfObservation: ReaperConfObservation? = nil) async -> ConfigUpdateResult
     /// ロック 1 の食い違い（CV-30）の修復口。本体は T-40（DeletionEnabler.reconcileLock1）。
     /// reconcile は reaper.conf を無効側（DELETE_SOURCE_AUDIO=false）に揃え、揃えたら true を返す。
     public func setLock1Reconciler(_ reconcile: @escaping @Sendable () async -> Bool)
 
     static let fileKeyPath = "<file>"
 }
+
+/// update の結果（`Result` の失敗側は `Error` を要り配列は `Error` でないため包み型。ケース名は `Result` と同じ。利用者の決定 2026-09-22）。
+public enum ConfigUpdateResult: Sendable, Equatable {
+    case success(AppConfig)
+    case failure([ConfigViolation])
+}
 ```
 
 - **PT-11**: このファイルに識別子 `reaperConf` を書かない（引数ラベル・仮引数名・ローカル変数名も）。reaper.conf は注入された `observeReaperConf` で読み、T-09 の `ConfigLoader.load` / `ConfigValidator.validate` も `reaperConfObservation:` のラベルで呼ぶ（本番は T-36 の `LockEvaluator.observeReaperConf()`。T-36 より前の Bootstrap は `{ .missing }` を渡す。`observeReaperConf` / `reaperConfObservation` は別の識別子なので PT-11 に当たらない）
 - 状態: `private var config: AppConfig?`、`private var lastViolations: [ConfigViolation] = []`、`private var created = false`、`private var reconciler: (@Sendable () async -> Bool)?`
 
-**`load()` の手順**:
+**`load()` の手順**（actor の再入: 観測（と修復口）を待ってから、ファイルの読み出しと 4〜5 の反映までは await を挟まない。観測を先に取る）:
+0. `obs = await observeReaperConf()`
 1. `url = layout.configFile`。`lstat(p(url))` が `ENOENT` なら（**無いときだけ**。symlink が壊れていても「在る」）:
    `d = AppConfig.defaults(timeZone: defaultTimeZone())` → `AtomicFile.write(ConfigLoader.encode(d), to: url, permissions: 0o644)`。
    失敗 → `violation("既定の設定を書けません: " + ErrorText.describe(e))` で手順 6 へ。成功 → `created = true`
-2. `result = read()`（下記）
+2. `result = read(obs)`（下記。同期）
 3. `result` が `.invalid(v)` で `v` に `rule == "CV-30"` が在り、`reconciler` が在るとき（1 回だけ）:
-   1. `await reconciler()` が偽 → 手順 6（設定エラー）
-   2. `data` を読み直し `JSONDecoder().decode(AppConfig.self, from: data)`。失敗 → 手順 6
+   1. `await reconciler()` が偽 → `read(obs)` をやり直して手順 6（設定エラー。await の後で読み直す）
+   2. `obs2 = await observeReaperConf()`。`data` を読み直し `JSONDecoder().decode(AppConfig.self, from: data)`。失敗 → 手順 6
    3. `c.cleanup.deleteSourceAudio = false`、`c.cleanup.deleteSkippedSource = false`、`c.device.mountMode = "ro"` → `AtomicFile.write(ConfigLoader.encode(c), to: url, permissions: 0o644)`。失敗 → 手順 6
    4. `log.warning(.configWarning, [(.rule, "CV-30"), (.message, "reaper.conf と config.json の削除の設定を無効側に揃えました")])`
-   5. `result = read()`（2 回目は修復しない）
+   5. `result = read(obs2)`（2 回目は修復しない。2〜3 の失敗も `read(obs2)` をやり直して手順 6）
 4. `.valid(c)` → `config = c`、`lastViolations = []`
 5. `.invalid(v)` → `config = nil`、`lastViolations = v`
 6. 設定エラーのとき、違反ごとに `log.error(.configInvalid, [(.rule, v.rule), (.key, v.keyPath), (.message, v.message)])`
 7. `result` を返す
 
 `read()`: `data = try Data(contentsOf: url)`。失敗 → `.invalid([violation("読めません: " + ErrorText.describe(e))])`。
-成功 → `ConfigLoader.load(data: data, catalog: catalog, reaperConfObservation: await observeReaperConf())`（T-09 §5。ラベルに `reaperConf` の語を使わない。PT-11）。
+成功 → `ConfigLoader.load(data: data, catalog: catalog, reaperConfObservation: obs)`（T-09 §5。await しない。ラベルに `reaperConf` の語を使わない。PT-11）。
 
 `violation(_ message:)` = `ConfigViolation(rule: "CV-39", code: .configInvalidValue, keyPath: ConfigStore.fileKeyPath, message: message)`。
 
-**`update(_:reaperConfObservation:)` の手順**:
+**`update(_:reaperConfObservation:)` の手順**（actor の再入: 観測を**先に**取り、`config` の読み出しから 5 の書き戻しまでは await を挟まない。
+観測を後で待つと、並行した 2 つの update が同じ古い `config` から始まり、後から書いた方が先の変更を消す）:
+0. `obs = reaperConfObservation ?? await observeReaperConf()`
 1. `guard var c = config else { return .failure(lastViolations.isEmpty ? [violation("設定が読み込まれていません")] : lastViolations) }`
 2. `mutate(&c)`
-3. `obs = reaperConfObservation ?? await observeReaperConf()`、`v = ConfigValidator.validate(c, catalog: catalog, reaperConfObservation: obs)`。空でなければ `.failure(v)`（**書かない**。`config` も変えない）
+3. `v = ConfigValidator.validate(c, catalog: catalog, reaperConfObservation: obs)`。空でなければ `.failure(v)`（**書かない**。`config` も変えない）
 4. `AtomicFile.write(ConfigLoader.encode(c), to: layout.configFile, permissions: 0o644)`。失敗 → `.failure([violation("書けません: " + ErrorText.describe(e))])`
 5. `config = c`、`.success(c)`
 
@@ -195,19 +213,19 @@ public struct WorkerDependencies: Sendable {
     public let config: ConfigStore
     public let ingest: any IngestPort
     public let runner: any ProcessRunning
-    public let catalog: ModelCatalog
-    public let license: any LicenseGate
     public let clock: any AppClock
     public let sleeper: any Sleeper
     public let log: AppLog
+    public let license: any LicenseGate
+    public let catalog: ModelCatalog
     public init(layout: HomeLayout, paths: AppPaths, store: Store, config: ConfigStore, ingest: any IngestPort,
-                runner: any ProcessRunning, catalog: ModelCatalog, license: any LicenseGate,
-                clock: any AppClock, sleeper: any Sleeper, log: AppLog)
+                runner: any ProcessRunning, clock: any AppClock, sleeper: any Sleeper, log: AppLog,
+                license: any LicenseGate, catalog: ModelCatalog)
 }
 ```
 
-- 足す予定（参考。このチケットでは書かない）: T-22 が `llama: any LLMServerControl`・`chatTransportFactory`・`physicalMemoryBytes`・`verificationCache`、次に T-33 が `importedKeys: ImportedKeysService`、最後に T-36 が `locks`・`volumeOpener`（`reaper` は持たない。`locks.reaper` を使う）。**init の引数は宣言の順**、足すフィールドは末尾に足す
-- **最終の並びは 00-api-map §11 の `WorkerDependencies` の行が正**（末尾に足す順: 本チケットの並び → T-33 の `importedKeys` → T-36 の `locks` と `volumeOpener`）
+- 足す予定（参考。このチケットでは書かない）: T-22 が `llama: any LLMServerControl`・`chatTransportFactory`・`physicalMemoryBytes`・`verificationCache`、次に T-33 が `importedKeys: ImportedKeysService`（T-33 は取り下げ）、最後に T-36 が `locks`・`volumeOpener`（`reaper` は持たない。`locks.reaper` を使う）。**init の引数は宣言の順**
+- **並びは 00-api-map §11 の `WorkerDependencies` の行の相対順が正**（地図 ＞ チケット。上の並びは地図から T-18 の時点のフィールドだけを抜いたもの）。T-22 は `llama`・`chatTransportFactory` を `runner` の後に挿し、`physicalMemoryBytes`（と `verificationCache`）を `catalog` の後に置く。T-33 の `importedKeys`（T-33 は取り下げ）→ T-36 の `locks` と `volumeOpener` は末尾に足す
 - **タイムゾーンは持たない**: 分組・「今日」・表示の時刻は tick ごとに `config.timeZone`（CV-32 で解決できることが保証済み）から作る（§4.9 `Worker.zone(for:)`）
 
 ### 4.5 `WorkerStatus.swift`
@@ -238,13 +256,20 @@ public struct WorkerStatus: Equatable, Sendable {
 ```swift
 // ガード（遷移せずに待つ。失敗ではない。PLAN §5.4）の理由。rawValue はログの reason 語（付録 A.4）。
 public enum PauseReason: String, Sendable, CaseIterable, Equatable {
-    case diskSpaceLow = "disk_space_low", whisperMissing = "whisper_missing", modelMissing = "model_missing",
-         vadModelMissing = "vad_model_missing", vaultNotConfigured = "vault_not_configured",
-         vaultUnavailable = "vault_unavailable", llmNotSelected = "llm_not_selected",
-         llmModelMissing = "llm_model_missing", llmInsufficientMemory = "llm_insufficient_memory",
-         llamaServerMissing = "llama_server_missing", license
+    case diskSpaceLow = "disk_space_low"
+    case whisperMissing = "whisper_missing"
+    case modelMissing = "model_missing"
+    case vadModelMissing = "vad_model_missing"
+    case vaultNotConfigured = "vault_not_configured"
+    case vaultUnavailable = "vault_unavailable"
+    case llmNotSelected = "llm_not_selected"
+    case llmModelMissing = "llm_model_missing"
+    case llmInsufficientMemory = "llm_insufficient_memory"
+    case llamaServerMissing = "llama_server_missing"
+    case license
 }
 ```
+（実装の注記: `swift format` の `OneCasePerLine` に合わせて 1 行 1 ケースにした）
 
 ```swift
 // ガードに入った・出たときだけログを出す（毎 tick 出さない。PLAN §5.4）。
@@ -372,7 +397,7 @@ let pauses: PauseBook
 let board: ActivityBoard
 let stop = StopFlag()
 let onStage: (@Sendable (TickStage) -> Void)?
-var started = false
+var startTask: Task<Void, Never>?     // 起動の処理。2 回目以降の start・run・tick はこれを待つ（actor の再入で二重に走らせない）
 var pendingStart = false
 var lastSeenConnectEpoch: UInt64 = 0
 var pendingRequeues: [RequeueReason] = []
@@ -386,8 +411,9 @@ var stoppingLogged = false
 `zone(for:)`: `ZonedTime(timeZone: TimeZone(identifier: config.timeZone) ?? TimeZone.current)`（CV-32 があるので後者には来ない）。
 
 **`start()`**（PLAN §5.4 / §5.3。アプリの起動手順は「DB を開く → Worker.start() → IngestService.start()」）:
-1. `started` なら何もしない。`started = true`
-2. `blocked = await deps.config.current() == nil || await deps.ingest.state() == .coexistenceBlocked`。真なら `pendingStart = true` で終わり（解除された最初の tick の先頭で行う）
+1. `startTask` が在ればそれを `await` して戻る（後から来た呼び手は 1 回目の処理が終わるのを待つ。start の途中で tick が走らない）。
+   無ければ `startTask = Task { await self.startOnce() }` を作って `await`。以下 2〜3 は `startOnce()` の中身（T-30 の Bootstrap は `start()` を await してから `run()` を回す。`run()` の先頭の `start()` も同じ Task を待つだけ）
+2. `noConfig = await deps.config.current() == nil`、`blocked = await deps.ingest.state() == .coexistenceBlocked`（`||` の右辺に `await` は書けないので 2 つに分ける）。どちらかが真なら `pendingStart = true` で終わり（解除された最初の tick の先頭で行う）
 3. `await performStart(delayed: false)`
 
 **`performStart(delayed:)`**（internal）:
@@ -395,7 +421,7 @@ var stoppingLogged = false
 2. `log.info(.serviceStarted, [(.version, .string(AppVersion.string)), (.schema, .of((try? deps.store.appliedMigrations)?.last))])`
 3. `zone = Worker.zone(for: config)`、`ctx = makeContext(config, zone, snapshot: nil)`
 4. 復旧: `try Recovery(store: deps.store, layout: deps.layout, log: deps.log, config: config, zone: zone).run()`。投げたら `warnStore(e, rule: "recovery")`
-5. `try SessionSteps(ctx: ctx).closeIdleSessions()`（= PLAN の closeStaleOpenSessions。日付が過去の OPEN は `stale_day` で閉じる。本体は T-22）。投げたら `warnStore(e)`
+5. `try SessionSteps(ctx: ctx).closeIdleSessions()`（= PLAN の closeStaleOpenSessions。日付が過去の OPEN は `stale_day` で閉じる。本体は T-22。F-66 で `stale_day` は廃止し、idle だけで閉じる）。投げたら `warnStore(e)`
 6. `delayed == false` のときだけ inbox の孤児の削除:
    `n = try await BlockingIO.run { try InboxMaintenance(store: s, layout: l, log: g).removeOrphans() }`。`n > 0` なら `log.info(.inboxOrphansRemoved, [(.count, .of(n))])`。投げたら `warnStore(e)`
    - **遅れて行う start（pendingStart）では行わない**: そのときは IngestService が既に動いていて、コピー中の `.partial` と登録前の `_orig.wav` を孤児と見分けられない（次の起動で消える）
@@ -405,6 +431,7 @@ var stoppingLogged = false
 
 **`tick()`**（PLAN §5.4。この順で。各段の前に `stop.isSet` なら `return`）:
 ```text
+if let t = startTask { await t.value }                                                  // start の途中なら終わりを待つ
 guard let config = await deps.config.current() else { board.set(.idle); return }       // 設定エラー（§6.1）
 if await deps.ingest.state() == .coexistenceBlocked { board.set(.idle); return }        // 共存ガード（§8.1）
 if pendingStart { pendingStart = false; await performStart(delayed: true) }
@@ -724,8 +751,7 @@ for key in keys:
 enum SessionStepResult: Equatable, Sendable { case stopped, empty, analyzed, saved }
 
 struct SessionSteps {
-    let ctx: TickContext
-    init(ctx: TickContext)
+    let ctx: TickContext              // init は合成されたもの（swift format の UseSynthesizedInitializer）
     func groupNewParts() throws {}                                           // T-22
     func closeIdleSessions() throws {}                                       // T-22
     /// 再オープン。行えたら true。TransitionConflict は false（PLAN §5.6）。
@@ -810,7 +836,7 @@ final class RecordingSleepAssertion: SleepAssertion {
     var begins: Int { get }; var ends: Int { get }; var active: Bool { get }
 }
 ```
-- `make`: `TempDirectory()` → `layout = HomeLayout(root: tmp.path("home"))`・`createDirectories()` → `paths = AppPaths(resources: PackageRoot.url.appendingPathComponent("Resources"), helpers: tmp.path("helpers"))` →
+- `make`: `TempDirectory()` → `layout = HomeLayout(root: tmp.url.appendingPathComponent("home", isDirectory: true))`・`createDirectories()` → `paths = AppPaths(resources: PackageRoot.url.appendingPathComponent("Resources"), helpers: tmp.url.appendingPathComponent("helpers", isDirectory: true))`（`TempDirectory` に `path(_:)` は無い）→
   `store = Builders.openStore(in: tmp.url, clock: clock)` → `configStore = ConfigStore(layout:, catalog: TestCatalogs.minimal, log:, observeReaperConf: { .missing }, defaultTimeZone: { "Asia/Tokyo" })` →
   `AtomicFile.write(ConfigLoader.encode(設定), to: layout.configFile)` → `await configStore.load()` が `.valid` であること
 - `registerPart`: `inbox = layout.inboxFile(deviceID: "DJIMIC3", relpath:)`、`BWFWriter.write(to: inbox, seconds:, format: .pcm24, content: .speech)`、
@@ -831,9 +857,10 @@ final class RecordingSleepAssertion: SleepAssertion {
 | `updateUsesGivenObservation` / 「update は渡された reaper.conf の観測で検証する」 | 観測 `.valid(ReaperConf(deleteSourceAudio: true))` を渡し deleteSourceAudio は false のまま | `.failure`（CV-30） |
 | `updateWhileInvalidFails` / 「設定エラー中の update は書かない」 | 不正なファイルで load の後 | `.failure`、ファイルは変わらない |
 | `cv30WithoutReconcilerIsInvalid` / 「CV-30 は修復口が無ければ設定エラー」 | 観測 `.valid(true)`、config は削除無効 | `.invalid`、CV-30 を含む |
-| `cv30IsReconciled` / 「CV-30 は両方を無効側に揃えて読み直す」 | `deleteSourceAudio = true`・`mountMode = "rw"` の config、観測は最初 `.valid(true)`・修復口が呼ばれた後 `.valid(false)` を返す | 修復口が 1 回呼ばれ、`.valid`、ファイルの `deleteSourceAudio == false`・`deleteSkippedSource == false`・`mountMode == "ro"`、ログ `config_warning rule=CV-30` |
+| `cv30IsReconciled` / 「CV-30 は両方を無効側に揃えて読み直す」 | `deleteSourceAudio = true`・`mountMode = "rw"` の config、観測は修復の前も後も `.valid(false)`（無効化の途中で落ちた片方だけの状態。観測が `.valid(true)` だと config の true と一致して CV-30 が出ない） | 修復口が 1 回呼ばれ、`.valid`、ファイルの `deleteSourceAudio == false`・`deleteSkippedSource == false`・`mountMode == "ro"`、ログ `config_warning rule=CV-30` |
 | `cv30ReconcileFailureStaysInvalid` / 「修復口が偽なら設定エラー」 | 修復口が false | `.invalid`、ファイルは変わらない |
 | `cv30IsReconciledOnlyOnce` / 「修復は 1 回だけ」 | 修復口は true を返すが観測は `.valid(true)` のまま | 修復口 1 回、`.invalid`（CV-30） |
+| `concurrentUpdatesKeepBothChanges` / 「並行した 2 つの update の変更が両方残る（actor の再入）」 | 観測の口を門で止め、2 つの update（`vault.path = "/tmp/a"` と `session.maxParts = 10`）が揃うまで待たせてから同時に通す | 両方 `.success`、`current()` とファイルの両方に 2 つの変更が在る |
 
 ### 6.2 `RecoveryTests.swift`（`@Suite("Recovery")`）
 
@@ -872,6 +899,7 @@ final class RecordingSleepAssertion: SleepAssertion {
 ### 6.5 `InProcessRetryTests.swift`
 
 偽の工程: 呼ばれるたびに行を（NORMALIZING でなければ）NORMALIZING にしてから `NORMALIZING→FAILED(code)` を記録し、呼び出しを数える（voicedock `failing_pipeline`）。
+**止まらない壊れ方でも落ちる上限**: スイートに `.timeLimit(.minutes(1))`。`waitsTheBackoffBetweenAttempts` は偽の工程が 10 回目で停止を立て、ほかは 10 回を超えた待ちで `CancellationError` を投げる `LimitedSleeper(limit: 10)`（PipelineFixtures）を使う（retry_count が戻り続けると無限に回るため）。§6.9・§6.10 のスイートも `.timeLimit(.minutes(1))`
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
@@ -933,7 +961,7 @@ final class RecordingSleepAssertion: SleepAssertion {
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `tickFollowsThePlanOrder` / 「tick の段の順（PLAN §5.4）」（voicedock :170） | 新鮮な snapshot（completedAt = now）、`requeue(.manual)` の後に tick、onStage で記録 | `TickStage.allCases` と同じ列 |
-| `staleSnapshotSkipsDeletionStages` / 「snapshot が古ければ削除の 3 段を飛ばす」 | completedAt = now − 901 秒 | 記録に evaluateDeletions・settleSkippedDeletions・runReaperIfNeeded が無く、ほかは在る |
+| `staleSnapshotSkipsDeletionStages` / 「snapshot が古ければ削除の 3 段を飛ばす」 | completedAt = now − 901 秒 | 記録 == `[groupNewParts, requeueRecopied, closeIdleSessions, processPendingParts, refreshVaultIndex, processReadySessions, collectDeleteResults, expireDeleteRequests, pendingJobs, requeueOnConnect]`（直書き。TEST-01） |
 | `nilSnapshotSkipsDeletionStages` / 「snapshot が無ければ（起動直後）削除の 3 段を飛ばす」 | snapshot nil | 同上 |
 | `freshnessBoundaryIsInclusive` / 「ちょうど 900 秒は新鮮」 | completedAt = now − 900 秒 | 3 段が在る |
 | `configErrorDoesNothing` / 「設定エラー中は何もしない」 | 不正な config.json で load | 記録が空、DB 変わらない |
@@ -941,6 +969,7 @@ final class RecordingSleepAssertion: SleepAssertion {
 | `startRecoversAndRequeues` / 「start は復旧 → 閉じる → 孤児 → requeue」 | NORMALIZING の Part、FAILED(IMPORT_FAILED) の Part、行の無い _orig.wav | ログの順に `service_started version=<AppVersion.string> schema=<最後の移行 ID>`・`recovery_completed rolled_back=1`・`inbox_orphans_removed count=1`・`recovery_completed requeued=1` |
 | `startWhileBlockedIsDeferred` / 「設定エラー中の start は保留し、解除後の最初の tick で行う」 | 不正な設定で start → 設定を直して load → tick | start の時点で `service_started` 無し、tick の後に在る、孤児の _orig.wav は残る（遅れた start では消さない） |
 | `startIsOnce` / 「start は 1 回だけ」 | start を 2 回 | `service_started` 1 本 |
+| `concurrentStartWaitsForTheFirst` / 「start の途中に来た 2 回目の start は 1 回目の終わりを待つ（actor の再入）」 | `ingest.state()` を門で止めた取り込みで 1 回目の start を止め、2 回目の start を呼ぶ（最大 200 ms 戻る機会を与えてから門を開ける） | 2 回目が戻った時点で `service_started` が出ている、`service_started` は 1 本 |
 | `connectRisingEdgeRequeues` / 「connectEpoch が増えたら requeue(.connect)」（voicedock :358-455） | FAILED の Part。tick（epoch 0）→ epoch 1 で tick → もう一度 tick → epoch 2 で tick | 1 回目は FAILED のまま、2 回目で戻る。再び FAILED にして 3 回目は戻らない、4 回目で戻る |
 | `firstConnectAfterStartupCounts` / 「起動後の最初の接続も契機」 | lastSeen 0、epoch 1 の snapshot | 戻る |
 | `manualRequeueRunsAtTickStart` / 「再試行ボタンは次の tick の先頭」 | FAILED の Part、`requeue(.manual)` | requeue 直後は FAILED、tick の後は戻り先 |
@@ -960,7 +989,7 @@ final class RecordingSleepAssertion: SleepAssertion {
 |---|---|---|
 | `tickCarriesAPartToTranscribed` / 「1 tick で DISCOVERED → TRANSCRIBED」 | `installWhisper()`、`registerPart()`、tick | TRANSCRIBED、events の to の列 `[DISCOVERED, NORMALIZING, NORMALIZED, TRANSCRIBING, TRANSCRIBED]`、transcript の中身が T-17 §6.3 の期待（`duration_seconds` は `2.0`）とバイト一致、inbox と audio16k.wav が無い |
 | `secondTickIsIdempotent` / 「2 回目の tick は何もしない（Raw は T-29）」 | 上の後にもう一度 tick | events が増えない、whisper が再び起動しない |
-| `failedWhisperIsRetriedInProcess` / 「whisper の失敗は工程内で 3 回」 | exitCode 1 | FAILED(WHISPER_FAILED)、retry_count 3、sleeper `[3, 10]` |
+| `failedWhisperIsRetriedInProcess` / 「whisper の失敗は工程内で 3 回」 | exitCode 1、sleeper は `LimitedSleeper(limit: 10)` | FAILED(WHISPER_FAILED)、retry_count 3、sleeper `[3, 10]` |
 | `emptyDatabaseTick` / 「空の DB で tick」（TEST-28） | 何も無い | 例外なし、ログ無し |
 
 ### 6.11 `StateHandlerTests.swift`（SM-07。voicedock test_part_resume :129-150）
@@ -975,7 +1004,11 @@ final class RecordingSleepAssertion: SleepAssertion {
 
 | 関数名 / 表示名 | 期待 |
 |---|---|
-| `tickOrderMatchesSpec` / 「tick の順が SPEC と一致」 | `SpecDocument` の「Worker の tick の順」の `text` ブロックを空白で分けた列 == `TickStage.allCases.map(\.rawValue)` |
+| `tickOrderMatchesSpec` / 「tick の段が SPEC S13 の表と同じ順」 | SPEC S13（PLAN §5.4 の tick の段の表）の「段」の列 == `TickStage.allCases.map(\.rawValue)`（#18 で固定値から替えた） |
+| `freshSnapshotStagesMatchSpec` / 「snapshot が新鮮なときだけ行う段が SPEC S13 の条件の列と同じ」 | S13 の「条件」が `snapshot が新鮮` の段の集合 == `TickStage.requiresFreshSnapshot`（#18 で足した） |
+
+**実装の注記（T-18 の実装時）**: 当初は `tickOrderMatchesSpec`（`SpecDocument` の「Worker の tick の順」の節と照合）だったが、`docs/SPEC.md` は `tools/spec/make-spec.py` が PLAN の決まった節（S1〜S9）から作る生成物で（「手で直さない」）、PLAN に tick の順の `text` ブロックが無いため節を足せない（T-17 §9 と同じ事情。GitHub issue #18）。当面は §9 のブロックを固定値で照合する。PLAN §5.4 にブロックを足して `make-spec.py` に S10 を足すなら、このテストを SPEC との照合に替える
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: PLAN §5.4 に「tick の段」の表（`| # | 段 | 上の擬似コードの行 | 条件 |`）を置き、SPEC の `S13. Worker の tick の段` に写した。テストは上の 2 行（`tickOrderMatchesSpec`・`freshSnapshotStagesMatchSpec`）に替えた
 
 ### 6.13 `ConfigEffectPending.swift`（PolicyTests）
 
@@ -985,7 +1018,8 @@ final class RecordingSleepAssertion: SleepAssertion {
 
 | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|
-| tick で groupNewParts と processPendingParts を入れ替える | `tickFollowsThePlanOrder`、`tickOrderMatchesSpec` |
+| tick で groupNewParts と processPendingParts を入れ替える | `tickFollowsThePlanOrder` |
+| TickStage の宣言で groupNewParts と processPendingParts を入れ替える | `tickOrderMatchesSpec` |
 | 新鮮さの比較を `<` にする（900 秒ちょうどを古いとする） | `freshnessBoundaryIsInclusive` |
 | requeueFailed で needs_recopy の除外を消す | `requeueSkipsNeedsRecopy` |
 | requeueRecopied で `needsRecopy == false` の条件を消す | `requeueRecopiedOnlyAfterRecopy` |
@@ -1001,8 +1035,43 @@ final class RecordingSleepAssertion: SleepAssertion {
 | Recovery の NORMALIZING の削除を `normalized_path` 列から取る | `normalizingPartialIsComputedFromPartkey` |
 | ConfigStore.load で不正なファイルを既定で上書きする | `doesNotOverwriteInvalidFile` |
 | ConfigStore.update で検証の前に書く | `updateValidatesBeforeWriting` |
+| ConfigStore.update で観測を `config` の読み出しの後に待つ | `concurrentUpdatesKeepBothChanges` |
+| Worker.start を `started` の旗だけにする（2 回目がすぐ戻る） | `concurrentStartWaitsForTheFirst` |
 | 遅れた start でも inbox の孤児を消す | `startWhileBlockedIsDeferred` |
 | requeueOnConnect で lastSeenConnectEpoch を更新しない | `connectRisingEdgeRequeues`（3 回目が戻る） |
+
+**結果（T-18 の実装時。コミット後の清潔な状態から 1 項目ずつ壊し、`git checkout --` で戻した。落ちたテストは表示名）**:
+
+| 壊し方 | 実際に落ちたテスト |
+|---|---|
+| tick で groupNewParts と processPendingParts を入れ替える | 「tick の段の順（PLAN §5.4）」「snapshot が古ければ削除の 3 段を飛ばす」 |
+| TickStage の宣言で groupNewParts と processPendingParts を入れ替える | 「tick の順がチケット §9 のブロックと一致」「tick の段の順（PLAN §5.4）」「snapshot が古ければ削除の 3 段を飛ばす」 |
+| 新鮮さの比較を `<` にする（`DeviceSnapshot.isFresh`。T-15 のファイルを一時的に壊した） | 「ちょうど 900 秒は新鮮」 |
+| requeueFailed で needs_recopy の除外を消す | 「needs_recopy の Part は requeue しない」 |
+| requeueRecopied で `needsRecopy == false` の条件を消す | 「契機 4: needs_recopy が 0 に戻った SOURCE_HASH_MISMATCH / NORMALIZED_MISSING だけ」 |
+| InProcessRetry で sleep の前の停止の確認を消す | 「停止要求の後は待たない」 |
+| InProcessRetry の resumeFailed で resetRetry を true にする | 「失敗 → 3 秒 → 失敗 → 10 秒 → 失敗 → 終了」（最初はテストが終わらなかった。retry_count が戻り続けて無限に回るため。偽の工程が 10 回で停止を立てる形に直し、落ちるようにした。`sessionRetriesToo`・`ceRetry*`・`failedWhisperIsRetriedInProcess` はこの壊し方では終わらない） |
+| ensureNormalized の needs_recopy の分岐を消す | 「needs_recopy なら SKIPPED にせず待つ」 |
+| 空き容量のガードで DISCOVERED→NORMALIZING を先に記録する | 「空き容量が足りなければ遷移しない」 |
+| NORMALIZING からの入口で遷移を記録する | 「NORMALIZING から入っても遷移を記録しない」 |
+| inbox の削除を DB 更新の前に動かし、updateRecording を失敗させる注入（同じ列を 2 回渡す）をする | 「変換して DB を書き、その後で inbox を消す」ほか、変換を通る 8 本 |
+| ensureTranscribed のガードで `NORMALIZED→TRANSCRIBING` を先に記録する | 「whisper-cli が無ければ遷移せずに待つ」「モデルと VAD モデルの欠けも待つ」「16 kHz が無く inbox が在れば NORMALIZING へ戻す」「0 バイトの 16 kHz は無いのと同じ」 |
+| renormalizeOrFail の needs_recopy の書き込みを消す | 「どちらも無ければ NORMALIZED_MISSING」（2 通りとも） |
+| PauseBook で毎回ログを出す | 「続く間は 1 回だけ出す」 |
+| Recovery の NORMALIZING の削除を `normalized_path` 列から取る | 「NORMALIZING の部分出力は partkey から消す（列が NULL でも）」「消せなくても続ける」 |
+| ConfigStore.load で不正なファイルを既定で上書きする | 「在るが不正なら上書きしない」ほか 7 本 |
+| ConfigStore.update で検証の前に書く | 「update は書く前に検証する」 |
+| 遅れた start でも inbox の孤児を消す | 「設定エラー中の start は保留し、解除後の最初の tick で行う」 |
+| requeueOnConnect で lastSeenConnectEpoch を更新しない | 「connectEpoch が増えたら requeue(.connect)」 |
+
+**結果（レビューの修正の後。コミット 70e8dc3 の清潔な状態から trap で戻して 1 項目ずつ）**:
+
+| 壊し方 | 実際に落ちたもの |
+|---|---|
+| WorkerDependencies の init を旧い並び（`runner, catalog, license, clock, sleeper, log`）に戻す | ビルドが落ちる（PipelineFixtures の地図の順の呼び出しが「incorrect argument labels」） |
+| ConfigStore.update で観測を `config` の読み出しの後に待つ | 「並行した 2 つの update の変更が両方残る（actor の再入）」 |
+| InProcessRetry の resumeFailed で resetRetry を true にする | 5 本が止まらずに落ちる: 「失敗 → 3 秒 → …」「Session も同じ」「CE retry.maxAttempts 2 …」「CE retry.backoffSeconds [5,7,9] …」「whisper の失敗は工程内で 3 回」 |
+| Worker.start で 2 回目以降をすぐ戻す（startTask を待たない） | 「start の途中に来た 2 回目の start は 1 回目の終わりを待つ（actor の再入）」 |
 
 ## 8. 受け入れ条件
 
@@ -1015,7 +1084,10 @@ final class RecordingSleepAssertion: SleepAssertion {
 
 ## 9. SPEC の変更
 
-`docs/SPEC.md` に次の節を足す（`tickOrderMatchesSpec` が突き合わせる）:
+**実装の注記（T-18 の実装時）**: 次の節は足していない。`docs/SPEC.md` は `tools/spec/make-spec.py` の生成物で、PLAN に写す元のブロックが無い（§6.12 の注記。GitHub issue #18）。下のブロックは `tickOrderIsVerbatim` が固定値として持つ。
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: 下のブロックではなく PLAN §5.4 の表を SPEC の `S13.` に写した（§6.12）。`tickOrderIsVerbatim` は `tickOrderMatchesSpec` に替えた
+
+当初の案: `docs/SPEC.md` に次の節を足す:
 
 ````markdown
 ## Worker の tick の順
@@ -1043,3 +1115,8 @@ manualRequeue groupNewParts requeueRecopied closeIdleSessions processPendingPart
 9. §15 の `Builders` は T-11 の本文では `StoreFixtures` という名前で書かれている。どちらかに揃える（本チケットは地図の `Builders` で書いた）
 10. `SessionSteps.swift` の骨組み（§4.17）は T-18 が置き、T-22 が本体を書く。`Worker+SessionStages.swift`・`Worker+NoteStages.swift`・`Worker+DeletionStages.swift`・`Worker+Jobs.swift`・`Recovery+VaultTmp.swift`・`PartSteps+RawNote.swift` も同じ（空の本体を後続が書き換える）
 11. 付録 A.4 に「DB の予期しない例外」を出すイベントが無い。本チケットは `config_warning rule=store message=…` で代用した。専用のイベント（例 `worker_error stage=… message=…`）を足すなら A.4・`LogEvent`・SPEC を同じ PR で直す
+12. **（決着。利用者の決定 2026-09-22）** 包み型 `ConfigUpdateResult`（§4.2）にし、00-api-map §11 と T-31 §4 を直した。以下は経緯。 `ConfigStore.update` の戻り値 `Result<AppConfig, [ConfigViolation]>`（00-api-map §11・T-31 §4 の `updateConfig`）は、`Result` の失敗側が `Error` を要るのに配列が `Error` でないため、そのままではコンパイルできない。
+    T-18 は地図の形を保つために `ConfigStore.swift` に `extension Array: @retroactive Error where Element == ConfigViolation {}` を置き、`swift format` の `AvoidRetroactiveConformances` を `// swift-format-ignore: AvoidRetroactiveConformances` で 1 か所だけ外した。
+    （`@retroactive` の準拠と `swift-format-ignore` はやめた。ケース名が `Result` と同じなので T-30・T-31・T-40 の `case .failure(let v)` はそのまま使える）
+13. **（決着。利用者の決定 2026-09-22。00-api-map §11 をクロージャに直した）** 00-api-map §11 の `ConfigStore.init` は `defaultTimeZone: String = TimeZone.current.identifier` だが、本チケット §4.2 と T-40 §6 のテスト（`defaultTimeZone: { "Asia/Tokyo" }`）はクロージャ。T-18 はチケットの `@escaping @Sendable () -> String = { TimeZone.current.identifier }` で書いた（読み込みの時点で評価する）。地図をクロージャに揃える
+14. （取り下げ）`WorkerDependencies` の並びは地図の相対順に合わせた（§4.4）。T-22 の「末尾に足す」も「`runner` の後に挿す」に直した

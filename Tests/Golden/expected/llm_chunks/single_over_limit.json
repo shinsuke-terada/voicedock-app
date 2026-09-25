@@ -1,0 +1,18 @@
+[
+  {
+    "texts": [
+      "abcdef"
+    ],
+    "startMs": 0,
+    "endMs": 1000,
+    "text": "abcdef"
+  },
+  {
+    "texts": [
+      "g"
+    ],
+    "startMs": 1000,
+    "endMs": 2000,
+    "text": "g"
+  }
+]

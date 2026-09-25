@@ -1,0 +1,59 @@
+{
+  "schema": 1,
+  "group": "keys",
+  "cases": [
+    {
+      "name": "partkey_fixed",
+      "kind": "partkey",
+      "deviceID": "DJIMIC3",
+      "relpath": "TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "partkey_no_name",
+      "kind": "partkey",
+      "deviceID": "NO NAME",
+      "relpath": "TX_MIC001_20260912_120950/TX00_MIC001_20260912_120950_orig.wav",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "partkey_root_file",
+      "kind": "partkey",
+      "deviceID": "DJIMIC3",
+      "relpath": "TX01_MIC001_20260829_071204_orig.wav",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "session_fixed",
+      "kind": "sessionKey",
+      "deviceID": "DJIMIC3",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "overflow": 1,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "session_overflow2",
+      "kind": "sessionKey",
+      "deviceID": "DJIMIC3",
+      "startedAt": "2026-08-29T07:12:04+09:00",
+      "overflow": 2,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "session_utc_input_converted",
+      "kind": "sessionKey",
+      "deviceID": "DJIMIC3",
+      "startedAt": "2026-08-28T23:50:00+00:00",
+      "overflow": 1,
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "session_late_night",
+      "kind": "sessionKey",
+      "deviceID": "DJIMIC3",
+      "startedAt": "2026-08-29T23:50:00+09:00",
+      "overflow": 1,
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

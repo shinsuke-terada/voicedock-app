@@ -1,0 +1,6 @@
+---
+s: "a\"b\\cdef g"
+colon: "a: b #c"
+jp: "日本語"
+empty: ""
+---

@@ -419,7 +419,7 @@ voicedock 実測のエラー行（`AnalysisValidatorTests` の表。すべて既
 ```swift
 public enum ChatResult: Equatable, Sendable {
     case content(String)                  // choices[0].message.content。外形が壊れていれば ""（修復へ回す）
-    case failure(StageFailure)            // LLM_UNAVAILABLE（接続失敗・HTTP 400 以上）
+    case failure(StageFailure)            // LLM_UNAVAILABLE（接続失敗・HTTP 2xx 以外。3xx を含む。F-79 で「HTTP 400 以上」から直した。T-21）
 }
 public protocol ChatTransport: Sendable {
     func complete(system: String, user: String) async -> ChatResult
@@ -658,7 +658,7 @@ public actor FakeChatTransport: ChatTransport {
 | 壊し方（1 か所だけ） | 落ちるべきテスト |
 |---|---|
 | `SchemaBlock` の ideas の例に `（最大 \(n) 件）` を足す | `itemLimitIsNotShown`、`goldenSchemaBlock` |
-| `AnalysisSchema` の配列の節を config の order で並べる | `listOrderIgnoresConfigOrder`、`goldenSchemaBlock` |
+| `AnalysisSchema` の配列の節を config の order で並べる（`AnalysisConfigView` は `order` を持たないので、`listSections` の代わりに `listOrderIgnoresConfigOrder` の order の並び `["ideas", "tasks", "key_points", "decisions", "tags"]` を直書きして代える） | `listOrderIgnoresConfigOrder`、`goldenSchemaBlock` |
 | 中間形で tags を除かない | `defaultPartialFields`、`goldenSchemaBlock`（`partial_default`）、`goldenSystemPrompt`（`map_default`） |
 | `Prompts` の置換を `{custom_instructions}` → `{schema_block}` の順にする | `substitutionOrderIsFixed` |
 | `repair_json_ja.txt` の末尾の `{schema_block}` の行を消す | `resourceFilesAreExactCopies`、`repairIncludesTheSchema` |
@@ -688,6 +688,7 @@ public actor FakeChatTransport: ChatTransport {
 5. `ChatTransport` / `ChatResult` の作成は T-20 ではなく本チケット（修復の流れのテストに要るため）。`FakeChatTransport`（TestSupport）も本チケット → 00-api-map §8・§15 に反映済み（2026-09-18）
 6. golden のファイル名（§5.0）を T-25 に取り決める。比較の補助は T-25 の `GoldenAssert` → 形を変えて反映済み（2026-09-18）: T-25 のグループ（`llm_schema_block` ほか 9 つ）と `Golden.cases` を使う形に §5.0 を直した
 7. （整合修正で追加 → **採用済み**）`GoldenCase.orderedObject(_:)`（キーの順を保った `[(String, PyJSONValue)]`）は **T-45** が `Tests/TestSupport/GoldenCase+PyJSON.swift` に extension で足す（00-api-map §15。`PyJSONValue` / `PyJSON.decode` は T-45 が作るので、T-25 の本体に置くと T-25 → T-45 の循環になる）。本チケットはそれを使う（自前の `GoldenPayload` は作らない）
+8. （実装で発見。**未反映・利用者の承認待ち。実装には不要**）00-api-map §8 の `AnalysisValidator.swift` の行に載っている `AnalysisCall` と `LLMProbe` は、本チケット §3 どおり `AnalysisCall.swift` と `Prompts.swift` に置いた。地図の `Prompts.load(directory:) throws` は本チケットの `throws(PromptsError)` に、地図の `AnalysisSchema` / `Kind` にも `Equatable` を足すよう、地図の行を直すことを提案する
 
 ## 9. SPEC の変更
 

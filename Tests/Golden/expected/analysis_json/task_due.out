@@ -1,0 +1,18 @@
+{
+  "title": "t",
+  "summary": "s",
+  "key_points": [],
+  "tasks": [
+    {
+      "text": "x",
+      "due": "2026-09-20"
+    },
+    {
+      "text": "y",
+      "due": null
+    }
+  ],
+  "decisions": [],
+  "ideas": [],
+  "tags": []
+}

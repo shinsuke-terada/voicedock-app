@@ -1,5 +1,13 @@
 # T-28 VDNotes: Vault の確認・ノートの書き込み・保存検証・出力先の決定
 
+> （F-75・issue #115、2026-09-23。マージ後の追記）`mayOverwrite` は `type` が書こうとしている種類（`voice-raw` / `voice-daily`）と一致することも見る（Raw と Daily のフォルダが大文字小文字だけ違うと APFS では同じファイルになり、Daily が Raw を置き換えた）。
+> `resolve` は DB の出力パスの親フォルダが無ければそれを使わずに基本名の探索へ進む。書き直しで消える鍵を返す `keysLostByOverwrite(_:protectedKeys:newKeys:)` を足した（呼び手は T-29 の Raw の工程）。
+> 仕様は PLAN §8.6・§8.8、テストは `OutputPathResolverOverwriteTests.swift`。既存の `OutputPathResolverTests` の Raw として解決するノートは `type: "voice-raw"` にした。
+
+> （F-83・issue #119、2026-09-23。マージ後の追記）`NoteWriter` は `AtomicFile.write(…, fullSync: true)`（F_FULLFSYNC。PolicyTests の `DurableWriteCallTests` が字句で固定）で書き、`Frontmatter.maxNoteBytes` を超える内容は書く前に `.write(errno: EFBIG)` で断る。
+> `NoteFolder.ensure` の `/` の分割はスカラー単位にした。保存検証の規則 3 と `mayOverwrite`・`keysLostByOverwrite` はノートを `Frontmatter.readNote`（64 MiB の上限・O_NOFOLLOW | O_NONBLOCK）で読む
+> （symlink・FIFO・大きすぎるノートは読めない扱い）。PLAN §8.7・§8.8。テストは `NoteWriterFullSyncTests.swift`・`NoteReadLimitTests.swift`。
+
 | 項目 | 内容 |
 |---|---|
 | ID | T-28 |
@@ -41,8 +49,8 @@ T-26 の「4.0 全体の規則」を適用する。この章のコードはフ�
 
 ```swift
 // Vault の確認（PLAN §8.7 手順 0 / DEL-06）。ガード・Raw・Daily・診断・削除条件が共有する唯一の判定関数。Vault のルートを作らない。
-import Darwin
 import Foundation
+import VDCore
 
 public enum VaultStatus: Equatable, Sendable {
     case notConfigured
@@ -59,6 +67,8 @@ public enum VaultCheck {
 }
 ```
 
+（VDNotes の import の許可リスト（PLAN §3.4・PT-07）に Darwin は無い。`stat` / `opendir` / `lstat` は Foundation 経由で使う。`PyText` のために VDCore を import する）
+
 **`evaluate`** の手順（この順。最初に当たったものを返す）:
 1. `path == nil` → `.notConfigured`
 2. `var st = stat(); let r = stat(path, &st)`（symlink を辿る）:
@@ -66,7 +76,7 @@ public enum VaultCheck {
    - `r != 0`（それ以外の errno）→ `.missingRoot`
    - `(st.st_mode & S_IFMT) != S_IFDIR` → `.missingRoot`
 3. `opendir(path)` が nil → `.notReadable(errno: errno)`（`EPERM` は TCC。書類フォルダ・iCloud Drive の Vault で起こる）。成功したら `closedir`
-4. `marker` の `PyText.strip` が空、または `marker` に `/` を含む、または `marker` が `.` か `..` → `.missingMarker`（CV-41 が弾くが、ここでも fail-closed。voicedock の「空で検査を無効化」は廃止。X-18）
+4. `marker` の `PyText.strip` が空、または `marker` に `/` を含む、または `marker` が `.` か `..`（`PyText.scalarsEqual` で比べる）→ `.missingMarker`（CV-41 が弾くが、ここでも fail-closed。voicedock の「空で検査を無効化」は廃止。X-18）
 5. `stat(path + "/" + marker)`（symlink を辿る。連結は `URL(fileURLWithPath: path).appendingPathComponent(marker, isDirectory: false).path(percentEncoded: false)`）が失敗するかディレクトリでない → `.missingMarker`
 6. `.available`
 
@@ -113,9 +123,8 @@ public enum NoteErrorText {
 
 **`NoteFolder.ensure(relative:vault:)`**:
 1. `relative` が空でなく、`RelPath.isSafe(relative)` でなければ `NoteFolderError.unsafeRelative` を投げる（テンプレートが `..` を含まないことは CV-11 が保証するが、ここでも確かめる）。空なら `vault` をそのまま返す
-2. `dir = vault.appendingPathComponent(relative, isDirectory: true)`
-3. `FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)`（Vault のルートは呼び手の `VaultCheck` で在ることが確かめ済み。ここで作るのはその下だけ）
-4. `dir` を返す
+2. `relative` を `/` で分けた要素ごとに、`vault` から 1 段ずつ `createDirectory(at:, withIntermediateDirectories: false)`（既にディレクトリなら飛ばす）。Vault のルートは呼び手の `VaultCheck` で在ることが確かめ済みで、ここで作るのはその下だけ。**確認の後に Vault のルートが消えていても（外付けの Vault が外れた等）、最初の段が ENOENT で失敗し、ルートやその上の階層を作り直さない**（T-29 のレビューで判明。`withIntermediateDirectories: true` だとルートを作り直してノートを本体のディスクに書いてしまう）
+3. 最後の段の `dir` を返す
 - `public enum NoteFolderError: Error, Equatable, Sendable { case unsafeRelative }`
 
 **`NoteErrorText.describe(e)`** = `"\(type(of: e)): \(e)"`（例 `AtomicFileError: open(errno: 13)`）。DB で 200 文字に切り詰められる
@@ -157,8 +166,9 @@ public enum NoteVerifier {
 8. `doc == nil` のとき: `add(keyRule, false)`、`add(keyRule + 1, false)`。Daily ならさらに `dailyBodyChecks(text)`（DN-8・DN-9）。終わり
 9. **RN-5 / DN-6**: `add(keyRule, (doc[Frontmatter.keySessionKey] as? String).map { PyText.scalarsEqual($0, sessionKey) } ?? false)`（文字列でなければ偽。鍵はスカラー列で比べる。00-api-map §0）
 10. `found = Set(Frontmatter.stringList(doc, Frontmatter.keyRecordingKeys))`（配列でなければ空集合）
-    - Raw **RN-6**: `add(6, expectedKeys.isSubset(of: found))`（**包含**）
-    - Daily **DN-7**: `add(7, found == expectedKeys)`（**完全一致**。RN-6 と混同しない。NOTE-12）
+    - 鍵の集合は**スカラー列の集合**（`Set(keys.map { Array($0.unicodeScalars) })`。内部の `NoteVerifier.scalarSet`）で比べる。`Set<String>` は正準等価で比べるので、partkey の照合（00-api-map §0）に使わない。`expected = scalarSet(expectedKeys)`、`found = scalarSet(stringList(…))`
+    - Raw **RN-6**: `add(6, expected.isSubset(of: found))`（**包含**）
+    - Daily **DN-7**: `add(7, found == expected)`（**完全一致**。RN-6 と混同しない。NOTE-12）
 11. Daily なら `dailyBodyChecks(text)`
 
 `dailyBodyChecks(text)`:
@@ -182,6 +192,9 @@ public enum OutputPathResolver {
                                ownedPartkeys: Set<String>, kind: NoteKind) -> Result<URL, StageFailure>
     /// 上書きしてよいか（§8.8）
     public static func mayOverwrite(_ url: URL, sessionKey: String, ownedPartkeys: Set<String>, kind: NoteKind) -> Bool
+    /// F-75: 書き直しで消える鍵（§8.6・§8.8）。ファイルが無ければ空、在るのに読めない・鍵の列が配列でなければ nil。
+    /// 鍵は Set<String> で受けない（正準等価な 2 本がまとまる）
+    public static func keysLostByOverwrite(_ url: URL, protectedKeys: [String], newKeys: [String]) -> [String]?
 }
 ```
 
@@ -189,7 +202,7 @@ public enum OutputPathResolver {
 - `ownedPartkeys` = アプリの DB でこの Session に属する Part の partkey の全部（状態を問わない）。呼び手が作る
 
 **`resolve`** の手順:
-1. `existing != nil` なら: `!exists(existing) || mayOverwrite(existing, …)` のとき `.success(existing)`
+1. `existing != nil` で（F-75）`existing` の親が（symlink を辿って）ディレクトリなら: `!exists(existing) || mayOverwrite(existing, …)` のとき `.success(existing)`
 2. 候補を順に: `folder/<baseName>.md`、`folder/<baseName> (2).md`、…、`folder/<baseName> (99).md`（`(n)` の前は半角空白 1 つ、括弧は半角）。
    最初に `!exists(c) || mayOverwrite(c, …)` を満たすものを `.success(c)`
 3. どれも満たさなければ `.failure(StageFailure(kind == .raw ? .obsidianRawWriteFailed : .obsidianWriteFailed, "同名ファイルが多すぎます: " + baseName + ".md"))`
@@ -200,9 +213,11 @@ public enum OutputPathResolver {
 1. `Data(contentsOf:)` が失敗 → 偽
 2. `String(validating:as: UTF8.self)` が nil → 偽
 3. `doc = Frontmatter.parse(text)` が nil → 偽
+3a. （F-75）`(doc[Frontmatter.keyType] as? String).map { PyText.scalarsEqual($0, kind == .raw ? RawNote.noteType : DailyNote.noteType) } ?? false` が偽 → 偽
 4. `(doc[Frontmatter.keySessionKey] as? String).map { PyText.scalarsEqual($0, sessionKey) } ?? false` が偽 → 偽
 5. `keys = stringList(doc, Frontmatter.keyRecordingKeys)`。Daily なら `+ stringList(doc, Frontmatter.keyFailedParts) + stringList(doc, Frontmatter.keySkippedParts)`
-6. `keys` の全要素が `ownedPartkeys` に含まれれば真、1 つでも含まれなければ偽（`keys` が空なら真）
+   （F-75: `voicedock_recording_keys` が無い・配列でない、または Daily の failed / skipped が在るのに配列でなければ偽）
+6. `keys` の全要素が `ownedPartkeys` に含まれれば真、1 つでも含まれなければ偽（`keys` が空なら真）。スカラー列で照合する（`NoteVerifier.scalarSet(keys).isSubset(of: NoteVerifier.scalarSet(ownedPartkeys))`。00-api-map §0）
 
 - 読めないノート・voicedock が書いたノート（鍵がアプリの DB に無い）・利用者が作ったノートは上書きしない
 - rename の後・DB 更新の前に落ちた場合、自分のノートは鍵が全部自分の DB に在るので上書きされる（` (2)` が増え続けない）
@@ -254,6 +269,7 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 | `書けないときは既存のノートを変えない` | `failureLeavesExistingIntact` | `d` を chmod 555（既存 `a.md` あり）→ `AtomicFileError` を投げ、`a.md` は元のまま、tmp は無い（root ならスキップ） |
 | `空の内容も書ける` | `emptyContentWritten` | `""` → 0 バイトのファイル（検証は RN-2 で落ちるが書き込みは成功） |
 | `フォルダを中間ごと作る` | `folderCreatesIntermediates` | `NoteFolder.ensure(relative: "Daily/Voice/Raw/20260829", vault: v)` → ディレクトリができる |
+| `Vault のルートが消えていたら作り直さない（確認の後に外付けの Vault が外れた場合）` | `folderNeverRecreatesAMissingVaultRoot` | 無い Vault の URL を渡す → 例外を投げ、Vault のルートは作られない（T-29 のレビューで追加） |
 | `危ないフォルダ名は作らない` | `folderRejectsUnsafe` | `"../x"`・`"/abs"`・`".hidden/x"` → `NoteFolderError.unsafeRelative`、何も作られない |
 | `エラーの文言` | `errorText` | `NoteErrorText.describe(AtomicFileError.open(errno: 13))` == `"AtomicFileError: open(errno: 13)"` |
 
@@ -263,7 +279,7 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 
 | 表示名 | 関数名 | 準備 → 期待 |
 |---|---|---|
-| `RN と DN の件数` | `ruleCounts` | 正しいノートで Raw の `results` の rule が `RN-1`〜`RN-6`、Daily が `DN-1`〜`DN-9`（件数は SPEC の表から読む） |
+| `RN と DN の件数（SPEC S12 の表と同じ）` | `ruleCounts` | 正しいノートで Raw の `results` の rule が `RN-1`〜`RN-6`、Daily が `DN-1`〜`DN-9`（SPEC S12 の表から読む。#18） |
 | `正しいノートは全部通る` | `validNotePasses` | Raw・Daily とも `passed` |
 | `RN-1 / DN-1 ファイルが無い` | `rule1Missing` | 存在しないパス → `failedRules == ["RN-1"]`（Daily は `["DN-1"]`）、`results.count == 1` |
 | `RN-1 / DN-1 symlink を拒む` | `rule1Symlink` | 正しいノートへの symlink → 規則 1 だけが評価されて偽 |
@@ -274,14 +290,14 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 | `DN-5 frontmatter の区切りが無い` | `dn5RequiresBlock` | 本文だけ → DN-5 が偽 |
 | `DN-5 閉じの区切りが無い` | `dn5RequiresClosing` | `"---\na: 1\n"` → DN-5 が偽 |
 | `Raw に DN-5 は無い` | `rawHasNoDN5` | Raw の結果に 5 番の「区切り」規則が無い（`RN-5` は session_key） |
-| `session_key が違う` | `sessionKeyMismatch` | Raw → `RN-5` が偽、Daily → `DN-6` が偽 |
-| `session_key が無い` | `sessionKeyMissing` | frontmatter に鍵が無い → 同上 |
-| `session_key が文字列でない` | `sessionKeyNotString` | `voicedock_session_key: 123` → 偽 |
+| `RN-5 / DN-6 session_key が違う` | `sessionKeyMismatch` | Raw → `RN-5` が偽、Daily → `DN-6` が偽 |
+| `RN-5 / DN-6 session_key が無い` | `sessionKeyMissing` | frontmatter に鍵が無い → 同上 |
+| `RN-5 / DN-6 session_key が文字列でない` | `sessionKeyNotString` | `voicedock_session_key: 123` → 偽 |
 | `YAML が読めなくても残りの規則を報告する` | `unparseableReportsRules` | `"---\na: [unclosed\n---\n…"`: Raw → `RN-5`・`RN-6` が偽で `results` は 6 件。Daily → `DN-6`・`DN-7` が偽、`DN-8`・`DN-9` も評価され 9 件 |
 | `RN-6 は包含` | `rn6ContainmentOnly` | ノートの鍵 `[keyA, keyB, keyC]`、期待 `[keyA, keyB]` → RN-6 が真 |
 | `RN-6 は欠けると偽` | `rn6MissingKeyFails` | ノート `[keyA]` → RN-6 が偽 |
 | `DN-7 は完全一致` | `dn7ExactEquality` | ノート `[keyA, keyB, keyC]` → DN-7 が偽、`[keyB, keyA]`（順が違う）→ 真 |
-| `鍵の欄が無い` | `keysFieldMissing` | Raw → RN-6 が偽、Daily → DN-7 が偽 |
+| `RN-6 / DN-7 鍵の欄が無い` | `keysFieldMissing` | Raw → RN-6 が偽、Daily → DN-7 が偽 |
 | `DN-8 見出しの下に本文が要る` | `dn8RequiresContent` | `## Summary\n\n## Timeline\n…` → DN-8 が偽、本文ありで真 |
 | `DN-8 見出しが無い` | `dn8MissingHeading` | `## Summary` が無い → 偽 |
 | `DN-8 設定の見出しを使う` | `dn8UsesConfiguredHeading` | summaryHeading `## 要約` で `## 要約\n\n本文` → 真、`## Summary\n\n本文` だけ → 偽 |
@@ -346,12 +362,15 @@ func buildNote(sessionKey: String = NotesFixtures.sessionKey, keys: [String] = [
 - [ ] 5 章のテストが全部通る
 - [ ] VDNotes のソースに PT-01（削除）・PT-12（`AtomicFile` 以外の書き込み）の違反が無い
 - [ ] `VaultCheck` は Vault のルートを作らない（テストで確かめた）
-- [ ] 保存検証の規則 ID が SPEC の RN / DN の表と一致する（SPEC 同期）
+- [ ] 保存検証の規則 ID が SPEC の RN / DN の表と一致する（SPEC 同期）→ **T-28 の PR では行わない。GitHub issue #18 に回した**（下の §8。当面は `ruleCounts` が PLAN §8.7 の固定の列と照合する）→ **SPEC 同期は #18 で足した**（PLAN F-68）
 - [ ] 破壊による証明の結果を PR 本文に貼った
 
 ## 8. SPEC の変更
 
 - `docs/SPEC.md` に RN-1〜RN-6 と DN-1〜DN-9 の表（PLAN §8.7 の表を ID が先頭の列になるように 2 つの表に分けたもの）を足し、SPEC 同期の対象に RN / DN を加える（`NoteVerifierTests` の表示名は `RN-n` / `DN-n` で始める）
+
+**実装の注記（T-28 の実装時）**: T-28 の PR では行わない。T-05 の持ち物（`docs/SPEC.md`・`Tests/TestSupport/Spec/SpecDocument.swift` の `SpecIDKind`・`Tests/PolicyTests/SpecSync/SpecCoverage.swift` の `activated`）を直す必要があり、§3 に無い。GitHub issue #18（SPEC 同期の拡張。T-06・T-07・T-17 の分と同じ）に回した。RN / DN を有効にするときは、`TestNameIndex` が表示名の先頭の ID 1 つしか拾わないので、DN-1〜4・RN-5・DN-6 を先頭に持つテストの表示名の付け直し（または分割）も要る
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: 表は 2 つに分けず、PLAN §8.7 の表をそのまま SPEC の `S12. 保存検証 RN / DN` に写した（ID は「#」の列に RN- / DN- を付けたもの。— の欄は無い。`SpecDocument.noteRules(_:)`）。`SpecIDKind` には足さず（S12 の行は `| RN-n |` の形でないので `ids(_:)` では読めない）、網羅は `Tests/PolicyTests/SpecSync/NoteRuleCoverageTests.swift` が見る。表示名の先頭は `RN-5 / DN-6 …` のように ` / ` で ID を並べてよい（PLAN §10.3）。付け直したのは `sessionKeyMismatch`・`sessionKeyMissing`・`sessionKeyNotString`（`RN-5 / DN-6`）と `keysFieldMissing`（`RN-6 / DN-7`）。`ruleCounts` は S12 と照合する
 
 ## 9. マージ後にやること
 

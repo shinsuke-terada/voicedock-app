@@ -1,0 +1,11 @@
+---
+s: "text"
+i: 3
+b: true
+f: false
+n: null
+e: []
+l:
+  - "x"
+  - "y\""
+---

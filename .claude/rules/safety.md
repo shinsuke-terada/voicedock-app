@@ -1,10 +1,10 @@
 # 安全（このプロジェクトで絶対に守ること）
 
-利用者の実機 DJI Mic 3 が `/Volumes/DJIMIC3` にマウントされていることがある。消えた録音は戻らない。
+利用者の実機 DJI Mic 3 が `/Volumes/VOICEDOCK`（F-94 で利用者が改名。改名前は `/Volumes/DJIMIC3`）にマウントされていることがある。消えた録音は戻らない。
 
 1. **ディスクを扱うセッションを始める前に、実機を物理的に抜いてもらう。** 抜け道の無い唯一の対策。
 2. `/Volumes` 配下に `diskutil`・書き込み・削除・再マウントをしない。読み取り（`ls`・`stat`・`find -print`）だけ。
-3. ディスクイメージは `hdiutil attach -nobrowse -mountpoint ~/VoiceDockPoC/mnt/<名前>` で **`/Volumes` の外**に attach する。ボリューム名に `DJIMIC3` を使わない。
+3. ディスクイメージは `hdiutil attach -nobrowse -mountpoint ~/VoiceDockPoC/mnt/<名前>` で **`/Volumes` の外**に attach する。ボリューム名に `VOICEDOCK`・`DJIMIC3`（大文字小文字を問わない）を使わない。
 4. `VOICEDOCK_DISK_TESTS` / `VOICEDOCK_REAL_TOOLS` / `VOICEDOCK_LLM_MODEL` を自分で設定しない。`make test-disk` を自分で回さない。実機が抜いてあることを利用者が確かめてから。
 5. テストは注入された `volumesRoot`（`TempDirectory`）だけを見る。本番のコードパスに「テストなら」の分岐を作らない（CR-25）。
 6. 参照実装 `/Users/terada/Projects/voicedock` は読み書きしない。`git -C /Users/terada/Projects/voicedock show d3d595e:<path>` と `… archive d3d595e` だけを使う。
@@ -23,4 +23,4 @@
 
 本当の防壁は **1（実機を抜く）** と **5（`volumesRoot` の注入）** の 2 つ。フックは滑りを止める最後の一歩でしかない。
 
-フックを直したら `python3 .claude/hooks/guard-volumes.test.py` を回す（45 件。実機には触れない）。
+フックを直したら `python3 .claude/hooks/guard-volumes.test.py` を回す（47 件。実機には触れない）。

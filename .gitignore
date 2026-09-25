@@ -9,6 +9,9 @@ DerivedData/
 Vendor/work/
 Vendor/build/
 
+# LLM 受け入れ試験の報告（T-24。docs/POC.md 章 15 に貼ってから消す）
+/llm-acceptance-*.md
+
 # .app と dmg（T-34）
 dist/
 
@@ -20,3 +23,6 @@ tmp/
 
 # macOS
 .DS_Store
+
+# 作業用のログ・レポートの置き場所（本セッションで導入。~ に散らばっていたものをここへ）
+local/

@@ -1,0 +1,205 @@
+{
+  "schema": 1,
+  "group": "frontmatter",
+  "cases": [
+    {
+      "name": "all_types",
+      "kind": "render",
+      "fields": [
+        [
+          "s",
+          [
+            "s",
+            "text"
+          ]
+        ],
+        [
+          "i",
+          [
+            "i",
+            3
+          ]
+        ],
+        [
+          "b",
+          [
+            "b",
+            true
+          ]
+        ],
+        [
+          "f",
+          [
+            "b",
+            false
+          ]
+        ],
+        [
+          "n",
+          [
+            "n"
+          ]
+        ],
+        [
+          "e",
+          [
+            "a",
+            []
+          ]
+        ],
+        [
+          "l",
+          [
+            "a",
+            [
+              "x",
+              "y\""
+            ]
+          ]
+        ]
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "special_chars",
+      "kind": "render",
+      "fields": [
+        [
+          "s",
+          [
+            "s",
+            "a\"b\\c\u0001d\u007fe\u0085f\u2028g"
+          ]
+        ],
+        [
+          "colon",
+          [
+            "s",
+            "a: b #c"
+          ]
+        ],
+        [
+          "jp",
+          [
+            "s",
+            "日本語"
+          ]
+        ],
+        [
+          "empty",
+          [
+            "s",
+            ""
+          ]
+        ]
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "raw_like",
+      "kind": "render",
+      "fields": [
+        [
+          "type",
+          [
+            "s",
+            "voice-raw"
+          ]
+        ],
+        [
+          "voicedock_session_key",
+          [
+            "s",
+            "DJIMIC3:20260829"
+          ]
+        ],
+        [
+          "voicedock_recording_keys",
+          [
+            "a",
+            [
+              "DJIMIC3/TX_MIC001_20260829_071201/TX01_MIC002_20260829_071204_orig.wav",
+              "DJIMIC3/TX_MIC001_20260829_074201/TX01_MIC002_20260829_074210_orig.wav"
+            ]
+          ]
+        ],
+        [
+          "date",
+          [
+            "s",
+            "2026-08-29"
+          ]
+        ],
+        [
+          "parts",
+          [
+            "i",
+            2
+          ]
+        ],
+        [
+          "source",
+          [
+            "s",
+            "DJI Mic 3"
+          ]
+        ]
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "quote_plain",
+      "kind": "quote",
+      "text": "abc",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "quote_escapes",
+      "kind": "quote",
+      "text": "a\"b\\c\u0000\u001f\u007f\u0085",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "escape_lines",
+      "kind": "escapeBody",
+      "text": "---\na\n --- \n----x\n",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "escape_crlf",
+      "kind": "escapeBody",
+      "text": "a\r\n---\r\nx\r---\n",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "escape_none",
+      "kind": "escapeBody",
+      "text": "no dashes here\n",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "split_ok",
+      "kind": "split",
+      "text": "---\na: 1\n---   \nbody\n",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "split_no_frontmatter",
+      "kind": "split",
+      "text": "a: 1\n---\n",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "split_unclosed",
+      "kind": "split",
+      "text": "---\na: 1\n",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "split_empty_front",
+      "kind": "split",
+      "text": "---\n---\nbody",
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

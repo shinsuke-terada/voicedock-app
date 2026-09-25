@@ -31,6 +31,9 @@ DENY = [
     "git -C /Users/terada/Projects/voicedock commit -am wip",
     "rm -rf /Users/terada/Projects/voicedock/voicedock",
     "cd /tmp && rm -rf /Volumes/DJIMIC3/x",
+    # F-94: 実機は VOICEDOCK に改名して使う（フックは名前を見ないが、改名後の場所でも止まることを確かめる）
+    "diskutil unmount /Volumes/VOICEDOCK",
+    "rm -rf /Volumes/VOICEDOCK/TX_MIC001_20260912_120950",
 ]
 ASK = [
     "make test-disk",

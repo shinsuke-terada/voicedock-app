@@ -29,7 +29,7 @@
 | `docs/PLAN.md` | `tmp/witty-gliding-clover.md`（計画書 v1.1）を**バイト単位でそのまま**コピー |
 | `docs/POC.md` | P0 の記録（P0 で書いたもの） |
 | `docs/tickets/*.md` | 既存のチケット一式（そのままコミット） |
-| `docs/porting-notes/check-tickets.py` | 既存の機械検査（そのままコミット） |
+| `docs/porting-notes/**` | 既存の移植メモ（V1〜V7・BRIEFING・R1・R2 など）と機械検査 `check-tickets.py`（そのままコミット。CLAUDE.md と ticket-brief が参照する） |
 | `CLAUDE.md`, `.claude/**` | 既存の AI 開発ハーネス（そのままコミット。新しく書かない） |
 | `Package.swift` | 下記の全文 |
 | `Package.resolved` | `swift package resolve` が生成したもの（手で書かない。下記の値になることを確かめる） |
@@ -67,7 +67,7 @@
 4. **main の最初のコミット**（ドキュメントだけ）:
    ```bash
    git add .gitignore README.md identity.env docs/PLAN.md docs/POC.md docs/tickets \
-           docs/porting-notes/check-tickets.py CLAUDE.md .claude
+           docs/porting-notes CLAUDE.md .claude
    git commit -m "docs: 計画・チケット・PoC の記録"
    git branch develop
    ```
@@ -482,7 +482,8 @@ public enum TestEnvironment {
         return id
     }
 
-    private static func value(_ name: String) -> String? {
+    /// 環境変数の値。TestSupport の extension（T-25・T-24）もこれを通して読む（PLAN §10.1。ProcessInfo を読むのはこのファイルだけ）。
+    static func value(_ name: String) -> String? {
         ProcessInfo.processInfo.environment[name]
     }
 }
@@ -617,7 +618,8 @@ struct RepositoryLayoutTests {
 |---|---|
 | `Sources/VDCore/ModuleMarker.swift` に `func f() { let x = 1 }`（未使用の変数の警告）を足す | `make build`（警告がエラーになる。`treatAllWarnings` が効いている証明） |
 | `VERSION` の中身を `0.1\n` にする | `versionFileIsSemVer()` |
-| `.xcode-version` の末尾に空行を足す | `xcodeVersionFileIsOneLine()`、`make build`（`check-toolchain`） |
+| `.xcode-version` の末尾に空行を足す | `xcodeVersionFileIsOneLine()`（`make build` の `check-toolchain` は通る。`$(cat …)` のコマンド置換が末尾の改行をすべて落とすため。1 行であることの検査はこのテストが受け持つ） |
+| `.xcode-version` の中身を `26.0` にする | `make build`（`check-toolchain`） |
 | `Tests/PolicyTests/RepositoryLayoutTests.swift` の import の順を `Testing` → `TestSupport` にする | `make lint` |
 | `Package.swift` の `exact: "7.11.1"` を `from: "7.11.1"` にする | （T-04 の PT-13 で落ちる。T-01 の時点では落ちるテストが無いことを PR に書く） |
 

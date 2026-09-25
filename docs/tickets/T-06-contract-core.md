@@ -1,5 +1,21 @@
 # T-06 VDContract: 鍵・名前規則・削除要求の JSON・AtomicFile・HomeLayout・ReaperConf・FileLock
 
+> （F-95。2026-09-25。利用者の決定）`HomeLayout` に `dataResetRequest`（`run/data-reset-requested`。データの初期化の予約）を足した（PLAN §2.3）。
+
+> （F-81・issue #119。2026-09-23）`PartKey.deviceID(of:)` / `relpath(of:)` の最初の `/` と、`DeviceID.isValid` の「`.` で始まる」も Unicode スカラーで見る
+> （`partkey.unicodeScalars.firstIndex(of: "/")`・`id.unicodeScalars.first == "."`。ASCII の入力の結果は変わらない）。以下の本文の `firstIndex(of: "/")`・`hasPrefix(".")` は記録として残す。テストは `KeyScalarTests`。
+
+> （F-84・issue #119。2026-09-23。マージ後の追記）`FileLock` に `static func tryAcquireResult(url:) -> Result<FileLock, FileLock.Failure>` と `enum Failure { held（flock が EWOULDBLOCK）, openFailed(errno:), lockFailed(errno:) }` を足した（手順は `tryAcquire` と同じ。errno は close の前に控える）。`tryAcquire` はこの結果を nil にするだけで振る舞いは変えない（reaper と IngestService はこれまでどおり `tryAcquire`）。アプリの単一起動のロック（T-30 の `Bootstrap.acquireInstanceLock`）が、ほかが持っているのと開けないのを分けるため。テストは `FileLockFailureTests`。
+
+> （F-73・issue #113。2026-09-23）`RelPath` の分割・先頭の `/`・`.` 始まりの判定を Unicode スカラー（UTF-8 の 0x2F）で行うようにした（書記素で見ると `/` の直後の結合文字で区切りを見落とす。ASCII の入力の結果は変わらない）。
+> `ReaperConf.observe` の open に `O_NONBLOCK`（FIFO で止まらない）、`FileLock.tryAcquire` の open に `O_NOFOLLOW`（symlink を辿らない）を足した。以下の本文の手順・フラグは記録として残す。
+> テストは `RelPathScalarTests`・`FileLockNoFollowTests`（reaper.conf の FIFO は `ReaperDefenseTests`）。
+
+> （F-83・issue #119、2026-09-23。マージ後の追記）`AtomicFile.write` に `fullSync: Bool = false` を足し、真なら tmp と親ディレクトリを `AtomicFile.fullFsync(_:)`（`fcntl(F_FULLFSYNC)`。どの errno で失敗しても `fsync` に戻す。失敗は errno）で書き出す。
+> 既定は今までどおり（reaper の書き込みは変わらない）。使うのは `NoteWriter`（T-28）と VDModels（T-23）。transcript の書き手（`Transcriber`。T-17）も統合で真にした（PolicyTests の `DurableWriteCallTests`）。テストは `AtomicFileFullSyncTests.swift`（PLAN §4.7・§8.7）。
+
+> （F-76・issue #116。2026-09-23。マージ後の追記）`HomeLayout` に `appLock`（`state/app.lock`。アプリの単一起動のロック。reaper.lock とは別）を足した（§4.16 の表と `HomeLayoutTests` の「全プロパティ」の表）。
+
 | 項目 | 値 |
 |---|---|
 | Phase | 1（骨組みと防護柵） |
@@ -311,7 +327,7 @@ public enum RequestID {
 ```
 
 - `make` の `gmtime_r` が失敗（戻り値 nil）したら年月日時分秒をすべて 0 として書く（`00000000T000000Z-…`。形式としては有効だが、現実の時刻では起きない。例外にしない）
-- `randomHex6()` は 00-api-map に無い。§8「API 地図への変更提案」を見よ
+- `randomHex6()` は §8「API 地図への変更提案」の 1 で 00-api-map に反映済み
 
 ### 4.13 `DeleteRequest.swift` / `DeleteResult.swift`
 
@@ -493,11 +509,11 @@ public enum ReaperConfError: Error, Equatable, Sendable {
 **`render`**: `"SCHEMA=1\nDELETE_SOURCE_AUDIO=\(deleteSourceAudio ? "true" : "false")\nVOLUMES_ROOT=\(volumesRoot)\n"` を UTF-8 にしたもの。書き込みは呼び手が `AtomicFile.write(_, to:, permissions: 0o644)` で行う（このファイルは書かない）。
 
 **`observe(at:)`**:
-1. `open(url.path, O_RDONLY | O_NOFOLLOW | O_CLOEXEC)`。失敗: `ENOENT` → `.missing`、`ELOOP` → `.invalid(.notRegularFile)`、その他 → `.invalid(.unreadable)`
+1. `open(url.path(percentEncoded: false), O_RDONLY | O_NOFOLLOW | O_CLOEXEC)`。失敗: `ENOENT` → `.missing`、`ELOOP` → `.invalid(.notRegularFile)`、その他 → `.invalid(.unreadable)`
 2. `fstat`。失敗 → `.invalid(.unreadable)`。`(st_mode & S_IFMT) != S_IFREG` → `.invalid(.notRegularFile)`。`st_size > Contract.maxRequestBytes` → `.invalid(.tooLarge)`
 3. `PosixIO.readAll(fd:, limit: Contract.maxRequestBytes + 1)`。失敗 → `.invalid(.unreadable)`
 4. `close` → `parse` の結果を `.valid` / `.invalid` に写す
-（どの経路でも fd を閉じる。`defer` で）
+（どの経路でも fd を閉じる。2〜3 は private の `readRegularFile(fd:)` に分け、その直後に `close` してから `parse` する。fd を開いたまま parse しない）
 
 ### 4.16 `HomeLayout.swift`（「// <HOME> 配下の全パス（PLAN §2.3）。パスはここからだけ得る。」）
 
@@ -532,6 +548,7 @@ public struct HomeLayout: Equatable, Sendable {
 | `stateDirectory` | `state` | ○ |
 | `processedLog` | `state/processed.log` | |
 | `reaperLock` | `state/reaper.lock` | |
+| `appLock` | `state/app.lock`（F-76 で追加。アプリの単一起動のロック） | |
 | `runDirectory` | `run` | ○ |
 | `llamaAPIKeyFile` | `run/llama-api-key` | |
 | `binDirectory` | `bin` | **作らない**（ロック 2-A） |
@@ -564,7 +581,7 @@ public struct HomeLayout: Equatable, Sendable {
 | `modelResume(file:)` | `models/.<file>.resume` |
 
 - 組み立ては `appendingPathComponent(_:isDirectory:)` の連鎖で行う（`"\(a)/\(b)"` の文字列を作らない。PT-06）。ディレクトリを指すものは `isDirectory: true`
-- `relativePath(of:)`: `let r = root.standardizedFileURL.path`、`let p = url.standardizedFileURL.path`。`p.hasPrefix(r + "/")` なら `String(p.dropFirst(r.count + 1))`、それ以外（root 自身を含む）は nil。**realpath はしない**（呼び手が DB に保存する相対パスを作るための関数で、封じ込めの検査は SafeUnlink が行う）
+- `relativePath(of:)`: `let r` / `let p` は `root` / `url` の `standardizedFileURL.path(percentEncoded: false)` から末尾の `/` を落としたもの（ディレクトリの URL は末尾に `/` が付くため。`"/"` だけのときはそのまま。private の `withoutTrailingSlash(_:)`）。`p.hasPrefix(r + "/")` なら `String(p.dropFirst(r.count + 1))`、それ以外（root 自身を含む）は nil。**realpath はしない**（呼び手が DB に保存する相対パスを作るための関数で、封じ込めの検査は SafeUnlink が行う）
 - `production()`: `URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)` → `Library` → `Application Support` → `VoiceDock`
 
 ### 4.17 `PosixIO.swift`（internal。「// errno を返す低水準の読み書き（AtomicFile・ReaperConf・TargetIdentity が使う）。」）
@@ -606,13 +623,13 @@ public enum AtomicFileError: Error, Equatable, Sendable {
 
 **`write` の手順**（途中のどこで失敗しても、tmp を作った後なら tmp を `unlink` で消し（その失敗は無視）、**元の誤りを投げる**。最終ファイルは差し替えない。CR-21）:
 1. `tmp = tmpURL(for: url)`
-2. `fd = open(tmp.path, O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, permissions)`。失敗 → `.open(errno)`（tmp は作られていないので消さない）
+2. `fd = open(tmp.path(percentEncoded: false), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, permissions)`。失敗 → `.open(errno)`（tmp は作られていないので消さない）
 3. `fchmod(fd, permissions)`（既存の tmp の権限や umask に左右されないようにする。失敗は無視）
 4. `PosixIO.writeAll(fd:, data)`。失敗 → `.write(errno)`
 5. `fsync(fd)`。失敗 → `.fsync(errno)`
 6. `close(fd)`
 7. `verifyReadBack` なら: tmp を `open(O_RDONLY | O_NOFOLLOW | O_CLOEXEC)` で開いて全部読み、`SHA256` が `data` の SHA256 と一致しなければ `.readBackMismatch`（開けない・読めない場合も `.readBackMismatch`）
-8. `rename(tmp.path, url.path)`。失敗 → `.rename(errno)`
+8. `rename(tmp.path(percentEncoded: false), url.path(percentEncoded: false))`。失敗 → `.rename(errno)`
 9. 親ディレクトリを `open(O_RDONLY | O_DIRECTORY | O_CLOEXEC)` → `fsync` → `close`（どれの失敗も無視）
 
 - `url` が symlink なら rename が symlink そのものを置き換える（リンク先には書かない）
@@ -826,7 +843,7 @@ public final class FileLock: Sendable {
 | `createDirectoriesDoesNotCreateBin` | bin を作らない（ロック 2-A） | 一時ディレクトリで `createDirectories()` → 表の ○ と `models/whisper`・`models/vad`・`models/llm` が在り、`bin` が**無い** |
 | `createDirectoriesIsIdempotent` | 2 回呼んでもよい | 2 回目も throw しない |
 | `relativePathOutsideIsNil` | 配下でなければ nil | root 自身・兄弟の `<root>-old/x`・`/etc/passwd` → nil |
-| `productionPath` | 本番の場所 | `production().root.path` が `NSHomeDirectory() + "/Library/Application Support/VoiceDock"` |
+| `productionPath` | 本番の場所 | `production().root.path(percentEncoded: false)` が `NSHomeDirectory() + "/Library/Application Support/VoiceDock/"`（ディレクトリの URL なので末尾に `/`） |
 
 ### 5.13 `AtomicFileTests.swift`
 
@@ -897,10 +914,14 @@ public final class FileLock: Sendable {
 7. `FileLock.release()` の意味を「`flock(LOCK_UN)`。何度呼んでもよい。fd を閉じるのは deinit」と明記する（`final class` に可変の状態を持たせずに冪等にするため） → 00-api-map に反映済み（2026-09-18）
 8. （整合修正で追記）`RecordingName.matchesFilePattern(_:)`（T-13〜T-15 の提案で地図 §1 に載った。形だけの判定）を 4.5 に足した → 00-api-map に反映済み（2026-09-18）
 9. （整合修正で追記）00-api-map §15 は `TempDirectory`・`PackageRoot`・`TestEnvironment` の作り手を T-06 と書くが、T-01 が作る（4.20）。地図を T-01 に直すことを提案する
+10. （実装時に発見・決定）00-api-map §0 は「`URL` からパス文字列を取るときは `url.path(percentEncoded: false)` だけを使う」とするが、このチケットの 4.15・4.16・4.18 と 5.12 の `productionPath` は `.path` を使っていた。
+    上位の地図に合わせて `path(percentEncoded: false)` にした。ディレクトリの URL では末尾に `/` が付くので、`relativePath(of:)` は比べる前に末尾の `/` を落とす（`withoutTrailingSlash`）。地図の変更は不要
 
 ## 9. SPEC の変更
 
 `docs/SPEC.md`（T-05 が作る）に、§4.1 の 2 つの正規表現と §4.4 の request_id の正規表現を、このチケットの定数と逐語で同じ形で載せる（SPEC 同期テストが `RecordingName.filePattern` / `folderPattern` / `RequestID.pattern` と照合する）。T-05 が先にマージされていればこの PR で足し、後なら T-05 が足す。
+→ （T-05 の実装で判明）SPEC.md は PLAN の 9 節の機械的な写しで §4.1・§4.4 を写さないので、T-05 には収まらなかった。GitHub issue #18 に切り出した（当面は `patternsAreVerbatim` が逐語を守る）
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: PLAN §4.1・§4.4 に `| 定数 | 正規表現 |` の表を置き、`make-spec.py` が SPEC の `S10. 名前の正規表現` に写す。`Tests/VDContractTests/SpecSyncContractTests.swift` の `patternsMatchSpec`（「名前の正規表現が SPEC S10 の表と逐語で同じ」）が `RecordingName.filePattern` / `folderPattern` / `RequestID.pattern` と照合する。表の中の `|` は `\|` と書き、`SpecDocument.namePatterns()` が戻す。`patternsAreVerbatim` は二重の守りとして残す
 
 ## 10. マージ後にやること
 

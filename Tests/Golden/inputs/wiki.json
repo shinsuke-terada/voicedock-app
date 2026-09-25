@@ -1,0 +1,232 @@
+{
+  "schema": 1,
+  "group": "wiki",
+  "cases": [
+    {
+      "name": "normalize_names",
+      "kind": "normalize",
+      "inputs": [
+        "VoiceDock",
+        "Straße",
+        "STRASSE",
+        "İ",
+        "ﬁle",
+        "ΣΑΣ",
+        "か\u3099",
+        "ＡＢＣ"
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_basic",
+      "kind": "plan",
+      "overrides": {},
+      "tags": [
+        "VoiceDock",
+        "none",
+        "a#b",
+        "2026-08-29 Voice"
+      ],
+      "indexNames": [
+        "voicedock"
+      ],
+      "rawNames": [
+        "2026-08-29 raw"
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_max_links_2",
+      "kind": "plan",
+      "overrides": {
+        "obsidian.wiki.maxLinks": 2
+      },
+      "tags": [
+        "VoiceDock"
+      ],
+      "indexNames": [
+        "VoiceDock"
+      ],
+      "rawNames": [
+        "2026-08-29 raw"
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_max_links_0",
+      "kind": "plan",
+      "overrides": {
+        "obsidian.wiki.maxLinks": 0
+      },
+      "tags": [
+        "VoiceDock"
+      ],
+      "indexNames": [
+        "VoiceDock"
+      ],
+      "rawNames": [
+        "2026-08-29 raw"
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_link_tags_false",
+      "kind": "plan",
+      "overrides": {
+        "obsidian.wiki.linkTags": false
+      },
+      "tags": [
+        "VoiceDock"
+      ],
+      "indexNames": null,
+      "rawNames": [
+        "2026-08-29 raw"
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_link_only_existing_false",
+      "kind": "plan",
+      "overrides": {
+        "obsidian.wiki.linkOnlyExisting": false
+      },
+      "tags": [
+        "VoiceDock",
+        "新しい"
+      ],
+      "indexNames": [],
+      "rawNames": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_no_daily_no_adjacent",
+      "kind": "plan",
+      "overrides": {
+        "obsidian.wiki.linkDailyNote": false,
+        "obsidian.wiki.linkAdjacentDays": false
+      },
+      "tags": [
+        "VoiceDock"
+      ],
+      "indexNames": [
+        "voicedock"
+      ],
+      "rawNames": [
+        "2026-08-29 raw"
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_index_null",
+      "kind": "plan",
+      "overrides": {},
+      "tags": [
+        "VoiceDock",
+        " "
+      ],
+      "indexNames": null,
+      "rawNames": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_casefold_match",
+      "kind": "plan",
+      "overrides": {},
+      "tags": [
+        "STRASSE",
+        "ǅ"
+      ],
+      "indexNames": [
+        "straße",
+        "ǆ"
+      ],
+      "rawNames": [],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "plan_month_boundary",
+      "kind": "plan",
+      "day": "2026-03-01",
+      "overrides": {},
+      "tags": [],
+      "indexNames": [],
+      "rawNames": [
+        "2026-03-01 raw (2)"
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "plan_bad_raw_name",
+      "kind": "plan",
+      "overrides": {},
+      "tags": [],
+      "indexNames": [],
+      "rawNames": [
+        "a|b",
+        "2026-08-29 raw"
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "index_tree",
+      "kind": "buildIndex",
+      "overrides": {},
+      "files": [
+        "Top.md",
+        "Notes/VoiceDock.md",
+        "Notes/deep/Straße.md",
+        "Notes/UPPER.MD",
+        "Notes/readme.txt",
+        ".obsidian/workspace.md",
+        "Notes/.hidden.md",
+        ".trash/old.md",
+        "Daily/Voice/Raw/20260829/2026-08-29 raw.md",
+        "Daily/Voice/Rawish/keep.md",
+        "Daily/Voice/Wiki/20260829/2026-08-29 Voice.md"
+      ],
+      "symlinkDirs": [
+        [
+          "linked",
+          "Notes"
+        ]
+      ],
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "raw_prefix_default",
+      "kind": "rawPrefix",
+      "overrides": {},
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "raw_prefix_no_brace",
+      "kind": "rawPrefix",
+      "overrides": {
+        "obsidian.raw.folderTemplate": "Raw/Notes/"
+      },
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    },
+    {
+      "name": "raw_prefix_brace_first",
+      "kind": "rawPrefix",
+      "overrides": {
+        "obsidian.raw.folderTemplate": "{yyyymmdd}/raw"
+      },
+      "timeZone": "Asia/Tokyo",
+      "day": "2026-08-29"
+    }
+  ]
+}

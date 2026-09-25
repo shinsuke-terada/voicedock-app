@@ -1,5 +1,13 @@
 # T-22 VDPipeline: Session の工程（分組・閉じる・再オープン・統合・解析）と LLM のガード
 
+> （F-82・issue #119、2026-09-23。マージ後の追記）`groupNewParts` は分組の 1 件を `Store.groupPart`（Session の作成・`session_key`・集計・`OPEN→OPEN` を 1 トランザクション）で書き、分組した Part が既に `partTerminal`（分組より先に FAILED / SKIPPED になったもの）なら既存の `reopenSession` を呼ぶ（SAVED / COMPLETED の日の Daily に除外の警告行が載らなかった。NOTE-05。処理待ちの Part は従来どおり契機にしない）。PLAN §5.6。テストは `SessionGroupingReopenTests`。
+> 解析（`ensureAnalysis`）は、`ensureRunning` の失敗と `Analyzer` の失敗のとき停止要求（`ctx.stop`）が立っていれば `failSession` せずに ANALYZING のまま返す（終了のときの `server_start_failed: cancelled` と止められたサーバとの通信の失敗を記録しない。次回起動時の復旧が戻す。PLAN §8.5・§8.15）。テストは `SessionAnalysisStoppedTests`。
+
+> （F-74・issue #114、2026-09-23。マージ後の追記）統合で segment が 0 件でも、有効な Part（FAILED / SKIPPED でない）の transcript が読めなければ `session_empty` にせず `MERGING→FAILED`（`SESSION_MERGE_FAILED`、「文字起こしを読めない Part があります: <partkey>, …」）。
+> MERGED 以降で統合結果が空になった Session は `→ANALYZING`（MERGED から通常の辺、ANALYZED / WRITING から ★ `stale_analysis`）→ `ANALYZING→FAILED`（同じコード）にする（`SessionSteps.failUnreadableAfterMerge`・`unreadableTranscriptPartkeys`。PLAN §5.6）。テストは `UnreadableTranscriptMergeTests`。
+
+> （F-83・issue #119、2026-09-23。マージ後の追記）`LLMGuard` のメモリの条件は独自の `bytesPerGB` と式をやめ、`ModelMemory.hasEnough`（T-30）の 1 か所にした（CR-06。振る舞いは同じ）。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-22 |
@@ -38,6 +46,7 @@ T-18 が置いた `SessionSteps` の骨組みに本体を書く: Part の分組�
 | `Tests/TestSupport/FakeLLMServer.swift` | `FakeLLMServer`（actor） |
 | `Tests/VDPipelineTests/PipelineFixtures.swift`（変更） | LLM の部品を足す |
 | `Tests/VDPipelineTests/SessionGroupTests.swift` ほか 7 本（`ModelFilesTests` は T-09） | §6 |
+| `Tests/VDPipelineTests/UnreadableTranscriptMergeTests.swift`（F-74 で追加） | 有効な Part の transcript が読めないときの統合の失敗（PLAN §5.6） |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | 7 キーを消す |
 
 ## 4. 仕様
@@ -64,7 +73,7 @@ extension LlamaServerSupervisor: LLMServerControl {}
 public typealias ChatTransportFactory = @Sendable (LlamaServerHandle, LLMConfig) -> any ChatTransport
 ```
 
-`WorkerDependencies` の末尾に足す（init の引数も同じ順で末尾に）:
+`WorkerDependencies` に足す（並びは 00-api-map §11 の相対順が正。`llama`・`chatTransportFactory` は `runner` の後に挿し、`physicalMemoryBytes` は `catalog` の後に置く。init の引数も同じ順）:
 ```swift
     public let llama: any LLMServerControl
     public let chatTransportFactory: ChatTransportFactory
@@ -109,7 +118,7 @@ struct LLMGuard {
 2. `reasons: [PauseReason] = []`、`model: URL?`
 3. `if let e = ctx.deps.catalog.entry(kind: .llm, id: id)`: `model = ModelFiles.url(kind: .llm, entry: e, layout:)`。
    `!ModelFiles.isPresent(e, kind: .llm, layout:)` → `reasons.append(.llmModelMissing)`。
-   `e.minMemoryGB` が在り `ctx.deps.physicalMemoryBytes < UInt64(gb) * 1_073_741_824` → `reasons.append(.llmInsufficientMemory)`
+   `e.minMemoryGB` が在り、`let (need, overflow) = UInt64(clamping: gb).multipliedReportingOverflow(by: LLMGuard.bytesPerGB /* 1_073_741_824 */)` で `overflow || ctx.deps.physicalMemoryBytes < need` → `reasons.append(.llmInsufficientMemory)`（範囲外の値でトラップしない。溢れたら足りない側。CR-16。T-22 の実装で判明）
 4. そうでなく `if let u = ModelFiles.customLLMURL(id: id, layout:)`: `model = u`。`!FileProbe.isNonEmptyRegularFile(u)` → `.llmModelMissing`。**メモリは確かめない**（カスタムの目安は分からない。警告は選ぶときの UI（T-31）が出す）
 5. どちらでもない（CV-42 で起きない）→ `model = nil`、`.llmModelMissing`
 6. `!FileProbe.isExecutableFile(ctx.deps.paths.llamaServer)` → `.llamaServerMissing`
@@ -177,6 +186,7 @@ for s in try store.sessions(status: .open):                                  // 
       （TransitionConflict は捕まえて次へ）
 ```
 - ちょうど `idleCloseSeconds` 経ったものは閉じる（`<=`）
+- **F-66（2026-09-23）で `staleDay` の枝を廃止した。**閉じるのは idle だけ（detail `idle`。日付が過去の OPEN も同じ）。PLAN §5.6
 
 **`reopenSession(_:)`**（PLAN §5.6。voicedock pipeline.py:551-590 ＋ ★3 辺）:
 1. `cfg.session.allowReopen` が偽 → false
@@ -375,13 +385,14 @@ public actor FakeLLMServer: LLMServerControl {
 
 - `PipelineWorld.make(configure:chat:llm:physicalMemoryBytes:)`: `chat: FakeChatTransport = FakeChatTransport(responses: [])`、`llm: FakeLLMServer = FakeLLMServer()`、`physicalMemoryBytes: UInt64 = 1 << 40`。
   deps の `chatTransportFactory` は `{ _, _ in chat }`
-- `func installLLM() throws`: `TestCatalogs.minimal` の `test-llm` のファイルを `ModelFiles.url` に `entry.bytes` の 0 で置き、`paths.llamaServer` に `#!/bin/sh\nexit 0\n`（0755）を置き、`update { $0.llm.modelID = "test-llm" }`
+- `func installLLM() async throws`（`ConfigStore.update` が async のため）: `TestCatalogs.minimal` の `test-llm` のファイルを `ModelFiles.url` に `entry.bytes` の 0 で置き、`paths.llamaServer` に `#!/bin/sh\nexit 0\n`（0755）を置き、`update { $0.llm.modelID = "test-llm" }`
 - `func addSessionPart(hour: Int, status: PartStatus = .rawSaved, text: String? = "おはようございます。", sessionKey: String = "DJIMIC3:20260912", day: String = "20260912") throws -> String`（voicedock test_session_analysis `add_part`）:
   relpath `TX_MIC001_<day>_<hh>0000/TX00_MIC001_<day>_<hh>0000_orig.wav`、started `<yyyy-MM-dd>T<hh>:00:00+09:00`、duration 60、ended `<hh>:01:00`。
   `insertRecording` の後、`forcePart(pk, status:, sessionKey:)`。`text` が nil でなければ `PartTranscriptCodec.encode(PartTranscript(partkey: pk, language: "ja", durationSeconds: 60.0, startedAt: started, text: text, segments: [TranscriptSegment(start: 0.0, end: 3.0, text: text)]))` を `layout.transcript(slug:)` に書く
 - `func addSession(key: String = "DJIMIC3:20260912", day: String = "2026-09-12", status: SessionStatus, regenerated: Int = 0) throws`: `insertSession` → `forceSession(key, status:, regeneratedCount:)`
 - `func registerRow(folder: String = "TX_MIC001_20260912_120950", name: String = "TX00_MIC001_20260912_120950_orig.wav", started: String = "2026-09-12T12:09:50+09:00", duration: Double? = 1800.0, device: String = "DJIMIC3", status: PartStatus = .discovered) throws -> String`
   （voicedock test_session_group `part`）: `relpath = RelPath.join([folder, name])`（folder が空なら name）、`NewRecording(… transmitterID: <name の先頭 4 文字>, micIndex: 1, startedAt: started, durationSeconds: duration, endedAt: duration の分を足した ISO（nil なら nil）, sourcePath: relpath, sourceSize: 1, sourceMtime: 1.0, sha256Helper: "a" × 64, inboxPath: <layout.inboxFile の HOME 相対>)`。inbox のファイルは作らない。`status` が DISCOVERED 以外なら `forcePart`
+- `func addTimedPart(time:stamp:duration:ended:status:segments:sessionKey:day:) throws -> String`: 任意の時刻（`hh:mm:ss`）に始まる Part（`addSessionPart` はこれを呼ぶ）。`segments` が nil なら transcript を書かない、`ended` が偽なら ended_at は NULL（§6.4 の 09:00:05 開始・ended NULL などに使う）
 - `forcePart` / `forceSession`: `@testable import VDStore` の `store.pool.write` で `UPDATE recordings SET status = ?, session_key = ? WHERE partkey = ?` / `UPDATE sessions SET status = ?, regenerated_count = ? WHERE session_key = ?`（テストだけの近道。Tests/ は PT-05 の対象外。**本番のコードは使わない**）
 - `ANALYSIS`（voicedock test_session_analysis の固定値。1 行の JSON 文字列）:
   `{"title": "開発の一日", "summary": "削除条件を整理した。", "key_points": ["論理式に落とした"], "tasks": [{"text": "ND テストを書く", "due": null}], "decisions": [], "ideas": [], "tags": ["VoiceDock"]}`
@@ -420,7 +431,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | `onlyUngroupedParts` / 「対象は session_key が NULL の Part だけ」 | 2 回呼ぶ | 2 回目は events が増えない |
 | `columnsAreRecounted` / 「集計列を数え直す」 | 600 秒の Part と、16:00 開始 1200 秒の SKIPPED の Part | part_count 2、failed_part_count 1、recorded_seconds 1800.0、started_at `2026-09-12T12:09:50+09:00`、ended_at `2026-09-12T16:20:00+09:00`、day_date `2026-09-12` |
 | `addingToOpenIsATransition` / 「SM-02 OPEN への追加は OPEN→OPEN」 | 2 件 | events `[(nil, OPEN, nil), (OPEN, OPEN, <pk1>), (OPEN, OPEN, <pk2>)]`（from, to, detail） |
-| `addingToClosedWritesNoEvent` / 「閉じた Session への追加は events を書かず再オープンしない」 | 1 件で分組 → OPEN→READY → 2 件目で分組 | 2 件目の session_key が同じ、events 増えない、READY のまま、part_count 2 |
+| `addingToClosedWritesNoEvent` / 「閉じた Session への追加は events を書かず再オープンしない」 | 1 件で分組 → OPEN→READY → 2 件目で分組 → SAVED に強制 → 3 件目で分組（READY は再オープン元でないので、「分組で再オープンする」壊し方は SAVED でしか見えない） | 2 件目の session_key が同じ、events 増えない、READY のまま、part_count 2。3 件目も同じ鍵、events 増えない、SAVED のまま、regenerated_count 0 |
 | `emptyGroupsNothing` / 「未分組が無ければ何もしない」（TEST-28） | Part 0 件 | Session 0 件 |
 
 上限（時計 `1_789_257_600_000` = 2026-09-13T09:00+09:00。voicedock test_session_reopen `add_part`: 09:00 から 1 分ずつ、60 秒。`K = "DJIMIC3:20260912"`）:
@@ -437,7 +448,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
-| `pastDayBecomesReady` / 「日付が過去の OPEN は stale_day で閉じる」 | 分組 → 時計 +1 日 | READY、detail `stale_day` |
+| `pastDayBecomesReady` / 「日付が過去の OPEN は stale_day で閉じる」 | 分組 → 時計 +1 日 | READY、detail `stale_day`（F-66 で廃止。`dayChangeAloneDoesNotClose`・`pastDayClosesByIdle`・`startClosesIdlePastDay` に置き換えた） |
 | `idleSameDayBecomesReady` / 「当日でも idle 経過で閉じる」 | +1801 秒 | READY、detail `idle` |
 | `exactlyIdleCloses` / 「ちょうど idleCloseSeconds で閉じる」 | +1800 秒 | READY |
 | `recentStaysOpen` / 「idle 未満は OPEN」 | +1799 秒 | OPEN |
@@ -464,7 +475,7 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
 | `excludesFailedAndSkipped` / 「FAILED / SKIPPED を除外する」 | 09 時 RAW_SAVED（「朝」）・10 時 FAILED（「昼」）・11 時 SKIPPED（「夜」）、どれも transcript 在り | segments の text `["朝"]`、excludedPartkeys `[10 時, 11 時]` |
-| `absoluteTimes` / 「TIME-01 絶対時刻 = started_at + offset」 | segment (1.5, 3.2) | at = `2026-09-12T09:00:01+09:00` の Instant + 500 ms、endAt = +3200 ms（`epochMillis` で比べる） |
+| `absoluteTimes` / 「TIME-01 絶対時刻 = started_at + offset」 | 09:00:00 開始の Part に segment (1.0, 1.2)・(1.5, 3.2)（前の segment に足し込む壊れ方でも値が変わるよう、先に 1 つ置く） | (1.5, 3.2) の at = `2026-09-12T09:00:01+09:00` の Instant + 500 ms、endAt = 09:00:00 + 3200 ms（`epochMillis` で比べる） |
 | `textIsStrippedAndEmptyDropped` / 「text を Python 互換 strip し空を捨てる」 | segments `" a "`, `"\u{3000}"`, `"\u{1c}b\u{1f}"` | `["a", "b"]` |
 | `sortedByAtThenEndAt` / 「(at, end_at) で安定ソート」 | 09:00 の Part に (10, 20, "x")、09:00:05 開始の Part に (0, 30, "y")・(5, 8, "z") | text の順 `["y", "z", "x"]`（y は 09:00:05。z と x は同じ 09:00:10 で end の早い z が先） |
 | `unreadableTranscriptIsSkipped` / 「読めない transcript は飛ばすが Block には数える」 | 09 時（読める）と 09:30（transcript 無し） | segments は 1 件、blocks は 1 つで end が 09:31:00 |
@@ -490,17 +501,17 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | `missingFingerprintReanalyzes` / 「指紋が無ければ作り直す」（voicedock :388） | analysis.json だけ | chat 1 回 |
 | `differentTranscriptReanalyzes` / 「別の transcript の解析は作り直す」（:408） | .source.json の sha が別の値 | chat 1 回 |
 | `brokenAnalysisReanalyzes` / 「壊れた解析は作り直す」（:444） | analysis.json が `{` | chat 1 回 |
-| `staleAnalysisFromAnalyzed` / 「★ ANALYZED で指紋が違えば ANALYZED→ANALYZING（stale_analysis）」 | 09 時の Part で解析済み（ANALYZED、正しいファイル）→ 10 時の RAW_SAVED の Part を足す → `ensureAnalysis` | events `(ANALYZED, ANALYZING, "stale_analysis")`・`(ANALYZING, ANALYZED)`、chat 1 回、.source.json の segments 2 |
+| `staleAnalysisFromAnalyzed` / 「★ ANALYZED で指紋が違えば ANALYZED→ANALYZING（stale_analysis）」 | 09 時の Part で解析済み（ANALYZED、正しいファイル）→ 09:30 開始の RAW_SAVED の Part を足す（10 時だと 09:00:00〜10:00:03 が `maxSecondsPerRequest` 3600 を超えて 2 チャンクになり、chat が Map 2 回 ＋ Reduce 1 回になる）→ `ensureAnalysis` | events `(ANALYZED, ANALYZING, "stale_analysis")`・`(ANALYZING, ANALYZED)`、chat 1 回、.source.json の segments 2 |
 | `staleAnalysisFromWriting` / 「★ WRITING でも同じ（WRITING→ANALYZING）」 | 同上で WRITING | `(WRITING, ANALYZING, "stale_analysis")` |
 | `brokenAnalysisInAnalyzedIsRedone` / 「ANALYZED で解析 JSON が読めなければ作り直す（FAILED にしない）」 | ANALYZED、analysis.json が `{` | ANALYZED、FAILED を経ない |
 | `matchingAnalyzedIsKept` / 「ANALYZED で一致すれば何もしない」 | ANALYZED、正しいファイル | true、events 増えない、chat 0 |
 | `llmFailureIsFailed` / 「LLM の失敗は ANALYZING→FAILED」（:477, :510） | chat `[.failure(StageFailure(.llmUnavailable, "URLError -1004"))]` | FAILED(LLM_UNAVAILABLE)、message `URLError -1004`、ログ `llm_failed session_key=… error_code=LLM_UNAVAILABLE detail="URLError -1004"`、analysis.json も .source.json も無い |
 | `invalidJSONIsFailed` / 「直らない JSON は LLM_INVALID_JSON」 | chat 2 回とも `{"title":"t"}` | FAILED(LLM_INVALID_JSON)、message `- summary: Field required` |
 | `serverStartFailureIsFailed` / 「起動の失敗は LLM_UNAVAILABLE」 | `FakeLLMServer(failure: StageFailure(.llmUnavailable, "server_start_failed: no_port"))` | FAILED、message `server_start_failed: no_port`、chat 0 回 |
-| `analysisWriteFailureLeavesNoFingerprint` / 「解析を書けなければ LLM_FAILED で指紋は書かない」（:727） | `layout.analysis` を 0o555 に | FAILED(LLM_FAILED)、message が `AtomicFileError: ` で始まる、.source.json が無い |
+| `analysisWriteFailureLeavesNoFingerprint` / 「解析を書けなければ LLM_FAILED で指紋は書かない」（:727） | analysis.json の位置にディレクトリを置く（`layout.analysis` を 0o555 にすると同じディレクトリの .source.json も書けず、「.source.json を先に書く」壊し方が見えない） | FAILED(LLM_FAILED)、message が `AtomicFileError: ` で始まる、.source.json が無い |
 | `sourceWriteFailureIsLLMFailed` / 「指紋を書けなければ LLM_FAILED」 | `.source.json` の位置にディレクトリを置く | FAILED(LLM_FAILED)、次の `ensureAnalysis`（FAILED→ANALYZING に戻した後）で chat がもう一度呼ばれる |
 | `trimmedIsLogged` / 「切り詰めを記録する」 | ANALYSIS の tags を 20 個に | ログ `analysis_trimmed session_key=… fields="tags: 20 -> 15"` |
-| `reopenedSessionIsReanalyzed` / 「再オープン後は再解析」（:754） | chat は `ANALYSIS` を 2 回。1 回処理して ANALYZED → SAVED に強制 → 10 時の RAW_SAVED の Part を足し `reopenSession` → `process` | chat 2 回目が呼ばれる |
+| `reopenedSessionIsReanalyzed` / 「再オープン後は再解析」（:754） | chat は `ANALYSIS` を 2 回。1 回処理して ANALYZED → SAVED に強制 → 09:30 開始の RAW_SAVED の Part を足し（1 チャンクに収める。`staleAnalysisFromAnalyzed` と同じ理由）`reopenSession` → `process` | chat 2 回目が呼ばれる |
 | `unchangedReopenIsReused` / 「新しい segment が無ければ再解析しない」（:780） | 1 回処理 → SAVED に強制 → SKIPPED の Part を足し `reopenSession` → `process` | chat は 1 回のまま、`analysis_reused` |
 | `guardFailureDoesNotTransition` / 「ガードで止まれば遷移しない」 | llm.modelID nil、MERGED | false、MERGED のまま、`pipeline_paused reason=llm_not_selected`、chat 0 |
 | `staleWaitsOnGuard` / 「古い解析もガードで待つ（遷移しない）」 | ANALYZED・指紋違い・llama-server を消す | ANALYZED のまま、`paused` に `.llamaServerMissing` |
@@ -553,6 +564,18 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 
 `timeZone`、`session.blockGapSeconds`、`session.idleCloseSeconds`、`session.allowReopen`、`session.maxParts`、`session.maxDurationSeconds`、`llm.modelID` の 7 行を消す。
 
+### 6.11 `UnreadableTranscriptMergeTests.swift`（`@Suite("UnreadableTranscriptMerge")`。F-74 で追加。PLAN §5.6）
+
+読めない transcript は、09 時の Part の `transcripts/parts/<slug>.json` を消す（無い）か `{` にする（壊れている）。
+
+| 関数名 / 表示名 | 準備 | 期待 |
+|---|---|---|
+| `unreadableTranscriptFailsTheMerge` / 「F-74 有効な Part の transcript が読めず segment が 0 件なら session_empty にせず MERGING→FAILED（SESSION_MERGE_FAILED）（パラメータ化: 無い・壊れている）」 | READY、09 時 RAW_SAVED（読めない）・10 時 SKIPPED | `.stopped`、FAILED・`SESSION_MERGE_FAILED`・error_message「文字起こしを読めない Part があります: <09 時の partkey>」、events `READY→MERGING`・`MERGING→FAILED`、ログ `session_merge_failed session_key=DJIMIC3:20260912 error_code=SESSION_MERGE_FAILED`、`session_empty` が無い |
+| `readableButBlankTranscriptIsStillEmpty` / 「F-74 有効な Part の transcript が読めて text が空白だけなら、従来どおり本当に空として session_empty で COMPLETED」 | READY、09 時 RAW_SAVED（text `" \u{3000} "`） | `.empty`、COMPLETED、`session_empty … parts=1`、`session_merge_failed` が無い |
+| `unreadableAfterMergeFailsTheSession` / 「F-74 MERGED 以降で transcript が読めなくなった Session は黙って止まらず、→ANALYZING→FAILED（SESSION_MERGE_FAILED）にする（パラメータ化: MERGED・ANALYZING・ANALYZED・WRITING）」 | `installLLM()`、その状態の Session、09 時 RAW_SAVED（transcript 無し） | `.stopped`、FAILED・同じコードと文言、最後の events が MERGED `[MERGED→ANALYZING, ANALYZING→FAILED]`・ANALYZING `[ANALYZING→FAILED]`・ANALYZED / WRITING `[<状態>→ANALYZING（stale_analysis）, ANALYZING→FAILED]`、`session_merge_failed`、`llm.ensureCalls` と `chat.calls` が空（LLM を起動しない）、もう一度処理しても `session_merge_failed` は 1 件のまま |
+| `partiallyUnreadableStillMerges` / 「F-74 一部の Part だけ transcript が読めないなら、従来どおり読めない Part を飛ばして MERGED にする（失敗にしない）」 | READY、09 時 RAW_SAVED（読める）・10 時 RAW_SAVED（transcript 無し）、LLM なし | `.stopped`、MERGED、`session_merged … parts=2 excluded=0 chars=10`、`session_merge_failed` が無い |
+| `noPartsIsNotAFailure` / 「F-74 TEST-28 Part が 0 件なら読めない Part も 0 件で、MERGED の Session を失敗にしない」 | MERGED、Part 0 | `unreadableTranscriptPartkeys([]) == []`、`failUnreadableAfterMerge == false`、MERGED のまま、`session_merge_failed` が無い |
+
 ## 7. 破壊による証明
 
 | 壊し方（1 か所だけ） | 落ちるべきテスト |
@@ -572,6 +595,12 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 | ガードを MERGED→ANALYZING の後に置く | `guardFailureDoesNotTransition` |
 | processReadySessions の終わりの `llama.stop()` を対象があるときだけにする | `serverIsAlwaysStopped`（対象なし・停止要求） |
 | processReadySessions で Part 0 件の Session も対象にする | `sessionWithoutPartsIsNotReady` |
+| （F-74）ensureMerged の「有効な Part の transcript が読めない」分岐を消す（従来どおり session_empty） | `unreadableTranscriptFailsTheMerge`（両方） |
+| （F-74）`unreadableTranscriptPartkeys` が読めるかを見ない（有効な Part を全部数える） | `readableButBlankTranscriptIsStillEmpty` |
+| （F-74）process の MERGED 以降の `guard let t` を `return .stopped` だけに戻す | `unreadableAfterMergeFailsTheSession`（全部） |
+| （F-74）MERGED 以降で統合結果が空のまま解析へ進める（空の SessionTranscript を渡す） | `unreadableAfterMergeFailsTheSession`（`llm.ensureCalls` が空でない・文言が「チャンクが 0 個」） |
+| （F-74）buildSessionTranscript で読めない Part があれば nil を返す（一部だけ読めなくても失敗にする） | `partiallyUnreadableStillMerges` |
+| （F-74）`failUnreadableAfterMerge` の「読めない Part が 0 件なら何もしない」を消す | `noPartsIsNotAFailure` |
 
 ## 8. 受け入れ条件
 
@@ -599,3 +628,5 @@ Part は `registerRow(folder:name:started:duration:device:)`（行だけを DISC
 5. `SessionSteps` の宣言を地図に書く: `groupNewParts() throws`・`closeIdleSessions() throws`・`reopenSession(_:) -> Bool`・`process(sessionKey:) async -> SessionStepResult`・`ensureMerged(_:_:) -> Bool`・`ensureAnalysis(_:_:) async -> Bool`・`ensureDailyNote(_:_:) async -> Bool`（T-29）・`saveTimeline(…)`（T-29）・`deleteSourcesIfSafe(_:) async`（T-38）。`SessionStepResult { stopped, empty, analyzed, saved }`
 6. PLAN §5.6 の「解析の再利用」に「再利用するときも analysis_path と title を書く」を足す（書かないと、解析の書き込みの後・DB 更新の前に落ちた Session が ANALYZED のまま Daily の工程に進めない。voicedock の潜在バグ）
 7. `PyJSON.decode` は地図では `(_ data: Data)`、T-19 §4.9 では `(_ text: String)`。本チケットは地図の `Data` 版を使う
+
+- （実装で追記）VDModels の `ModelManager.meetsMemory`（T-23）は、同じ判定を `UInt64(gb) * 1_073_741_824` のトラップしうる形で持っている。UI（T-31）とガード（T-22）で書き方をそろえるため、`meetsMemory` も飽和演算にすることを提案する（値の上で違いが出るのは溢れる場合だけ）

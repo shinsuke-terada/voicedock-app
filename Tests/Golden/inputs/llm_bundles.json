@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "group": "llm_bundles",
+  "cases": [
+    {
+      "name": "limit_120",
+      "limit": 120,
+      "overrides": {},
+      "partials": [
+        {
+          "summary": "s0"
+        },
+        {
+          "summary": "s1"
+        },
+        {
+          "summary": "s2"
+        },
+        {
+          "summary": "s3"
+        },
+        {
+          "summary": "s4"
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "limit_300",
+      "limit": 300,
+      "overrides": {},
+      "partials": [
+        {
+          "summary": "s0"
+        },
+        {
+          "summary": "s1"
+        },
+        {
+          "summary": "s2"
+        },
+        {
+          "summary": "s3"
+        },
+        {
+          "summary": "s4"
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "single_oversized",
+      "limit": 10,
+      "overrides": {},
+      "partials": [
+        {
+          "summary": "longlonglonglonglonglonglonglonglonglong"
+        },
+        {
+          "summary": "x"
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

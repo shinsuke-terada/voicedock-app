@@ -5,7 +5,7 @@
 | ID | P0 |
 | 題 | 実機 PoC（Phase 0） |
 | Phase | 0 |
-| 前提 | なし（T-01 より前に行う。ただし P0-10 は T-02 の中で行う） |
+| 前提 | なし（T-01 より前に行う。P0-10 は行わない。CI を開発機のセルフホストランナーにしたため。T-02） |
 | 見積もり | コードは使い捨て（リポジトリに入れない）。成果物は `docs/POC.md`（T-01 の最初のコミットに含める） |
 
 ## 安全の規則（最初に読む）
@@ -78,10 +78,10 @@
 | 5 | P0-04 | whisper.cpp v1.9.4（Metal）の RTF と JSON の形 | PLAN §8.4、RK-03、T-03、T-17 | ⬜ |
 | 6 | P0-05 | AVAudioConverter と ffmpeg の比較 | PLAN §8.3、RK-05、T-16 | ⬜ |
 | 7 | P0-06 | llama-server（Metal）と json_object・起動時間・メモリ | PLAN §8.5、RK-04、T-03、T-21 | ⬜ |
-| 8 | P0-07 | 1 日分（約 350,000 文字）の Map-Reduce | PLAN §10.6、T-24 | ⬜ |
+| 8 | P0-07 | 1 日分（10 時間・約 220,000 文字）の Map-Reduce | PLAN §10.6、T-24 | ⬜ |
 | 9 | P0-08 | SMAppService のログイン項目 | PLAN §8.12、RK-02、T-31 | ⬜ |
 | 10 | P0-09 | 1 日分の処理見込み（文字数で外挿） | PLAN §12.2、E2E-06 | ⬜ |
-| 11 | P0-10 | GitHub ランナーでのディスクイメージ | PLAN §10.8、RK-06、RK-33、T-02 | ⬜（T-02 で記入） |
+| 11 | P0-10 | GitHub ランナーでのディスクイメージ | PLAN §10.8、RK-06、RK-33、T-02 | `— 対象外`（T-02 で理由を記入） |
 | 12 | P0-11 | DADiskMountApprovalCallback（任意） | PLAN §8.1（v1 では採用しない） | ⬜ |
 | 13 | P0-12 | Vault が書類フォルダ・iCloud Drive にあるときの TCC | PLAN §8.7、§8.11 DR-10、T-28、T-32 | ⬜ |
 | 14 | — | Phase 0 で決めたこと | PLAN §3.1、§3.3、§8.1、`identity.env` | ⬜ |
@@ -224,6 +224,12 @@ statfs(新しいパス) → MNT_RDONLY を出す
 2. 入力は 3 種: 実機の 24 bit BWF、実機の 32 bit float BWF（DJI の設定を切り替えて録る。録音とコピーは【利用者が行う】）、voicedock の `tests/fixtures/make_wav.py` 相当で作った fmt 16 バイト・tag 3 の float WAV
 3. 各入力で ffmpeg 版（`ffmpeg -i in.wav -ar 16000 -ac 1 -c:a pcm_s16le ff.wav`）も作り、`afinfo` で長さを比べる（合格: 差 ≤ 1.0 秒）
 4. 両方の 16 kHz を P0-04 の whisper にかけ、`text` の差分（`diff <(jq -r .transcription[].text a.json) <(jq -r .transcription[].text b.json)`）を貼る。判定は「実用上同等」（語の欠落・幻覚の増加が無い）を人が判断し、理由を書く
+5. （F-77・issue #117 で追加。任意）実機の WAV のチャンクの並びを記録する。PLAN §8.3 手順 6 の照合は、data の後ろに**チャンクでないバイト**（0 埋め・ID3v1 の `TAG` など）があると、正常な録音でも「入力のヘッダの長さと実データの量が合いません」で `NORMALIZE_VERIFY_FAILED` にする（消さない側だが、取り込みが止まる）。実機がそういうファイルを作らないことを確かめるための手順。
+   対象（録音とコピーは【利用者が行う】。デバイスの上では読むだけ。写しは `~/VoiceDockPoC/audio/` に置く）: (a) 24 bit の設定で録った `_orig.wav`、(b) 32 bit float の設定で録った `_orig.wav`、(c) `_orig` でない方のファイル（あれば）、
+   (d) 電池が切れるまで録り続ける・録音中に電源を切るなどで途中で止まった録音。
+   各写しで、先頭から辿ったチャンクの id とサイズ、data の開始位置と宣言したサイズ、ファイルのサイズ（`xxd -l 64` と、`data` の位置の前後の `xxd -s <位置> -l 16`、`stat -f %z`）と `afinfo` の長さ（ヘッダの長さ）を貼り、
+   `ファイルのサイズ − data の開始位置` が宣言したサイズと一致するか（data の後ろにチャンクや詰め物が無いか。あればその中身の先頭 16 バイト）を書く。
+   (a)〜(c) で一致しなければ照合の規則を見直す（利用者に上げる）。(d) でヘッダが実データより短ければ、本アプリは手順 6 で `NORMALIZE_VERIFY_FAILED` にして消さない（期待どおり）
 
 ### 8. P0-06 llama-server（章 7）
 
@@ -247,7 +253,7 @@ voicedock の LLM のコードをそのまま使って測る（本アプリの�
 
 1. `git -C /Users/terada/Projects/voicedock archive d3d595e | tar -x -C ~/VoiceDockPoC/vd` → `cd ~/VoiceDockPoC/vd && uv sync --frozen --python 3.12`
 2. llama-server を **`--api-key-file` を付けずに**起動する（voicedock の HTTP クライアントは認証ヘッダを送らないため。この違いを記録に書く）
-3. 約 350,000 文字の transcript（実録音の P0-04 の出力を連結するか、T-24 で作る合成 fixture の長文）を `SessionTranscript` にし、`voicedock.llm.analyze_session` を `VOICEDOCK_LLM_URL=http://127.0.0.1:18080/v1`・`VOICEDOCK_LLM_MODEL=x` で呼ぶ台本 `~/VoiceDockPoC/p007.py` を書いて実行
+3. 約 220,000 文字（10 時間分）の transcript（実録音の P0-04 の出力を連結するか、T-24 で作る合成 fixture の長文）を `SessionTranscript` にし、`voicedock.llm.analyze_session` を `VOICEDOCK_LLM_URL=http://127.0.0.1:18080/v1`・`VOICEDOCK_LLM_MODEL=x` で呼ぶ台本 `~/VoiceDockPoC/p007.py` を書いて実行
 4. 記録: 総時間、チャンク数、各 Map・Reduce の時間、修復の回数、最終結果が検証を通ったか
 5. 合格: 30 分以内
 
@@ -260,15 +266,15 @@ voicedock の LLM のコードをそのまま使って測る（本アプリの�
 
 ### 11. P0-09 1 日分の処理見込み（章 10）
 
-- 入力: P0-04 の「文字 / 経過秒」、voicedock POC の実測「密な発話は 3.9〜4.6 文字/秒（音声 1 秒あたり）」、16 時間
-- 見込みの文字数 = 16 × 3600 × 4.6 = 264,960 文字（上限側で見積もる）
+- 入力: P0-04 の「文字 / 経過秒」、voicedock POC の実測「密な発話は 3.9〜4.6 文字/秒（音声 1 秒あたり）」、10 時間
+- 見込みの文字数 = 10 × 3600 × 4.6 = 165,600 文字（上限側で見積もる）
 - 見込みの文字起こし時間 = 見込みの文字数 ÷ （P0-04 の文字 / 経過秒）
 - 見込みの解析時間 = P0-07 の総時間 × （見込みの文字数 ÷ P0-07 の文字数）
 - 合格: 文字起こし + 解析 + コピー（1 日分 約 11 分）が 24 時間未満。計算式と数値を貼る
 
 ### 12. P0-10 GitHub ランナーでのディスクイメージ（章 11）
 
-T-02 の中で行う（T-02 のチケット §「P0-10 の手順」）。ここでは章の枠だけを作る。
+行わない（CI を開発機のセルフホストランナーにしたため。PLAN §10.8）。章 11 には T-02 が理由とランナーの確認結果を書く。
 
 ### 13. P0-11 DADiskMountApprovalCallback（任意。章 12）
 
@@ -326,4 +332,4 @@ T-02 の中で行う（T-02 のチケット §「P0-10 の手順」）。ここ�
 ## マージ後にやること
 
 - T-01 で `docs/POC.md` をコミットし、章 14 の値を `identity.env` に写す
-- T-02 で章 11（P0-10）を記入する
+- T-02 で章 11（P0-10 を行わない理由とランナーの確認結果）を記入する

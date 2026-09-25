@@ -1,0 +1,5 @@
+{
+  "ok": false,
+  "errors": "- title: Field required\n- summary: Input should be a valid string\n- tags.0: Input should be a valid string\n- mood: Extra inputs are not permitted\n- zzz: Extra inputs are not permitted",
+  "result": null
+}

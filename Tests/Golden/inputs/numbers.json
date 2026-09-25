@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "group": "numbers",
+  "cases": [
+    {
+      "name": "whisper_num",
+      "kind": "num",
+      "inputs": [
+        0.5,
+        1.0,
+        0.25,
+        2.0,
+        0.1,
+        0.0,
+        250.0,
+        1000.0,
+        0.35
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "whisper_timeout",
+      "kind": "whisperTimeout",
+      "inputs": [
+        null,
+        10,
+        199.9,
+        200,
+        1800,
+        7200,
+        1000000000.0,
+        0,
+        200.4
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "convert_timeout",
+      "kind": "convertTimeout",
+      "inputs": [
+        null,
+        100,
+        360,
+        361,
+        1800.7,
+        0,
+        1000000.0
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "expected_bytes",
+      "kind": "expectedBytes",
+      "inputs": [
+        null,
+        0,
+        1.5,
+        1800,
+        1800.99999,
+        -5
+      ],
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

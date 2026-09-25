@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "group": "llm_strip_think",
+  "cases": [
+    {
+      "name": "closed",
+      "text": "<think>x</think>rest",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "two",
+      "text": "<think>a</think>b<think>c</think>d",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "unclosed",
+      "text": "a<think>b",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "multiline",
+      "text": "<think>\nx\n</think>\ny",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "none",
+      "text": "plain",
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

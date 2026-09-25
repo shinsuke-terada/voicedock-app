@@ -80,7 +80,7 @@ VoiceDock for Mac の実装タスクごとの詳細仕様。**誰が実装して
 | [T-09](T-09-config.md) | VDCore: 設定と CV・モデルカタログ | 2 | T-04, T-05, T-08, T-10, T-25 |
 | [T-11](T-11-store.md) | VDStore | 2 | T-08, T-10 |
 | [T-12](T-12-process-runner.md) | VDProcess | 2 | T-10 |
-| [T-13](T-13-device-detection.md) | VDDevice: デバイス判定・共存ガード | 3 | T-07, T-09, T-12 |
+| [T-13](T-13-device-detection.md) | VDDevice: デバイス判定（共存ガードは F-61 で外した） | 3 | T-07, T-09, T-12 |
 | [T-14](T-14-ingest-copy.md) | VDDevice: 走査・安定性判定・コピー・登録（＋ AudioProbe） | 3 | T-11, T-13 |
 | [T-15](T-15-remount-snapshot.md) | VDDevice: 再マウント・snapshot・IngestService | 3 | T-14 |
 | [T-16](T-16-audio.md) | VDAudio: 16 kHz 変換・検証・空き容量 | 4 | T-14 |
@@ -90,7 +90,7 @@ VoiceDock for Mac の実装タスクごとの詳細仕様。**誰が実装して
 | [T-20](T-20-llm-mapreduce.md) | VDLLM: チャンク分割・Map-Reduce | 5 | T-19 |
 | [T-21](T-21-llama-server.md) | VDLLM: llama-server・ループバック HTTP | 5 | T-03, T-12, T-19 |
 | [T-22](T-22-session-steps.md) | VDPipeline: Session の工程 | 5 | T-18, T-20, T-21 |
-| [T-23](T-23-models.md) | VDModels | 5 | T-09, T-10 |
+| [T-23](T-23-models.md) | VDModels | 5 | T-09, T-10, T-21（TestSupport の `BlockingURLProtocol`・`BlockingSessionFactory`） |
 | [T-24](T-24-catalog-acceptance.md) | カタログの確定と LLM 受け入れ試験 | 5 | T-22, T-23 |
 | [T-26](T-26-notes-raw.md) | VDNotes: sanitize・frontmatter・Raw | 6 | T-09, T-25, T-45 |
 | [T-27](T-27-notes-daily.md) | VDNotes: Daily・Timeline・WikiLink | 6 | T-26 |
@@ -99,15 +99,21 @@ VoiceDock for Mac の実装タスクごとの詳細仕様。**誰が実装して
 | [T-30](T-30-ui-shell.md) | UI: メニューバーとパネル・AppModel | 7 | T-29 |
 | [T-31](T-31-ui-onboarding.md) | UI: はじめに・Vault・モデル・ログイン項目 | 7 | T-30, T-23 |
 | [T-32](T-32-diagnostics-attention.md) | 診断・要対応・状態の詳細（`LockObserving` と既定の「無効」実装もここで作る。T-36 が差し替える） | 7 | T-30 |
-| [T-33](T-33-migration.md) | voicedock からの乗り換え | 7 | T-29 |
+| [T-33](T-33-migration.md) | voicedock からの乗り換え — 取り下げ（2026-09-22、利用者の決定。PLAN F-60） | 7 | T-29 |
 | [T-34](T-34-release-scripts.md) | .app の組み立て・署名・公証・dmg | 7 | T-01, T-03, T-30 |
-| [T-35](T-35-e2e-off.md) | 実機 E2E（削除 OFF） | 7 | T-30〜T-34 |
-| [T-36](T-36-deletion-policy.md) | 削除条件・ロックの評価 | 8 | T-29, T-07 |
+| [T-35](T-35-e2e-off.md) | 実機 E2E（削除 OFF） | 7 | T-30〜T-32, T-34（実施の前提: T-38, T-39） |
+| [T-36](T-36-deletion-policy.md) | 削除条件・ロックの評価 | 8 | T-29, T-07, T-30, T-32 |
 | [T-37](T-37-reaper.md) | reaper 実行ファイル | 8 | T-07 |
 | [T-38](T-38-deletion-flow.md) | 要求・Session の削除段・reaper の起動・回収・期限切れ・後始末 | 8 | T-36, T-37 |
 | [T-39](T-39-skipped-deletion.md) | 根拠 B | 8 | T-38 |
 | [T-40](T-40-deletion-enabler.md) | 有効化・無効化と常時表示 | 8 | T-38, T-30 |
 | [T-41](T-41-backlog.md) | 後追い（過去分・手動で消した分） | 8 | T-30, T-32, T-38 |
 | [T-42](T-42-e2e-on.md) | 実機 E2E（削除 ON）とゲート | 8 | T-34, T-35, T-36〜T-41 |
+| [T-46](T-46-diarization-vendor.md) | 話者分離の外部バイナリとモデル（argmax-cli・SpeakerModels の同梱。F-89） | 8.5 | T-03, T-34 |
+| [T-47](T-47-diarization-core.md) | VDCore: 話者の型・設定キーと schemaVersion 2・ログ・AppPaths | 8.5 | T-09, T-10 |
+| [T-48](T-48-diarization-transcribe.md) | VDTranscribe: argmax-cli の起動・RTTM・話者の割り当て | 8.5 | T-46, T-47, T-17 |
+| [T-49](T-49-diarization-pipeline.md) | VDPipeline: 話者分離の配線・統合・Raw の Part・ログ・DR-18 | 8.5 | T-48 |
+| [T-50](T-50-diarization-notes-llm.md) | VDNotes / VDLLM: Raw の話者の行とチャンクの前置き | 8.5 | T-47 |
+| [T-51](T-51-diarization-ui.md) | UI: 「一般」の話者分離のトグル | 8.5 | T-47, T-48 |
 | [T-43](T-43-readme.md) | README と文書テスト | 9 | T-42 |
-| [T-44](T-44-release-v1.md) | v1.0 のリリース | 9 | T-34, T-42, T-43 |
+| [T-44](T-44-release-v1.md) | v1.0 のリリース | 9 | T-34, T-42, T-43, T-46〜T-51 |

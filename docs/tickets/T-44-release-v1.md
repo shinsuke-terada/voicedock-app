@@ -5,8 +5,8 @@
 | ID | T-44 |
 | 題 | v1.0 のリリース（VERSION・タグ・dmg・verify-bundle・E2E-06 の記録・非公開リポジトリでのリリース） |
 | Phase | 9 |
-| 前提 | T-43（README）、T-42（削除のゲート）、T-34（`make release`） |
-| 見積もり | 手で書く行 約 230（`docs/RELEASE.md` 約 140、テスト約 80、`VERSION` と `Version.swift` と README の更新 約 10） |
+| 前提 | T-43（README）、T-42（削除のゲート）、T-34（`make release`）、T-46〜T-51（話者分離。PLAN F-89） |
+| 見積もり | 手で書く行 約 230（`docs/RELEASE.md` 約 140、テスト約 80、`VERSION` と `Version.swift` と `docs/DEVELOPMENT.md` の状態の表の更新 約 10） |
 
 ## 1. 目的
 
@@ -28,7 +28,7 @@
 | `Tests/PolicyTests/ReleaseChecklistTests.swift` | 下記 §5 の全文 |
 | `VERSION` | `1.0.0` と改行 1 つ（`0.1.0` から上げる） |
 | `Sources/VDContract/Version.swift` | `AppVersion.string = "1.0.0"`（**同じ PR で両方を変える**。T-06 の照合テストが落ちて気づく） |
-| `README.md` | `## 状態` の表だけを更新（Phase 9 の行を `—` でなくする） |
+| `docs/DEVELOPMENT.md` | `## 状態` の表だけを更新（Phase 9 の行を `—` でなくする。F-93 で README から移った） |
 
 ## 4. `docs/RELEASE.md`
 
@@ -114,7 +114,7 @@
 
 1. `develop` から `feat/T-44-release-v1` を切る
 2. `VERSION` を `1.0.0` に、`Sources/VDContract/Version.swift` の `AppVersion.string` を `"1.0.0"` にする
-3. `README.md` の `## 状態` の表を更新する（Phase 9 の行）
+3. `docs/DEVELOPMENT.md` の `## 状態` の表を更新する（Phase 9 の行。F-93）
 4. `docs/RELEASE.md` の `## 2` の確認表と `## 5` の記録を埋める
 5. `make lint && make test && make test-disk` を回し、全出力を PR 本文と `## 5` に貼る
 6. PR を `develop` へ。利用者が確かめてマージする
@@ -292,7 +292,7 @@ struct ReleaseDoc: Sendable {
 | `theReleaseIsGatedOnTheDeletionGate()` | **ゲートが開いていなければ v1.0 を名乗れない** | `RunbookGate.load()`（T-42）と `VERSION` | `components(VERSION).major >= 1` なら `gateState() == "**ゲート: 開**"` |
 | `theOneDayScenarioIsDone()` | **E2E-06 が済んでいなければ v1.0 を名乗れない** | `Runbook.load()`（T-35） | `components(VERSION).major >= 1` なら、判定表の `E2E-06` の判定が `✅` で始まる |
 | `everyChecklistPassesBeforeRelease()` | 確認表が全部通っている | `checklist()` と `VERSION` | `major >= 1` なら、全行が `✅` か `—` で始まる |
-| `theReadmeStatusIsUpdated()` | README の Phase 9 が `—` のままでない | `Readme.load()`（T-43）の `## 状態` の表 | `major >= 1` なら、`9` で始まる行の状態の列が `—` でない |
+| `theReadmeStatusIsUpdated()` | `docs/DEVELOPMENT.md` の Phase 9 が `—` のままでない（F-93） | `docs/DEVELOPMENT.md`（`Readme.developmentPath`）の `## 状態` の表 | `major >= 1` なら、`9` で始まる行の状態の列が `—` でない |
 | `everyReferencedPathExists(_:)` | RELEASE.md が指すファイルが実在 | `Readme.referencedPaths(text)` で parametrize | `PackageRoot.file(_)` が在る |
 | `everyMakeTargetExists(_:)` | RELEASE.md が挙げる make のターゲットが実在 | `Readme.makeTargets(text)` で parametrize | `Makefile` に `^<name>:` が在る |
 | `theReleaseDocDoesNotPinTheVersion(_:)` | 手順に版を直書きしない | **コードフェンスの外の行だけ**を連結したものに `Readme.versionLikeNumbers` を掛けて parametrize | **1 件も無い**（手順の散文に `X.Y.Z` を書かない。版は `$version` と `<版>` で表す）。**`## 5. 記録` に貼る生の出力（フェンスの中）には版が出るので、フェンスの中は見ない** |
@@ -318,7 +318,7 @@ struct ReleaseDoc: Sendable {
 | 5 | `RL-01` の判定を `たぶん大丈夫` にする | `everyChecklistVerdictStartsWithAMarker("RL-01")` |
 | 6 | `VERSION` を `1.0` にする | `theVersionIsOnePointZeroOrLater`、T-01 の `versionFileIsSemVer` |
 | 7 | `VERSION` を `1.0.0` にしたまま `Version.swift` を `"0.1.0"` に戻す | T-06 の `AppVersion.string` と `VERSION` の照合テスト |
-| 8 | `README.md` の Phase 9 の状態を `—` に戻す | `theReadmeStatusIsUpdated` |
+| 8 | `docs/DEVELOPMENT.md` の Phase 9 の状態を `—` に戻す（F-93） | `theReadmeStatusIsUpdated` |
 | 9 | `docs/RELEASE.md` に `v1.0.0 のタグを打つ` と版を直書きする | `theReleaseDocDoesNotPinTheVersion("1.0.0")` |
 | 10 | `gh release create` の行から `--verify-tag` を消す | `theReleaseDocNamesTheGate("--verify-tag")` |
 | 11 | `### 3.5` から `gh release download` の説明を消す | `theReleaseDocExplainsPrivateDistribution` |
@@ -331,7 +331,7 @@ struct ReleaseDoc: Sendable {
 
 - [ ] `docs/RELEASE.md` が §4.1 の 19 見出しをその順で持ち、確認表が `RL-01`〜`RL-12` の連番
 - [ ] `VERSION` が `1.0.0`、`AppVersion.string` が `"1.0.0"`、`make test` が緑
-- [ ] `README.md` の `## 状態` の Phase 9 が更新されている
+- [ ] `docs/DEVELOPMENT.md` の `## 状態` の Phase 9 が更新されている（F-93）
 - [ ] `docs/E2E.md` が `**ゲート: 開**` で、E2E-06 が `✅ PASS`
 - [ ] 【利用者が行う】`### 3.2`〜`### 3.6` を実際に行い、`docs/RELEASE.md` の `## 5` に生の出力を貼った:
   - [ ] `make test` と `make test-disk` と `make lint` の全出力

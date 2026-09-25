@@ -1,0 +1,18 @@
+前回の出力は JSON として不正でした。
+
+エラー内容:
+- title: Extra inputs are not permitted
+
+前回の出力:
+{"title": "t", "summary": "s"}
+
+同じ内容を、指定されたスキーマに厳密に従う有効な JSON のみで出力し直してください。
+説明文やコードフェンスを付けないでください。
+
+{
+  "summary": "全体の要約（4000 文字以内）",
+  "key_points": ["..."],
+  "tasks": [{"text": "やること", "due": "2026-08-30 または null"}],
+  "decisions": ["..."],
+  "ideas": ["..."]
+}

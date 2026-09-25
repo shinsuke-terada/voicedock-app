@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- voicedock-reaper のエンタイトルメント（PLAN §11.3）。空である。reaper は親（VoiceDock.app）の TCC の許可だけで動く。 -->
+<plist version="1.0">
+<dict/>
+</plist>

@@ -1,0 +1,9 @@
+VoiceDock の話者分離のモデル
+
+このフォルダのモデルは、pyannote.audio の speaker-diarization-community-1（pyannoteAI、CC-BY-4.0）を
+Argmax, Inc. が Core ML に変換したもの（https://huggingface.co/argmaxinc/speakerkit-coreml、CC-BY-4.0）です。
+コミット 556fc52a13327837688f02289457cded017802e9 の speaker_segmenter/pyannote-v3/W8A16、
+speaker_embedder/pyannote-v3/W8A16、speaker_clusterer/pyannote-v4/W32A32 を変更せずに同梱しています。
+
+ライセンス: Creative Commons Attribution 4.0 International（https://creativecommons.org/licenses/by/4.0/）
+実行ファイル argmax-cli: argmax-oss-swift v1.1.0（MIT、https://github.com/argmaxinc/argmax-oss-swift）

@@ -1,0 +1,161 @@
+{
+  "schema": 1,
+  "group": "blocks",
+  "cases": [
+    {
+      "name": "exactly_gap_not_split",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [
+        {
+          "startS": 0,
+          "endS": 1800
+        },
+        {
+          "startS": 5400,
+          "endS": 6000
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "one_second_over_splits",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [
+        {
+          "startS": 0,
+          "endS": 1800
+        },
+        {
+          "startS": 5401,
+          "endS": 6000
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "overlap_single",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [
+        {
+          "startS": 0,
+          "endS": 1800
+        },
+        {
+          "startS": 1000,
+          "endS": 2000
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "contained_keeps_end",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [
+        {
+          "startS": 0,
+          "endS": 7200
+        },
+        {
+          "startS": 100,
+          "endS": 200
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "null_end_forces_split",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [
+        {
+          "startS": 0,
+          "endS": null
+        },
+        {
+          "startS": 60,
+          "endS": 120
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "zero_gap",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 0,
+      "parts": [
+        {
+          "startS": 0,
+          "endS": 60
+        },
+        {
+          "startS": 60,
+          "endS": 120
+        },
+        {
+          "startS": 121,
+          "endS": 180
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "empty",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "unsorted_input",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [
+        {
+          "startS": 7200,
+          "endS": 7300
+        },
+        {
+          "startS": 0,
+          "endS": 60
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "same_start_null_first",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [
+        {
+          "startS": 0,
+          "endS": 60
+        },
+        {
+          "startS": 0,
+          "endS": null
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "last_null_end",
+      "base": "2026-08-29T07:00:00+09:00",
+      "gapSeconds": 3600,
+      "parts": [
+        {
+          "startS": 0,
+          "endS": 60
+        },
+        {
+          "startS": 100,
+          "endS": null
+        }
+      ],
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "group": "timeline_decode",
+  "cases": [
+    {
+      "name": "valid",
+      "fingerprint": "abc",
+      "document": "{\"schema\": 2, \"transcript_sha256\": \"abc\", \"blocks\": [{\"start_at\": \"2026-08-29T07:12:04+09:00\", \"end_at\": \"2026-08-29T07:42:04+09:00\", \"lines\": [\"a\", \"b\"]}]}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "wrong_schema",
+      "fingerprint": "abc",
+      "document": "{\"schema\": 1, \"transcript_sha256\": \"abc\", \"blocks\": []}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "wrong_fingerprint",
+      "fingerprint": "abc",
+      "document": "{\"schema\": 2, \"transcript_sha256\": \"xyz\", \"blocks\": [{\"start_at\": \"2026-08-29T07:12:04+09:00\", \"end_at\": \"2026-08-29T07:42:04+09:00\", \"lines\": [\"a\"]}]}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "bad_elements_skipped",
+      "fingerprint": "abc",
+      "document": "{\"schema\": 2, \"transcript_sha256\": \"abc\", \"blocks\": [1, {\"start_at\": \"x\", \"end_at\": \"2026-08-29T07:42:04+09:00\", \"lines\": []}, {\"start_at\": \"2026-08-29T07:12:04+09:00\", \"end_at\": \"2026-08-29T07:42:04+09:00\", \"lines\": \"a\"}, {\"start_at\": \"2026-08-29T08:00:00+09:00\", \"end_at\": \"2026-08-29T09:00:00+09:00\", \"lines\": [\"ok\", 3]}, {\"end_at\": \"2026-08-29T09:00:00+09:00\", \"lines\": []}]}",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "not_object",
+      "fingerprint": "abc",
+      "document": "[1, 2]",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "not_json",
+      "fingerprint": "abc",
+      "document": "{",
+      "timeZone": "Asia/Tokyo"
+    },
+    {
+      "name": "blocks_not_list",
+      "fingerprint": "abc",
+      "document": "{\"schema\": 2, \"transcript_sha256\": \"abc\", \"blocks\": {}}",
+      "timeZone": "Asia/Tokyo"
+    }
+  ]
+}

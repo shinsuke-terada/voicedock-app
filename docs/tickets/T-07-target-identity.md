@@ -1,5 +1,8 @@
 # T-07 VDContract: TargetIdentity（削除対象の同定。openat の連鎖と検証済みの親 fd）
 
+> （F-73・issue #113。2026-09-23）openat 連鎖の 1 段は `O_RDONLY | O_DIRECTORY | O_NOFOLLOW_ANY | O_CLOEXEC`（internal の `TargetIdentity.openDirectory(in:named:)`）になった（`O_NOFOLLOW` と併せると EINVAL。symlink は ELOOP、通常ファイルは ENOTDIR で、理由語は変わらない）。
+> relpath の要素は `RelPath.components` がスカラーで分ける。以下の本文のフラグは記録として残す。テストは `TargetIdentityChainTests`。
+
 | 項目 | 値 |
 |---|---|
 | Phase | 1（骨組みと防護柵） |
@@ -19,7 +22,7 @@ reaper の RV-06〜RV-12 そのもの（PLAN §4.6）を VDContract に実装す
 - voicedock@d3d595e: `helper/voicedock-reaper:138-173`（`target_is_identical`。realpath 比較版の検証 5〜10）、`tests/unit/test_reaper.py:40-173`（ベンチと mtime の事例 `+120` / `+1`）、`tests/fixtures/fake_tree.py`（`DEVICE_MTIME_OFFSET`）
 - 実機の確認（このチケットを書く時点で手元の macOS 26.6 / Xcode 27.0 で確かめた事実）:
   - `openat(dirfd, name, O_RDONLY | O_DIRECTORY | O_NOFOLLOW)` は、name が symlink のとき **ENOTDIR**（ELOOP ではない）、通常ファイル・FIFO のときも ENOTDIR、無いとき ENOENT
-  - `hdiutil create -size 64m -fs "MS-DOS FAT32" -volname DJIMIC3 -layout NONE` → `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <dir>` で、`fstatfs` の `f_mntonname` は `<dir>` の realpath と一致し、`f_fstypename` は `msdos`。`-readonly` を付けると `f_flags & MNT_RDONLY` が立つ。`-fs HFS+` は `hfs`
+  - `hdiutil create -size 64m -fs "MS-DOS FAT32" -volname VDT0007 -layout NONE` → `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <dir>` で、`fstatfs` の `f_mntonname` は `<dir>` の realpath と一致し、`f_fstypename` は `msdos`。`-readonly` を付けると `f_flags & MNT_RDONLY` が立つ。`-fs HFS+` は `hfs`
   - FAT に mtime `1787000001` を設定すると `1787000000` として保存される（2 秒分解能・切り捨て）
   - 普通の一時ディレクトリに `fstatfs` すると `f_mntonname` は `/System/Volumes/Data`、`apfs`
 
@@ -236,7 +239,7 @@ public final class DiskImageVolume: Sendable {
     public let filesystem: Filesystem
 
     /// create → mountPoint を作る → attach（書き込み可）
-    public init(in tmp: TempDirectory, deviceID: String = "DJIMIC3", filesystem: Filesystem = .fat32, sizeMB: Int = 64) throws
+    public init(in tmp: TempDirectory, deviceID: String = "VDT0007", filesystem: Filesystem = .fat32, sizeMB: Int = 64) throws
     /// detach → attach（readOnly なら -readonly）
     public func reattach(readOnly: Bool) throws
     /// hdiutil detach -force <mountPoint>（失敗は無視）
@@ -250,7 +253,9 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 - 作成: `hdiutil create -size <sizeMB>m -fs "MS-DOS FAT32" -volname <deviceID> -layout NONE <image>`（HFS+ は `-fs HFS+`。DJI Mic 3 と同じくパーティションの無い superfloppy にする）
 - マウント: `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <mountPoint> [-readonly] <image>`
 - 外す: `hdiutil detach -force <mountPoint>`
-- **`/Volumes` の下には決してマウントしない**（利用者の実機 `/Volumes/DJIMIC3` と衝突させない。mountPoint は必ず一時ディレクトリの下）
+- **`/Volumes` の下には決してマウントしない**（利用者の実機 `/Volumes/VOICEDOCK`・改名前の `/Volumes/DJIMIC3` と衝突させない。mountPoint は必ず一時ディレクトリの下）
+- **ボリューム名に `VOICEDOCK`・`DJIMIC3`（実機の名前。F-94）を使わない**（PLAN §10.2。既定の deviceID は `VDT0007`。T-15 は extension の `uniqueName()` で `VDTxxxx` を作って渡す）
+- init は hdiutil を起動する前に拒む（`DiskImageError`）: `DeviceID.isValid(deviceID)` が偽、`deviceID` が `"VOICEDOCK"` か `"DJIMIC3"`（F-94）、一時ディレクトリの realpath が `/Volumes` かその下。`detach()` は mountPoint の `statfs` の `f_mntonname` が realpath と一致するときだけ `hdiutil detach -force` を起動する（二重の detach・未 attach で撃たない）
 - **テストの安全**: このチケットのテストは `/Volumes` 配下の実機（利用者が挿している DJI Mic 3 など）に一切触れない。`openVolume`・`SystemVolumeOpener`・`FakeVolumeOpener` に渡す `volumesRoot` は必ず一時ディレクトリの下（`FakeVolume.volumesRoot` / `DiskImageVolume.volumesRoot`）にし、`Contract.volumesRoot`（`/Volumes`）を渡さない。`/Volumes` 配下に `diskutil`・`hdiutil detach`・書き込み・削除・再マウントを行わない（`hdiutil detach` は自分が attach した `mountPoint` だけ）
 
 ## 5. テスト
@@ -259,7 +264,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 
 共通の準備（`makeBench()`）: `TempDirectory` に `FakeVolume`（deviceID `DJIMIC3`）を作り、`FOLDER = "TX_MIC001_20260912_090000"`、`FILE = "TX00_MIC001_20260912_090000_orig.wav"`、
 `REL = FOLDER + "/" + FILE`、中身 `standardContent`（4096 バイト）、`MTIME = 1787000000.0` で置く（voicedock の reaper ベンチと同じ値）。
-ボリュームは `FakeVolumeOpener().open(volumesRoot: fake.volumesRoot.path, deviceID: "DJIMIC3")` の `.opened` を使う。各テストは**弾かせたい条件以外をすべて満たす**（TEST-19）。
+ボリュームは `FakeVolumeOpener().open(volumesRoot: fake.volumesRoot.path(percentEncoded: false), deviceID: "DJIMIC3")` の `.opened` を使う。各テストは**弾かせたい条件以外をすべて満たす**（TEST-19）。
 
 `openVolume` の検査（普通のディレクトリでは本物の `openVolume` を呼ぶ）:
 
@@ -279,7 +284,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 |---|---|---|---|
 | `positiveControl` | 正の対照 [R2] 正しい対象なら body が呼ばれ、親 fd と名前を渡す | 変更なし。body の中で `fstatat(parentFD, name, &st, AT_SYMLINK_NOFOLLOW) == 0` を確かめ 42 を返す | `.success(42)`、body が 1 回呼ばれた |
 | `rv08UnsafeRelpath` | RV-08 不健全な relpath は relpath_unsafe（パラメータ化） | relpath `""`・`"/abs"`・`"a//b"`・`"./" + REL`・`FOLDER + "/../" + REL` | `relpath_unsafe` |
-| `nd24ParentTraversal` | ND-24 [R2] relpath に ../ があれば relpath_unsafe | ボリュームの外（`tmp/outside/<FOLDER>/<FILE>`）に同じファイルを置き、relpath `"../outside/" + REL` | `relpath_unsafe`、外のファイルは残る |
+| `nd24ParentTraversal` | ND-24 [R2] relpath に ../ があれば relpath_unsafe | ボリュームの外（`tmp/outside/<FOLDER>/<FILE>`）に同じファイルを置き、relpath `"../../outside/" + REL`（ボリュームの root は `<tmp>/` の 2 段下なので、2 段上がると外のファイルに届く） | `relpath_unsafe`、外のファイルは残る |
 | `nd28DotPrefixed` | ND-28 [R2] . 始まりの要素は relpath_unsafe | `.Trashes/501/<FILE>` を置き、その relpath | `relpath_unsafe`、ファイルは残る |
 | `rv09IntermediateSymlink` | RV-09 経路の途中の symlink は path_contains_symlink | `FOLDER` を実ディレクトリ `real` への symlink にし、`real/<FILE>` を置く | `path_contains_symlink` |
 | `nd25SymlinkEscapesVolume` | ND-25 [R2] symlink 経由でボリュームの外を指せば path_contains_symlink | `FOLDER` をボリュームの外の `tmp/outside/<FOLDER>` への絶対パスの symlink にし、外にファイルを置く | `path_contains_symlink`、外のファイルは残る |
@@ -307,7 +312,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `rv06Fat32IsOpened` | RV-06 FAT32 のマウント点は開ける | `DiskImageVolume(.fat32)` | `.opened`、`readOnly == false`、`mountPath == realpath(volumesRoot) + "/DJIMIC3"` |
+| `rv06Fat32IsOpened` | RV-06 FAT32 のマウント点は開ける | `DiskImageVolume(.fat32)` | `.opened`、`readOnly == false`、`mountPath == realpath(volumesRoot) + "/VDT0007"` |
 | `rv06HfsIsUnexpectedFS` | RV-06 HFS+ は unexpected_fs | `DiskImageVolume(.hfsPlus)` | `.rejected(unexpected_fs)` |
 | `rv07ReadOnlyIsObserved` | RV-07 読み取り専用のマウントを観測する | FAT32 を `reattach(readOnly: true)` | `.opened`、`readOnly == true` |
 | `fullChainOnFat` | FAT の上で検証が通る | FAT32 に `FOLDER/FILE` を 4096 バイトで置き、mtime を読み直した値で `withVerifiedTarget` | `.success` |
@@ -321,6 +326,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 | `deviceMtimeIsOffset` | 原本の mtime はコピー時刻の 4 時間 34 分前 | 全ファイルの mtime が `1787000000`（= 1787016440 − 16440） |
 | `origNamesParse` | 候補の名前は規則に一致する | `origInScope` の各最後の要素が `RecordingName.parseFile` で `isOrig == true` |
 | `fakeOpenerSkipsMountCheck` | FakeVolumeOpener は普通のディレクトリを開く | `.opened`、`readOnly` が引数どおり |
+| `diskImageVolumeRefusesUnsafeNames` | DiskImageVolume は実機に触れ得る名前を hdiutil の前に拒む（パラメータ化） | `"VOICEDOCK"`（F-94）・`"DJIMIC3"`・`""`・`"../x"`・`"a:b"` で `DiskImageError`。`<tmp>/Volumes` は作られない（hdiutil を起動しない） |
 
 ## 6. 破壊による証明
 
@@ -357,6 +363,8 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 ## 9. SPEC の変更
 
 `docs/SPEC.md` の付録 B.2 の理由語の列と `IdentityReason.all` を照合するテストは T-05 の SPEC 同期に足す（このチケットでは `reasonsAreVerbatim` で固定値と照合する）。
+→ （T-05 の実装で判明）T-05 の設計（PolicyTests は VDContract を import できない、SPEC.md は付録 B.2 を写さない）に収まらなかった。GitHub issue #18 に切り出した
+→ **SPEC 同期は #18 で足した**（PLAN F-68）: 付録 B.2 は既に SPEC の `S8.` に写っているので節は足さず、`SpecDocument.reasonWords()`（S8 の「理由語」の列のバッククォートの語を出現順に。重複は最初の 1 回）を足した。`Tests/VDContractTests/SpecSyncContractTests.swift` の `reasonsMatchSpec`（「理由語が SPEC S8（付録 B.2）の理由語の列と同じ順で同じ」）が `IdentityReason.all` と照合する。`reasonsAreVerbatim` は二重の守りとして残す
 
 ## 10. マージ後にやること
 

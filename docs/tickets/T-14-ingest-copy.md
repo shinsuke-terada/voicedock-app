@@ -1,5 +1,15 @@
 # T-14 VDDevice: ファイルの走査・安定性判定・コピー・登録（＋ VDAudio の AudioProbe）
 
+> （F-81・issue #119。2026-09-23）`ingestDevice` は列挙（`scan`）の直後に `deps.inspector.mountInfo(path: mountPath)` をもう一度取り、internal の `DeviceIngestResult.mountAfterListing` で返す
+> （T-15 の走査が列挙の前の statfs と照らし、違えば snapshot に載せない）。取り込み（安定性判定とコピー）はこれまでどおり続ける。以下の本文の `DeviceIngestResult` の 2 つの項目は記録として残す。
+> `registerCopied` の再コピー（`recopyRow` あり）は、`AudioProbe` で測れた長さが登録済みの `duration_seconds` と違えば（NULL を含む）`duration_seconds` と `ended_at`（登録済みの `started_at` + 長さ。
+> 最初のコピーと共有する internal の `endedAtISO(start:duration:)`）も書き直し、Session に属していれば `store.refreshSessionAggregates` で数え直す（測れない・同じなら従来の値を残す）。テストは `IngestRecopyDurationTests`。
+>
+> （F-61 で共存ガードは外した。2026-09-22、利用者の決定）`IngestDependencies` の `coexistence: CoexistenceGuard` は外した。以下の本文の共存ガードの記述は記録として残す。
+>
+> （F-67・issue #97 で走査の完全さを直した。2026-09-23）`scan` の `walk` は、項目の `lstat` が `ENOENT` 以外で失敗したら `complete = false` にして飛ばす（`ENOENT` は列挙から `lstat` までの間に消えたので従来どおり黙って飛ばす）。
+> `lstat` は `DeviceReader` の internal の `init(lstat:)` で差し替えられ（`entryKind`・`stat` も同じ呼び出しを使う）、テストが失敗を注入する。深さの上限の外は見ず、`complete` にも数えない。以下の §5 の手順の `entryKind(child)` と「missing: continue」の記述は記録として残す（テストは `DeviceReaderScanTests` の「lstat が ENOENT 以外で失敗した項目があれば complete は偽」ほか 5 本）。
+
 | 項目 | 値 |
 |---|---|
 | ID | T-14 |
@@ -167,7 +177,7 @@ public struct InboxWriter: Sendable {
 2. `fd = open(partial.path(percentEncoded: false), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOFOLLOW, 0o644)`。負なら `.failure(.writeError(errno))`
 3. `var hasher = SHA256()`、`var total: Int64 = 0`
 4. 繰り返し:
-   - `chunk = try source.read(maxBytes: chunkBytes)`。投げたら `close(fd)` → `discardPartial` → `.failure(.readError(e.errno))`
+   - `chunk = try source.read(maxBytes: chunkBytes)`。投げたら `close(fd)` → `discardPartial` → `.failure(.readError(e.code))`（`ErrnoError` の欄は `code`。T-13）
    - `chunk.isEmpty` なら抜ける
    - `hasher.update(data: chunk)`
    - `chunk` を全部書く（`write` の部分書き込みは残りを続けて書く。`EINTR` は再試行）。`-1` なら `close(fd)` → `discardPartial` → `.failure(.writeError(errno))`
@@ -294,7 +304,8 @@ enum CopyOutcome: Equatable, Sendable { case copied(isNew: Bool), failed(CopyErr
        case .failure(let e): return .failure(e)
        case .success(let handle):
            defer { handle.close() }
-           return writer.writePartial(from: handle, expectedSize: stat.size, partial: partial, chunkBytes: chunk)
+           return writer.writePartial(
+               from: handle, expectedSize: stat.size, partial: partial, chunkBytes: chunk)
        }
    }) ?? .failure(.readError(EIO))
    ```
@@ -306,7 +317,7 @@ enum CopyOutcome: Equatable, Sendable { case copied(isNew: Bool), failed(CopyErr
 8. `copy_completed recording_key=<partkey> bytes=<stat.size> recopy=<!isNew>`（INFO）
 9. `progressCopied += 1`、`lastActivityAt = deps.clock.now()` → `.copied(isNew: isNew)`
 
-`logCopyFailed(partkey, error)`: `copy_failed recording_key=<partkey> reason=<error.reason>`。`readError` / `writeError` のときは `errno=<n>` を足す。レベルは `changed` だけ INFO、ほかは WARNING
+`logCopyFailed(partkey, error)`: `copy_failed recording_key=<partkey> reason=<error.reason>`。（実装で変更）`errno=<n>` は足さない（`LogKey` に `errno` が無く、付録 A.4 の `copy_failed` のフィールドにも無い。§10 の提案 10）。レベルは `changed` だけ INFO、ほかは WARNING
 
 `registerCopied(…)`:
 1. `guard let inboxRel = deps.layout.relativePath(of: final) else { throw CopyError.writeError(EINVAL) }`
@@ -323,7 +334,7 @@ enum CopyOutcome: Equatable, Sendable { case copied(isNew: Bool), failed(CopyErr
        sha256Helper: sha256, inboxPath: inboxRel))
    ```
    → `true`
-- `durationMillis(s)`: `Int64((s * 1_000_000).rounded(.toNearestOrEven)) / 1000`（Python の `timedelta(seconds=s)` は µ 秒に偶数丸めし、`isoformat(timespec="seconds")` は切り捨てる。ms へは切り捨てで落とす）
+- `durationMillis(s) -> Int64?`: `Int64(exactly: (s * 1_000_000).rounded(.toNearestOrEven))` を 1000 で割る（Python の `timedelta(seconds=s)` は µ 秒に偶数丸めし、`isoformat(timespec="seconds")` は切り捨てる。ms へは切り捨てで落とす）。Int64 に収まらなければ nil で、`ended_at` を書かない（壊れたファイルが巨大なフレーム数を名乗ってもトラップしない。PT-19。T-14 のレビューで判明）
 - `source_size` / `source_mtime` は**原本の stat の値**（`stat` 引数。安定性判定の最後の観測。DEL-12）。inbox のコピーを stat しない
 
 ### 4.6 `Sources/VDAudio/AudioProbe.swift`
@@ -478,7 +489,7 @@ public final class FakeChunkReader: ChunkReading {
 - `TX_MIC001_20260912_163444/TX00_MIC001_20260912_163444_orig.wav`（2.0 秒・発話。320,776 バイト）と `TX_MIC001_20260912_163444/TX00_MIC001_20260912_163444.wav`（denoised）
 - `TX_MIC002_20260913_090000/TX01_MIC003_20260913_090000.wav`（denoised だけ・1.0 秒・無音）
 
-`IngestService(deps:)` を作り、`ingestDevice(deviceID: "DJIMIC3", mountPath: fake.root.path, config: AppConfig.defaults(timeZone: "Asia/Tokyo"))` を呼ぶ。
+`IngestService(deps:)` を作り、`ingestDevice(deviceID: "DJIMIC3", mountPath: fake.root.path(percentEncoded: false), config: AppConfig.defaults(timeZone: "Asia/Tokyo"))` を呼ぶ。
 
 | 関数名 / 表示名 | 準備 | 期待 |
 |---|---|---|
@@ -536,13 +547,15 @@ public final class FakeChunkReader: ChunkReading {
 | `selectCandidates` で `importedKeys` を無視する | `importedKeyIsSkipped` |
 | `StabilityChecker` の fast path を `<` にする | `fastPathBoundaryIsInclusive` |
 | `StabilityChecker` を候補ごとに待つ実装にする | `waitingDoesNotScaleWithFileCount` |
-| 不一致で 0 に戻さず続ける | `changeInFirstRoundDefers` |
+| 不一致でも数えて続ける（`ok[r] = 0` の代わりに `ok[r] += 1`） | `changeInFirstRoundDefers`・`changeInLastRoundDefers` |
 | `writePartial` の読み取りエラーで `discardPartial` を呼ばない | `readErrorRemovesPartial` |
 | `scan` で `entryKind` の代わりに symlink を辿る `stat` を使う | `symlinksAreNotFollowed` |
 | `scan` の `.` 始まりの除外を消す | `dotEntriesAreIgnoredSilently` |
 | `openForCopy` から `O_NOFOLLOW` を外す | `openForCopyRejectsSymlink` |
 | `durationMillis` を `(s * 1000).rounded()` にする | `durationMillisMatchesPython` |
 | `BWFWriter` の pcm24 の量子化を `rounded()` にする | `pcm24SpeechMatchesVoicedock` |
+
+（実装で追記）不一致のときに `ok[r] = 0` へ戻す行を消すだけ（据え置き）の変異は**等価**で、落ちるテストは無い。回数はちょうど `checks` 回なので、`checks` に届くのは全回が一致したときだけで、戻しても戻さなくても結果は変わらない（§4.3 の「残りの回数では `checks` に届かない」）。そのため表の壊し方を「不一致でも数えて続ける」にした。
 
 ## 7. 受け入れ条件
 
@@ -573,3 +586,5 @@ public final class FakeChunkReader: ChunkReading {
 7. `NewRecording` の初期化子を `init(partkey:deviceID:sourceFolder:transmitterID:micIndex:startedAt:durationSeconds:endedAt:sourcePath:sourceSize:sourceMtime:sha256Helper:inboxPath:)` に固定する（T-11）→ 00-api-map に反映済み（2026-09-18。init は T-11 で同じ形に固定）
 8. `RelPath.parent` と `RelPath.lastComponent` は API 地図の追記どおり使う（直下のファイルの親は `""`）→ 00-api-map に反映済み（2026-09-18）
 9. `BWFWriter` の作り手は T-14（T-16 の版を正とする）→ 00-api-map §15 に反映済み（2026-09-18）
+10. （実装で追記）`LogKey` に `errno`（`case errno`）を足す（T-10 の `Log.swift`）。T-14 の `copy_failed` と T-15 の `volume_skipped … errno=<n>`（T-15 §4 の `recordSkip`）が使う。T-14 では `Log.swift` が §3 の表に無いため足さず、`copy_failed` に `errno` を出していない（付録 A.4 の `copy_failed` のフィールドは `recording_key`・`reason` だけなので、PLAN とは食い違わない）。T-15 では必要になる
+11. （実装で追記）`DeviceReader.stat(volumeRoot:relpath:)` を足すと、型の中の `stat()`（Darwin の構造体の初期化）がこのメソッドに解決されるので、T-13 の `entryKind` の `var st = stat()` を `Darwin.stat()` に直した（振る舞いは同じ）
