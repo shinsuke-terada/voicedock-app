@@ -53,6 +53,7 @@ public enum LogEvent: String, CaseIterable, Sendable {
     case modelDownloaded = "model_downloaded"
     case modelDownloadFailed = "model_download_failed"
     case diagnosticsCompleted = "diagnostics_completed"
+    case dataReset = "data_reset"
 }
 
 public enum LogLevel: Int, Comparable, Sendable, CaseIterable {

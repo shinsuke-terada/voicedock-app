@@ -1,5 +1,7 @@
 # T-06 VDContract: 鍵・名前規則・削除要求の JSON・AtomicFile・HomeLayout・ReaperConf・FileLock
 
+> （F-95。2026-09-25。利用者の決定）`HomeLayout` に `dataResetRequest`（`run/data-reset-requested`。データの初期化の予約）を足した（PLAN §2.3）。
+
 > （F-81・issue #119。2026-09-23）`PartKey.deviceID(of:)` / `relpath(of:)` の最初の `/` と、`DeviceID.isValid` の「`.` で始まる」も Unicode スカラーで見る
 > （`partkey.unicodeScalars.firstIndex(of: "/")`・`id.unicodeScalars.first == "."`。ASCII の入力の結果は変わらない）。以下の本文の `firstIndex(of: "/")`・`hasPrefix(".")` は記録として残す。テストは `KeyScalarTests`。
 

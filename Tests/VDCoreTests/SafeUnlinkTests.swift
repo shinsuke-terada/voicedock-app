@@ -198,4 +198,27 @@ struct SafeUnlinkTests {
             try SafeUnlink.removeEmptyDirectory(file, under: .staging, layout: layout)
         }
     }
+
+    @Test("database は <HOME> 直下の DB の 3 つのファイルだけを消す（F-95）")
+    func databaseRootAllowsOnlyTheThreeFiles() throws {
+        for name in ["voicedock.sqlite", "voicedock.sqlite-wal", "voicedock.sqlite-shm"] {
+            let file = try makeFile(layout.url(relative: name))
+            try SafeUnlink.remove(file, under: .database, layout: layout)
+            #expect(!exists(file))
+        }
+        // 設定・ui-state・似た名前は拒む
+        for name in ["config.json", "ui-state.json", "voicedock.sqlite.bak"] {
+            let file = try makeFile(layout.url(relative: name))
+            #expect(throws: SafeUnlinkError.nameNotAllowed) {
+                try SafeUnlink.remove(file, under: .database, layout: layout)
+            }
+            #expect(exists(file))
+        }
+        // 下位のディレクトリの同じ名前も拒む（直下だけ）
+        let nested = try makeFile(layout.inbox.appendingPathComponent("voicedock.sqlite"))
+        #expect(throws: SafeUnlinkError.nameNotAllowed) {
+            try SafeUnlink.remove(nested, under: .database, layout: layout)
+        }
+        #expect(exists(nested))
+    }
 }

@@ -5,6 +5,8 @@ import VDContract
 
 public enum SafeUnlinkRoot: Sendable, Equatable {
     case inbox, staging, transcripts, analysis, queueDelete, queueResult, models, run
+    /// <HOME> 直下の DB の 3 つのファイル（HomeLayout.database とその -wal・-shm）だけ（データの初期化。F-95）
+    case database
     case vaultTmp(vault: URL)
 
     /// ルートのディレクトリ。
@@ -18,6 +20,7 @@ public enum SafeUnlinkRoot: Sendable, Equatable {
         case .queueResult: return layout.queueResult
         case .models: return layout.modelsDirectory
         case .run: return layout.runDirectory
+        case .database: return layout.root
         case .vaultTmp(let vault): return vault
         }
     }
@@ -39,6 +42,12 @@ public enum SafeUnlink {
         switch root {
         case .queueDelete, .queueResult:
             guard located.parentIsRoot, located.name.hasSuffix(".json") else { throw .nameNotAllowed }
+        case .database:
+            // 名前は HomeLayout.database から作る（CR-06。同じ名前を 2 か所に書かない）
+            let base = layout.database.lastPathComponent
+            guard located.parentIsRoot, [base, base + "-wal", base + "-shm"].contains(located.name) else {
+                throw .nameNotAllowed
+            }
         case .vaultTmp:
             let name = located.name
             guard name.hasPrefix("."), name.hasSuffix(".tmp"), TextLimit.scalarCount(name) > 5 else {

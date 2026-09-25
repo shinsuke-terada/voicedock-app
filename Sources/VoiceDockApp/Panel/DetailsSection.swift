@@ -1,4 +1,4 @@
-// 「詳細・診断」の画面の中身（PLAN §8.12 の 8）。診断・LLM の疎通確認・状態の詳細・設定とログ・版・後追い（T-41）。
+// 「詳細・診断」の画面の中身（PLAN §8.12 の 8）。診断・LLM の疎通確認・状態の詳細・設定とログ・版・後追い（T-41）・データの初期化（F-95）。
 import SwiftUI
 import VDPipeline
 
@@ -56,6 +56,25 @@ struct DetailsSection: View {
         .controlSize(.small)
         SectionBox(title: Strings.sectionBacklog) {
             BacklogControls(model: model)
+        }
+        // F-95: データの初期化。元音声の削除が有効な間は押せない（先に無効にする）
+        SectionBox(title: Strings.sectionDataReset) {
+            Text(Strings.dataResetExplanation).font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if model.dataResetBlockedByDeletion {
+                Text(Strings.dataResetNeedsDeletionOff).font(.caption).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HoldToConfirmButton(
+                title: Strings.buttonDataReset, disabled: !model.canRequestDataReset,
+                accessibilityHintText: Strings.holdToResetHint
+            ) {
+                Task { await model.requestDataReset() }
+            }
+            if model.dataResetFailed {
+                Text(Strings.dataResetRequestFailed).font(.caption).foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         Text(model.versionLine).font(.caption).foregroundStyle(.secondary)
     }

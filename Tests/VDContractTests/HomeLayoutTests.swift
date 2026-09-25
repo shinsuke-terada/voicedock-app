@@ -33,6 +33,7 @@ struct HomeLayoutTests {
         Row(name: "appLock", property: { $0.appLock }, relative: "state/app.lock"),
         Row(name: "runDirectory", property: { $0.runDirectory }, relative: "run"),
         Row(name: "llamaAPIKeyFile", property: { $0.llamaAPIKeyFile }, relative: "run/llama-api-key"),
+        Row(name: "dataResetRequest", property: { $0.dataResetRequest }, relative: "run/data-reset-requested"),
         Row(name: "binDirectory", property: { $0.binDirectory }, relative: "bin"),
         Row(name: "reaperExecutable", property: { $0.reaperExecutable }, relative: "bin/voicedock-reaper"),
         Row(name: "reaperConf", property: { $0.reaperConf }, relative: "bin/reaper.conf"),

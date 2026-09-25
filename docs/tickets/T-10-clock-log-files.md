@@ -1,5 +1,8 @@
 # T-10 VDCore: 時刻・ログ・SafeUnlink・AppPaths・Transcript 型・指紋・Block
 
+> （F-95。2026-09-25。利用者の決定）`SafeUnlinkRoot` に `database`（`<HOME>` 直下の `voicedock.sqlite`・`-wal`・`-shm` の 3 つだけ。名前は `HomeLayout.database` から作る）を、`LogEvent` の末尾に `data_reset` を足した（PLAN §9.2・付録 A.4）。
+> テストは `SafeUnlinkTests.databaseRootAllowsOnlyTheThreeFiles` と `LogTests`（イベントは 50 件）。
+
 > （F-81・issue #119。2026-09-23）`SafeUnlink` の検査 2（`..` を含まない）は、パスを Unicode スカラーの `/`（UTF-8 の 0x2F）で分けた要素がちょうど `..` のものが無いことで見る
 > （`split(separator: "/")` の書記素の分割は `/` の直後の結合文字で区切りを見落とす。ASCII のパスの結果は変わらない）。テストは `SafeUnlinkScalarTests`。
 >

@@ -84,6 +84,11 @@ final class AppModel {
     /// パネルを閉じた回数（F-84）。有効化・根拠 B は始めたときの値を控え、終わるまでに閉じられていたら失敗の表示を立てない
     /// （panelDidClose が戻した enableError を、閉じた後に終わった操作が立て直さない）
     @ObservationIgnored private var panelCloses = 0
+    // F-95（書くのは AppModel+DataReset だけ）
+    /// データの初期化の予約の実行中（二度押し対策）
+    var dataResetBusy = false
+    /// 直近の予約に失敗したか（Strings.dataResetRequestFailed を出す）
+    var dataResetFailed = false
     // T-41（書くのは下の extension だけ）
     /// 後追いの 2 つのボタンの状態（PLAN §8.9.9。画面にだけ在る値）
     private(set) var backlogState: BacklogPanelState = .idle
@@ -315,6 +320,7 @@ final class AppModel {
         // 次に開いたときに古い結果を出さない
         reloadResult = nil
         vaultError = nil
+        dataResetFailed = false
         modelNotice = nil
         // 閉じた後に届いた DR-09 の返事は捨てる（receiveProbe が .running のときだけ受け取る）
         probe = .idle
