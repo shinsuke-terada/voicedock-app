@@ -157,9 +157,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// パネルの「終了」ボタンから呼ぶ
+    /// パネルの「終了」ボタンと「初期化して終了」（F-95）から呼ぶ。terminate は run loop の次の周回で呼ぶ（F-96）:
+    /// メインアクターの Task の中（main queue の block の中）で terminate を直に呼ぶと、`.terminateLater` の返事を待つ入れ子の
+    /// イベントループが、返事を返す後始末の Task（メインアクター）を走らせられず、アプリが固まった（main queue は block の中では
+    /// 回らない。「初期化して終了」の実機で確認）。起動に失敗したときの terminate は context が無く `.terminateNow` なので待たない
     func requestTerminate() {
-        NSApp.terminate(nil)
+        NSApp.perform(#selector(NSApplication.terminate(_:)), with: nil, afterDelay: 0)
     }
 }
 

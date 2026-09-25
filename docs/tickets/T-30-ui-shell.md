@@ -1,5 +1,7 @@
 # T-30 UI: メニューバーとパネルの骨組み・AppModel
 
+> （F-96。2026-09-25）`AppDelegate.requestTerminate` は `terminate` を run loop の次の周回で呼ぶ（`NSApp.perform(_:with:afterDelay: 0)`。メインアクターの Task の中から直に呼ぶと固まった）。テストは `TerminateDeferralTests`（PolicyTests）。
+
 > （F-95。2026-09-25。利用者の決定）`Bootstrap.build()` は手順 8 の後・手順 9（DB）の前に `DataReset.performIfRequested` を呼ぶ（消す能力が残っているか設定の `deleteSourceAudio` が真なら消さない）。
 > `AppServices` に `requestDataReset() async -> Bool` を足した（PLAN §8.15）。テストは `DataResetTests`（VDPipeline）・`AppModelDataResetTests`・`DataResetWiringTests`（PolicyTests。起動の順と LiveServices の確かめ）。`LiveServices.read` は設定が読めている間も `deletionResidual` を読む（初期化のボタンの判定）。
 
