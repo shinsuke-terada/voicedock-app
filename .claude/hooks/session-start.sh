@@ -7,12 +7,14 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}
 echo "## VoiceDock セッションの現在地"
 
 # 1) 実機が挿さっているか（最優先）
-if /sbin/mount 2>/dev/null | grep -qE ' on /Volumes/DJIMIC3[ /]'; then
-  echo "- ⚠️ **実機 DJI Mic 3 が /Volumes/DJIMIC3 にマウント中**。ディスク系の手順（hdiutil・make test-disk・イメージの実験）は行わない。行う前に利用者に物理的に抜いてもらう。"
+# 実機は利用者が Finder で VOICEDOCK に改名して使う（F-94）。改名前の DJIMIC3 も実機として扱う
+REAL="$(/sbin/mount 2>/dev/null | sed -nE 's#.* on (/Volumes/(VOICEDOCK|DJIMIC3)( [0-9]+)?) \(.*#\1#p' | paste -sd', ' -)"
+if [ -n "${REAL:-}" ]; then
+  echo "- ⚠️ **実機 DJI Mic 3 が ${REAL} にマウント中**。ディスク系の手順（hdiutil・make test-disk・イメージの実験）は行わない。行う前に利用者に物理的に抜いてもらう。"
 else
   OTHER="$(/sbin/mount 2>/dev/null | sed -n 's#.* on \(/Volumes/[^(]*\) (.*#\1#p' | sed 's/ *$//' | paste -sd', ' -)"
   if [ -n "${OTHER:-}" ]; then
-    echo "- /Volumes にマウント中: ${OTHER}（DJIMIC3 は無し）。それでも /Volumes 配下への書き込み・削除・再マウントはしない。"
+    echo "- /Volumes にマウント中: ${OTHER}（実機の VOICEDOCK・DJIMIC3 は無し）。それでも /Volumes 配下への書き込み・削除・再マウントはしない。"
   else
     echo "- /Volumes に外部ボリュームは無し。"
   fi

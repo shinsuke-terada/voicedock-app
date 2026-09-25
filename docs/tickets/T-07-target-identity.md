@@ -254,7 +254,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 - マウント: `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <mountPoint> [-readonly] <image>`
 - 外す: `hdiutil detach -force <mountPoint>`
 - **`/Volumes` の下には決してマウントしない**（利用者の実機 `/Volumes/DJIMIC3` と衝突させない。mountPoint は必ず一時ディレクトリの下）
-- **ボリューム名に `DJIMIC3` を使わない**（PLAN §10.2。既定の deviceID は `VDT0007`。T-15 は extension の `uniqueName()` で `VDTxxxx` を作って渡す）
+- **ボリューム名に `VOICEDOCK`・`DJIMIC3`（実機の名前。F-94）を使わない**（PLAN §10.2。既定の deviceID は `VDT0007`。T-15 は extension の `uniqueName()` で `VDTxxxx` を作って渡す）
 - init は hdiutil を起動する前に拒む（`DiskImageError`）: `DeviceID.isValid(deviceID)` が偽、`deviceID == "DJIMIC3"`、一時ディレクトリの realpath が `/Volumes` かその下。`detach()` は mountPoint の `statfs` の `f_mntonname` が realpath と一致するときだけ `hdiutil detach -force` を起動する（二重の detach・未 attach で撃たない）
 - **テストの安全**: このチケットのテストは `/Volumes` 配下の実機（利用者が挿している DJI Mic 3 など）に一切触れない。`openVolume`・`SystemVolumeOpener`・`FakeVolumeOpener` に渡す `volumesRoot` は必ず一時ディレクトリの下（`FakeVolume.volumesRoot` / `DiskImageVolume.volumesRoot`）にし、`Contract.volumesRoot`（`/Volumes`）を渡さない。`/Volumes` 配下に `diskutil`・`hdiutil detach`・書き込み・削除・再マウントを行わない（`hdiutil detach` は自分が attach した `mountPoint` だけ）
 
@@ -326,7 +326,7 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 | `deviceMtimeIsOffset` | 原本の mtime はコピー時刻の 4 時間 34 分前 | 全ファイルの mtime が `1787000000`（= 1787016440 − 16440） |
 | `origNamesParse` | 候補の名前は規則に一致する | `origInScope` の各最後の要素が `RecordingName.parseFile` で `isOrig == true` |
 | `fakeOpenerSkipsMountCheck` | FakeVolumeOpener は普通のディレクトリを開く | `.opened`、`readOnly` が引数どおり |
-| `diskImageVolumeRefusesUnsafeNames` | DiskImageVolume は実機に触れ得る名前を hdiutil の前に拒む（パラメータ化） | `"DJIMIC3"`・`""`・`"../x"`・`"a:b"` で `DiskImageError`。`<tmp>/Volumes` は作られない（hdiutil を起動しない） |
+| `diskImageVolumeRefusesUnsafeNames` | DiskImageVolume は実機に触れ得る名前を hdiutil の前に拒む（パラメータ化） | `"VOICEDOCK"`（F-94）・`"DJIMIC3"`・`""`・`"../x"`・`"a:b"` で `DiskImageError`。`<tmp>/Volumes` は作られない（hdiutil を起動しない） |
 
 ## 6. 破壊による証明
 

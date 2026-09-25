@@ -184,12 +184,12 @@ struct ReaperBenchSafetyTests {
         }
     }
 
-    @Test("deviceID が DJIMIC3 なら舞台を作らない")
-    func realDeviceNameIsRefused() throws {
+    @Test("deviceID が実機の名前（VOICEDOCK・改名前の DJIMIC3）なら舞台を作らない", arguments: ["VOICEDOCK", "DJIMIC3"])
+    func realDeviceNameIsRefused(_ deviceID: String) throws {
         let tmp = try TempDirectory()
         let root = tmp.url.appendingPathComponent("Volumes", isDirectory: true)
         #expect(throws: BenchError.self) {
-            try ReaperBench.refuseUnsafe(volumesRoot: root, deviceID: "DJIMIC3")
+            try ReaperBench.refuseUnsafe(volumesRoot: root, deviceID: deviceID)
         }
     }
 

@@ -1,5 +1,7 @@
 # T-32 診断（DR）・要対応（沈黙の検出）・状態の詳細
 
+> （F-94。2026-09-25。利用者の決定）`deviceNameInvalid` の対処の文言を `Finder でデバイスの名前を「VOICEDOCK」に変えてから、つなぎ直してください（VoiceDock はデバイスに書き込みません）` にした（既定の include が `["VOICEDOCK"]` だけなので「など」を落とした。下の表も直した）。テストは `AttentionTextsTests`。
+
 > （F-80・issue #119、2026-09-23。マージ後の追記）(1) 「一覧に在るか」は `SourcePresence.of(_:in:)`（internal）の 1 か所にまとめ、`AttentionEvaluator.sourcePresence` を置き換えた（削除の段と共有。PLAN §8.9.5）。
 > (2) 要対応の `undeletableSources` と状態の詳細の在否は、`snapshotMaxAgeSeconds` より古い snapshot では「一覧に在る」と数えない（`AttentionEvaluator.freshSnapshot`。状態の詳細は「デバイスを観測できない」）。
 > (3) DB から数える 2 つの件数は `AttentionInput.countStoredItems(from: ReadOnlyStore)`（public）で入れ、AppServices（`LiveServices.read`）はそれを呼ぶだけ（配線は PolicyTests の `AttentionWiringTests` がトークンで固定）。
@@ -882,7 +884,7 @@ s.attention = AttentionEvaluator.items(attention)
 | `toolMissing(.llamaServer)` | `llama-server がありません` | 同上 |
 | `deviceNotListable(n)` | `<n> の中身を読めません` | `システム設定 → プライバシーとセキュリティ → ファイルとフォルダ → VoiceDock → リムーバブルボリューム` |
 | `deviceNeedsReplug(n)` | `<n> を挿し直してください` | `同じ名前のボリュームがあるか、マウント先の名前が変わっています。取り外して、もう一度つなぎ直してください` |
-| `deviceNameInvalid(n)` | `<n> は使えない名前です` | `Finder でデバイスの名前を「DJIMIC3」などに変えてから、つなぎ直してください（VoiceDock はデバイスに書き込みません）` |
+| `deviceNameInvalid(n)` | `<n> は使えない名前です` | `Finder でデバイスの名前を「VOICEDOCK」に変えてから、つなぎ直してください（VoiceDock はデバイスに書き込みません）` |
 | `ingestSilent` | `取り込みが止まっているようです` | `デバイスはつながっていますが、しばらく何も起きていません。ログを確かめてください` |
 | `diskSpaceLow` | `空き容量が足りません` | `不要なファイルを消すか、staging の上限を上げてください` |
 | `lockMismatch` | `削除の設定が食い違っています` | `アプリと reaper.conf の設定が合いません。「元音声の削除」を開いて無効化し直してください` |

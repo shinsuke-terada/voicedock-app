@@ -3,7 +3,7 @@ import Darwin
 import Foundation
 
 public struct MountInfo: Equatable, Sendable {
-    /// statfs の f_mntonname（例 "/Volumes/DJIMIC3"）
+    /// statfs の f_mntonname（例 "/Volumes/VOICEDOCK"）
     public let mountOnName: String
     /// f_mntfromname（例 "/dev/disk4"）
     public let mountFromName: String

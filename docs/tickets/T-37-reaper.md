@@ -1,5 +1,7 @@
 # T-37 voicedock-reaper（削除を実行する唯一の実行ファイル）
 
+> （F-94。2026-09-25）実機は `VOICEDOCK` に改名して使うので、`ReaperBench.refuseUnsafe` は deviceID が `VOICEDOCK` か `DJIMIC3` なら拒む（PLAN §10.2）。`realDeviceNameIsRefused` はその 2 つを引数に取る（下の表の「DJIMIC3」を読み替える）。
+
 > （F-80・issue #119、2026-09-23。マージ後の追記）processed.log の成功の行は `<request_id> DELETED`（拒否は従来どおり `<request_id>`。`ProcessedLog.append(_:deleted:)`・`recordedDeleted(_:)`）。
 > RV-04 は `<request_id> DELETED` と記録した要求（unlink の後に結果を書けずに残った）を拒否せず、結果が無ければ結果 DELETED（detail = 要求の relpath）を書き直して要求を消す（`RequestOutcome.redelivered`。unlink もボリュームを開くこともしない。ログは出さない）。
 > 従来の ID だけの行・読めない processed.log は従来どおり `replayed`。下の本文の「1 行 1 request_id」「照合は行の完全一致」はその分を読み替える（PLAN §8.9.4・付録 B.2）。

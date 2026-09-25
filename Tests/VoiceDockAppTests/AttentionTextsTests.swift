@@ -34,7 +34,7 @@ struct AttentionTextsTests {
         ),
         (
             .deviceNameInvalid("NO NAME"), "NO NAME は使えない名前です",
-            "Finder でデバイスの名前を「DJIMIC3」などに変えてから、つなぎ直してください（VoiceDock はデバイスに書き込みません）"
+            "Finder でデバイスの名前を「VOICEDOCK」に変えてから、つなぎ直してください（VoiceDock はデバイスに書き込みません）"
         ),
         (.ingestSilent, "取り込みが止まっているようです", "デバイスはつながっていますが、しばらく何も起きていません。ログを確かめてください"),
         (.diskSpaceLow, "空き容量が足りません", "不要なファイルを消すか、staging の上限を上げてください"),

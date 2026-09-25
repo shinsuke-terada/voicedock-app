@@ -1,4 +1,4 @@
-// 既定の device.includeVolumes を ["DJIMIC3"] にしても、既存の config.json の値は書き換えない（PLAN §6.1・§6.2・F-81・issue #119）。
+// 既定の device.includeVolumes を ["VOICEDOCK"] にしても、既存の config.json の値は書き換えない（PLAN §6.1・§6.2・F-81・issue #119・F-94）。
 // 既定値を書くのは config.json が無いとき（初回起動）だけ。HOME は一時ディレクトリ。
 import Foundation
 import TestSupport
@@ -8,7 +8,7 @@ import VDCore
 
 @testable import VDPipeline
 
-@Suite("ConfigStore と既定の includeVolumes（F-81）")
+@Suite("ConfigStore と既定の includeVolumes（F-81・F-94）")
 struct ConfigStoreIncludeDefaultTests {
     struct Scene {
         let tmp: TempDirectory
@@ -47,14 +47,14 @@ struct ConfigStoreIncludeDefaultTests {
         }
     }
 
-    @Test("F-81 config.json が無ければ、既定の includeVolumes（DJIMIC3 だけ）を書く")
-    func absentConfigGetsDJIMIC3Default() async throws {
+    @Test("F-94 config.json が無ければ、既定の includeVolumes（VOICEDOCK だけ）を書く")
+    func absentConfigGetsVOICEDOCKDefault() async throws {
         let s = try Scene()
         let store = s.store()
         _ = await store.load()
         #expect(await store.didCreateDefaults() == true)
-        #expect(try s.fileIncludeVolumes() == ["DJIMIC3"])
-        #expect(await store.current()?.device.includeVolumes == ["DJIMIC3"])
+        #expect(try s.fileIncludeVolumes() == ["VOICEDOCK"])
+        #expect(await store.current()?.device.includeVolumes == ["VOICEDOCK"])
     }
 
     @Test("F-81 既存の config.json の includeVolumes が空なら、書き換えずに空のまま使う（TEST-28）")

@@ -1,5 +1,5 @@
 // hdiutil の FAT32（または HFS+）イメージを一時ディレクトリにマウントする（.diskImage のテストだけが使う）。
-// /Volumes の下には決してマウントしない（利用者の実機 /Volumes/DJIMIC3 と衝突させない）。
+// /Volumes の下には決してマウントしない（利用者の実機 /Volumes/VOICEDOCK・改名前の /Volumes/DJIMIC3 と衝突させない）。
 import Darwin
 import Foundation
 import VDContract
@@ -65,13 +65,13 @@ public final class DiskImageVolume: Sendable {
     }
 
     /// 実機に触れ得る入力を hdiutil を起動する前に拒む（PLAN §10.2）:
-    /// deviceID が DeviceID の規則外、`DJIMIC3`（実機と同じ名前）、一時ディレクトリの realpath が /Volumes の下。
+    /// deviceID が DeviceID の規則外、`VOICEDOCK`・`DJIMIC3`（実機と同じ名前。F-94 で実機は VOICEDOCK に改名する）、一時ディレクトリの realpath が /Volumes の下。
     static func refuseUnsafe(tmp: URL, deviceID: String) throws {
         guard DeviceID.isValid(deviceID) else {
             throw DiskImageError(description: "DiskImageVolume: 不正な deviceID: \(deviceID)")
         }
-        guard deviceID != "DJIMIC3" else {
-            throw DiskImageError(description: "DiskImageVolume: 実機と同じ名前 DJIMIC3 は使わない")
+        guard !["VOICEDOCK", "DJIMIC3"].contains(deviceID) else {
+            throw DiskImageError(description: "DiskImageVolume: 実機と同じ名前 \(deviceID) は使わない")
         }
         guard let root = realpath(tmp.path(percentEncoded: false)) else {
             throw DiskImageError(description: "DiskImageVolume: 一時ディレクトリの realpath が取れない")

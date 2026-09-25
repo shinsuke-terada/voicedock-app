@@ -857,7 +857,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
   "timeZone": "<初回起動時の TimeZone.current.identifier>",
   "vault": { "path": null, "marker": ".obsidian" },
   "device": {
-    "includeVolumes": ["DJIMIC3"],
+    "includeVolumes": ["VOICEDOCK"],
     "excludeVolumes": ["Macintosh HD", "com.apple.TimeMachine.*", ".*"],
     "mountMode": "ro",
     "stabilityFastPathSeconds": 60, "stabilityIntervalSeconds": 3, "stabilityChecks": 2,
@@ -916,11 +916,13 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 - `llm.analysis.sections` の 7 つのキー（voicedock の節名。LLM の JSON のキーと同じなので snake_case のまま）は固定。これ以外のキーは CV-01。**`maxItems` を持つのは `key_points` / `tasks` / `decisions` / `ideas` / `tags` の 5 つだけ**（voicedock と同じ。`summary` は文字数の上限 4000 がスキーマ側にあり、`timeline` は LLM のスキーマに入らないので、両者に `maxItems` を置くと「受理されるのに効かない設定」になる。CR-14）。`summary` / `timeline` に `maxItems` を書いたら CV-01
 - `vault.path` と `llm.modelID` の **null は違反ではなく「未設定」**。処理を止め（§5.4 のガード）、パネルの「はじめに」と「要対応」に出す
 - `transcription.threads = 0` は `min(ProcessInfo.processInfo.activeProcessorCount, 8)`（voicedock は `os.cpu_count()` = 論理 CPU 数）
-- **`device.includeVolumes` の既定は `["DJIMIC3"]`**（F-81。2026-09-23 の利用者の決定。voicedock の既定は空で、付録 D の X-42）。
+- **`device.includeVolumes` の既定は `["VOICEDOCK"]`**（F-81。2026-09-23 の利用者の決定。voicedock の既定は空で、付録 D の X-42）。
+  F-81 では `["DJIMIC3"]`（それまでの実機の名前）だったが、2026-09-25 の利用者の決定で、実機を利用者が Finder で `VOICEDOCK` に改名して使うことにし、既定もそれに合わせた（F-94。アプリは改名しない。DEV-10）。
   空（全ボリュームが規則 2 へ進む）だと、ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすので、録音の写しを入れたバックアップ用のメモリ（FAT）の中身が
   DUPLICATE_CONTENT → 根拠 B で消されうる。既定値は `config.json` が**無いときだけ**書くので（§6.1）、既存の `config.json` の値（F-81 より前に書かれた `[]` を含む）は書き換えない。
-  **既存の `config.json`（`[]`）ではこの守りが効かないので、利用者が手で `"includeVolumes": ["DJIMIC3"]` にする**（「設定を読み直す」か次回起動で効く）。
-  名前を `DJIMIC3` 以外にしたデバイス・2 台目の送信機（`DJIMIC3 1` など）・出荷時名 `NO NAME` のデバイスは、この配列に足さない限り規則 1 の `not_included` で取り込まない。
+  **既存の `config.json`（`[]` や F-94 より前の `["DJIMIC3"]`）の値は変わらないので、利用者が手で `"includeVolumes": ["VOICEDOCK"]` にする**（「設定を読み直す」か次回起動で効く。移行は足さない）。
+  改名すると device_id（= ボリューム名）が変わるので、改名前の名前で取り込んだ録音は削除の対象にならない（RK-28。削除の同定は partkey で行うため。消す側には倒れない）。
+  名前を `VOICEDOCK` 以外にしたデバイス（改名前の `DJIMIC3` を含む）・2 台目の送信機（`VOICEDOCK 1` など）・出荷時名 `NO NAME` のデバイスは、この配列に足さない限り規則 1 の `not_included` で取り込まない。
   ルートに録音のフォルダがあるものは、取り込まずに「はじめに」の⑤で改名（か、この配列に名前を足すこと）を案内する（§8.1 規則 1・§8.12。F-81 のレビューでの利用者の決定）
 - `logging.level` の綴りは voicedock と同じ大文字。ログ行の表記は §8.15
 - GUI・由来の対応:
@@ -1160,13 +1162,13 @@ CREATE TABLE imported_keys (
 
 **デバイス判定**（この順に適用し、最初に当たった理由で対象外にする。voicedock §5.4 ＋ 本計画の追加）
 1. `includeVolumes` が空でなければ、名前がどの glob にも一致しないものを除外（`not_included`）。**空なら規則 1 を適用しない**（全エントリが規則 2 へ進む）。名前だけで判定し stat しない（DEV-05）。
-   既定は `["DJIMIC3"]`（F-81。§6.2）。`fnmatch` は C 文字列（UTF-8 のバイト列）で比べるので、正準等価でも綴りの違う名前は一致しない。
+   既定は `["VOICEDOCK"]`（F-81・F-94。§6.2）。`fnmatch` は C 文字列（UTF-8 のバイト列）で比べるので、正準等価でも綴りの違う名前は一致しない。
    **名前のほかはデバイスに見えるものは案内する**（F-81 のレビュー。2026-09-23 の利用者の決定「include は絞ったまま、名前が合わないが DJI 形式のフォルダを持つボリュームは取り込まずに案内」）:
    `not_included` の名前だけ、続けて規則 2（exclude とネットワークの FS）・3・4・5・6 を同じ順に当て（規則 8・9 は見ない）、全部通れば `DetectionResult.notIncludedDevices` に入れる。
    走査はそれを snapshot の `unavailable` に理由語 `not_included` で載せ（取り込まない・再マウントしない・`devices` に載せないので削除の要求も F-64 / F-78 の完了も起きない）、
    「はじめに」の⑤が改名（か `device.includeVolumes` に名前を足すこと）を案内する（§8.12）。`volume_skipped … reason=not_included` はこの場合だけ前回の走査から変わったときに WARNING。
    stat が増えるのは `not_included` の名前だけ（include が空なら起きない。F-81 より前の既定の `[]` では全エントリに規則 2〜6 を当てていた）。
-   対象は出荷時名 `NO NAME` の新品・名前を変えた機器・録音の写しを入れたメモリ、それに**古いマウント点が残って実機が `DJIMIC3 1` にマウントされた 1 台**
+   対象は出荷時名 `NO NAME` の新品・名前を変えた機器（`VOICEDOCK` に改名する前の `DJIMIC3` を含む。F-94）・録音の写しを入れたメモリ、それに**古いマウント点が残って実機が `VOICEDOCK 1` にマウントされた 1 台**
    （以前（include が空）は規則 8 の `mount_name_mismatch` で要対応「挿し直してください」に出ていた。今は規則 1 の `not_included` で、⑤の案内で知らせる）
 2. `excludeVolumes` のどれかの glob に一致するものを除外（`excluded`。`fnmatch(pattern, name, 0)`。正規表現ではない。`.*` は「`.` で始まる」。DEV-07）。
    **ネットワークの FS のマウント点も `excluded`**（F-81。新しい理由語は足さない）: 判定の最初に待たずに取れるマウントの一覧（`getmntinfo(MNT_NOWAIT)`。`MountInspector.allMounts()`）から
@@ -2594,12 +2596,12 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
 3. **はじめに**（未完了の項目がある間だけ、状態・要対応の下に出す）: 項目（①〜⑤）と完了の条件は下の「はじめに」の項目の表（SPEC S22）のとおり。
    ⑤ は改名の案内（**アプリは改名しない**。デバイスに書かない。Finder か ディスクユーティリティで行う手順を表示。DEV-10）。
    出す相手は、snapshot の `unavailable` の `not_included`（名前が `device.includeVolumes` に合わないが録音のフォルダがあるボリューム。§8.1 規則 1。F-81）と、
-   `devices` / `unavailable` の `NO NAME`（include が空の旧い設定で検出された出荷時名）。出荷時名の新品・名前を変えた機器・古いマウント点が残って `DJIMIC3 1` にマウントされた実機・
-   写しを入れたメモリのどれでも出る（取り込みも削除もしない）。文言（`Strings.renameInstructions`。F-81 で既定の include と食い違わないように直した。`<名前>` は「、」でつなぐ）:
-   「<名前> という名前のデバイスがつながっています。VoiceDock が取り込むのは、名前が設定の device.includeVolumes（既定は DJIMIC3 だけ。空なら全部）に合うデバイスです。VoiceDock はデバイスに一切書き込みません。DJI Mic 3 なら、次のどちらかを利用者が行ってください。」＋改行＋
-   「1. Finder のサイドバーでデバイスを選び、名前をゆっくり 2 回クリックして「DJIMIC3」に変えます。変えたらデバイスを取り外して、もう一度つなぎ直してください」＋改行＋
+   `devices` / `unavailable` の `NO NAME`（include が空の旧い設定で検出された出荷時名）。出荷時名の新品・名前を変えた機器・古いマウント点が残って `VOICEDOCK 1` にマウントされた実機・
+   写しを入れたメモリのどれでも出る（取り込みも削除もしない）。文言（`Strings.renameInstructions`。F-81 で既定の include と食い違わないように直し、F-94 で名前を `VOICEDOCK` にした。`<名前>` は「、」でつなぐ）:
+   「<名前> という名前のデバイスがつながっています。VoiceDock が取り込むのは、名前が設定の device.includeVolumes（既定は VOICEDOCK だけ。空なら全部）に合うデバイスです。VoiceDock はデバイスに一切書き込みません。DJI Mic 3 なら、次のどちらかを利用者が行ってください。」＋改行＋
+   「1. Finder のサイドバーでデバイスを選び、名前をゆっくり 2 回クリックして「VOICEDOCK」に変えます。変えたらデバイスを取り外して、もう一度つなぎ直してください」＋改行＋
    「2. 名前を変えずに使うなら、config.json の device.includeVolumes にこの名前を足して、「設定を読み直す」を押してください」＋改行＋
-   「名前が「DJIMIC3 1」のように番号付きなら、名前は変えずに取り外して、もう一度つなぎ直してください。録音の写しを入れたメモリなど DJI Mic 3 でなければ、何もしなくてかまいません（取り込みも削除もしません）」
+   「名前が「VOICEDOCK 1」のように番号付きなら、名前は変えずに取り外して、もう一度つなぎ直してください。録音の写しを入れたメモリなど DJI Mic 3 でなければ、何もしなくてかまいません（取り込みも削除もしません）」
    - ④の「今はしない」は `<HOME>/ui-state.json`（`HomeLayout.uiState`。§2.3）（`{"schema": 1, "loginItemDecided": true}`。`AtomicFile`）に記録する（UserDefaults を使わない。PR-03）。
      同じファイルに 1 の最終接続 `lastConnectedAt`（整数。一度も観測していなければキーを書かない）を持つ（F-70。schema は 1 のまま）。
      読むときは、無い・壊れた・`schema` が 1 でないファイルは既定、未知のキーは無視、`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にする（「今はしない」を失わない）
@@ -2881,7 +2883,7 @@ swift-syntax は使わない（CI のビルド時間が増えるため）。対�
 | `BWFWriter` | 実機と同じ Broadcast Wave（48 kHz / 24 bit・32 bit float・16 bit / mono、fmt 16（cbSize 無し）・bext 602（0 埋め）・iXML 1092（`<BWFXML></BWFXML>` を空白で右詰め）・cue 28・PAD 30978、data は offset 32776。奇数長は 1 バイトのパッド）を生成。無音・発話（0.8 秒鳴らし 0.4 秒休む `0.1 × (sin θ + 0.5 sin 2θ + 0.25 sin 4θ)`、θ = 2π × 220 × t）・指定長。44 バイトの最小ヘッダも作れる | voicedock `tests/fixtures/make_wav.py`（ASR-15） |
 | `FakeVolume` | 一時ディレクトリに DJI と同じ木（`TX_MIC001_YYYYMMDD_HHMMSS/TX00_MIC00N_…_orig.wav`、denoised、`._*`、`.Spotlight-V100`、`.Trashes`、symlink、深い階層）を作る。原本の mtime はコピー時刻の 4 時間 34 分前 | `fake_tree.py` |
 | `FakeMountInspector` / `FakeRemounter` | `MountInspector` / `Remounter` の差し替え（マウント点・`MNT_RDONLY`・再マウントの成否・パスの変化を表で与える） | — |
-| `DiskImageVolume` | `hdiutil create -size 64m -fs "MS-DOS FAT32" -volname <一意の名前 VDTxxxx> <tmp>/img.dmg` → `hdiutil attach -nobrowse -mountpoint <tmp>/Volumes/<同じ名前>`（**実機と同じ `DJIMIC3` を名前に使わない。`/Volumes` の下に attach しない**）。読み取り専用での再マウント・statfs・reaper の unlink を**本物の FAT で**確かめる（`.diskImage`）。後片付けは `hdiutil detach -force` | POC の `mkimg.sh` |
+| `DiskImageVolume` | `hdiutil create -size 64m -fs "MS-DOS FAT32" -volname <一意の名前 VDTxxxx> <tmp>/img.dmg` → `hdiutil attach -nobrowse -mountpoint <tmp>/Volumes/<同じ名前>`（**実機と同じ `VOICEDOCK`・改名前の `DJIMIC3` を名前に使わない。`/Volumes` の下に attach しない**）。読み取り専用での再マウント・statfs・reaper の unlink を**本物の FAT で**確かめる（`.diskImage`）。後片付けは `hdiutil detach -force` | POC の `mkimg.sh` |
 | `FixedClock` / `SteppingClock` / `RecordingSleeper` | 時計と待ち（待った秒数を記録し、実際には待たない） | |
 | `FakeSignatureVerifier` | reaper の署名検証の差し替え | |
 | `ReaperBinary` | テストから reaper の実行ファイルを見つける: ReaperTests は `voicedock-reaper` ターゲットに依存し（`swift build --build-tests` で必ずビルドされる）、テストバンドル（`.xctest`）と同じディレクトリの `voicedock-reaper` を使う。見つからなければ skip ではなく fail | — |
@@ -3711,7 +3713,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | X-39 | chat/completions の 3xx は `status_code >= 400` に当たらず、httpx の既定でリダイレクトに従わないまま 3xx の本文を content として読み、JSON が無ければ修復へ回す（llm.py:377・394・409） | リダイレクトに従わない（`RedirectRefusal`）うえで、2xx 以外を `LLM_UNAVAILABLE`「HTTP <code>: <本文の先頭 200 スカラー>」にする（§8.5） | 3xx は llama-server の正しい応答ではない（ポートを別のプロセスが取った・何かが間に入った）。修復の要求を重ねて `LLM_INVALID_JSON` にせず、接続の失敗と同じ `LLM_UNAVAILABLE`（工程内リトライ）にする（F-79） |
 | X-40 | frontmatter の文字列に YAML の読み手が拒む文字（C1 制御の U+0080–0084・U+0086–009F、U+FFFE・U+FFFF）をそのまま書く（notes.py:121-131。PyYAML の読み取りも「special characters are not allowed」で拒む） | `\uXXXX`（大文字 16 進 4 桁）で書く。値はそのまま読み戻せる（§8.6） | 保存の検証が落ち続け、再試行ごとに ` (2)` … の読めないノートが増えた。session_key・partkey はボリューム名を含み、C1 を含みうる（F-83） |
 | X-41 | whisper の生 JSON を `json.loads(path.read_text(encoding="utf-8"))` で読む（transcribe.py:447-452）。生の制御文字（U+0000〜U+001F）や区間の境目で割れた多バイト文字（不正な UTF-8）が 1 つあると全体が読めず、Part が毎回 `WHISPER_FAILED` | whisper の生 JSON に限り、読む前に不正な UTF-8 を U+FFFD に置き換え、文字列の中の生の制御文字を `\u00XX` にする（文字列の外は触らない。正常な JSON は 1 バイトも変えない。§8.4 手順 7）。`PyJSON.decode` は変えない。直した transcript は、直した文字（U+FFFD と U+0000〜U+001F）を除いた文字数が minChars に届かなければ無音（NO_SPEECH_DETECTED の SKIPPED。根拠 B で元の録音を消しうる）にせず `WHISPER_FAILED`（消さない側。§8.4 手順 6・9）。エスケープした制御文字は文字として残るので、NUL などを含む transcript と Raw ノート（`.md`）ができうる | 利用者の決定（2026-09-23。寛容に読む。F-82）。1 区間の不良で Part の全文を失わない |
-| X-42 | `INCLUDE_VOLUMES` の既定は空（「改名した瞬間に無言で検出されなくなるのを避けるため」。helper/helper.example.conf:4-8） | `device.includeVolumes` の既定は `["DJIMIC3"]`（既存の `config.json` の値は変えない。§6.2）。名前が合わないが録音のフォルダがあるボリュームは取り込まずに「はじめに」の⑤で改名を案内する（§8.1 規則 1） | 利用者の決定（2026-09-23。F-81）。ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすと、録音の写しを入れたバックアップ用のメモリが DUPLICATE_CONTENT → 根拠 B で消されうる。voicedock が避けた「無言で検出されなくなる」は案内で補う |
+| X-42 | `INCLUDE_VOLUMES` の既定は空（「改名した瞬間に無言で検出されなくなるのを避けるため」。helper/helper.example.conf:4-8） | `device.includeVolumes` の既定は `["VOICEDOCK"]`（F-94。実機は利用者が改名する。既存の `config.json` の値は変えない。§6.2）。名前が合わないが録音のフォルダがあるボリュームは取り込まずに「はじめに」の⑤で改名を案内する（§8.1 規則 1） | 利用者の決定（2026-09-23。F-81）。ルートに DJI 形式のフォルダがある外付けを何でもデバイスとみなすと、録音の写しを入れたバックアップ用のメモリが DUPLICATE_CONTENT → 根拠 B で消されうる。voicedock が避けた「無言で検出されなくなる」は案内で補う |
 | X-43 | `reduce_phase` は本文の文字数だけで単一パス Reduce にするか決める（`_bundles` も文字数だけで束ねる） | 本文の文字数に加えて、件数が `reduceMaxItems`（4）を超えたら束ねる（単一パスは文字数以下**かつ**件数 4 以下のときだけ。`_bundles` も文字数か件数のどちらかで区切る） | 2026-09-24。4B・30B の受け入れ試験（10 時間・220,000 文字）で、18 個の中間結果を 1 回でまとめる最終 Reduce が壊れた JSON になった（`max_tokens=4096` に収まらず切れる。修復も同じ枠なので直らない）。voicedock にも同じ弱点があるが（`git show d3d595e:src/voicedock/llm.py` の `reduce_phase`・`strip_think` のコメント「`max_tokens` で切られた場合にこうなる」）、実機で確かめたのは今回が初めて。3 個の Reduce（s09-allhands）は壊れておらず、4 を上限にする
 | X-44 | `max_output_tokens: 4096`（config/config.example.yaml:98） | `maxOutputTokens` の既定を **8192** に | 2026-09-24。30B の受け入れ試験（220,000 文字）で、X-43 の畳み込みとは別に、1 チャンク（約 1〜1.5 万文字）を要約するだけの map 呼び出しが `LLM_INVALID_JSON` で落ちた（18 個中 15 個目あたり）。スキーマの上限（タスク最大 50 件×500 文字など）を素直に計算すると 4096 では足りないことがある。`CV-51`（`contextSize >= maxCharsPerRequest + maxOutputTokens + 2048`）の範囲で、既定の `contextSize`（32768）・`maxCharsPerRequest`（20000）のまま上げられる上限は 10720。倍の 8192 にする（利用者の決定）。内容が特に濃いチャンクでは、上げても稀に失敗しうることは許容する（利用者の決定。§8.5 の `LLM_INVALID_JSON` は次の再評価まで待つ既定のまま変えない） |
 | X-45 | 話者分離なし（Raw は段落だけ） | 話者分離（`argmax-cli`。パネルでオン／オフ、既定オフ）。オンの Part は transcript の区間に `speaker`、Raw は `**話者A**: ` の行、LLM のチャンクは `話者A: ` を前に付ける（§8.4.1・§8.5・§8.6） | 2026-09-24。利用者の依頼（issue #104）。**オフのときの出力（transcript・Raw・Daily・指紋・LLM の要求）は voicedock とバイト単位で同じ**（golden を変えない） |
@@ -3842,3 +3844,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-91 | 事 | §8.9.8・§8.12 | （2026-09-25。利用者の依頼「ゴミ箱アイコンはダサいので、削除 ON なら波のアイコンに赤ポチを付けるくらいに。他は変えなくて良い」）削除が有効な間のメニューバーの印を、状態の記号の横に並べる `trash` から、状態の記号の右上に重ねる赤い点（`StatusIconBadge`。直径 6pt・`NSColor.systemRed`）に変えた。アイコンの画像はテンプレートのまま 1 枚（明暗・開いている間の強調・非アクティブなディスプレイの減光は AppKit に任せる）で、赤い点は `NSStatusBarButton` に重ねたビューが描く。読み上げの説明は「<状態>。元音声の削除が有効です」。表示の条件（`DeletionPanelState.showsTrash`）とパネルの `trash` は変えない |
 | F-92 | 事 | D-7・§1.2・§6.1・§6.2・§6.3・§6.4（CV-39・CV-60）・§8.5・§8.12・付録 D | （2026-09-25。利用者の依頼と決定: analyze・map・reduce の 3 本を編集できる・アプリ内の別の窓で編集する・保存先は config.json で null は既定）X-46。設定 `llm.analysis.prompts.{analyze,map,reduce}`（既定はすべて null）を足し `schemaVersion` を 3 に（2 → 3 の移行。移行器は 1 段ずつ続けて上げる）。`Analyzer` が `Prompts.overriding(_:)` で上書きを当てる（差し込みの順・修復プロンプト・golden は変えない）。検証 CV-60 を足した（`{custom_instructions}` を必須にするのは、追加の指示が黙って効かなくなるのを防ぐため。長さの上限 1,500 は CV-51 の余白 2048 トークンに system を収めるため）。D-7 の「それ以外の画面は作らない」に、要約プロンプトの編集の窓 1 つだけの例外を足した（`PromptEditorWindowController`。本文の欄は自動置換を切った `NSTextView`）。ログのイベント・エラーコード・遷移の辺・削除の条件は変えない |
 | F-93 | 事 | §10.8・§11.1・付録 F | （2026-09-25。利用者の決定: 本体のライセンスは Apache License 2.0・README は利用者向けに書き直す・同梱物の表示はリポジトリと `.app` の両方に入れる）ライセンスを置いた: `LICENSE`（Apache License 2.0 の全文）・`NOTICE`（Copyright 2026 Shinsuke Terada）・`THIRD_PARTY_NOTICES.md`（whisper.cpp・llama.cpp とその `vendor/` の部品・argmax-oss-swift と swift-argument-parser・GRDB.swift・Yams と LibYAML の MIT / BSD-2-Clause / Apache-2.0 の文を上流からそのまま、話者分離のモデルの CC-BY-4.0 の出典）。MIT などは配布物に著作権表示を含めることを求めるので、`make-app.sh` が 3 つを `Contents/Resources/` に入れ、`Resources/bundle-manifest.txt` に足した（§11.1）。版を上げて表が古くなるのを `LicenseFilesTests` が落とす。README（T-43）は利用者向けだけにし、`## 開発`・`## 状態` を `docs/DEVELOPMENT.md` へ移した（§10.8 の「CI の ND は層 1・2 だけ」「削除に触れる PR では手元の `make test-disk` の結果を貼る」の記述もそちら。T-44 が更新する `## 状態` の表もそちら）。`## 出典`（T-49）は `## ライセンス` にまとめた。ダウンロードするモデル（Whisper・VAD・LLM）は同梱しないので表示の対象外で、README に配布元のライセンスを書く。コード・設定キー・ログ・遷移・削除の条件は変えない |
+| F-94 | 事 | §6.2・§8.1・§8.12・§10.2・付録 D | （2026-09-25。利用者の依頼「デバイスを接続した時のボリュームの名前を VOICEDOCK で固定したい」と決定: 改名は利用者が Finder で行う・変えるのは既定値だけ・既存の config.json は手で直す）`device.includeVolumes` の既定を `["DJIMIC3"]` から `["VOICEDOCK"]` にした（F-81 の既定の名前だけを替える。規則 1 の照合・案内の仕組みは変えない）。「はじめに」の⑤（`Strings.renameInstructions`）と要対応の `deviceNameInvalid` の文言の名前も `VOICEDOCK` にした（後者は既定が 1 つなので「など」を落とした）。**アプリは改名しない**（PR-11・DEV-10 は変えない）。既定値は `config.json` が無いときだけ書くので既存の値は変わらず、利用者が手で `["VOICEDOCK"]` にする（schemaVersion は上げない・移行は足さない）。改名すると device_id が変わるので、改名前の `DJIMIC3` で取り込んだ録音は削除の対象にならない（RK-28。消す側には倒れない）。テストの `DiskImageVolume`・`ReaperBench` は実機の名前として `VOICEDOCK` も拒む（§10.2）。device_id・partkey の例とテストの固定データの `DJIMIC3` は例なので変えない。ログのイベント・エラーコード・遷移の辺・削除の条件は変えない |

@@ -30,7 +30,7 @@ CI は開発機のセルフホストランナー `voicedock-local`（`~/actions-
 
 ## なぜ `/Volumes` が危ないか
 
-利用者の**実機**の DJI Mic 3 が `/Volumes/DJIMIC3` にマウントされていることがある。そこにあるのは本物の録音で、消したら戻らない。
+利用者の**実機**の DJI Mic 3 が `/Volumes/VOICEDOCK`（F-94 で利用者が改名。改名前は `/Volumes/DJIMIC3`）にマウントされていることがある。そこにあるのは本物の録音で、消したら戻らない。
 
 このアプリ自身、デバイスへは**読み取りと `diskutil` のマウント操作以外を一切しない**設計（PR-11）。原本は `O_RDONLY | O_NOFOLLOW` でしか開かず、削除は `voicedock-reaper` だけが、三重ロックと独立再検証（`openat` の連鎖 → `unlinkat` → `fstatat` で `ENOENT`）を通してから行う。**開発の途中でその設計を破ると、設計が守っているものが先に消える。**
 
@@ -113,6 +113,6 @@ Swift 6 言語モード（strict concurrency complete、警告はエラー）、
 | `agents/ticket-review` | 読み取り専用。受け入れ条件と API 地図に照らした判定 |
 | `skills/` | 上の `/` コマンド 4 本 |
 | `hooks/guard-volumes.py` | Bash の実行前に破壊的な操作を止める |
-| `hooks/guard-volumes.test.py` | そのフックの回帰テスト（45 件）。フックを直したら `python3 .claude/hooks/guard-volumes.test.py` |
+| `hooks/guard-volumes.test.py` | そのフックの回帰テスト（47 件）。フックを直したら `python3 .claude/hooks/guard-volumes.test.py` |
 | `hooks/session-start.sh` | セッションの先頭に実機の接続状態と「次にやること」を出す |
 | `settings.json` | permissions（deny / ask / allow）・フックの登録・並列数 |
