@@ -71,6 +71,45 @@ struct AnalyzerPromptOverrideTests {
         #expect(AnalyzerHarness.success(outcome) != nil)
     }
 
+    @Test("map の上書きは多段 Reduce の束ね（中間の Map）にも効き、最後の Reduce は同梱のまま（PLAN §8.5。F-92）")
+    func mapOverrideAppliesToFolding() async throws {
+        let harness = try AnalyzerHarness()
+        let config = AnalyzerHarness.config {
+            $0.maxCharsPerRequest = 150
+            $0.chunkOverlapChars = 0
+            $0.analysis.prompts = PromptOverrides(
+                analyze: nil, map: "部分。{custom_instructions}\n{schema_block}", reduce: nil)
+        }
+        // 3 チャンク（100 文字ずつ）→ 中間結果 3 個は 150 文字に収まらないので 2 束に畳む（AnalyzerTests と同じ形）
+        let segs = [
+            ChunkFixtures.seg(String(repeating: "a", count: 100), 0),
+            ChunkFixtures.seg(String(repeating: "b", count: 100), 10),
+            ChunkFixtures.seg(String(repeating: "c", count: 100), 20),
+        ]
+        let transport = FakeChatTransport { call in
+            if call.user.contains("\"f1\"") { return AnalyzerHarness.final() }
+            if call.user.hasPrefix("[") {
+                return call.user.contains("\"s1\"") ? AnalyzerHarness.partial("f1") : AnalyzerHarness.partial("f2")
+            }
+            switch call.user.first {
+            case "a": return AnalyzerHarness.partial("s1")
+            case "b": return AnalyzerHarness.partial("s2")
+            case "c": return AnalyzerHarness.partial("s3")
+            default: return AnalyzerHarness.unexpected
+            }
+        }
+        let analyzer = Analyzer(transport: transport, prompts: try LLMFixtures.prompts(), config: config)
+        let outcome = await analyzer.analyze(AnalyzerHarness.transcript(segs))
+        let calls = await transport.calls
+        let map = "部分。\n" + (try Self.schemaBlock("partial_default"))
+        try #require(calls.count == 6)
+        // 0〜2 はチャンクの Map、3〜4 は中間結果の束の Map（どちらも上書き）、5 は最後の Reduce（同梱）
+        #expect(calls.map(\.system) == [map, map, map, map, map, harness.reduceSystem])
+        #expect(calls[3].user.hasPrefix("["))
+        #expect(calls[4].user.hasPrefix("["))
+        #expect(AnalyzerHarness.success(outcome) != nil)
+    }
+
     @Test("上書きが全部 null なら 3 つとも同梱の本文（TEST-28）")
     func noOverridesKeepBundled() async throws {
         let harness = try AnalyzerHarness()
