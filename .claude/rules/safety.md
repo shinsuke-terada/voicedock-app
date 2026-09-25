@@ -4,7 +4,7 @@
 
 1. **ディスクを扱うセッションを始める前に、実機を物理的に抜いてもらう。** 抜け道の無い唯一の対策。
 2. `/Volumes` 配下に `diskutil`・書き込み・削除・再マウントをしない。読み取り（`ls`・`stat`・`find -print`）だけ。
-3. ディスクイメージは `hdiutil attach -nobrowse -mountpoint ~/VoiceDockPoC/mnt/<名前>` で **`/Volumes` の外**に attach する。ボリューム名に `VOICEDOCK`・`DJIMIC3` を使わない。
+3. ディスクイメージは `hdiutil attach -nobrowse -mountpoint ~/VoiceDockPoC/mnt/<名前>` で **`/Volumes` の外**に attach する。ボリューム名に `VOICEDOCK`・`DJIMIC3`（大文字小文字を問わない）を使わない。
 4. `VOICEDOCK_DISK_TESTS` / `VOICEDOCK_REAL_TOOLS` / `VOICEDOCK_LLM_MODEL` を自分で設定しない。`make test-disk` を自分で回さない。実機が抜いてあることを利用者が確かめてから。
 5. テストは注入された `volumesRoot`（`TempDirectory`）だけを見る。本番のコードパスに「テストなら」の分岐を作らない（CR-25）。
 6. 参照実装 `/Users/terada/Projects/voicedock` は読み書きしない。`git -C /Users/terada/Projects/voicedock show d3d595e:<path>` と `… archive d3d595e` だけを使う。

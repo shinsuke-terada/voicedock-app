@@ -48,7 +48,12 @@ struct AppModelDataResetTests {
         #expect(fake.dataResetCount == 1)
         #expect(quit.value == 1)
         #expect(model.dataResetFailed == false)
-        #expect(model.dataResetBusy == false)
+        // 終了の後始末（最大 10 秒）の間にもう一度押させない（レビューの #1）
+        #expect(model.dataResetBusy == true)
+        #expect(model.canRequestDataReset == false)
+        await model.requestDataReset()
+        #expect(fake.dataResetCount == 1)
+        #expect(quit.value == 1)
     }
 
     @Test("予約できなければ終了せず、失敗を画面に出す")
@@ -62,6 +67,9 @@ struct AppModelDataResetTests {
         #expect(fake.dataResetCount == 1)
         #expect(quit.value == 0)
         #expect(model.dataResetFailed == true)
+        // 失敗したら押し直せる
+        #expect(model.dataResetBusy == false)
+        #expect(model.canRequestDataReset == true)
     }
 
     @Test("元音声の削除が有効な間（trash が出ている）は押せず、services も終了も呼ばない")
@@ -117,5 +125,55 @@ struct AppModelDataResetTests {
         #expect(model.dataResetFailed == true)
         model.panelDidClose()
         #expect(model.dataResetFailed == false)
+    }
+
+    @Test(
+        "起動時の初期化の結果を状態の見出しの下に出す（F-95・レビューの #4）",
+        arguments: [
+            (DataReset.Outcome.completed(removed: 79, failed: 0), "データを初期化しました（79 件のファイルを消しました）", false),
+            (
+                DataReset.Outcome.completed(removed: 3, failed: 2),
+                "データを初期化しましたが、消せなかったものが 2 件あります。ログを確かめてください", true
+            ),
+            (
+                DataReset.Outcome.refused(.deletionEnabled),
+                "データを初期化しませんでした。元音声の削除が有効でした。無効にしてから、もう一度初期化してください", true
+            ),
+            (
+                DataReset.Outcome.refused(.databaseNotRemoved),
+                "データを初期化しませんでした。データベースを消せませんでした。ログを確かめてください", true
+            ),
+            (
+                DataReset.Outcome.refused(.requestNotRemoved),
+                "データを初期化しませんでした。初期化の予約を取り下げられませんでした。ログを確かめてください", true
+            ),
+            (DataReset.Outcome.refused(.staleRequest), "前回の初期化の残りの予約を取り下げました（データは消していません）", true),
+        ])
+    func outcomeNoticeIsShown(_ outcome: DataReset.Outcome, _ text: String, _ warning: Bool) async {
+        var s = Self.snapshot(appEnabled: false)
+        s.dataReset = outcome
+        let model = Self.makeModel(FakeServices(s), quit: QuitCounter())
+        await model.refresh()
+        #expect(model.dataResetNotice == text)
+        #expect(model.dataResetNoticeIsWarning == warning)
+    }
+
+    @Test("予約が無ければ結果は出さない（TEST-28）")
+    func noNoticeWithoutARequest() async {
+        let model = Self.makeModel(FakeServices(Self.snapshot(appEnabled: false)), quit: QuitCounter())
+        await model.refresh()
+        #expect(model.dataResetNotice == nil)
+    }
+
+    @Test("結果は、出したままパネルを閉じたら二度と出さない")
+    func noticeIsDismissedWhenThePanelCloses() async {
+        var s = Self.snapshot(appEnabled: false)
+        s.dataReset = .completed(removed: 1, failed: 0)
+        let model = Self.makeModel(FakeServices(s), quit: QuitCounter())
+        await model.refresh()
+        #expect(model.dataResetNotice != nil)
+        model.panelDidClose()
+        await model.refresh()
+        #expect(model.dataResetNotice == nil)
     }
 }

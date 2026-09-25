@@ -52,6 +52,9 @@ struct AppSnapshot: Equatable, Sendable {
     var deletion: DeletionPanelState? = nil
     /// 設定エラー中（deletion が nil）でも消す能力が残っているか（reaper.conf が有効か reaper が在る。PLAN §8.9.8 の常時表示）
     var deletionResidual: Bool = false
+    // F-95
+    /// この起動で行ったデータの初期化の結果（AppContext.dataResetOutcome の写し）
+    var dataReset: DataReset.Outcome = .notRequested
     // T-51（F-89）
     /// 設定の transcription.diarization.enabled の写し（設定エラー中は false）
     var diarizationEnabled = false

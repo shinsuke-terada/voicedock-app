@@ -54,8 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let controller = StatusItemController(model: model)
             model.presentPromptEditor = { [weak controller] in controller?.showPromptEditor() }
             model.start()
-            // 初回起動だけ自動で開く（PLAN §8.12）
-            if await ctx.config.didCreateDefaults() { controller.open() }
+            // 初回起動と、データの初期化の予約があった起動（結果を見せる。F-95）は自動で開く（PLAN §8.12）
+            if await ctx.config.didCreateDefaults() || ctx.dataResetOutcome != .notRequested { controller.open() }
             self?.model = model
             self?.statusItem = controller
         }
@@ -69,11 +69,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         terminating = true
         guard let ctx = context else { return .terminateNow }
         let steps = Self.shutdownSteps(Self.shutdownParts(ctx))
-        Task { @MainActor in
+        let timeout = Self.terminateTimeout
+        // 後始末はメインアクターの外で回し、返事は main run loop の全モードで返す（F-96・レビューの #5）。
+        // terminate がメインアクターの Task の中（main queue の block の中）から呼ばれると、AppKit は .terminateLater の
+        // 返事を待つ入れ子のイベントループをその block の中で回すので、main queue に積んだ仕事（メインアクターの Task）は
+        // 走れない。run loop に直に積んだ block は入れ子のループでも走る
+        Task.detached {
             // 後始末全体を最大 10 秒で打ち切る。超えたら残りを待たずに終了する
             // （中途の状態は次回起動の復旧が戻す。PLAN §5.3・§8.15・F-76）
-            _ = await Self.shutDown(within: Self.terminateTimeout, steps)
-            NSApp.reply(toApplicationShouldTerminate: true)
+            _ = await Self.shutDown(within: timeout, steps)
+            Self.replyOnMainRunLoop()
         }
         return .terminateLater
     }
@@ -155,6 +160,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 await step()
             }
         }
+    }
+
+    /// `.terminateLater` の返事を main run loop の全モード（入れ子の返事の待ちを含む）で返す（F-96・レビューの #5）。
+    /// main queue（メインアクター）を経由しないので、terminate がどこから呼ばれても返事が届く
+    nonisolated static func replyOnMainRunLoop() {
+        let main = CFRunLoopGetMain()
+        CFRunLoopPerformBlock(main, CFRunLoopMode.commonModes.rawValue) {
+            MainActor.assumeIsolated { NSApp.reply(toApplicationShouldTerminate: true) }
+        }
+        CFRunLoopWakeUp(main)
     }
 
     /// パネルの「終了」ボタンと「初期化して終了」（F-95）から呼ぶ。terminate は run loop の次の周回で呼ぶ（F-96）:

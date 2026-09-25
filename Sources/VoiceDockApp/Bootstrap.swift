@@ -47,6 +47,8 @@ final class AppContext {
     /// 起動の手順 8 で時刻帯とログに実際に使った値（F-84）。Store・IngestService・AppLog はこの値のまま動き、
     /// 「設定を読み直す」では変わらない（LiveServices.read が今の設定と比べ、違えばパネルに「再起動すると反映されます」を出す）
     let runningSettings: EffectiveSettings
+    /// 起動の手順 8 の後に行ったデータの初期化の結果（F-95。予約が無ければ notRequested）。パネルが 1 回だけ出す
+    let dataResetOutcome: DataReset.Outcome
 
     init(
         layout: HomeLayout, paths: AppPaths, clock: any AppClock, log: AppLog, catalog: ModelCatalog,
@@ -55,8 +57,10 @@ final class AppContext {
         worker: Worker, enabler: DeletionEnabler, models: ModelManager, downloader: ModelDownloader,
         loginItem: any LoginItemControlling,
         uiState: UIStateStore, physicalMemoryBytes: UInt64, instanceLock: FileLock? = nil,
-        runningSettings: EffectiveSettings = EffectiveSettings.resolve(nil)
+        runningSettings: EffectiveSettings = EffectiveSettings.resolve(nil),
+        dataResetOutcome: DataReset.Outcome = .notRequested
     ) {
+        self.dataResetOutcome = dataResetOutcome
         self.layout = layout
         self.paths = paths
         self.clock = clock
@@ -186,7 +190,7 @@ enum Bootstrap {
         // 有効なら消さない（予約だけ取り下げる）
         let residual = await enabler.hasRemainingCapability()
         let appEnabled = loadedConfig?.cleanup.deleteSourceAudio == true
-        _ = DataReset.performIfRequested(
+        let resetOutcome = DataReset.performIfRequested(
             layout: layout, deletionCapable: residual || appEnabled, log: log.withCategory("pipeline"))
         // 9. DB
         let store: Store
@@ -252,7 +256,8 @@ enum Bootstrap {
             runner: runner, locks: locks, diagnostics: diagnostics, llama: llama, ingest: ingest, worker: worker,
             enabler: enabler, models: models, downloader: downloader,
             loginItem: SystemLoginItem(), uiState: UIStateStore(url: layout.uiState),
-            physicalMemoryBytes: physicalMemoryBytes, instanceLock: instanceLock, runningSettings: running)
+            physicalMemoryBytes: physicalMemoryBytes, instanceLock: instanceLock, runningSettings: running,
+            dataResetOutcome: resetOutcome)
         ctx.workerTask = await startServices(
             workerStart: { await worker.start() }, workerRun: { await worker.run() },
             ingestStart: { await ingest.start() })

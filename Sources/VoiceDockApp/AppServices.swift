@@ -120,6 +120,7 @@ struct LiveServices: AppServices {
         // trash は設定が読めている間は DeletionPanelState だけで決める（IconState.showsTrash）。設定が読めている間も読むのは、
         // データの初期化を無効化の段の失敗（bin/ に reaper が残った）でも押せなくするため（F-95）
         s.deletionResidual = await context.enabler.hasRemainingCapability()
+        s.dataReset = context.dataResetOutcome
         s.worker = await context.worker.status()
         // T-32: 要対応（ガードの判定は Worker の PauseReason をそのまま読む。CR-06）
         var attention = AttentionInput(now: s.now)

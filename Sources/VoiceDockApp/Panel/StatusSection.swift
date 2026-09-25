@@ -37,6 +37,12 @@ struct StatusSection: View {
                     Text(Strings.deviceFreeLine(free)).font(.caption).foregroundStyle(.secondary)
                 }
                 summarizeNowRow.padding(.top, 3)
+                // 起動時のデータの初期化の結果（閉じるまで。F-95）
+                if let notice = model.dataResetNotice {
+                    Text(notice).font(.caption)
+                        .foregroundStyle(model.dataResetNoticeIsWarning ? Color.orange : Color.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 0)
             Button {

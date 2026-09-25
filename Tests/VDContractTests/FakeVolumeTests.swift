@@ -65,7 +65,9 @@ struct FakeVolumeTests {
         #expect(handle.readOnly == readOnly)
     }
 
-    @Test("DiskImageVolume は実機に触れ得る名前を hdiutil の前に拒む", arguments: ["VOICEDOCK", "DJIMIC3", "", "../x", "a:b"])
+    @Test(
+        "DiskImageVolume は実機に触れ得る名前を hdiutil の前に拒む",
+        arguments: ["VOICEDOCK", "voicedock", "DJIMIC3", "DjiMic3", "", "../x", "a:b"])
     func diskImageVolumeRefusesUnsafeNames(_ deviceID: String) throws {
         let tmp = try TempDirectory()
         #expect(throws: DiskImageError.self) { try DiskImageVolume(in: tmp, deviceID: deviceID) }
