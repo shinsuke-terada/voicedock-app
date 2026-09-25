@@ -49,6 +49,9 @@ final class FakeServices: AppServices {
         // F-92
         var promptSources: (bundled: Prompts, saved: PromptOverrides)?
         var promptSourcesCount = 0
+        /// 真なら次の updateConfig を releaseUpdate まで返さない（書いている間に窓を閉じるテスト）
+        var holdUpdate = false
+        var updateGates: [AsyncStream<Void>.Continuation] = []
         // T-32
         var diagnosticsResult: [DiagnosticResult] = []
         var diagnosticsCount = 0
@@ -227,14 +230,36 @@ final class FakeServices: AppServices {
         }
     }
 
-    func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult {
-        state.withLock {
-            var c = $0.config
-            mutate(&c)
-            $0.updatedConfigs.append(c)
-            if let v = $0.updateViolations { return .failure(v) }
-            return .success(c)
+    /// 次の updateConfig を 1 回止める
+    func setHoldUpdate() { state.withLock { $0.holdUpdate = true } }
+    /// 止めている updateConfig の数
+    var heldUpdates: Int { state.withLock { $0.updateGates.count } }
+    /// 止めている updateConfig を返させる
+    func releaseUpdate() {
+        let gates = state.withLock { s -> [AsyncStream<Void>.Continuation] in
+            let g = s.updateGates
+            s.updateGates = []
+            return g
         }
+        for g in gates { g.yield(()) }
+    }
+
+    func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult {
+        let (result, gate) = state.withLock { s -> (ConfigUpdateResult, AsyncStream<Void>?) in
+            var c = s.config
+            mutate(&c)
+            s.updatedConfigs.append(c)
+            let result: ConfigUpdateResult = s.updateViolations.map { .failure($0) } ?? .success(c)
+            guard s.holdUpdate else { return (result, nil) }
+            s.holdUpdate = false
+            let (stream, continuation) = AsyncStream<Void>.makeStream()
+            s.updateGates.append(continuation)
+            return (result, stream)
+        }
+        if let gate {
+            for await _ in gate { break }
+        }
+        return result
     }
 
     func download(

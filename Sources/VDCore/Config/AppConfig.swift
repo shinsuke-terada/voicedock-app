@@ -328,7 +328,7 @@ public struct PromptOverrides: Codable, Equatable, Sendable {
     public static let schemaPlaceholder = "{schema_block}"
     /// `llm.analysis.customInstructions` を差し込む場所。上書きにも必ず要る（CV-60。追加の指示を黙って効かなくしない）
     public static let customPlaceholder = "{custom_instructions}"
-    /// CV-60 の長さの上限（Unicode スカラー数）。CV-51 の余白 2048 トークンに system 全体を収めるため
+    /// CV-60 の長さの上限（Unicode スカラー数。customInstructions と合わせて数える）。CV-51 の余白 2048 トークンに system を収めるため
     public static let maxScalars = 1500
 
     public var analyze: String?

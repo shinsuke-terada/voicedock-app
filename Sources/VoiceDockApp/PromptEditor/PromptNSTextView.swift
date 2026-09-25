@@ -6,7 +6,10 @@ import AppKit
 final class PromptNSTextView: NSTextView {
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         // 窓は全ビューに配るので、フォーカスが無いときは受けない
-        guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+        // 変換中（IME の未確定の文字がある間）は NSTextView に任せる
+        guard window?.firstResponder === self, !hasMarkedText() else {
+            return super.performKeyEquivalent(with: event)
+        }
         // Caps Lock などは見ない（⌘・⇧・⌥・⌃ だけで比べる）
         let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
         guard flags == .command || flags == [.command, .shift],
@@ -17,8 +20,12 @@ final class PromptNSTextView: NSTextView {
         case ("c", true): copy(nil)
         case ("v", true): paste(nil)
         case ("a", true): selectAll(nil)
-        case ("z", true): undoManager?.undo()
-        case ("z", false): undoManager?.redo()
+        case ("z", true):
+            guard let undo = undoManager, undo.canUndo else { return false }
+            undo.undo()
+        case ("z", false):
+            guard let undo = undoManager, undo.canRedo else { return false }
+            undo.redo()
         default: return super.performKeyEquivalent(with: event)
         }
         return true

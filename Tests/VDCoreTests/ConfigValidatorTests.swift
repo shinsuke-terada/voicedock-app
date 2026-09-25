@@ -666,11 +666,26 @@ struct ConfigValidatorTests {
         #expect(Self.check { $0.llm.analysis.prompts.analyze = at1500 }.isEmpty)
         #expect(
             Self.check { $0.llm.analysis.prompts.analyze = at1500 + "a" }
-                == Self.one("CV-60", "llm.analysis.prompts.analyze", "1500 以下であること（1501）"))
+                == Self.one("CV-60", "llm.analysis.prompts.analyze", "customInstructions と合わせて 1500 以下であること（1501）"))
         // 書記素では 1501 でもスカラーでは 1502
         #expect(
             Self.check { $0.llm.analysis.prompts.analyze = at1501 }
-                == Self.one("CV-60", "llm.analysis.prompts.analyze", "1500 以下であること（1502）"))
+                == Self.one("CV-60", "llm.analysis.prompts.analyze", "customInstructions と合わせて 1500 以下であること（1502）"))
+    }
+
+    @Test("CV-60 長さは customInstructions と合わせて数える（本文 1500 でも追加の指示が 1 文字あれば違反）")
+    func cv60LengthIncludesCustomInstructions() {
+        let at1500 = Self.validPrompt + String(repeating: "あ", count: 1460)
+        #expect(
+            Self.check {
+                $0.llm.analysis.prompts.map = at1500
+                $0.llm.analysis.customInstructions = "短"
+            } == Self.one("CV-60", "llm.analysis.prompts.map", "customInstructions と合わせて 1500 以下であること（1501）"))
+        #expect(
+            Self.check {
+                $0.llm.analysis.prompts.map = String(at1500.dropLast())
+                $0.llm.analysis.customInstructions = "短"
+            }.isEmpty)
     }
 
     @Test("CV-60 {schema_block} の直後に結合文字が続いてもスカラー列で見つける（F-83 と同じ照らし方）")

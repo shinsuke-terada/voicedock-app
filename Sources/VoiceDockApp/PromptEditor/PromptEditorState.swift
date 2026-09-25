@@ -77,5 +77,5 @@ struct PromptEditorState: Equatable {
     }
 
     /// `String.==` は正準等価で比べるので使わない（見た目が同じ別の本文を「変わっていない」としない）
-    private static func same(_ a: String, _ b: String) -> Bool { a.unicodeScalars.elementsEqual(b.unicodeScalars) }
+    private static func same(_ a: String, _ b: String) -> Bool { PyText.scalarsEqual(a, b) }
 }

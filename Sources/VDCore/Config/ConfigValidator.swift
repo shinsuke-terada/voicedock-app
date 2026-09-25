@@ -28,7 +28,7 @@ public enum ConfigValidator {
         checkLocksAndPaths(c, catalog: catalog, reaperConfObservation: reaperConfObservation, &out)
         checkDevice(c, &out)
         checkNumbers(c, &out)
-        checkPrompts(c.llm.analysis.prompts, &out)
+        checkPrompts(c.llm.analysis, &out)
         return out.violations
     }
 
@@ -309,7 +309,10 @@ public enum ConfigValidator {
     }
 
     /// 順 37: CV-60（F-92）。null でない上書きごとに、`{schema_block}` → `{custom_instructions}` → 長さの順で最初の 1 件だけ。
-    private static func checkPrompts(_ p: PromptOverrides, _ out: inout Collector) {
+    /// 長さは差し込む customInstructions と合わせて数える（system に入るのは両方）。
+    private static func checkPrompts(_ analysis: AnalysisConfig, _ out: inout Collector) {
+        let p = analysis.prompts
+        let customCount = TextLimit.scalarCount(analysis.customInstructions)
         let entries: [(String, String?)] = [("analyze", p.analyze), ("map", p.map), ("reduce", p.reduce)]
         for (name, value) in entries {
             guard let value else { continue }
@@ -318,9 +321,10 @@ public enum ConfigValidator {
                 out.add("CV-60", keyPath, "\(PromptOverrides.schemaPlaceholder) を含むこと")
             } else if !containsScalars(value, PromptOverrides.customPlaceholder) {
                 out.add("CV-60", keyPath, "\(PromptOverrides.customPlaceholder) を含むこと")
-            } else if TextLimit.scalarCount(value) > PromptOverrides.maxScalars {
+            } else if TextLimit.scalarCount(value) + customCount > PromptOverrides.maxScalars {
+                let total = TextLimit.scalarCount(value) + customCount
                 out.add(
-                    "CV-60", keyPath, "\(PromptOverrides.maxScalars) 以下であること（\(TextLimit.scalarCount(value))）")
+                    "CV-60", keyPath, "customInstructions と合わせて \(PromptOverrides.maxScalars) 以下であること（\(total)）")
             }
         }
     }

@@ -125,6 +125,57 @@ struct AppModelPromptEditorTests {
         #expect(model.promptEditor?.hasChanges == true)
     }
 
+    @Test("断られた後に本文を直すと、書けなかった理由を消す")
+    func editClearsError() async {
+        let fake = Self.fake()
+        fake.setUpdateViolations([
+            ConfigViolation(
+                rule: "CV-60", code: .configInvalidValue, keyPath: "llm.analysis.prompts.analyze",
+                message: "{schema_block} を含むこと")
+        ])
+        let model = Self.makeModel(fake, counter: PresentCounter())
+        await model.openPromptEditor()
+        model.editPrompt("壊れた指示")
+        await model.savePrompts()
+        #expect(model.promptEditorError != nil)
+
+        model.editPrompt(Self.valid)
+        #expect(model.promptEditorError == nil)
+    }
+
+    @Test("書いている間に窓が閉じられたら、結果（失敗）を残さない")
+    func closeDuringSaveLeavesNoError() async {
+        let fake = Self.fake()
+        fake.setUpdateViolations([
+            ConfigViolation(
+                rule: "CV-60", code: .configInvalidValue, keyPath: "llm.analysis.prompts.analyze",
+                message: "{schema_block} を含むこと")
+        ])
+        let model = Self.makeModel(fake, counter: PresentCounter())
+        await model.openPromptEditor()
+        model.editPrompt("壊れた指示")
+        fake.setHoldUpdate()
+        let save = Task { await model.savePrompts() }
+        while fake.heldUpdates == 0 { await Task.yield() }
+        model.promptEditorDidClose()
+        fake.releaseUpdate()
+        await save.value
+        #expect(model.promptEditor == nil)
+        #expect(model.promptEditorError == nil)
+    }
+
+    @Test("読み込み中の二度押しは二重に読まない")
+    func doubleOpenLoadsOnce() async {
+        let fake = Self.fake()
+        let counter = PresentCounter()
+        let model = Self.makeModel(fake, counter: counter)
+        async let first: Void = model.openPromptEditor()
+        async let second: Void = model.openPromptEditor()
+        _ = await (first, second)
+        #expect(fake.promptSourcesCount == 1)
+        #expect(model.promptEditor != nil)
+    }
+
     @Test("窓を閉じたら下書きを捨て、次に開くと読み直す")
     func closeDiscardsDrafts() async {
         let fake = Self.fake()

@@ -1,10 +1,14 @@
 // 要約プロンプトの本文を編集する欄（F-92）。NSTextView を包み、引用符・ダッシュの自動置換を切る。
 import AppKit
 import SwiftUI
+import VDCore
+import VDLLM
 
 /// 要約プロンプトの本文を編集する欄（F-92）。SwiftUI の TextEditor はシステムの自動置換（" → “ など）に従い、
 /// 書いた本文が LLM に送るものと変わるので使わない。
 struct PromptTextView: NSViewRepresentable {
+    /// 編集している種類。変わったら本文が同じでも Undo の履歴を捨てる（別の種類の打鍵を当てない）
+    let kind: PromptKind
     @Binding var text: String
 
     func makeCoordinator() -> Coordinator { Coordinator(text: $text) }
@@ -27,6 +31,7 @@ struct PromptTextView: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.textContainer?.widthTracksTextView = true
         textView.delegate = context.coordinator
+        context.coordinator.kind = kind
         Self.replaceText(text, in: textView)
         let scroll = PromptScrollView()
         scroll.hasVerticalScroller = true
@@ -38,8 +43,9 @@ struct PromptTextView: NSViewRepresentable {
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.text = $text
         guard let textView = scroll.documentView as? NSTextView else { return }
-        // 同じなら書き戻さない（カーソルと Undo の履歴を保つ）
-        if !textView.string.unicodeScalars.elementsEqual(text.unicodeScalars) {
+        // 種類が同じで本文も同じなら書き戻さない（カーソルと Undo の履歴を保つ）
+        if context.coordinator.kind != kind || !PyText.scalarsEqual(textView.string, text) {
+            context.coordinator.kind = kind
             Self.replaceText(text, in: textView)
         }
     }
@@ -55,6 +61,7 @@ struct PromptTextView: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSTextViewDelegate {
         var text: Binding<String>
+        var kind: PromptKind?
         let undo = UndoManager()
 
         init(text: Binding<String>) { self.text = text }

@@ -21,6 +21,7 @@ struct PromptEditorView: View {
                 .labelsHidden()
                 Text(Strings.promptKindNote(state.selected)).font(.callout).foregroundStyle(.secondary)
                 PromptTextView(
+                    kind: state.selected,
                     text: Binding(get: { state.draft(state.selected) }, set: { model.editPrompt($0) }))
                 Text(Strings.promptEditorHint).font(.caption).foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)

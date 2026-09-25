@@ -110,6 +110,8 @@ final class AppModel {
     var promptEditorMessage: String?
     /// 編集の窓を開けない・保存できない理由
     var promptEditorError: String?
+    /// 編集の窓の元を読み込んでいる間（二度押しで二重に読まない）
+    @ObservationIgnored var promptEditorOpening = false
     /// 編集の窓を前に出す（AppDelegate が StatusItemController.showPromptEditor を入れる）
     @ObservationIgnored var presentPromptEditor: @MainActor () -> Void = {}
 
