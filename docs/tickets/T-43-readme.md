@@ -131,6 +131,8 @@ DJI Mic 3 で録音 → 帰宅 → Mac へ USB 接続 → （以降すべて自�
 #### `### 1. dmg から入れる`
 
 - `VoiceDock-<版>.dmg` を開き、`VoiceDock` を `Applications` へドラッグする、と書く（**具体的な版番号を書かない**）
+- （F-99）その前に、Releases の最新版へのリンク（`https://github.com/shinsuke-terada/voicedock-app/releases/latest`）と「非公開リポジトリなので、招待されてサインインしている人だけが開ける」ことを書く。
+  dmg を開くと左に `VoiceDock`・右に `Applications` のウィンドウが出ること、コピーの後はディスクイメージ（`VoiceDock <版>`）を取り出すことを書く
 - 「配布物は Apple の公証を受けています。初回起動で警告が出る場合は、いったん dmg を閉じて開き直してください」
 
 #### `### 2. 最初の起動と、許可の出し方`
