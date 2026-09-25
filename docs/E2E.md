@@ -1935,7 +1935,7 @@ Raw が 1 枚・Daily が 1 枚（その日の分）。`FAILED` が 0 件（あ�
 | # | 元 | 削除 ON での違い（これを確かめる） | 判定 | 記録 |
 |---|---|---|---|---|
 | R-01 | E2E-01 | Raw ノートの検証を通った直後に要求を書き、元音声が消える（Daily の保存を待たない）。`RAW_SAVED` → `SOURCE_DELETING` → `COMPLETED` | ✅ PASS | §6.1 |
-| R-02 | E2E-02 | コピー中に抜いても 1 本も消えない。再接続後の再コピー分も、Raw の検証を経てから消える。[C-7] の差分が「Raw の検証を通った分」と完全に一致 | ⬜ 未実施 | §6.2 |
+| R-02 | E2E-02 | コピー中に抜いても 1 本も消えない。再接続後の再コピー分も、Raw の検証を経てから消える。[C-7] の差分が「Raw の検証を通った分」と完全に一致 | ✅ PASS | §6.2 |
 | R-03 | E2E-03 | 文字起こし中に抜くと、デバイスが未接続なので削除せずに待つ（`sessions.delete_attempts` が増える）。挿し直すと消える。未接続を「書き込み可能」と誤認しない | ✅ PASS | §6.3 |
 | R-04 | E2E-04 | Vault が使えない間は 1 本も消えない（Raw ノートが書けない ＝ 根拠 A が成立しない）。戻したら消える | ✅ PASS | §6.4 |
 | R-05 | E2E-05 | 抜き挿し 6 回で要求が二重に書かれない（`request_id` が重複しない。`reaper.log` に `reason=replayed` が出ない） | ✅ PASS | §6.5 |
@@ -2030,11 +2030,333 @@ $ [C-14](該当行)
 #### 記録
 §3.2 の記録に加えて、[C-7] の前後、[C-13]、[C-14]、抜く直前の [C-6]、`comm -23` の出力。
 
+実施: 2026-09-25 18:19〜19:54。DEV=DJIMIC3。削除 ON（18:32:08 `deletion_enabled`。[C-11] は `ロック 1  : アプリ=有効, reaper.conf=有効`・`ロック 2-A: 削除モジュール=導入済み（署名 OK, 版 0.1.0）`・`ロック 2-B: 設定=rw, デバイス未接続`）。
+アプリは `make app` のビルド 416（develop `0094061`）。`$BACKUP=<HOME>/VoiceDockE2E-ON`。全出力は `docs/e2e-logs/2026-09-25-r02/`（`<HOME>` に伏せた）。
+
+新しい録音は **5 本**（MIC034 約 27 分・MIC035 30 分・MIC036 約 3.5 分・MIC037 30 分・MIC038 約 25 秒。合計約 787 MB）。**5 本とも消えてよい試験用の録音であることを利用者が確かめた**（MIC038 は挿す直前に録り始めたもの）。
+
+**退避（安全の手順）**: 挿した途端に新しい録音が取り込まれないよう、**アプリを終了した状態で**挿し、全ファイルの一覧と `ditto` の退避（`device-backup-r02`、2.2 GB）を取ってから Finder で取り出した。件数は `device: 109  backup: 108` で、足りない 1 件は `.Trashes/._501`（macOS のゴミ箱の管理用。E2E-10 と同じ）。`.wav` は 15 本すべて同じサイズで退避できた。
+そのあとアプリを起動し、デバイスをつながずに削除を有効にした。削除の段で止まっている Session は 0 行、`RAW_SAVED` は 0、`queue/delete` は空（有効化の前に確認）。
+
+**抜いた時機**: 合図は E2E-02 と同じ「最初の `copy_completed`」にしたが、実際に抜いたのは 18:34:43 で、4 本目（MIC037）の**コピー中**だった（最初の `copy_completed` は 18:34:20）。「コピー中に抜く」の条件は満たしている。抜くまでに `delete_requested` は 0 件で、マウントの時点（18:34:01）の `queue/delete` も空。
+挿し直したとき、macOS は「ディスクの不正な取り出し」の通知だけを出し、修復や初期化は求めなかった。
+
+退避:
 ```text
+Fri Sep 25 18:21:02 JST 2026
+/dev/disk20 on /Volumes/DJIMIC3 (msdos, local, nodev, nosuid, noowners, noatime, fskit)
+…（全ファイルの一覧 109 行。docs/e2e-logs/2026-09-25-r02/r02-backup.txt）
+device:      109  backup:      108
+Filesystem     Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk20    28Gi   2.1Gi    26Gi     8%       0     0     -   /Volumes/DJIMIC3
+Fri Sep 25 18:24:00 JST 2026
 ```
 
+挿す前（[C-1]・削除済みの件数・[C-6]・`reaper.conf`）:
+```text
+Fri Sep 25 18:33:05 JST 2026
+COMPLETED|54
+SKIPPED|5
+COMPLETED|4
+49
+<HOME>/Library/Application Support/VoiceDock/queue/delete:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 25 01:28 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+
+<HOME>/Library/Application Support/VoiceDock/queue/result:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 25 01:28 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+SCHEMA=1
+DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=/Volumes
+```
+
+挿した直後（マウントの時点。前の [C-7] と `queue/delete`）:
+```text
+Fri Sep 25 18:34:01 JST 2026
+/dev/disk20 on /Volumes/DJIMIC3 (msdos, local, nodev, nosuid, noowners, noatime, fskit)
+…（.wav 以外の行は省略。全文は docs/e2e-logs/2026-09-25-r02/r02-mount1.txt）
+106588456 1790320000 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC032_20260925_160641_orig.wav
+123822376 1790317152 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC030_20260925_151913_orig.wav
+173623336 1790318016 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC031_20260925_153337_orig.wav
+235415176 1790322580 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav
+242289736 1790310126 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav
+259254376 1790307880 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_124440_orig.wav
+259254376 1790311810 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav
+259254376 1790324218 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav
+259254376 1790326232 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav
+30207976 1790326018 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav
+31047496 1790313610 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav
+3628456 1790328034 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav
+63852136 1790309680 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav
+84317416 1790260494 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC024_20260924_233455_orig.wav
+96989416 1790320742 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC033_20260925_161903_orig.wav
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 25 01:28 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+```
+
+見張り（抜くまで。`app.log` の工程の行）:
+```text
+2026-09-25T18:34:20+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav duration_s=1634.6
+2026-09-25T18:34:20+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav bytes=235415176 recopy=false
+2026-09-25T18:34:40+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav duration_s=1800.15
+2026-09-25T18:34:40+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav bytes=259254376 recopy=false
+2026-09-25T18:34:42+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav duration_s=209.55
+2026-09-25T18:34:42+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav bytes=30207976 recopy=false
+2026-09-25T18:34:43+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav reason=read_error
+2026-09-25T18:34:43+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav reason=read_error
+2026-09-25T18:35:38+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav elapsed_s=69.0 chars=7417 rtf=0.042 speech_ratio=0.902
+2026-09-25T18:35:38+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=24 bytes=71515
+2026-09-25T18:35:40+09:00 INFO  llm_server_started port=54684 elapsed_s=2.1
+2026-09-25T18:37:26+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav duration_s=1800.15
+2026-09-25T18:37:26+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav bytes=259254376 recopy=false
+2026-09-25T18:37:26+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav duration_s=24.97
+2026-09-25T18:37:26+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav bytes=3628456 recopy=false
+```
+
+抜いた直後（[C-5]・[C-6]・[C-2]。`.partial` は無い。MIC034 は処理中で staging、MIC035・036 は inbox）:
+```text
+Fri Sep 25 18:34:46 JST 2026
+<HOME>/Library/Application Support/VoiceDock/inbox/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav
+<HOME>/Library/Application Support/VoiceDock/inbox/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav
+<HOME>/Library/Application Support/VoiceDock/staging/f1ca2b50795283a3/audio16k.wav
+286M	<HOME>/Library/Application Support/VoiceDock/inbox
+ 50M	<HOME>/Library/Application Support/VoiceDock/staging
+<HOME>/Library/Application Support/VoiceDock/queue/delete:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 25 01:28 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+
+<HOME>/Library/Application Support/VoiceDock/queue/result:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 25 01:28 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+2026-09-25T16:34:56+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=13785
+2026-09-25T16:34:56+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260925 reason=delete_source_audio_disabled
+2026-09-25T16:34:56+09:00 INFO  llm_server_stopped port=51161
+2026-09-25T16:34:58+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC033_20260925_161903_orig.wav in_bytes=96989416 out_bytes=21550016 elapsed_s=1.3
+2026-09-25T16:35:27+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC033_20260925_161903_orig.wav elapsed_s=28.0 chars=2874 rtf=0.042 speech_ratio=0.995
+2026-09-25T16:35:27+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC033_20260925_161903_orig.wav speakers=4 elapsed_s=1.0
+2026-09-25T16:35:27+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=23 bytes=48143
+2026-09-25T16:35:27+09:00 INFO  session_reopened session_key=DJIMIC3:20260925 regenerated_count=22
+2026-09-25T16:35:27+09:00 INFO  session_merged session_key=DJIMIC3:20260925 parts=23 excluded=1 chars=14881
+2026-09-25T16:35:28+09:00 INFO  llm_server_started port=51204 elapsed_s=1.0
+2026-09-25T16:38:57+09:00 INFO  analysis_trimmed session_key=DJIMIC3:20260925 fields="reduce1: key_points: 34 -> 20"
+2026-09-25T16:38:57+09:00 INFO  llm_completed session_key=DJIMIC3:20260925 chunks=6 elapsed_s=209.6
+2026-09-25T16:38:57+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=16247
+2026-09-25T16:38:57+09:00 INFO  source_delete_skipped session_key=DJIMIC3:20260925 reason=delete_source_audio_disabled
+2026-09-25T16:38:58+09:00 INFO  llm_server_stopped port=51204
+2026-09-25T17:05:05+09:00 INFO  service_stopping version=0.1.0
+2026-09-25T17:05:28+09:00 INFO  service_started version=0.1.0 schema=v1_initial
+2026-09-25T18:19:00+09:00 INFO  service_stopping version=0.1.0
+2026-09-25T18:31:42+09:00 INFO  service_started version=0.1.0 schema=v1_initial
+2026-09-25T18:32:08+09:00 INFO  deletion_enabled
+2026-09-25T18:34:20+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav duration_s=1634.6
+2026-09-25T18:34:20+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav bytes=235415176 recopy=false
+2026-09-25T18:34:23+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav in_bytes=235415176 out_bytes=52311296 elapsed_s=2.9
+2026-09-25T18:34:40+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav duration_s=1800.15
+2026-09-25T18:34:40+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav bytes=259254376 recopy=false
+2026-09-25T18:34:42+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav duration_s=209.55
+2026-09-25T18:34:42+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav bytes=30207976 recopy=false
+2026-09-25T18:34:43+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav reason=read_error
+2026-09-25T18:34:43+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav reason=read_error
+2026-09-25T18:34:43+09:00 INFO  scan_completed devices=1 copied=3 elapsed_s=42.1
+```
+
+抜いている間と挿し直した後の `app.log`（18:34〜18:37。MIC034 は抜いている間に `raw_note_saved` になったが、デバイスが無いので `delete_requested` は書かれていない）:
+```text
+2026-09-25T18:34:20+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav duration_s=1634.6
+2026-09-25T18:34:20+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav bytes=235415176 recopy=false
+2026-09-25T18:34:23+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav in_bytes=235415176 out_bytes=52311296 elapsed_s=2.9
+2026-09-25T18:34:40+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav duration_s=1800.15
+2026-09-25T18:34:40+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav bytes=259254376 recopy=false
+2026-09-25T18:34:42+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav duration_s=209.55
+2026-09-25T18:34:42+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav bytes=30207976 recopy=false
+2026-09-25T18:34:43+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav reason=read_error
+2026-09-25T18:34:43+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav reason=read_error
+2026-09-25T18:34:43+09:00 INFO  scan_completed devices=1 copied=3 elapsed_s=42.1
+2026-09-25T18:35:38+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav elapsed_s=69.0 chars=7417 rtf=0.042 speech_ratio=0.902
+2026-09-25T18:35:38+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav speakers=5 elapsed_s=6.3
+2026-09-25T18:35:38+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=24 bytes=71515
+2026-09-25T18:35:38+09:00 INFO  session_reopened session_key=DJIMIC3:20260925 regenerated_count=23
+2026-09-25T18:35:38+09:00 INFO  session_merged session_key=DJIMIC3:20260925 parts=24 excluded=1 chars=22298
+2026-09-25T18:35:40+09:00 INFO  llm_server_started port=54684 elapsed_s=2.1
+2026-09-25T18:37:26+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav duration_s=1800.15
+2026-09-25T18:37:26+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav bytes=259254376 recopy=false
+2026-09-25T18:37:26+09:00 INFO  part_discovered recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav duration_s=24.97
+2026-09-25T18:37:26+09:00 INFO  copy_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav bytes=3628456 recopy=false
+2026-09-25T18:37:26+09:00 INFO  scan_completed devices=1 copied=2 elapsed_s=21.1
+```
+
+挿し直した直後（`comm -23`。`.wav` は 1 本も消えていない。出た 1 行は macOS の `.fseventsd`）:
+```text
+Fri Sep 25 18:37:05 JST 2026
+/dev/disk20 on /Volumes/DJIMIC3 (msdos, local, nodev, nosuid, noowners, noatime, fskit)
+…（一覧は省略。docs/e2e-logs/2026-09-25-r02/device-all-replug-r02.txt）
+--- 前にあって今無い行:
+36 1790328840 /Volumes/DJIMIC3/.fseventsd/fseventsd-uuid
+```
+
+挿し直した後から完走まで（[C-14]。5 本とも `raw_note_saved` の後に `delete_requested`、その後に `source_deleted`）:
+```text
+2026-09-25T18:37:26+09:00 INFO  scan_completed devices=1 copied=2 elapsed_s=21.1
+2026-09-25T18:40:14+09:00 INFO  analysis_trimmed session_key=DJIMIC3:20260925 fields="reduce1: key_points: 26 -> 20; reduce: key_points: 32 -> 20"
+2026-09-25T18:40:14+09:00 INFO  llm_completed session_key=DJIMIC3:20260925 chunks=6 elapsed_s=273.3
+2026-09-25T18:40:14+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=19222
+2026-09-25T18:40:14+09:00 INFO  delete_requested request_id=20260925T094014Z-f1ca2b50795283a3-ff8d07 recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav session_key=DJ
+2026-09-25T18:40:14+09:00 INFO  llm_server_stopped port=54684
+2026-09-25T18:40:14+09:00 INFO  reaper_run exit=0
+2026-09-25T18:40:14+09:00 INFO  source_deleted recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav request_id=20260925T094014Z-f1ca2b50795283a3-ff8d07
+2026-09-25T18:40:17+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav in_bytes=259254376 out_bytes=57608896 elapsed_s=3.4
+2026-09-25T18:41:37+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav elapsed_s=76.7 chars=8015 rtf=0.043 speech_ratio=0.871
+2026-09-25T18:41:37+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav speakers=6 elapsed_s=2.4
+2026-09-25T18:41:37+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=25 bytes=96756
+2026-09-25T18:41:37+09:00 INFO  session_reopened session_key=DJIMIC3:20260925 regenerated_count=24
+2026-09-25T18:41:37+09:00 INFO  delete_requested request_id=20260925T094137Z-0f3220298e129d3f-23a310 recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav session_key=DJ
+2026-09-25T18:41:37+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav in_bytes=30207976 out_bytes=6709696 elapsed_s=0.4
+2026-09-25T18:41:45+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav elapsed_s=7.8 chars=831 rtf=0.037 speech_ratio=0.993
+2026-09-25T18:41:45+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav speakers=4 elapsed_s=0.5
+2026-09-25T18:41:45+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=26 bytes=99465
+2026-09-25T18:41:45+09:00 INFO  delete_requested request_id=20260925T094145Z-cc0ba23de1f48417-34f62a recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav session_key=DJ
+2026-09-25T18:41:49+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav in_bytes=259254376 out_bytes=57608896 elapsed_s=3.4
+2026-09-25T18:43:14+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav elapsed_s=82.7 chars=9166 rtf=0.046 speech_ratio=0.802
+2026-09-25T18:43:14+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav speakers=3 elapsed_s=2.4
+2026-09-25T18:43:14+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=27 bytes=128269
+2026-09-25T18:43:14+09:00 INFO  delete_requested request_id=20260925T094314Z-19f5e0cd444355d3-650b99 recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav session_key=DJ
+2026-09-25T18:43:14+09:00 INFO  normalize_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav in_bytes=3628456 out_bytes=803136 elapsed_s=0.0
+2026-09-25T18:43:15+09:00 INFO  transcription_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav elapsed_s=1.0 chars=99 rtf=0.041 speech_ratio=0.891
+2026-09-25T18:43:15+09:00 INFO  diarization_completed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav speakers=1 elapsed_s=0.2
+2026-09-25T18:43:15+09:00 INFO  raw_note_saved session_key=DJIMIC3:20260925 parts=28 bytes=128698
+2026-09-25T18:43:15+09:00 INFO  delete_requested request_id=20260925T094315Z-108712efe7e3ebe1-474cd3 recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav session_key=DJ
+2026-09-25T18:43:15+09:00 INFO  session_merged session_key=DJIMIC3:20260925 parts=28 excluded=1 chars=40409
+2026-09-25T18:43:16+09:00 INFO  llm_server_started port=54925 elapsed_s=1.0
+2026-09-25T18:49:14+09:00 INFO  analysis_trimmed session_key=DJIMIC3:20260925 fields="reduce1: key_points: 30 -> 20; reduce1: key_points: 29 -> 20"
+2026-09-25T18:49:14+09:00 INFO  llm_completed session_key=DJIMIC3:20260925 chunks=8 elapsed_s=357.1
+2026-09-25T18:49:14+09:00 INFO  obsidian_saved session_key=DJIMIC3:20260925 path="Daily/Voice/Wiki/20260925/2026-09-25 Voice.md" bytes=18465
+2026-09-25T18:49:14+09:00 INFO  llm_server_stopped port=54925
+2026-09-25T18:49:14+09:00 INFO  reaper_run exit=0
+2026-09-25T18:49:14+09:00 INFO  source_deleted recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav request_id=20260925T094137Z-0f3220298e129d3f-23a310
+2026-09-25T18:49:14+09:00 INFO  source_deleted recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav request_id=20260925T094145Z-cc0ba23de1f48417-34f62a
+2026-09-25T18:49:14+09:00 INFO  source_deleted recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav request_id=20260925T094314Z-19f5e0cd444355d3-650b99
+2026-09-25T18:49:14+09:00 INFO  source_deleted recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav request_id=20260925T094315Z-108712efe7e3ebe1-474cd3
+```
+
+後（[C-1]・[C-13]・[C-6]・[C-12]・`comm -23`・[C-15]）:
+```text
+Fri Sep 25 19:53:37 JST 2026
+COMPLETED|59
+SKIPPED|5
+COMPLETED|4
+DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_011257_orig.wav  COMPLETED                     2026-09-25T01:13:48+09:00
+DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_011431_orig.wav  COMPLETED                     2026-09-25T01:15:22+09:00
+DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_011825_orig.wav  COMPLETED                     2026-09-25T01:28:01+09:00
+DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav  COMPLETED                     2026-09-25T18:40:14+09:00
+DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav  COMPLETED                     2026-09-25T18:49:14+09:00
+DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav  COMPLETED                     2026-09-25T18:49:14+09:00
+DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav  COMPLETED                     2026-09-25T18:49:14+09:00
+DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav  COMPLETED                     2026-09-25T18:49:14+09:00
+<HOME>/Library/Application Support/VoiceDock/queue/delete:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 25 18:49 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+
+<HOME>/Library/Application Support/VoiceDock/queue/rejected:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 22 23:17 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+
+<HOME>/Library/Application Support/VoiceDock/queue/result:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 25 18:49 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+2026-09-25T00:59:55+09:00 INFO  source_deleted request_id=20260924T155947Z-c4ef04b6f5e0a0a3-d34005 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_005832_orig.wav
+2026-09-25T00:59:55+09:00 INFO  source_deleted request_id=20260924T155948Z-a3a66707888bb06c-2d5e69 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_005850_orig.wav
+2026-09-25T00:59:55+09:00 INFO  reaper_completed requests=2
+2026-09-25T01:06:19+09:00 INFO  reaper_started
+2026-09-25T01:06:19+09:00 INFO  source_deleted request_id=20260924T160613Z-f13769269bde9445-62268c partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_010102_orig.wav
+2026-09-25T01:06:19+09:00 INFO  reaper_completed requests=1
+2026-09-25T01:10:52+09:00 INFO  reaper_started
+2026-09-25T01:10:52+09:00 INFO  source_deleted request_id=20260924T161035Z-1b33d3cd0d969302-f2fdf7 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_011002_orig.wav
+2026-09-25T01:10:52+09:00 INFO  reaper_completed requests=1
+2026-09-25T01:12:30+09:00 INFO  reaper_started
+2026-09-25T01:12:30+09:00 INFO  source_deleted request_id=20260924T161213Z-c858dbffbdfe13e8-87b413 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_011149_orig.wav
+2026-09-25T01:12:30+09:00 INFO  reaper_completed requests=1
+2026-09-25T01:13:48+09:00 INFO  reaper_started
+2026-09-25T01:13:48+09:00 INFO  source_deleted request_id=20260924T161326Z-bcd024b208c677ba-be030e partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_011257_orig.wav
+2026-09-25T01:13:48+09:00 INFO  reaper_completed requests=1
+2026-09-25T01:15:22+09:00 INFO  reaper_started
+2026-09-25T01:15:22+09:00 INFO  source_deleted request_id=20260924T161456Z-2bb0dd8ab4f37393-4df511 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_011431_orig.wav
+2026-09-25T01:15:22+09:00 INFO  reaper_completed requests=1
+2026-09-25T01:28:01+09:00 INFO  reaper_started
+2026-09-25T01:28:01+09:00 INFO  source_deleted request_id=20260924T162801Z-2635ccc827f46ac9-523b4f partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_011825_orig.wav
+2026-09-25T01:28:01+09:00 INFO  reaper_completed requests=1
+2026-09-25T18:40:14+09:00 INFO  reaper_started
+2026-09-25T18:40:14+09:00 INFO  source_deleted request_id=20260925T094014Z-f1ca2b50795283a3-ff8d07 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav
+2026-09-25T18:40:14+09:00 INFO  reaper_completed requests=1
+2026-09-25T18:49:14+09:00 INFO  reaper_started
+2026-09-25T18:49:14+09:00 INFO  source_deleted request_id=20260925T094137Z-0f3220298e129d3f-23a310 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav
+2026-09-25T18:49:14+09:00 INFO  source_deleted request_id=20260925T094145Z-cc0ba23de1f48417-34f62a partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav
+2026-09-25T18:49:14+09:00 INFO  source_deleted request_id=20260925T094314Z-19f5e0cd444355d3-650b99 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav
+2026-09-25T18:49:14+09:00 INFO  source_deleted request_id=20260925T094315Z-108712efe7e3ebe1-474cd3 partkey=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav
+2026-09-25T18:49:14+09:00 INFO  reaper_completed requests=4
+…（後の一覧は省略。docs/e2e-logs/2026-09-25-r02/device-all-after-r02.txt）
+--- 前にあって後に無い行（消えたファイル）:
+1 1790328488 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/reverseDirectoryStore.updates
+1024 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexCompactDirectory
+16384 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexBigDates
+235415176 1790322580 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav
+259254376 1790324218 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav
+259254376 1790326232 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav
+28 1790328490 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/indexState
+30207976 1790326018 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav
+32768 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexIds
+3277 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexGroups
+36 1790328840 /Volumes/DJIMIC3/.fseventsd/fseventsd-uuid
+3628456 1790328034 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav
+36864 1790328688 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/.store.db
+4 1790328688 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/shutdown_time
+4096 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexPositions
+4096 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexPostings
+4096 1790328490 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/tmp.spotlight.state
+65536 1790328090 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/reverseDirectoryStore
+65536 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/0.directoryStoreFile
+65536 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.directoryStoreFile
+65536 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexArrays
+8 1790328488 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/store.updates
+8192 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexPositionTable
+8192 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexTermIds
+8224 1790328096 /Volumes/DJIMIC3/.Spotlight-V100/Store-V2/81AA5F21-ED0D-4826-868E-44F2CC35D54A/live.0.indexDirectory
+Filesystem     Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk20    28Gi   1.4Gi    27Gi     5%       0     0     -   /Volumes/DJIMIC3
+```
+
+`.wav` だけの突き合わせ（エージェントが `$BACKUP` の一覧で取った）:
+```text
+$ comm -23 <(grep '\.wav$' device-all-before-r02.txt) <(grep '\.wav$' device-all-after-r02.txt)
+235415176 1790322580 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC034_20260925_164941_orig.wav
+259254376 1790324218 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC035_20260925_171658_orig.wav
+259254376 1790326232 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav
+30207976 1790326018 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC036_20260925_174659_orig.wav
+3628456 1790328034 /Volumes/DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav
+$ comm -13 <(grep '\.wav$' device-all-before-r02.txt) <(grep '\.wav$' device-all-after-r02.txt)
+（出力なし）
+$ # comm -23 の .wav 以外の行（Spotlight の索引と .fseventsd）のパスが、後の一覧に在るか
+（すべて在る。mtime が変わっただけで、消えたファイルは無い）
+```
+
+所見:
+- 抜いた時点で 1 本も消えていない（挿し直した直後の `comm -23` に `.wav` が無い）。コピー未完了の Part（MIC037・038）にも、抜いた時点までのどの Part にも要求を書いていない
+- MIC034 は抜いている間に Raw ノートの検証を通ったが、デバイスが無いので要求を書かず、挿し直した後の 18:40:14 に要求 → 削除（R-03 と同じふるまい）
+- 再コピーした MIC037・038 も、`raw_note_saved` の後に要求を書き、18:49:14 に消えた
+- **消えた `.wav` は今回の 5 本と完全に一致**し、前からあった 10 本はサイズ・mtime とも変わらない。空き容量は使用 2.1 GiB → 1.4 GiB
+- `queue/delete`・`queue/result`・`queue/rejected` は空。`app.log` の `ERROR`・`reaper_failed` は 0、`reaper.log` の `source_delete_rejected`・`request_rejected`・`replayed` は 0
+- `comm -23` の `.wav` 以外の行は、Spotlight の索引（`.Spotlight-V100`）と `.fseventsd` の mtime が変わったもの（RK-22。読み書き可能なマウントの間に macOS が書く）
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 6.3 R-03 — 文字起こし中に抜く（削除 ON）
 
