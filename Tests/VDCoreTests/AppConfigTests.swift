@@ -11,7 +11,7 @@ struct AppConfigTests {
     /// PLAN §6.2 の JSON を逐語で（timeZone だけ "Asia/Tokyo"）。
     static let section62 = """
         {
-          "schemaVersion": 2,
+          "schemaVersion": 3,
           "timeZone": "Asia/Tokyo",
           "vault": { "path": null, "marker": ".obsidian" },
           "device": {
@@ -49,7 +49,8 @@ struct AppConfigTests {
                 "tags":       { "enabled": true, "heading": null,            "maxItems": 15 }
               },
               "order": ["summary", "timeline", "key_points", "tasks", "decisions", "ideas"],
-              "customInstructions": ""
+              "customInstructions": "",
+              "prompts": { "analyze": null, "map": null, "reduce": null }
             }
           },
           "obsidian": {
@@ -96,6 +97,9 @@ struct AppConfigTests {
         #expect(text.contains(#""path" : null"#))
         #expect(text.contains(#""modelID" : null"#))
         #expect(text.contains(#""heading" : null"#))
+        #expect(text.contains(#""analyze" : null"#))
+        #expect(text.contains(#""map" : null"#))
+        #expect(text.contains(#""reduce" : null"#))
     }
 
     @Test("F-54 summary と timeline に maxItems のキーが無い")
@@ -188,10 +192,20 @@ struct AppConfigTests {
         #expect(Set(ConfigKeys.allKeyPaths).count == ConfigKeys.allKeyPaths.count)
     }
 
-    @Test("CE schemaVersion 3 にすると CV-39 で読めない")
+    @Test("prompts の上書きは符号化して読み直すと等しい（null と本文の混在。F-92）")
+    func promptOverridesRoundTrip() throws {
+        var config = AppConfig.defaults(timeZone: "Asia/Tokyo")
+        config.llm.analysis.prompts = PromptOverrides(
+            analyze: nil, map: "部分\n\"引用\"{custom_instructions}\n{schema_block}\n", reduce: nil)
+        let result = ConfigLoader.load(
+            data: try ConfigLoader.encode(config), catalog: TestCatalogs.minimal, reaperConfObservation: .missing)
+        #expect(result == .valid(config))
+    }
+
+    @Test("CE schemaVersion 4 にすると CV-39 で読めない")
     func ceSchemaVersion() throws {
         var root = try Self.encodedObject(AppConfig.defaults(timeZone: "Asia/Tokyo"))
-        root["schemaVersion"] = 3
+        root["schemaVersion"] = 4
         let data = try JSONSerialization.data(withJSONObject: root)
         let result = ConfigLoader.load(data: data, catalog: TestCatalogs.minimal, reaperConfObservation: .missing)
         #expect(
@@ -199,7 +213,7 @@ struct AppConfigTests {
                 == .invalid([
                     ConfigViolation(
                         rule: "CV-39", code: .configInvalidValue, keyPath: "schemaVersion",
-                        message: "この版のアプリより新しい設定です（schemaVersion 3）。アプリを更新してください")
+                        message: "この版のアプリより新しい設定です（schemaVersion 4）。アプリを更新してください")
                 ]))
     }
 }

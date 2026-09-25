@@ -23,6 +23,7 @@ struct PanelView: View {
             case .settings:
                 SubScreen(title: Strings.screenSettings, model: model) {
                     SectionBox(title: Strings.sectionGeneral) { GeneralSection(model: model) }
+                    SectionBox(title: Strings.sectionPrompts) { PromptsSection(model: model) }
                     Text(model.versionLine).font(.caption).foregroundStyle(.secondary)
                 }
             }

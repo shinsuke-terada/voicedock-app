@@ -3,6 +3,7 @@ import Foundation
 import Synchronization
 import VDContract
 import VDCore
+import VDLLM
 import VDModels
 import VDPipeline
 
@@ -45,6 +46,12 @@ final class FakeServices: AppServices {
         var openSettingsCount = 0
         var saveResult = true
         var savedStates: [UIState] = []
+        // F-92
+        var promptSources: (bundled: Prompts, saved: PromptOverrides)?
+        var promptSourcesCount = 0
+        /// 真なら次の updateConfig を releaseUpdate まで返さない（書いている間に窓を閉じるテスト）
+        var holdUpdate = false
+        var updateGates: [AsyncStream<Void>.Continuation] = []
         // T-32
         var diagnosticsResult: [DiagnosticResult] = []
         var diagnosticsCount = 0
@@ -208,14 +215,51 @@ final class FakeServices: AppServices {
     func setSaveResult(_ ok: Bool) { state.withLock { $0.saveResult = ok } }
     var savedStates: [UIState] { state.withLock { $0.savedStates } }
 
-    func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult {
+    // MARK: F-92
+
+    /// promptSources が返す値（nil なら読めない）
+    func setPromptSources(_ value: (bundled: Prompts, saved: PromptOverrides)?) {
+        state.withLock { $0.promptSources = value }
+    }
+    var promptSourcesCount: Int { state.withLock { $0.promptSourcesCount } }
+
+    func promptSources() async -> (bundled: Prompts, saved: PromptOverrides)? {
         state.withLock {
-            var c = $0.config
-            mutate(&c)
-            $0.updatedConfigs.append(c)
-            if let v = $0.updateViolations { return .failure(v) }
-            return .success(c)
+            $0.promptSourcesCount += 1
+            return $0.promptSources
         }
+    }
+
+    /// 次の updateConfig を 1 回止める
+    func setHoldUpdate() { state.withLock { $0.holdUpdate = true } }
+    /// 止めている updateConfig の数
+    var heldUpdates: Int { state.withLock { $0.updateGates.count } }
+    /// 止めている updateConfig を返させる
+    func releaseUpdate() {
+        let gates = state.withLock { s -> [AsyncStream<Void>.Continuation] in
+            let g = s.updateGates
+            s.updateGates = []
+            return g
+        }
+        for g in gates { g.yield(()) }
+    }
+
+    func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult {
+        let (result, gate) = state.withLock { s -> (ConfigUpdateResult, AsyncStream<Void>?) in
+            var c = s.config
+            mutate(&c)
+            s.updatedConfigs.append(c)
+            let result: ConfigUpdateResult = s.updateViolations.map { .failure($0) } ?? .success(c)
+            guard s.holdUpdate else { return (result, nil) }
+            s.holdUpdate = false
+            let (stream, continuation) = AsyncStream<Void>.makeStream()
+            s.updateGates.append(continuation)
+            return (result, stream)
+        }
+        if let gate {
+            for await _ in gate { break }
+        }
+        return result
     }
 
     func download(

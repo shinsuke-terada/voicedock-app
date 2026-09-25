@@ -34,6 +34,7 @@ public enum ConfigKeys {
         "llm.analysis.sections.tags.enabled", "llm.analysis.sections.tags.heading",
         "llm.analysis.sections.tags.maxItems",
         "llm.analysis.order", "llm.analysis.customInstructions",
+        "llm.analysis.prompts.analyze", "llm.analysis.prompts.map", "llm.analysis.prompts.reduce",
         "obsidian.maxTitleBytes", "obsidian.defaultTags", "obsidian.raw.folderTemplate",
         "obsidian.raw.filenameTemplate", "obsidian.raw.timestampIntervalSeconds", "obsidian.raw.partBoundaryHeading",
         "obsidian.wiki.folderTemplate", "obsidian.wiki.filenameTemplate", "obsidian.wiki.linkDailyNote",

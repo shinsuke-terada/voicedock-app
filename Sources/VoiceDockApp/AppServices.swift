@@ -3,6 +3,7 @@ import AppKit
 import Foundation
 import VDContract
 import VDCore
+import VDLLM
 import VDModels
 import VDNotes
 import VDPipeline
@@ -21,7 +22,7 @@ protocol AppServices: Sendable {
     func scanNow() async
     /// IngestService からの更新の通知（走査の終わり）。
     func updates() async -> AsyncStream<Void>
-    /// 設定の 1 つのキーを変えて保存する（GUI で変えてよい 4 つだけ。PLAN §6.3）。
+    /// 設定の 1 つのキーを変えて保存する（GUI で変えてよいものだけ。PLAN §6.3）。
     func updateConfig(_ mutate: @Sendable (inout AppConfig) -> Void) async -> ConfigUpdateResult
     /// モデルを 1 件ダウンロードする（進捗は progress に。取り消しは cancelDownload）。
     func download(
@@ -52,6 +53,9 @@ protocol AppServices: Sendable {
     func enableSkippedDeletion(confirmation: String) async -> Result<Void, EnableError>
     /// 「削除を無効にする」（確認なし。DeletionEnabler.disable。失敗した段の名前）
     func disableDeletion() async -> [String]
+    // F-92
+    /// 要約プロンプトの編集の窓の元（同梱の本文と config.json の上書き）。どちらか読めなければ nil
+    func promptSources() async -> (bundled: Prompts, saved: PromptOverrides)?
 }
 
 /// 本番の AppServices（Bootstrap が作った AppContext を読むだけ）。
@@ -143,6 +147,13 @@ struct LiveServices: AppServices {
     func reloadConfig() async -> ConfigLoadResult { await context.config.load() }
 
     func scanNow() async { _ = await context.ingest.scanNow() }
+
+    func promptSources() async -> (bundled: Prompts, saved: PromptOverrides)? {
+        guard let config = await context.config.current(),
+            let bundled = try? Prompts.load(directory: context.paths.promptsDirectory)
+        else { return nil }
+        return (bundled, config.llm.analysis.prompts)
+    }
 
     func updates() async -> AsyncStream<Void> { await context.ingest.updates() }
 

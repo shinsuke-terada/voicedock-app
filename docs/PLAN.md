@@ -37,7 +37,7 @@ voicedock は 1,500 本超のテストと 56 版の仕様改訂で、多くの�
 | D-4 | 課金 | **v1 には入れない**（無償配布）。将来の差し込み口だけ残す（§8.14） |
 | D-5 | ロック 2-A | **reaper を .app に同梱し、有効化フローで `bin/` へ複製したときだけ実行可能にする**（§8.9） |
 | D-6 | CI | **開発機のセルフホストランナー**（非公開リポジトリ。GitHub の macOS ランナーは分数が 10 倍のため。2026-09-21 利用者の決定。§10.8） |
-| D-7 | 画面 | **起動するとメニューバーにアイコンが出て、バックグラウンドで動く。アイコンを押すと設定パネルが出る。**それ以外の画面は作らない（§8.12） |
+| D-7 | 画面 | **起動するとメニューバーにアイコンが出て、バックグラウンドで動く。アイコンを押すと設定パネルが出る。**それ以外の画面は作らない（§8.12）。例外は要約プロンプトの編集の窓 1 つだけ（利用者の決定。F-92） |
 | D-8 | voicedock 本体 | **変更しない。**参照のみ |
 
 ### 0.3 参照実装と優先順位
@@ -122,6 +122,7 @@ voicedock は 1,500 本超のテストと 56 版の仕様改訂で、多くの�
 - モデル管理（Whisper / VAD / LLM の選択・ダウンロード・SHA-256 検証・ローカルファイル取り込み）
 - 診断（パネルの「診断を実行」）
 - 話者分離（pyannote community-1 の CoreML 版 `argmax-cli` を子プロセスで起動。パネルでオン／オフ、**既定はオフ**。§8.4.1。F-89）
+- 要約プロンプト（analyze / map / reduce）の編集（⚙ の画面から開く編集の窓。既定は同梱の本文。§8.5・§8.12。F-92）
 
 ### 1.3 v1 に含めない（非目標）
 
@@ -816,7 +817,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 ### 6.1 方針
 
 - `AppConfig`（`Codable, Equatable, Sendable` の入れ子の struct）。JSON で `<HOME>/config.json`。**アプリが書く**（利用者が手で書く前提ではない）
-- 先頭に `"schemaVersion": 2`。版が上がるときは `ConfigMigrator` が旧版から移行する（キーを足す PR で再起動ループに落ちた教訓 CFG-01 の置き換え）。移行器は「2 ならそのまま」と「1 → 2」（F-89）を持つ。1 → 2: `transcription` が辞書で `diarization` を持たなければ `"diarization": {"enabled": false}` を足し、`schemaVersion` を 2 にする（`transcription` が辞書でないときは足さずに版だけ上げ、手順 2 の CV-39 に任せる）。移行した値はメモリの上だけで、ファイルは次に `ConfigStore.update` が書くときに 2 になる（読むだけでは書き換えない）
+- 先頭に `"schemaVersion": 3`。版が上がるときは `ConfigMigrator` が旧版から移行する（キーを足す PR で再起動ループに落ちた教訓 CFG-01 の置き換え）。移行器は「3 ならそのまま」と、1 段ずつ続けて上げる「1 → 2」（F-89）・「2 → 3」（F-92）を持つ（1 は 3 まで上がる）。1 → 2: `transcription` が辞書で `diarization` を持たなければ `"diarization": {"enabled": false}` を足す（`transcription` が辞書でないときは足さずに版だけ上げ、手順 2 の CV-39 に任せる）。2 → 3: `llm` と `llm.analysis` が辞書で `prompts` を持たなければ `"prompts": {"analyze": null, "map": null, "reduce": null}` を足す（辞書でないときは足さずに版だけ上げ、CV-39 に任せる）。移行した値はメモリの上だけで、ファイルは次に `ConfigStore.update` が書くときに 3 になる（読むだけでは書き換えない）。3 の `config.json` は F-92 より前のアプリでは「この版のアプリより新しい設定です」で読めない（X-46）
 - **既定値は `AppConfig.defaults(timeZone:)` の 1 か所だけ**に書く。デコード時の欠落を既定値で埋めない（欠落は CV-39 違反）。例外は移行処理が明示的に足す場合だけ
 - 読み込みの手順（`ConfigLoader.load(data:catalog:reaperConfObservation:) -> ConfigLoadResult`）:
   1. `JSONSerialization` で辞書にする（失敗 → CV-39）
@@ -852,7 +853,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "timeZone": "<初回起動時の TimeZone.current.identifier>",
   "vault": { "path": null, "marker": ".obsidian" },
   "device": {
@@ -890,7 +891,8 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
         "tags":       { "enabled": true, "heading": null,            "maxItems": 15 }
       },
       "order": ["summary", "timeline", "key_points", "tasks", "decisions", "ideas"],
-      "customInstructions": ""
+      "customInstructions": "",
+      "prompts": { "analyze": null, "map": null, "reduce": null }
     }
   },
   "obsidian": {
@@ -935,18 +937,19 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
 | `transcription.vad.modelID` | × | transcription.vad.model（パス → カタログ ID） |
 | `llm.modelID` | ○ | compose.yaml の models |
 | `llm.contextSize` | × | compose.yaml の context_size |
+| `llm.analysis.prompts.*` | ○（⚙ → 要約プロンプトを編集…。F-92） | `llm.prompts.*`（ファイルのパス → 本文の上書き。X-46） |
 | `llm.*`（その他）・`obsidian.*` | × | 同名（snake_case → camelCase） |
 | `cleanup.deleteSourceAudio` / `deleteSkippedSource` | 有効化フローだけ（§8.9.8） | cleanup.* |
 | その他の `cleanup.*`・`retry.*`・`logging.*` | × | 同名 |
 
 - **廃止する voicedock のキー（読まれていなかったもの・Docker 由来・固定値になったもの）:** `device.root`、`device.poll_interval_seconds`（Worker は 30 秒周期固定）、`transcription.engine`、
   `transcription.executable`（バンドル）、`wiki.timeline`、`audio.ffmpeg` / `ffprobe` / `ffprobe_timeout_seconds` / `target_*`、`import.inbox_root` / `staging_root`、`session.group_by`、
-  `llm.endpoint_env` / `model_env`、`llm.prompts.*`（プロンプトはバンドルの固定資源）、`cleanup.queue_root`、`cleanup.retain_transcript_days`（常に無期限）、`database.*`（busy_timeout は 10000 固定）、`logging.format`
+  `llm.endpoint_env` / `model_env`、`llm.prompts.*`（プロンプトのファイルのパス。本文はバンドルの資源で、利用者の上書きは `llm.analysis.prompts` の本文で持つ。F-92）、`cleanup.queue_root`、`cleanup.retain_transcript_days`（常に無期限）、`database.*`（busy_timeout は 10000 固定）、`logging.format`
 - 「受理されるのに効かない設定」を作らない（NOTE-01 / NOTE-02 / CFG-02）。**全キーに「そのキーを変えると振る舞いが変わる」テストを 1 本以上置く**（`ConfigEffectTests`。キーの一覧は `AppConfig` の定義から機械的に作り、テストの無いキーがあれば落ちる）
 
-### 6.3 GUI に出すのは 5 つだけ
+### 6.3 GUI に出すのは 6 つだけ
 
-Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動（SMAppService の状態であって `config.json` には持たない）、話者分離（`transcription.diarization.enabled`。§8.4.1。F-89）。
+Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動（SMAppService の状態であって `config.json` には持たない）、話者分離（`transcription.diarization.enabled`。§8.4.1。F-89）、要約プロンプト（`llm.analysis.prompts.*`。編集の窓。§8.5・§8.12。F-92）。
 削除関連は有効化フロー経由でしか変えられない。それ以外は `config.json` を Finder で開くボタン（詳細）と「設定を読み直す」ボタンだけ。
 手で編集された場合は次回読み込みで検証し、違反なら設定エラー状態（6.1）。
 
@@ -973,7 +976,7 @@ Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動�
 | CV-30 | ロック 1 が食い違っていない: reaper.conf が読めるとき（`.valid`）、`cleanup.deleteSourceAudio == reaperConf.deleteSourceAudio`（どちら向きの食い違いも違反）。reaper.conf が無い・読めないときはこの規則を評価しない（不明は §8.9.2 が「要求を書かない」側に倒す）。違反は §6.1 の修復を先に試す | CONFIG_LOCK_MISMATCH | V-30 |
 | CV-32 | `TimeZone(identifier: timeZone) != nil` | CONFIG_INVALID_VALUE | V-32 |
 | CV-33 | `!(cleanup.deleteSourceAudio == true && device.mountMode == "ro")` | CONFIG_LOCK_MISMATCH | V-33 |
-| CV-39 | JSON として読め、全階層で必要なキーがすべて在り、型が合う（`schemaVersion` が 2 であること（1 は §6.1 の移行で 2 にする）を含む） | CONFIG_INVALID_VALUE | voicedock の規則 ID `-` |
+| CV-39 | JSON として読め、全階層で必要なキーがすべて在り、型が合う（`schemaVersion` が 3 であること（1・2 は §6.1 の移行で 3 にする）を含む） | CONFIG_INVALID_VALUE | voicedock の規則 ID `-` |
 | CV-40 | `vault.path` が null か、`/` で始まる絶対パスの文字列（**存在は検査しない**。未接続の外付けは実行時のガード。§8.7） | CONFIG_INVALID_VALUE | 新規 |
 | CV-41 | `vault.marker` が空でなく、`/` を含まず、`.` でも `..` でもない（Unicode スカラー単位で見る） | CONFIG_INVALID_VALUE | 新規（X-18） |
 | CV-42 | `llm.modelID` が null か、カタログの LLM の ID か、`custom:<64 桁の小文字 16 進>` | CONFIG_INVALID_VALUE | 新規 |
@@ -994,6 +997,7 @@ Vault の場所、Whisper モデル、LLM モデル、ログイン時に起動�
 | CV-57 | session の数値: `1 <= idleCloseSeconds <= 31,536,000`、`maxParts >= 1`、`maxDurationSeconds >= 1` | CONFIG_INVALID_VALUE | 新規 |
 | CV-58 | audio の数値: `timeoutFactor > 0`、`1 <= minTimeoutSeconds <= 31,536,000`、`durationToleranceSeconds >= 0`、`freeSpaceMultiplier >= 1`、`freeSpaceMarginBytes >= 0`、`4096 <= hashChunkBytes <= 67,108,864` | CONFIG_INVALID_VALUE | 新規 |
 | CV-59 | obsidian の数値: `0 <= raw.timestampIntervalSeconds <= 31,536,000`（0 は「見出しを入れない」。voicedock と同じ）、`wiki.vaultIndexCacheSeconds >= 0`、`wiki.maxLinks >= 0`、`defaultTags` の各要素が空でない | CONFIG_INVALID_VALUE | 新規 |
+| CV-60 | `llm.analysis.prompts` の `analyze` / `map` / `reduce` は null か、`{schema_block}` と `{custom_instructions}` を含み、`llm.analysis.customInstructions` と合わせて 1,500 Unicode スカラー以下の文字列（空文字は `{schema_block}` の違反。system に入るのは両方なので合わせて数える）。1 キーに 1 件で、`{schema_block}` → `{custom_instructions}` → 長さの順に最初の違反だけ（文言 `{schema_block} を含むこと` / `{custom_instructions} を含むこと` / `customInstructions と合わせて 1500 以下であること（<スカラー数の和>）`）。プレースホルダはスカラー列で照らす（F-83 と同じ） | CONFIG_INVALID_VALUE | 新規（F-92） |
 
 - 各 CV にテストを 1 本以上（違反の例で落ちる・境界値で通る）。テストの表示名は `CV-nn` で始める（§10.3 の SPEC 同期が SPEC の表とテストを結ぶ）
 - **上限と桁あふれ（F-71。CR-16）**: 掛け算（`Int64(秒) × 1000` のミリ秒・`Instant.adding(seconds:)`）や待ち（`Task.sleep`）に使う秒のキーは **31,536,000（365 日）以下**、`audio.hashChunkBytes` は **67,108,864（64 MiB）以下**（読み取りのたびにこの大きさのバッファを確保する）、
@@ -1592,6 +1596,7 @@ argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == fals
 **プロンプト**
 - `Resources/prompts/` に voicedock `d3d595e:prompts/` の 3 ファイル（`analyze_ja.txt` / `map_ja.txt` / `reduce_ja.txt`）を**バイト単位で**コピーする（LF、末尾改行 1 つ）
 - 差し込みは文字列置換を **`{schema_block}` → `{custom_instructions}` の順に 1 回ずつ**（`format` 相当の機能を使わない）。Map は中間形、analyze / reduce は最終形の schema_block
+- **上書き（F-92）:** `llm.analysis.prompts.<analyze|map|reduce>` が null でなければ、その本文を同梱のファイルの代わりにテンプレートにする（`Prompts.overriding(_:)` を `Analyzer` が当てる。差し込みの順は同じ。CV-60）。map の上書きは多段 Reduce の束ね（中間の Map）にも効く。修復プロンプトは上書きしない。null（既定）のときの要求は voicedock とバイト単位で同じ（golden を変えない）。上書きを変えても要約済みの Session は作り直さない（指紋は transcript だけ）
 - **本計画の差分:** 修復プロンプトは `repair_json_ja.txt` = voicedock `repair_json.txt` の内容（末尾 `…付けないでください。\n`）の後ろに `\n{schema_block}\n` を足したもの（voicedock は修復時にスキーマを渡していなかった。X-12）。
   置換は `{schema_block}` → `{errors}` → `{previous_output}` の順（信用できない入力を最後にする）。スキーマは元の種類のもの（Map の修復なら中間形）。user メッセージは空文字列（transcript を再送しない）
 - DR-09 の疎通確認: system `{"ok": true} と返してください。`、user `ping`
@@ -2388,7 +2393,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 
 **有効化の書き込み順**（§8.9.8 の 3）は「reaper を複製 → reaper.conf を true → config を `update(_, reaperConfObservation: true)` で有効」。途中で落ちて片方だけ有効になった場合は、次の読み込みで reconcileLock1 が無効側へ揃える
 
-**常時表示**: 削除が有効な間（`config.cleanup.deleteSourceAudio` が真 **または** reaper.conf が有効。片方だけ有効な中途の状態でも出す）は、メニューバーのアイコンの横に `trash` シンボルを常に出す。パネルの「元音声の削除」には 3 つのロックを**個別に**、設定値と観測値を並べて出す（voicedock の起動時警告と voicedock doctor の D-17 に相当。DR-14 と同じ `LockEvaluator` を使い、式を書き直さない）:
+**常時表示**: 削除が有効な間（`config.cleanup.deleteSourceAudio` が真 **または** reaper.conf が有効。片方だけ有効な中途の状態でも出す）は、メニューバーのアイコン（状態の記号）の右上に赤い点（`NSColor.systemRed`）を常に重ねる（テンプレート画像は色を持てないので、画像には描かず `NSStatusBarButton` に重ねたビューで描く。`NSStatusItem` は 1 つのまま。読み上げの説明は「<状態>。元音声の削除が有効です」。パネルの `trash` は変えない。F-91）。パネルの「元音声の削除」には 3 つのロックを**個別に**、設定値と観測値を並べて出す（voicedock の起動時警告と voicedock doctor の D-17 に相当。DR-14 と同じ `LockEvaluator` を使い、式を書き直さない）:
 
 ```text
 ロック 1  : アプリ=有効, reaper.conf=有効
@@ -2556,14 +2561,14 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 - **設定エラー中**（`configInvalid`）は、ガードの停止理由（`PauseReason`）から作る項目（`vaultNotConfigured`・`vaultUnavailable`・`modelMissing`・`llmNotSelected`・`llmInsufficientMemory`・`toolMissing`・`diskSpaceLow`）を出さない（F-80）。
   Worker は設定エラー中に tick の段を回さず停止理由を更新しない（`finishTick` を呼ばない）ので、古い停止理由が並び続けた。snapshot・設定の違反・reaper・DB から作る項目は出す
 
-### 8.12 UI（D-7: メニューバーのアイコン → 設定パネル。これ以外の画面を作らない。パネルの中の画面の切り替えは可。F-65）
+### 8.12 UI（D-7: メニューバーのアイコン → 設定パネル。これ以外の画面を作らない。パネルの中の画面の切り替えは可。F-65。例外は要約プロンプトの編集の窓だけ。F-92）
 
 **構成**: `NSApplication` の `.accessory`（`Info.plist` の `LSUIElement = YES`。Dock に出ない）。`NSStatusItem` ＋ `NSPopover`（`behavior = .transient`）で
 SwiftUI の `PanelView` をホストする。`MenuBarExtra` は使わない（プログラムから開けないため。初回起動時に自動で開きたい）。
 パネルを開くとき `NSApp.activate()`（パネルの操作に最初のクリックから反応させるため）。
 popover の高さは中身に合わせる（`NSHostingController.sizingOptions = .preferredContentSize`。固定の高さを持たない。F-65）
 
-**アイコン**（SF Symbols、テンプレート画像。`IconState` を AppModel が計算する。SPEC S21。「IconState」の列は case、`trash` は case ではなく並べて出す記号）:
+**アイコン**（SF Symbols、テンプレート画像。`IconState` を AppModel が計算する。SPEC S21。「IconState」の列は case。削除が有効な印は記号ではなく、記号の右上に重ねる赤い点（§8.9.8。F-91））:
 
 | 状態 | IconState | シンボル |
 |---|---|---|
@@ -2571,7 +2576,7 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
 | 取り込み中 | `ingesting` | `arrow.down.circle` |
 | 文字起こし・要約中 | `processing` | `text.bubble` |
 | 要対応あり（上の 3 つより優先） | `attention` | `exclamationmark.triangle` |
-| 削除が有効（上記に**並べて**常時表示） | — | `trash` |
+| 削除が有効（上記の記号の右上に**赤い点**を常時表示。F-91） | — | — |
 
 メニューバーのツールチップは 1 の状態の 1 行。アイコンが変わらなくても、1 行が変われば書き直す（コピーの進み具合など。`AppModel.statusLineChanges`。F-84）
 
@@ -2600,7 +2605,10 @@ popover の高さは中身に合わせる（`NSHostingController.sizingOptions =
      読むときは、無い・壊れた・`schema` が 1 でないファイルは既定、未知のキーは無視、`lastConnectedAt` が無い・型が違う・0 以下のときはそれだけを nil にする（「今はしない」を失わない）
 4. **保存先（Vault）**: フォルダ名の 1 行（押すと「変更…」。`NSOpenPanel`、ディレクトリのみ、`VaultCheck` が `.available` でなければ拒否）
 5. **モデル**: 1 モデル 1 行。Whisper（状態・入手）、LLM（カタログから選ぶ `Picker` を `Menu` の中に。メモリ不足のものは選べない理由付き、「ファイルから読み込む…」も `Menu` の中、進捗バー、キャンセル）
-6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）と「話者分離（誰が話したか）」トグル（`transcription.diarization.enabled` を `ConfigStore.update` で書く。§8.4.1。F-89）。状態の見出しの ⚙ から開く「設定」の画面に置く（「はじめに」の④が未完了の間は「はじめに」のカードにも置く）
+6. **一般**: 「ログイン時に起動」トグル（`SMAppService.mainApp.register()` / `unregister()`。`requiresApproval` なら `SMAppService.openSystemSettingsLoginItems()` を開くボタン）と「話者分離（誰が話したか）」トグル（`transcription.diarization.enabled` を `ConfigStore.update` で書く。§8.4.1。F-89）。状態の見出しの ⚙ から開く「設定」の画面に置く（「はじめに」の④が未完了の間は「はじめに」のカードにも置く）。
+   ⚙ の画面には「一般」の下に「要約プロンプト」のカードを置き、「要約プロンプトを編集…」で別の窓（`PromptEditorWindowController`。F-92）を開く（パネルは閉じる）。
+   窓は種類（1 回で要約 / 分割して要約（Map）/ まとめ（Reduce））の切り替え・本文の欄（引用符・ダッシュの自動置換を切った `NSTextView`。⌘X・⌘C・⌘V・⌘A・⌘Z を自分で受ける）・「既定に戻す」（下書きだけ）・「保存」を持つ。
+   「保存」は変えた種類だけを `ConfigStore.update` で書き、同梱と同じ本文は null にする。違反（CV-60 など）なら書かずに「設定に書けませんでした: …」を出す。閉じたら下書きを捨てる（未保存の確認は出さない）
 7. **元音声の削除**（主画面は「› 元音声の削除  有効／無効」の行。押すと別の画面）: §8.9.8 のロック表示・事前確認・有効化（赤いボタンの 3 秒長押し）・無効化（確認なしの 1 クリック）・無音と重複の削除（同じ長押し）
 8. **詳細・診断**（主画面は行。押すと別の画面。状態の詳細はこの画面にいる間だけ読む）: 状態の詳細（下記）、診断を実行・LLM の疎通確認、過去分の削除・手動で消した分（§8.9.9）、ログと設定ファイルを Finder で表示、設定を読み直す、版。
    状態の詳細は画面に入ったときと、同じ画面での「設定を読み直す」・後追いの実行の返事の後に読み直す。「再試行」は Worker に要求を積むだけで DB を書き換えるのは次の tick なので、
@@ -3707,6 +3715,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 | X-43 | `reduce_phase` は本文の文字数だけで単一パス Reduce にするか決める（`_bundles` も文字数だけで束ねる） | 本文の文字数に加えて、件数が `reduceMaxItems`（4）を超えたら束ねる（単一パスは文字数以下**かつ**件数 4 以下のときだけ。`_bundles` も文字数か件数のどちらかで区切る） | 2026-09-24。4B・30B の受け入れ試験（10 時間・220,000 文字）で、18 個の中間結果を 1 回でまとめる最終 Reduce が壊れた JSON になった（`max_tokens=4096` に収まらず切れる。修復も同じ枠なので直らない）。voicedock にも同じ弱点があるが（`git show d3d595e:src/voicedock/llm.py` の `reduce_phase`・`strip_think` のコメント「`max_tokens` で切られた場合にこうなる」）、実機で確かめたのは今回が初めて。3 個の Reduce（s09-allhands）は壊れておらず、4 を上限にする
 | X-44 | `max_output_tokens: 4096`（config/config.example.yaml:98） | `maxOutputTokens` の既定を **8192** に | 2026-09-24。30B の受け入れ試験（220,000 文字）で、X-43 の畳み込みとは別に、1 チャンク（約 1〜1.5 万文字）を要約するだけの map 呼び出しが `LLM_INVALID_JSON` で落ちた（18 個中 15 個目あたり）。スキーマの上限（タスク最大 50 件×500 文字など）を素直に計算すると 4096 では足りないことがある。`CV-51`（`contextSize >= maxCharsPerRequest + maxOutputTokens + 2048`）の範囲で、既定の `contextSize`（32768）・`maxCharsPerRequest`（20000）のまま上げられる上限は 10720。倍の 8192 にする（利用者の決定）。内容が特に濃いチャンクでは、上げても稀に失敗しうることは許容する（利用者の決定。§8.5 の `LLM_INVALID_JSON` は次の再評価まで待つ既定のまま変えない） |
 | X-45 | 話者分離なし（Raw は段落だけ） | 話者分離（`argmax-cli`。パネルでオン／オフ、既定オフ）。オンの Part は transcript の区間に `speaker`、Raw は `**話者A**: ` の行、LLM のチャンクは `話者A: ` を前に付ける（§8.4.1・§8.5・§8.6） | 2026-09-24。利用者の依頼（issue #104）。**オフのときの出力（transcript・Raw・Daily・指紋・LLM の要求）は voicedock とバイト単位で同じ**（golden を変えない） |
+| X-46 | プロンプトは `llm.prompts.{analyze,map,reduce,repair}` にファイルのパスを書いて差し替える（config/config.example.yaml:106-110） | 同梱のファイル（パスは設定に持たない）を既定にし、`llm.analysis.prompts.{analyze,map,reduce}` に本文そのものの上書きを持つ（null = 同梱。修復は上書きしない）。⚙ の画面から開く編集の窓で編集する。上書きは `{schema_block}` と `{custom_instructions}` を含み、customInstructions と合わせて 1,500 スカラー以下（CV-60）。`schemaVersion` を 3 に上げる（2 → 3 の移行。3 の `config.json` は F-92 より前のアプリでは読めない） | 2026-09-25。利用者の依頼「要約のプロンプトを編集できるようにしたい。今設定しているものをデフォルトとして」。**上書きが null のときの要求は voicedock とバイト単位で同じ**（golden を変えない） |
 
 **意図して変えないもの**（voicedock の実装どおりにする。SPEC の記述と違っても）: frontmatter の文字列を常に引用、Timeline の区切り（Map-Reduce はチャンク単位）、
 Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を確かめない、`recorded` は除外 Part を含む、重複除去は Reduce 経路だけ、
@@ -3830,3 +3839,5 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-88 | 誤 | §6.2（既定値の JSON）・§8.5・付録 D | （2026-09-24。利用者の決定「上げて良い」）X-44。`maxOutputTokens` の既定を 4096 → 8192。F-87（X-43）とは別の失敗（1 チャンクの map 呼び出し単体が切れる）への対応 |
 | F-89 | 事 | §1.2・§1.3・§3.3・§6.1・§6.2・§6.3・§6.4（CV-39）・§8.4.1（新設）・§8.5・§8.6・§8.11（DR-18）・§8.12・§11.2・§12.3・付録 A.4・付録 D | （2026-09-24。利用者の依頼 issue #104 と決定: v1.0 に含める・パネルでオン／オフ・既定オフ・単語単位の時刻は使わない・表示は行頭の `**話者A**: `・精度は利用者が使って判断する）X-45。話者分離を足した。方式は pyannote community-1 の CoreML 版（Argmax SpeakerKit の `argmax-cli`）を whisper-cli と同じく子プロセスで起動する（SwiftPM の依存は増やさない。モデル 13 MB は同梱）。PoC は docs/POC.md の 16 章（P0-13。オフラインで動く・約 69 倍速・whisper の区間の時刻と揃う。合成音声では話者の取り違えが約 5 割で、人の声では未測定）。設定 `transcription.diarization.enabled` を足し `schemaVersion` を 2 に（1 → 2 の移行）。ログのイベント `diarization_completed`・`diarization_failed` とフィールド `speakers`、診断 DR-18、チケット T-46〜T-51 を足した。**失敗しても Part を失敗させない**（話者なしで進む）。エラーコード・遷移の辺・削除の条件は変えない |
 | F-90 | 誤 | §2（ディレクトリ）・§5.3・§8.4.1・§8.5・§8.9（後始末）・§11.2 | （2026-09-24。話者分離（F-89）のコードレビューを受けた利用者の決定: 話者の前置きは付けたまま LLM に渡す、ほかの指摘もすべて直す）(1) チャンクの切り方と重なりを、LLM に送る行（`話者A: ` の前置きを含む）の文字数で数える（text だけを数えると送る量が 2〜5 割増え `contextSize` を超えうる。話者なしは行 = text なので voicedock と同じ）。(2) 話者分離の途中で落ちたときの `staging/<slug>/diarization.rttm` を、起動時の復旧（TRANSCRIBING の後片付け）と Session の後始末（CLEANUP）でも消す（`HomeLayout.diarizationRTTM(slug:)`。それまでは次の話者分離が起動したときにしか消えず、オフに戻すと staging のフォルダごと残った）。(3) 部品の確かめを `Diarizer.missingParts(paths:)`（static）にし、診断 DR-18 とパネルが仮のタイムアウトの `Diarizer` を作らないようにした。(4) `build-argmax.sh` のフラグの判定を Swift 側（`containsFlag`）と同じ区切りに（後ろに `<` を足した）。(5) `fetch-speaker-models.sh` の「取得済み」は、一覧の全ファイルの sha256 が合い、一覧と NOTICE.txt のほかにファイルが無いときだけ（紛れ込んだファイルを同梱しない）。(6) `RTTMParser` の `\r` の手での除去を消した（`PyText.strip` が落とす）。設定キー・ログのイベント・エラーコード・遷移の辺は変えない |
+| F-91 | 事 | §8.9.8・§8.12 | （2026-09-25。利用者の依頼「ゴミ箱アイコンはダサいので、削除 ON なら波のアイコンに赤ポチを付けるくらいに。他は変えなくて良い」）削除が有効な間のメニューバーの印を、状態の記号の横に並べる `trash` から、状態の記号の右上に重ねる赤い点（`StatusIconBadge`。直径 6pt・`NSColor.systemRed`）に変えた。アイコンの画像はテンプレートのまま 1 枚（明暗・開いている間の強調・非アクティブなディスプレイの減光は AppKit に任せる）で、赤い点は `NSStatusBarButton` に重ねたビューが描く。読み上げの説明は「<状態>。元音声の削除が有効です」。表示の条件（`DeletionPanelState.showsTrash`）とパネルの `trash` は変えない |
+| F-92 | 事 | D-7・§1.2・§6.1・§6.2・§6.3・§6.4（CV-39・CV-60）・§8.5・§8.12・付録 D | （2026-09-25。利用者の依頼と決定: analyze・map・reduce の 3 本を編集できる・アプリ内の別の窓で編集する・保存先は config.json で null は既定）X-46。設定 `llm.analysis.prompts.{analyze,map,reduce}`（既定はすべて null）を足し `schemaVersion` を 3 に（2 → 3 の移行。移行器は 1 段ずつ続けて上げる）。`Analyzer` が `Prompts.overriding(_:)` で上書きを当てる（差し込みの順・修復プロンプト・golden は変えない）。検証 CV-60 を足した（`{custom_instructions}` を必須にするのは、追加の指示が黙って効かなくなるのを防ぐため。長さの上限 1,500 は CV-51 の余白 2048 トークンに system を収めるため）。D-7 の「それ以外の画面は作らない」に、要約プロンプトの編集の窓 1 つだけの例外を足した（`PromptEditorWindowController`。本文の欄は自動置換を切った `NSTextView`）。ログのイベント・エラーコード・遷移の辺・削除の条件は変えない |

@@ -40,7 +40,7 @@ public struct AppConfig: Codable, Equatable, Sendable {
     /// みなさない。既定値は config.json が無いときだけ書くので、既存の config.json の値は変わらない。§6.1）
     public static func defaults(timeZone: String) -> AppConfig {
         AppConfig(
-            schemaVersion: 2,
+            schemaVersion: 3,
             timeZone: timeZone,
             vault: VaultConfig(path: nil, marker: ".obsidian"),
             device: DeviceConfig(
@@ -77,7 +77,8 @@ public struct AppConfig: Codable, Equatable, Sendable {
                         ideas: SectionConfig(enabled: true, heading: "## Ideas", maxItems: 30),
                         tags: SectionConfig(enabled: true, heading: nil, maxItems: 15)),
                     order: ["summary", "timeline", "key_points", "tasks", "decisions", "ideas"],
-                    customInstructions: "")),
+                    customInstructions: "",
+                    prompts: PromptOverrides(analyze: nil, map: nil, reduce: nil))),
             obsidian: ObsidianConfig(
                 maxTitleBytes: 180, defaultTags: ["voice", "voicedock"],
                 raw: RawNoteConfig(
@@ -307,11 +308,45 @@ public struct AnalysisConfig: Codable, Equatable, Sendable {
     public var sections: AnalysisSections
     public var order: [String]
     public var customInstructions: String
+    /// F-92: 要約プロンプトの上書き（null は同梱の本文）
+    public var prompts: PromptOverrides
 
-    public init(sections: AnalysisSections, order: [String], customInstructions: String) {
+    public init(
+        sections: AnalysisSections, order: [String], customInstructions: String, prompts: PromptOverrides
+    ) {
         self.sections = sections
         self.order = order
         self.customInstructions = customInstructions
+        self.prompts = prompts
+    }
+}
+
+/// F-92: 要約プロンプト（analyze・map・reduce）の上書き。null は同梱の本文（Resources/prompts）を使う。
+/// 修復のプロンプトは上書きしない。値は CV-60 で検証する。
+public struct PromptOverrides: Codable, Equatable, Sendable {
+    /// JSON の形の見本を差し込む場所（PLAN §8.5）。上書きにも必ず要る（CV-60）
+    public static let schemaPlaceholder = "{schema_block}"
+    /// `llm.analysis.customInstructions` を差し込む場所。上書きにも必ず要る（CV-60。追加の指示を黙って効かなくしない）
+    public static let customPlaceholder = "{custom_instructions}"
+    /// CV-60 の長さの上限（Unicode スカラー数。customInstructions と合わせて数える）。CV-51 の余白 2048 トークンに system を収めるため
+    public static let maxScalars = 1500
+
+    public var analyze: String?
+    public var map: String?
+    public var reduce: String?
+
+    public init(analyze: String?, map: String?, reduce: String?) {
+        self.analyze = analyze
+        self.map = map
+        self.reduce = reduce
+    }
+
+    /// nil を `null` として書く（synthesized は nil のキーを省く）。
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(analyze, forKey: .analyze)
+        try container.encode(map, forKey: .map)
+        try container.encode(reduce, forKey: .reduce)
     }
 }
 

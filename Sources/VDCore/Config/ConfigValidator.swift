@@ -1,4 +1,4 @@
-// 設定の意味の検証（PLAN §6.4 の CV-08〜59）。表の順に全部評価し、1 つ目で止めない（CV-14 だけ CV-13 より先）。
+// 設定の意味の検証（PLAN §6.4 の CV-08〜60）。表の順に全部評価し、1 つ目で止めない（CV-14 だけ CV-13 より先）。
 import Foundation
 import VDContract
 
@@ -18,7 +18,7 @@ public enum ConfigValidator {
     /// F-71: CV-10・CV-51 の算術に入る文字数・トークン数の上限（10 億）。
     static let maxCharsOrTokens = 1_000_000_000
 
-    /// PLAN §6.4 の CV-08〜59 を表の順に全部評価する（CV-14 だけ CV-13 より先）。1 つ目で止めない。
+    /// PLAN §6.4 の CV-08〜60 を表の順に全部評価する（CV-14 だけ CV-13 より先）。1 つ目で止めない。
     public static func validate(_ c: AppConfig, catalog: ModelCatalog, reaperConfObservation: ReaperConfObservation)
         -> [ConfigViolation]
     {
@@ -28,6 +28,7 @@ public enum ConfigValidator {
         checkLocksAndPaths(c, catalog: catalog, reaperConfObservation: reaperConfObservation, &out)
         checkDevice(c, &out)
         checkNumbers(c, &out)
+        checkPrompts(c.llm.analysis, &out)
         return out.violations
     }
 
@@ -304,6 +305,27 @@ public enum ConfigValidator {
             [("vaultIndexCacheSeconds", o.wiki.vaultIndexCacheSeconds), ("maxLinks", o.wiki.maxLinks)], &out)
         for (i, tag) in o.defaultTags.enumerated() where tag.isEmpty {
             out.add("CV-59", "obsidian.defaultTags.\(i)", "空文字にできない")
+        }
+    }
+
+    /// 順 37: CV-60（F-92）。null でない上書きごとに、`{schema_block}` → `{custom_instructions}` → 長さの順で最初の 1 件だけ。
+    /// 長さは差し込む customInstructions と合わせて数える（system に入るのは両方）。
+    private static func checkPrompts(_ analysis: AnalysisConfig, _ out: inout Collector) {
+        let p = analysis.prompts
+        let customCount = TextLimit.scalarCount(analysis.customInstructions)
+        let entries: [(String, String?)] = [("analyze", p.analyze), ("map", p.map), ("reduce", p.reduce)]
+        for (name, value) in entries {
+            guard let value else { continue }
+            let keyPath = "llm.analysis.prompts.\(name)"
+            if !containsScalars(value, PromptOverrides.schemaPlaceholder) {
+                out.add("CV-60", keyPath, "\(PromptOverrides.schemaPlaceholder) を含むこと")
+            } else if !containsScalars(value, PromptOverrides.customPlaceholder) {
+                out.add("CV-60", keyPath, "\(PromptOverrides.customPlaceholder) を含むこと")
+            } else if TextLimit.scalarCount(value) + customCount > PromptOverrides.maxScalars {
+                let total = TextLimit.scalarCount(value) + customCount
+                out.add(
+                    "CV-60", keyPath, "customInstructions と合わせて \(PromptOverrides.maxScalars) 以下であること（\(total)）")
+            }
         }
     }
 

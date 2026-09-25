@@ -8,10 +8,14 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     private let item: NSStatusItem
     private let popover: NSPopover
     private let model: AppModel
+    /// 削除が有効な間の赤い点（F-91）
+    private let badge = StatusIconBadge()
     private var iconObserver: Task<Void, Never>?
     /// 状態の 1 行が変わったらツールチップを書き直す（F-84。アイコンが変わらない間も古いまま残さない）
     private var statusLineObserver: Task<Void, Never>?
     private var reopenAfterModal = false
+    /// 要約プロンプトの編集の窓（F-92。初めて開くときに作る）
+    private var promptEditor: PromptEditorWindowController?
 
     init(model: AppModel) {
         self.model = model
@@ -29,6 +33,7 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
         item.button?.target = self
         item.button?.action = #selector(toggle(_:))
         item.button?.setButtonType(.momentaryChange)
+        if let button = item.button { badge.attach(to: button) }
         applyIcon()
         iconObserver = Task { @MainActor [weak self] in
             for await _ in model.iconChanges { self?.applyIcon() }
@@ -49,6 +54,14 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     func close() {
         // popoverDidClose が model.panelDidClose() を呼ぶ
         popover.performClose(nil)
+    }
+
+    /// 要約プロンプトの編集の窓を出す（F-92）。パネルは閉じる（transient の popover は窓の前に残らない）
+    func showPromptEditor() {
+        close()
+        let editor = promptEditor ?? PromptEditorWindowController(model: model)
+        promptEditor = editor
+        editor.show()
     }
 
     /// NSOpenPanel など modal を出す前後で使う（PLAN §8.12「popover が閉じたら、終わった後に開き直す」）。
@@ -76,7 +89,9 @@ final class StatusItemController: NSObject, NSPopoverDelegate {
     }
 
     private func applyIcon() {
-        item.button?.image = StatusIconImage.make(state: model.iconState, showsTrash: model.showsTrash)
+        let image = StatusIconImage.make(state: model.iconState, showsDeletionBadge: model.showsTrash)
+        item.button?.image = image
+        badge.update(visible: model.showsTrash, imageSize: image.size)
         applyToolTip()
     }
 

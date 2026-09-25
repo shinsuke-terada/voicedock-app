@@ -36,7 +36,7 @@ public enum ConfigLoader {
         if !keyViolations.isEmpty {
             return .invalid(keyViolations)
         }
-        // 今の版なら移行は値を変えないので元の data を、1 → 2 の移行（F-89）で値を足したときは移行後の値を復号する。
+        // 今の版なら移行は値を変えないので元の data を、旧版からの移行（1 → 2 → 3。F-89・F-92）で値を足したときは移行後の値を復号する。
         // 移行した値はメモリの上だけで、ファイルは書き換えない（PLAN §6.1）。
         let source: Data
         if (dict["schemaVersion"] as? NSNumber)?.intValue == ConfigMigrator.currentVersion {
