@@ -112,7 +112,7 @@ struct IngestServiceMountRecheckTests {
             sink = CapturingLogSink()
             let log = AppLog(sink: sink, level: .debug, unsafeContent: false, zone: zone, clock: clock)
             var config = AppConfig.defaults(timeZone: "Asia/Tokyo")
-            // 名前を変えるテストがあるので include は既定で空にする（既定の ["DJIMIC3"] は DeviceDetectorNetworkTests と下の案内のテスト）
+            // 名前を変えるテストがあるので include は既定で空にする（既定の include は DeviceDetectorNetworkTests が確かめる。下の案内のテストは名前 1 つの include を渡す）
             config.device.includeVolumes = include
             let provided = config
             // ファイルシステムが保った綴りの名前（NFC か NFD）。判定はこの綴りでパスを作り、規則 8 はスカラー列で比べる
@@ -369,7 +369,7 @@ struct IngestServiceMountRecheckTests {
         #expect(IngestService.sameMount(a, otherNode) == false)
     }
 
-    @Test("F-81 既定の include で録音のフォルダがある別の名前のメモリは、取り込まず再マウントもせず、unavailable に not_included（案内だけ）")
+    @Test("F-81 include が 1 つの名前のとき、録音のフォルダがある別の名前のメモリは、取り込まず再マウントもせず、unavailable に not_included（案内だけ）")
     func backupStickIsOnlyHinted() async throws {
         let h = try Harness(
             deviceID: "BACKUP", outcomes: [.alreadyReadOnly], trigger: .never, include: ["DJIMIC3"])

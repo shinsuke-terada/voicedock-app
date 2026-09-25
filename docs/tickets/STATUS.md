@@ -156,7 +156,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
 | 削除 | **有効**（2026-09-25 18:32 に R-02 のためパネルの 3 秒長押しで有効化し、利用者の決定でそのままにした。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` 導入済み）。**有効な間は、デバイスを抜く前に Finder で取り出す**。無効に戻すときは削除の画面の「無効にする」をクリック 1 回（E2E-17）。E2E-13 のやり直しと E2E-06 は削除 OFF で行う |
-| 取り込むデバイスの名前 | **F-94（2026-09-25）で既定を `["VOICEDOCK"]` にした。利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直す（未。直すまでは改名した実機を取り込まない）。改名前の `DJIMIC3` で取り込んだ録音は削除の対象にならない（RK-28）。** それまでは `["DJIMIC3"]`（F-81 の既定に合わせて 2026-09-23 に利用者が手で直した。控えは `config.json.bak`） |
+| 取り込むデバイスの名前 | **F-94（2026-09-25）で既定を `["VOICEDOCK"]` にした。利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直す（未。直すまでは改名した実機を取り込まない）。改名前の `DJIMIC3` の Part は削除の対象から外れる。デバイスに残っている録音は改名後の最初の接続で `VOICEDOCK/…` として全件を再コピーし `DUPLICATE_CONTENT` になり、`deleteSkippedSource` が真なら根拠 B で元音声が消える（2026-09-25 の時点の config.json は `false`）（RK-28・PLAN §6.2）。** それまでは `["DJIMIC3"]`（F-81 の既定に合わせて 2026-09-23 に利用者が手で直した。控えは `config.json.bak`） |
 | 実機 | E2E の試験でたびたび `/Volumes/VOICEDOCK`（F-94 の改名の前は `/Volumes/DJIMIC3`）に接続する（削除 OFF の間は読み取り専用でマウント）。次のセッションはまず `ls /Volumes` で確かめる |
 
 ## 4. 2026-09-22〜23 に利用者が決めたこと・直したこと

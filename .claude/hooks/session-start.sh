@@ -8,7 +8,7 @@ echo "## VoiceDock セッションの現在地"
 
 # 1) 実機が挿さっているか（最優先）
 # 実機は利用者が Finder で VOICEDOCK に改名して使う（F-94）。改名前の DJIMIC3 も実機として扱う
-REAL="$(/sbin/mount 2>/dev/null | sed -nE 's#.* on (/Volumes/(VOICEDOCK|DJIMIC3)( [0-9]+)?) \(.*#\1#p' | paste -sd', ' -)"
+REAL="$(/sbin/mount 2>/dev/null | sed -nE 's#.* on (/Volumes/(VOICEDOCK|DJIMIC3)( [0-9]+)?) \(.*#\1#p' | paste -sd, -)"
 if [ -n "${REAL:-}" ]; then
   echo "- ⚠️ **実機 DJI Mic 3 が ${REAL} にマウント中**。ディスク系の手順（hdiutil・make test-disk・イメージの実験）は行わない。行う前に利用者に物理的に抜いてもらう。"
 else

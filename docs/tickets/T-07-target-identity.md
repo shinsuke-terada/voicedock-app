@@ -253,9 +253,9 @@ public struct DiskImageError: Error, CustomStringConvertible { public let descri
 - 作成: `hdiutil create -size <sizeMB>m -fs "MS-DOS FAT32" -volname <deviceID> -layout NONE <image>`（HFS+ は `-fs HFS+`。DJI Mic 3 と同じくパーティションの無い superfloppy にする）
 - マウント: `hdiutil attach -nobrowse -noautoopen -noverify -mountpoint <mountPoint> [-readonly] <image>`
 - 外す: `hdiutil detach -force <mountPoint>`
-- **`/Volumes` の下には決してマウントしない**（利用者の実機 `/Volumes/DJIMIC3` と衝突させない。mountPoint は必ず一時ディレクトリの下）
+- **`/Volumes` の下には決してマウントしない**（利用者の実機 `/Volumes/VOICEDOCK`・改名前の `/Volumes/DJIMIC3` と衝突させない。mountPoint は必ず一時ディレクトリの下）
 - **ボリューム名に `VOICEDOCK`・`DJIMIC3`（実機の名前。F-94）を使わない**（PLAN §10.2。既定の deviceID は `VDT0007`。T-15 は extension の `uniqueName()` で `VDTxxxx` を作って渡す）
-- init は hdiutil を起動する前に拒む（`DiskImageError`）: `DeviceID.isValid(deviceID)` が偽、`deviceID == "DJIMIC3"`、一時ディレクトリの realpath が `/Volumes` かその下。`detach()` は mountPoint の `statfs` の `f_mntonname` が realpath と一致するときだけ `hdiutil detach -force` を起動する（二重の detach・未 attach で撃たない）
+- init は hdiutil を起動する前に拒む（`DiskImageError`）: `DeviceID.isValid(deviceID)` が偽、`deviceID` が `"VOICEDOCK"` か `"DJIMIC3"`（F-94）、一時ディレクトリの realpath が `/Volumes` かその下。`detach()` は mountPoint の `statfs` の `f_mntonname` が realpath と一致するときだけ `hdiutil detach -force` を起動する（二重の detach・未 attach で撃たない）
 - **テストの安全**: このチケットのテストは `/Volumes` 配下の実機（利用者が挿している DJI Mic 3 など）に一切触れない。`openVolume`・`SystemVolumeOpener`・`FakeVolumeOpener` に渡す `volumesRoot` は必ず一時ディレクトリの下（`FakeVolume.volumesRoot` / `DiskImageVolume.volumesRoot`）にし、`Contract.volumesRoot`（`/Volumes`）を渡さない。`/Volumes` 配下に `diskutil`・`hdiutil detach`・書き込み・削除・再マウントを行わない（`hdiutil detach` は自分が attach した `mountPoint` だけ）
 
 ## 5. テスト
