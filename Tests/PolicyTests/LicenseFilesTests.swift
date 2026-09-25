@@ -84,6 +84,8 @@ struct LicenseFilesTests {
         let required = [
             "Copyright (c) 2023-2026 The ggml authors",  // whisper.cpp・llama.cpp
             "Copyright (c) 2024 argmax, inc.",  // argmax-oss-swift
+            "Copyright 2024 Mozilla Foundation",  // llamafile の sgemm（llama-server）
+            "Jeffrey Quesnelle and Bowen Peng",  // YaRN の RoPE（ggml）
             "Gwendal Roué",  // GRDB.swift
             "Copyright (c) 2016 JP Simard.",  // Yams
             "Kirill Simonov",  // LibYAML

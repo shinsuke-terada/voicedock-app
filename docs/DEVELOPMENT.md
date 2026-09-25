@@ -11,7 +11,7 @@
 | `make vendor` | whisper.cpp・llama.cpp・argmax-oss-swift をソースからビルドし、話者分離のモデルを取得する（版は `Vendor/versions.env`） |
 | `make app` | debug の `VoiceDock.app` を組み立てる（先に `make vendor`） |
 | `make release` | 署名・公証・dmg（手元の Mac で行う。証明書は CI に置かない） |
-| `make test-disk` | ディスクイメージのテストも含めた全テスト（下の「ディスクイメージのテスト」） |
+| `make test-disk` | `make test` にディスクイメージのテストを足したもの（LLM 受け入れ試験は含まない。下の「ディスクイメージのテスト」） |
 
 ## 文書
 

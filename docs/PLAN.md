@@ -3006,7 +3006,7 @@ jobs:
   CI では `sudo` を使わず、Xcode の版は `make check-toolchain` で確かめるだけにする（`.xcode-version` と開発機の Xcode を利用者がそろえる）
 - `main` のブランチ保護で `check` を必須にする（**非公開リポジトリで GitHub の無料プランだとブランチ保護が使えない**（API が 403）。その場合は T-02 に記録し、「保護した」とは書かない）
 - `.diskImage` のテストは **CI で走らせない**（`VOICEDOCK_DISK_TESTS` を付けない）。ランナーが開発機なので、CI が走るたびに実機が抜いてあることを保証できないため（P0-10 は行わない）。
-  CI の ND は層 1・2 だけになることを README に書き、**削除に触れる PR では、実機を抜いたことを利用者が確かめてから手元で `make test-disk` を回した結果を PR 本文に貼る**ことを必須にする
+  CI の ND は層 1・2 だけになることを `docs/DEVELOPMENT.md` に書き（F-93 で README から移した）、**削除に触れる PR では、実機を抜いたことを利用者が確かめてから手元で `make test-disk` を回した結果を PR 本文に貼る**ことを必須にする
 - `.app` の組み立て・署名・公証は CI で行わない（手元の `make release`。証明書を CI に置かない）
 
 ---
@@ -3019,8 +3019,8 @@ jobs:
 VoiceDock.app/Contents/
 ├── Info.plist          # Resources/Info.plist.template から生成（版は VERSION、ビルド番号は git のコミット数）
 ├── MacOS/VoiceDock     # swift build -c release --arch arm64 --product VoiceDockApp（debug は -c debug）
-├── Helpers/whisper-cli, llama-server, voicedock-reaper    # voicedock-reaper も swift build --product voicedock-reaper
-└── Resources/prompts/*, ModelCatalog.json, AppIcon.icns, LICENSE, NOTICE, THIRD_PARTY_NOTICES.md    # 3 つの文書は F-93
+├── Helpers/whisper-cli, llama-server, argmax-cli, voicedock-reaper    # voicedock-reaper も swift build --product voicedock-reaper。argmax-cli は F-89
+└── Resources/prompts/*, ModelCatalog.json, AppIcon.icns, SpeakerModels/, LICENSE, NOTICE, THIRD_PARTY_NOTICES.md    # SpeakerModels/ は F-89、3 つの文書は F-93
 ```
 
 Info.plist の必須キー: `CFBundleIdentifier`、`CFBundleName = VoiceDock`、`CFBundleExecutable = VoiceDock`、`CFBundlePackageType = APPL`、`CFBundleIconFile = AppIcon`、`CFBundleDevelopmentRegion = ja`、`CFBundleShortVersionString`、`CFBundleVersion`、

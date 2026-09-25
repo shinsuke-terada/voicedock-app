@@ -6,7 +6,7 @@
 | 題 | v1.0 のリリース（VERSION・タグ・dmg・verify-bundle・E2E-06 の記録・非公開リポジトリでのリリース） |
 | Phase | 9 |
 | 前提 | T-43（README）、T-42（削除のゲート）、T-34（`make release`）、T-46〜T-51（話者分離。PLAN F-89） |
-| 見積もり | 手で書く行 約 230（`docs/RELEASE.md` 約 140、テスト約 80、`VERSION` と `Version.swift` と README の更新 約 10） |
+| 見積もり | 手で書く行 約 230（`docs/RELEASE.md` 約 140、テスト約 80、`VERSION` と `Version.swift` と `docs/DEVELOPMENT.md` の状態の表の更新 約 10） |
 
 ## 1. 目的
 
@@ -318,7 +318,7 @@ struct ReleaseDoc: Sendable {
 | 5 | `RL-01` の判定を `たぶん大丈夫` にする | `everyChecklistVerdictStartsWithAMarker("RL-01")` |
 | 6 | `VERSION` を `1.0` にする | `theVersionIsOnePointZeroOrLater`、T-01 の `versionFileIsSemVer` |
 | 7 | `VERSION` を `1.0.0` にしたまま `Version.swift` を `"0.1.0"` に戻す | T-06 の `AppVersion.string` と `VERSION` の照合テスト |
-| 8 | `README.md` の Phase 9 の状態を `—` に戻す | `theReadmeStatusIsUpdated` |
+| 8 | `docs/DEVELOPMENT.md` の Phase 9 の状態を `—` に戻す（F-93） | `theReadmeStatusIsUpdated` |
 | 9 | `docs/RELEASE.md` に `v1.0.0 のタグを打つ` と版を直書きする | `theReleaseDocDoesNotPinTheVersion("1.0.0")` |
 | 10 | `gh release create` の行から `--verify-tag` を消す | `theReleaseDocNamesTheGate("--verify-tag")` |
 | 11 | `### 3.5` から `gh release download` の説明を消す | `theReleaseDocExplainsPrivateDistribution` |

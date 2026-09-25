@@ -32,7 +32,7 @@ Session の統合と Raw ノートの Part に `speaker` を運ぶ。診断に D
 | `docs/SPEC.md`（変更） | S6 に DR-18 |
 | `README.md`（変更） | 診断の件数（17 件）、話者分離の説明と出典 |
 | `Tests/PolicyTests/ConfigEffectPending.swift`（変更） | `transcription.diarization.enabled` を消す |
-| `Tests/PolicyTests/ReadmeTests.swift`（変更） | `expectedHeadings` の末尾に `"## 出典"`（§4.4 で README に足す見出し） |
+| `Tests/PolicyTests/ReadmeTests.swift`（変更） | `expectedHeadings` の末尾に `"## 出典"`（§4.4 で README に足す見出し。**F-93 で `## ライセンス` にまとめ、この見出しは無くなった**） |
 | `Tests/VDPipelineTests/PartStepsDiarizationTests.swift` | |
 | `Tests/VDPipelineTests/SessionMergeSpeakerTests.swift` | |
 | `Tests/VDPipelineTests/DiagnosticDR18Tests.swift` | |

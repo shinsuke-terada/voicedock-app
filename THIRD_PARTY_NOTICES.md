@@ -11,7 +11,8 @@ Their copyright notices and license texts are reproduced verbatim from the upstr
 |---|---|---|---|
 | whisper.cpp | `Contents/Helpers/whisper-cli` | v1.9.4（`927cfce`） | MIT |
 | llama.cpp | `Contents/Helpers/llama-server` | b11033（`8ed1a55`） | MIT |
-| llama.cpp が取り込んでいる部品 | `Contents/Helpers/llama-server` | llama.cpp と同じ | MIT・BSD-2-Clause・パブリックドメイン（下の一覧） |
+| llama.cpp が取り込んでいる部品（llamafile の sgemm など） | `Contents/Helpers/llama-server` | llama.cpp と同じ | MIT・BSD-2-Clause・パブリックドメイン（下の一覧） |
+| ggml の中の YaRN の RoPE | `Contents/Helpers/whisper-cli`・`Contents/Helpers/llama-server` | whisper.cpp・llama.cpp と同じ | MIT |
 | argmax-oss-swift | `Contents/Helpers/argmax-cli` | v1.1.0（`1e2a163`） | MIT（一部 Apache-2.0） |
 | swift-argument-parser | `Contents/Helpers/argmax-cli` | 1.7.0 | Apache-2.0（Runtime Library Exception 付き） |
 | GRDB.swift | `Contents/MacOS/VoiceDock` | 7.11.1 | MIT |
@@ -81,7 +82,43 @@ SOFTWARE.
 ### llama.cpp が取り込んでいる部品
 
 `llama-server` には、llama.cpp のリポジトリの `vendor/` にある次の部品が入っています。
-パブリックドメイン（または表示の要らない MIT-0）のものは名前だけを挙げます: sha1（100% Public Domain）、sha256（Igor Pavlov、Public domain）、subprocess.h（sheredom、The Unlicense）、stb_image（パブリックドメインまたは MIT の選択）、miniaudio（パブリックドメインまたは MIT-0 の選択）。
+パブリックドメイン（または表示の要らない MIT-0）のものは名前だけを挙げます: base64.hpp（`common/base64.hpp`、The Unlicense）、sha1（100% Public Domain）、sha256（Igor Pavlov、Public domain）、subprocess.h（sheredom、The Unlicense）、stb_image（パブリックドメインまたは MIT の選択）、miniaudio（パブリックドメインまたは MIT-0 の選択）。
+
+### llamafile（sgemm）
+
+https://github.com/Mozilla-Ocho/llamafile （llama.cpp の `ggml/src/ggml-cpu/llamafile/sgemm.cpp`。`llama-server` に入っている）。ファイルの先頭の文をそのまま載せます。
+
+```text
+Copyright 2024 Mozilla Foundation
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+### YaRN の RoPE
+
+ggml の `ggml/src/ggml-cpu/ops.cpp` と `ggml/src/ggml-metal/kernels/rope.metal` にある YaRN の実装（`whisper-cli` と `llama-server` の両方に入っている）には、次の 1 行の表示があります。ライセンスは MIT（文は上の whisper.cpp・llama.cpp の MIT と同じ形）です。
+
+```text
+// MIT licensed. Copyright (c) 2023 Jeffrey Quesnelle and Bowen Peng.
+```
 
 ### cpp-httplib
 
@@ -707,7 +744,7 @@ SOFTWARE.
 
 ### LibYAML（Yams に含まれる）
 
-https://github.com/yaml/libyaml （Yams の `Sources/CYaml`）
+https://github.com/yaml/libyaml （Yams の `Sources/CYaml`。ライセンス文は yaml/libyaml の `License` からそのまま）
 
 ```text
 Copyright (c) 2017-2020 Ingy döt Net

@@ -336,6 +336,12 @@ struct ReadmeTests {
         let readme = try Readme.load()
         let body = try readme.document.section("ライセンス").joined(separator: "\n")
         #expect(body.contains("(" + name + ")"))
+    }
+
+    @Test("ライセンスの章が本体のライセンスの名前を書く（F-93）")
+    func theLicenseChapterNamesTheLicense() throws {
+        let readme = try Readme.load()
+        let body = try readme.document.section("ライセンス").joined(separator: "\n")
         #expect(body.contains("Apache License 2.0"))
     }
 
