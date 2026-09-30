@@ -1,4 +1,4 @@
-# 進捗と再開の手順（2026-09-26・**v0.9.0 を公開した後**。v1.0 に向けて実機の確認が残る）
+# 進捗と再開の手順（2026-09-30・**v0.9.0 を公開した後**。E2E-06・R-06 が PASS。v1.0 に向けて E2E-13 と G-4 が残る）
 
 **この文書だけ読めば再開できる**ように書いてある。次のセッションはここから始める。
 
@@ -39,6 +39,15 @@
 
 T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマージ済み**で、**実機での実施が残っている**。
 
+## 1.7 2026-09-30 に進めたこと（E2E-06・R-06）
+
+利用者が 2026-09-29 の勤務時間中に普段どおり録った約 7 時間 4 分（30 分 × 14 本と約 4 分 1 本）で、**E2E-06（削除 OFF）と R-06（削除 ON）を続けて行い、どちらも ✅ PASS**（記録は `docs/E2E.md` §3.6・§6.6。生の出力の控えは `~/VoiceDockE2E-0930/`）。§6 の R-01〜09 がすべて PASS になったので **G-5 も ✅**。
+
+- **E2E-06**（01:11〜01:57。46 分）: 2026-09-29 の Session が 1 行（`part_count=15`）、Raw 1 枚・Daily 1 枚、元音声は残った。内訳は文字起こしまで約 8 分・無通信の待ち 30 分・要約 448.7 秒（7 チャンク・49,990 字）
+- **R-06**（02:12〜02:57。45 分）: E2E-06 の後に利用者がノートを消し、**データを初期化し、削除を有効にして、同じ録音を取り込み直した**（利用者の判断。記録に差として書いた）。消えた 16 本と `source_deleted` の 16 件が完全に一致、無音の 1 本は残った、`queue/*` は空、空き容量が 3.4 GiB 戻った
+- 観察（FAIL ではない）: 走査が終わる前に Raw ノートを保存した Part は、Raw の直後には要求されず、後の契機（次の Raw の直後・`SAVED` の直後）でまとめて要求された。遅れる側に倒れているだけ（§6.6 の箇条書き）
+- **削除は有効のまま**（利用者の決定。2026-09-30 02:07:58 `deletion_enabled`）
+
 ## 1.6 2026-09-25 夜〜26 に進めたこと（v0.9.0 の公開まで）
 
 | PR | F | 内容 |
@@ -52,7 +61,7 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 
 - **利用者の環境で行ったこと**（2026-09-25 23:07〜23:35）: 削除を無効に → データを初期化（`data_reset count=79 failed=0`）→ 実機を `VOICEDOCK` に改名 → `config.json` の `includeVolumes` を `["VOICEDOCK"]` に。以前の DB（`DJIMIC3` の行）は残っていない
 - **v0.9.0 の公開**（2026-09-26）: `main` に注釈付きタグ `v0.9.0` → `make release`（全テスト・Developer ID 署名・公証 2 回とも Accepted・dmg・verify-bundle すべて OK。ビルド 436）→ `gh release create v0.9.0 --verify-tag`（通常のリリース。プレリリースにすると README の `releases/latest` が指さない）。dmg の SHA-256 は `85d170254c353916e14267931dce9c58f958b0ad5c785971ffd3f2eae74f57e1`（Releases から落とし直して一致を確かめた）
-- **v1.0.0 の前に残るもの**: 実機の確認（E2E-06・E2E-13、R-06、§5 G-4、§6 G-5）→ 削除のゲートが開く → T-44（`docs/RELEASE.md`・`ReleaseChecklistTests`・版を 1.0.0 に）
+- **v1.0.0 の前に残るもの**: 実機の確認（E2E-13、§5 G-4。E2E-06・R-06・G-5 は 2026-09-30 に PASS。§1.7）→ 削除のゲートが開く → T-44（`docs/RELEASE.md`・`ReleaseChecklistTests`・版を 1.0.0 に）
 
 ## 1.5 2026-09-24 に進めたこと
 
@@ -173,7 +182,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | LLM モデル | `<HOME>/models/llm/custom-3605803b982cb64a.gguf`（2.5 GB。4B と同一。`verified: false`）と `Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`（18.6 GB。カタログから取り込み。**`verified: true`**。2026-09-24） |
 | 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
-| 削除 | **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
+| 削除 | **有効**（2026-09-30 02:07:58 に R-06 のために有効にし、利用者の決定でそのまま。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` は 0.9.0。**抜く前に Finder で取り出す**）。以下はそれより前の記録: **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
 | 取り込むデバイスの名前 | **`VOICEDOCK`**。2026-09-25 に利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直して「設定を読み直す」を押した（F-94。アプリの既定も `["VOICEDOCK"]`）。その前にデータを初期化した（F-95。`data_reset count=79 failed=0`）ので、`DJIMIC3` として取り込んだ行は残っていない。控えの `config.json.bak` は F-81 の時点のもの |
 | 実機 | E2E の試験でたびたび `/Volumes/VOICEDOCK`（F-94 の改名の前は `/Volumes/DJIMIC3`）に接続する（削除 OFF の間は読み取り専用でマウント）。次のセッションはまず `ls /Volumes` で確かめる |
 
@@ -227,8 +236,8 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 
 | issue | 中身 | 誰がやるか |
 |---|---|---|
-| #81 | T-35 実機 E2E（削除 OFF） | 手順書とテストはマージ済み（#82）。**11/16 本が PASS**（2026-09-24 夜に E2E-01・03・04・05・07・08・09・12・14・16、2026-09-25 に E2E-02）。残り: E2E-13（スリープ）、E2E-06（1日分）は実運用で確認 |
-| #95 | T-42 実機 E2E（削除 ON）とゲート | 手順書とテストはマージ済み（#96）。**実施は【利用者が行う】**。**11/13 本が PASS**（2026-09-25 未明に E2E-10・11・17・R-01・03・04・05・07・08・09、18 時台に R-02）。残り R-06（1 日分）・§5 G-4（24 時間）・§6 G-5（削除 ON で E2E-01〜09 を再実行）。削除は 2026-09-25 23:07 から**無効**（§3）。`docs/E2E.md` §4 のゲートは G-1・G-3 が PASS、G-2・G-4・G-5 が未実施で **ゲート: 閉** |
+| #81 | T-35 実機 E2E（削除 OFF） | 手順書とテストはマージ済み（#82）。**12/16 本が PASS**（2026-09-24 夜に E2E-01・03・04・05・07・08・09・12・14・16、2026-09-25 に E2E-02、2026-09-30 に E2E-06）。残り: E2E-13（スリープ。削除 OFF で行う） |
+| #95 | T-42 実機 E2E（削除 ON）とゲート | 手順書とテストはマージ済み（#96）。**実施は【利用者が行う】**。**12/13 本が PASS**（2026-09-25 未明に E2E-10・11・17・R-01・03・04・05・07・08・09、18 時台に R-02、2026-09-30 に R-06）。残り §5 G-4（24 時間）。削除は 2026-09-30 02:07:58 から**有効**（§3）。`docs/E2E.md` §4 のゲートは G-1・G-3・G-5 が PASS、G-2（E2E-13 待ち）・G-4 が未実施で **ゲート: 閉** |
 | #103 | Bluetooth 接続での読み込みと削除の調査・実験 | **2026-09-26 に実施（P0-14。`docs/POC.md` 17 章）。✗ FAIL**: DJI Mic 3 の BLE はペアリング・機器情報・送信機の Wi-Fi の接続情報の受け渡しだけで、ファイルの一覧・取得は Wi-Fi、DJI Mimo には削除が無い。**Bluetooth のみでのファイル操作はできない**。Wi-Fi の経路を調べるかは利用者の判断（別の計画） |
 
 **2026-09-24 に閉じた issue**: #67（T-24。30B が `verified: true` に。v1.0 で選べる LLM が 1 つ以上になった）、#77（T-34。`make release` が通り、署名・公証・dmg まで確認済み）。
@@ -262,12 +271,12 @@ T-44（v1.0 リリース）は T-46〜T-51 の後。
 ## 6. 次のセッションで最初にやること
 
 1. `git fetch origin && git switch develop && git pull`（`main` は v0.9.0。次に `main` へ入れるのは v1.0.0 のとき）
-2. `ls /Volumes` で**実機（`VOICEDOCK`）の接続状態**と、§3 の「削除」の行の状態（いまは**無効**）を確かめる。ディスクを触る作業（`make test-disk`・`make release`・dmg の作成）の前には利用者に抜いてもらう
+2. `ls /Volumes` で**実機（`VOICEDOCK`）の接続状態**と、§3 の「削除」の行の状態（いまは**有効**。抜く前に Finder で取り出す）を確かめる。ディスクを触る作業（`make test-disk`・`make release`・dmg の作成）の前には利用者に抜いてもらう
 3. `python3 docs/porting-notes/check-tickets.py` が 0 件、`make lint && make test` が緑であることを確かめる
 4. `gh pr list --state open` で開いている PR が無いことを確かめる
 5. **残っている実機作業は E2E（issue #81 → #95）とゲート**:
-   - 削除 OFF: **E2E-13**（スリープ。Claude Code を終了し `PreventSystemSleep 0` を確かめてから。手順は `~/VoiceDockE2E-ON/e2e13-retry.md`）、**E2E-06**（1 日分。運用の中で）
-   - 削除 ON: **R-06**（1 日分）、**§5 G-4**（三重ロックを外して 1 日流す）、**§6 G-5**（削除 ON で E2E-01〜09 を再実行）
+   - 削除 ON: **§5 G-4**（三重ロックを外して 1 日流す）。前提（E2E-10・11・17 と §6 の R がすべて PASS）は 2026-09-30 に揃った。**始める時点で** [C-1]・[C-7]・[C-15]・[C-9]・[C-16] を取るので、利用者に開始の日を決めてもらう
+   - 削除 OFF: **E2E-13**（スリープ。Claude Code を終了し `PreventSystemSleep 0` を確かめてから。手順は `~/VoiceDockE2E-ON/e2e13-retry.md`）。削除を無効にしてから行う。これが PASS すると G-2 が満たされる
    - データを初期化し実機を `VOICEDOCK` に改名したので、E2E の手順の `$DEV` は `VOICEDOCK`
 6. ゲートが開いたら T-44（v1.0 リリース）: 版を 1.0.0 に上げる PR → `develop` → `main` → タグ `v1.0.0` → `make release` → Releases
 7. **ブランチを切り替える前に、必ず `git status --short` で作業ツリーが clean か確かめる**（`local/` のような gitignore 対象でも、切り替え元でコミットされていると `git switch` で消えることがある。2026-09-24 にこれで事故を起こした。§1.5 参照）
