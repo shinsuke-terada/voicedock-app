@@ -311,6 +311,7 @@ struct ReleaseDoc: Sendable {
 | `theTemplateDoesNotPinTheVersion(_:)` | 雛形に版を直書きしない | `docs/release-notes/TEMPLATE.md` の全文 | `versionLikeNumbers` が空 |
 | `theReleaseNotesTemplateExists()` | リリースノートの雛形が在る | `docs/release-notes/TEMPLATE.md` | 在り、`<版>` を含む |
 | `theReleaseDocNamesTheGate(_:)` | 手順が必須のコマンドに触れている | `make release`・`scripts/verify-bundle.sh`・`gh release create`・`--verify-tag`・`shasum -a 256`・`git tag -a` で parametrize | `text` に含まれる |
+| `theReleaseCommandVerifiesTheTag()` | `gh release create` のコマンドに `--verify-tag` が付いている | `### 3.5` の節のコードフェンスの中の `gh release create` から、行末が `\` の続きの行まで | `--verify-tag` を含む（説明の箇条書きにも同じ語があるので、本文の検索だけではコマンドから消えても気づけない。破壊による証明の 10 で分かった） |
 | `theReleaseDocExplainsPublicDistribution()` | 公開リポジトリの配り方を説明している（F-101） | `### 3.5` の節 | `gh release download` と「匿名」の語を含む |
 
 - **`theReleaseIsGatedOnTheDeletionGate` と `theOneDayScenarioIsDone` と `everyChecklistPassesBeforeRelease` が本チケットの中心。**
@@ -332,7 +333,7 @@ struct ReleaseDoc: Sendable {
 | 7 | `VERSION` を `1.0.0` にしたまま `Version.swift` を `"0.1.0"` に戻す | T-06 の `AppVersion.string` と `VERSION` の照合テスト |
 | 8 | `docs/DEVELOPMENT.md` の Phase 9 の状態を `—` に戻す（F-93） | `theReadmeStatusIsUpdated` |
 | 9 | `docs/RELEASE.md` に `v1.0.0 のタグを打つ` と版を直書きする | `theReleaseDocDoesNotPinTheVersion("1.0.0")` |
-| 10 | `gh release create` の行から `--verify-tag` を消す | `theReleaseDocNamesTheGate("--verify-tag")` |
+| 10 | `gh release create` の行から `--verify-tag` を消す | `theReleaseCommandVerifiesTheTag`（`theReleaseDocNamesTheGate("--verify-tag")` は説明の箇条書きの語で通ってしまう） |
 | 11 | `### 3.5` から `gh release download` の説明を消す | `theReleaseDocExplainsPublicDistribution` |
 | 12 | `docs/release-notes/TEMPLATE.md` を消す | `theReleaseNotesTemplateExists` |
 | 12b | `docs/release-notes/TEMPLATE.md` の `<版>` を `1.0.0` にする | `theTemplateDoesNotPinTheVersion("1.0.0")` |

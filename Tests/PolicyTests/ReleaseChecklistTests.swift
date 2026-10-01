@@ -229,6 +229,28 @@ struct ReleaseChecklistTests {
         #expect(try ReleaseDoc.load().text.contains(command))
     }
 
+    @Test("gh release create のコマンドに --verify-tag が付いている")
+    func theReleaseCommandVerifiesTheTag() throws {
+        // 説明の箇条書きにも `--verify-tag` の語があるので、本文の検索ではコマンドから消えても気づけない。
+        // §3.5 のコードフェンスの中で `gh release create` から `\` の続きの行までを 1 つのコマンドとして見る。
+        let lines = try ReleaseDoc.load().document.section("3.5")
+        var inFence = false
+        var command: [String]?
+        for line in lines {
+            if MarkdownDocument.isFence(line) {
+                inFence.toggle()
+                continue
+            }
+            guard inFence else { continue }
+            if command == nil, line.contains("gh release create") { command = [] }
+            guard command != nil else { continue }
+            command?.append(line)
+            if !line.hasSuffix("\\") { break }
+        }
+        let joined = try #require(command).joined(separator: "\n")
+        #expect(joined.contains("--verify-tag"), "\(joined)")
+    }
+
     @Test("公開リポジトリの配り方を説明している（F-101）")
     func theReleaseDocExplainsPublicDistribution() throws {
         let section = try ReleaseDoc.load().document.section("3.5").joined(separator: "\n")
