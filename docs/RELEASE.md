@@ -72,7 +72,7 @@ gh pr create --base main --head develop --title "Release $(tr -d '[:space:]' < V
 ```
 
 - **`main` へは利用者が PR をマージする**（「Create a merge commit」で。エージェントは `gh pr merge` を実行しない）
-- **ブランチ保護は設定していない**（PLAN §10.8・F-101。公開リポジトリなので使えるが、2026-10-01 の時点では未設定）。「保護した」と書かない
+- **`main` はブランチ保護で `check` が緑でないとマージできない**（PLAN §10.8・F-102。PR 必須・管理者にも適用）。CI のランナー（開発機）が止まっているとマージできないので、先にランナーを動かす
 - マージの後、`main` で CI が緑になることを確かめる
 
 ### 3.3 タグを打つ
@@ -440,6 +440,313 @@ bff598339164653da77aa9fa5b3d9174ca7eafb69742f08b753361dba59c4406  dist/VoiceDock
 f844f243038f5344431731fe231842a7fda83441
 Thu Oct  1 19:58:07 JST 2026
 exit=0
+```
+
+**本番**（§3.4〜§3.6）。2026-10-01 21:35〜21:40、`main` の `9042132`（PR #194 のマージ。タグ `v<版>` の注釈付きタグを 21:35 に push 済み）で `make release` を回した。作業ツリーは clean、`ls /Volumes` は `Macintosh HD` だけ。
+全出力（約 1 MB）は `docs/release-logs/2026-10-01-make-release-main.txt`。1 段目の lint と test は 17 バンドルすべて passed、公証は 2 回とも `Accepted`、`verify-bundle` は V-1〜V-10 がすべて OK（ビルド 455）。
+
+下は全出力の 1〜8 行目、1 段目の `make test` の集計の行（17 行）、9962 行目以降（2〜7 段）。`notarytool` の進捗の行は `\r` で上書きされる 1 行なので、端末に最後に残る表示を貼った。
+
+```text
+$ date; ls /Volumes; git switch main && git pull && git status --porcelain; git rev-parse HEAD; git describe --tags
+Thu Oct  1 21:35:57 JST 2026
+Macintosh HD
+904213204c8e3b612c8a258cee0966792b5ff498
+v1.0.0
+$ make release; echo "exit=$?"
+scripts/release.sh
+==> 1/7 lint と test
+􁁛  Test run with 10 tests in 1 suite passed after 0.297 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 10.074 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.128 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.699 seconds.
+􀢂  Test run with 325 tests in 36 suites passed after 10.850 seconds with 3 known issues.
+􁁛  Test run with 317 tests in 39 suites passed after 0.517 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 23.395 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.466 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 12.317 seconds.
+􁁛  Test run with 861 tests in 89 suites passed after 19.501 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.672 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.835 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 12.775 seconds.
+􁁛  Test run with 205 tests in 19 suites passed after 3.454 seconds.
+􁁛  Test run with 393 tests in 45 suites passed after 2.028 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 0.136 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.774 seconds.
+==> 2/7 .app の組み立てと Developer ID 署名
+==> swift build -c release --arch arm64
+Building for production...
+[Computing dependencies]
+[14 / 57]
+[18 / 59] Yams
+[28 / 67] CYaml
+[30 / 68] VDContract
+[33 / 70] VDCore
+[35 / 71] Yams
+[37 / 67] VDCore
+[43 / 71] VDModels
+[47 / 75] VDProcess
+[52 / 72] VDTranscribe
+[55 / 73] VDTranscribe
+[57 / 73] VDLLM
+[59 / 71] GRDB
+[64 / 74] VDStore
+[69 / 78] VDDevice
+[71 / 79] VDDevice
+[82 / 89] VDPipeline
+[84 / 90] VDPipeline
+[87 / 87] VoiceDockApp-product
+[88 / 89] VoiceDockApp-product
+Build complete! (35.24秒)
+Building for production...
+Build complete! (0.25秒)
+==> 署名: Developer ID Application: Shinsuke Terada (ZCWP35H248)
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: replacing existing signature
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: valid on disk
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: satisfies its Designated Requirement
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app を署名しました（TeamIdentifier=ZCWP35H248）
+== V-1 バンドルの中身
+  OK   37 件が一致
+  OK   ディレクトリ 28 個が一致
+== V-2 Info.plist
+  OK   plist として読める
+  OK   CFBundleIdentifier = io.github.shinsuke-terada.VoiceDock
+  OK   CFBundleName = VoiceDock
+  OK   CFBundleExecutable = VoiceDock
+  OK   CFBundlePackageType = APPL
+  OK   CFBundleShortVersionString = 1.0.0
+  OK   LSMinimumSystemVersion = 15.0
+  OK   LSUIElement = true
+  OK   NSRemovableVolumesUsageDescription が在る
+  OK   NSDocumentsFolderUsageDescription が在る
+  OK   NSDesktopFolderUsageDescription が在る
+  OK   NSDownloadsFolderUsageDescription が在る
+== V-3 アーキテクチャ
+  OK   VoiceDock = arm64
+  OK   voicedock-reaper = arm64
+  OK   whisper-cli = arm64
+  OK   llama-server = arm64
+  OK   argmax-cli = arm64
+== V-4 otool -L
+  OK   リンク先は /usr/lib と /System/Library だけ
+OK: --files-only の検査に通りました
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app（版 1.0.0、ビルド 455、署名 developerid）
+==> 3/7 .app の公証と staple
+==> xcrun notarytool submit（キーチェーンプロファイル VOICEDOCK_NOTARY）
+Conducting pre-submission checks for VoiceDock-notarize.zip and initiating connection to the Apple notary service...
+Submission ID received
+  id: a2acfae5-ff19-4f94-a38e-016c3c3ae968
+Successfully uploaded file
+  id: a2acfae5-ff19-4f94-a38e-016c3c3ae968
+  path: /Users/terada/Projects/voicedock_app/dist/VoiceDock-notarize.zip
+Waiting for processing to complete.
+Current status: Accepted......Processing complete
+  id: a2acfae5-ff19-4f94-a38e-016c3c3ae968
+  status: Accepted
+
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The staple and validate action worked!
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The validate action worked!
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app を公証・staple しました（submission a2acfae5-ff19-4f94-a38e-016c3c3ae968）
+==> 4/7 dmg の作成
+created: /Users/terada/Projects/voicedock_app/dist/.dmg-stage.GaThOW/VoiceDock-rw.dmg
+OK: 作業用のイメージを /Users/terada/Projects/voicedock_app/dist/.dmg-stage.GaThOW/mnt にマウントしました（/dev/disk21）
+2 images written to /Users/terada/Projects/voicedock_app/dist/.dmg-stage.GaThOW/mnt/.background/background.tiff.
+OK: /Users/terada/Projects/voicedock_app/dist/.dmg-stage.GaThOW/mnt/.DS_Store
+イメージ作成エンジンを準備中…
+ディスク全体（Apple_HFS: 0）を読み込み中…
+   （CRC32 $EB4A2397:ディスク全体（Apple_HFS: 0））
+リソースを追加中…
+経過時間:  55.910ms
+ファイルサイズ: 23401594バイト、チェックサム: CRC32 $8DF560B5
+処理されたセクタ数: 151552、103873圧縮されました
+速度: 907.2Mバイト/秒
+節約率: 69.8%
+created: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+==> 5/7 dmg の署名
+==> 署名: Developer ID Application: Shinsuke Terada (ZCWP35H248)
+/Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg: valid on disk
+/Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg: satisfies its Designated Requirement
+OK: dmg を署名しました
+==> 6/7 dmg の公証と staple
+==> xcrun notarytool submit（キーチェーンプロファイル VOICEDOCK_NOTARY）
+Conducting pre-submission checks for VoiceDock-1.0.0.dmg and initiating connection to the Apple notary service...
+Submission ID received
+  id: a03aa940-3f5c-4159-b5a7-a93bb8afc827
+Successfully uploaded file
+  id: a03aa940-3f5c-4159-b5a7-a93bb8afc827
+  path: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+Waiting for processing to complete.
+Current status: Accepted.....Processing complete
+  id: a03aa940-3f5c-4159-b5a7-a93bb8afc827
+  status: Accepted
+
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The staple and validate action worked!
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The validate action worked!
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg を公証・staple しました（submission a03aa940-3f5c-4159-b5a7-a93bb8afc827）
+==> 7/7 verify-bundle
+== V-1 バンドルの中身
+  OK   38 件が一致
+  OK   ディレクトリ 28 個が一致
+== V-2 Info.plist
+  OK   plist として読める
+  OK   CFBundleIdentifier = io.github.shinsuke-terada.VoiceDock
+  OK   CFBundleName = VoiceDock
+  OK   CFBundleExecutable = VoiceDock
+  OK   CFBundlePackageType = APPL
+  OK   CFBundleShortVersionString = 1.0.0
+  OK   LSMinimumSystemVersion = 15.0
+  OK   LSUIElement = true
+  OK   NSRemovableVolumesUsageDescription が在る
+  OK   NSDocumentsFolderUsageDescription が在る
+  OK   NSDesktopFolderUsageDescription が在る
+  OK   NSDownloadsFolderUsageDescription が在る
+== V-3 アーキテクチャ
+  OK   VoiceDock = arm64
+  OK   voicedock-reaper = arm64
+  OK   whisper-cli = arm64
+  OK   llama-server = arm64
+  OK   argmax-cli = arm64
+== V-4 otool -L
+  OK   リンク先は /usr/lib と /System/Library だけ
+== V-5 codesign
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: valid on disk
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: satisfies its Designated Requirement
+  OK   署名が有効
+== V-6 本体の署名の中身
+  OK   Identifier=io.github.shinsuke-terada.VoiceDock
+  OK   TeamIdentifier=ZCWP35H248
+  OK   Hardened Runtime
+  OK   Developer ID Application で署名
+== V-7 reaper の署名
+  OK   Identifier=io.github.shinsuke-terada.VoiceDock.reaper
+  OK   TeamIdentifier=ZCWP35H248
+  OK   アプリが使う要件文字列を満たす
+== V-8 エンタイトルメント
+  OK   本体 のエンタイトルメントは空の dict
+  OK   reaper のエンタイトルメントは空の dict
+== V-9 spctl と staple
+  OK   spctl: Notarized Developer ID
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The validate action worked!
+  OK   stapler validate（app）
+== V-10 dmg
+  OK   spctl（dmg）
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The validate action worked!
+  OK   stapler validate（dmg）
+  OK   dmg の名前が版と一致
+OK: verify-bundle のすべての検査に通りました（版 1.0.0）
+
+版: 1.0.0
+0b29d2b29f6e0dbf2a42d76edfff67c9f44276fd7ef080e99db09da3ddbea1d5  /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+904213204c8e3b612c8a258cee0966792b5ff498
+exit=0
+Thu Oct  1 21:40:05 JST 2026
+```
+
+`gh release create`（利用者の確認を得てから。リリースノートの確認の 2 行は上の `shasum -a 256` と `git rev-parse HEAD` で埋めた）と `gh release view`:
+
+```text
+$ gh release create "v$version" "dist/VoiceDock-$version.dmg" --title "VoiceDock $version" --notes-file docs/release-notes/"$version".md --verify-tag --latest
+https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.0
+$ gh release view "v$version"
+title:	VoiceDock 1.0.0
+tag:	v1.0.0
+draft:	false
+prerelease:	false
+immutable:	false
+author:	shinsuke-terada
+created:	2026-10-01T12:35:46Z
+published:	2026-10-01T12:49:46Z
+url:	https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.0
+asset:	VoiceDock-1.0.0.dmg
+--
+# VoiceDock 1.0.0
+
+DJI Mic 3 の録音を Mac につなぐだけで取り込み、文字起こし（whisper.cpp）と要約（llama.cpp）をして Obsidian の Vault にノートを書く、メニューバーのアプリです。処理はすべて Mac の中で行い、録音と文字を外へ出しません。
+
+## 入れ方
+1. `VoiceDock-1.0.0.dmg` を開き、`VoiceDock` を `Applications` へドラッグする
+2. 初めてデバイスを挿したときの許可のダイアログで「許可」を押す
+3. 詳しくは README を参照
+
+## 変わったこと
+- 元音声の削除の実機での確認がすべて済んだ（実機 E2E の全件、三重ロックを外しての 1 日の運用、削除 ON での E2E-01〜09 の再実行）。0.9.0 の「試験的な機能として扱う」を外した。**既定は無効のまま**で、有効にするには三重ロックを外す操作が要る
+- アプリの動きは 0.9.0 から変わっていない（版の表示と削除モジュールの版が 1.0.0 になる）
+- 0.9.0 で削除を有効にしていた場合は、入れ替えた後にパネルに「削除モジュールの更新が必要です」が出る。有効化の操作をもう一度通すと 1.0.0 の削除モジュールに置き換わる
+- リポジトリを公開した。Releases の dmg は GitHub にサインインしなくても落とせる
+
+## 既知の制約
+- README の「既知の制約」を参照
+
+## 確認
+- SHA-256: `0b29d2b29f6e0dbf2a42d76edfff67c9f44276fd7ef080e99db09da3ddbea1d5`
+- コミット: `904213204c8e3b612c8a258cee0966792b5ff498`（タグ `v1.0.0`）
+```
+
+公開の後、サインインせずに落とせることと `gh release download` が通ることを確かめた（エージェント。SHA-256 は上の dmg と一致）:
+
+```text
+$ curl -sI https://github.com/shinsuke-terada/voicedock-app/releases/latest | grep -i "^location"
+location: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.0
+$ env -u GH_TOKEN -u GITHUB_TOKEN curl -sSL -o anon/VoiceDock-1.0.0.dmg -w "%{http_code} %{size_download}
+" https://github.com/shinsuke-terada/voicedock-app/releases/download/v1.0.0/VoiceDock-1.0.0.dmg
+200 23412864
+$ gh release download v1.0.0 --repo shinsuke-terada/voicedock-app --pattern "*.dmg" --dir gh
+exit=0
+$ shasum -a 256 anon/VoiceDock-1.0.0.dmg gh/VoiceDock-1.0.0.dmg
+0b29d2b29f6e0dbf2a42d76edfff67c9f44276fd7ef080e99db09da3ddbea1d5  anon/VoiceDock-1.0.0.dmg
+0b29d2b29f6e0dbf2a42d76edfff67c9f44276fd7ef080e99db09da3ddbea1d5  gh/VoiceDock-1.0.0.dmg
+```
+
+【利用者が行った】プライベートウィンドウ（サインインしていない状態）で Releases から dmg を落とし直し、`/Applications` へ入れ直して起動した。Gatekeeper に止められずに起動し、「詳細・診断」の版の表示は `<版>`（利用者の報告は「確認できた」）。
+その後にエージェントが確かめた出力（落とした dmg は `~/Downloads` に残っていなかったので、SHA-256 は上のエージェントのダウンロードで代えた。ビルド 455 は本番の `make release` のもので、リハーサルの 448 ではない）:
+
+```text
+$ shasum -a 256 ~/Downloads/VoiceDock-1.0.0.dmg
+shasum: /Users/terada/Downloads/VoiceDock-1.0.0.dmg: No such file or directory
+$ xattr -p com.apple.quarantine ~/Downloads/VoiceDock-1.0.0.dmg
+xattr: No such file: /Users/terada/Downloads/VoiceDock-1.0.0.dmg
+$ defaults read /Applications/VoiceDock.app/Contents/Info.plist CFBundleShortVersionString; defaults read /Applications/VoiceDock.app/Contents/Info.plist CFBundleVersion
+1.0.0
+455
+$ spctl -a -vv /Applications/VoiceDock.app
+/Applications/VoiceDock.app: accepted
+source=Notarized Developer ID
+origin=Developer ID Application: Shinsuke Terada (ZCWP35H248)
+$ pgrep -fl "VoiceDock.app/Contents/MacOS/VoiceDock"
+91156 /Applications/VoiceDock.app/Contents/MacOS/VoiceDock
+$ tail -n 3 "$HOME/Library/Application Support/VoiceDock/logs/app.log"
+2026-10-01T20:10:59+09:00 INFO  model_downloaded id=large-v3-turbo-q5_0
+2026-10-01T21:54:38+09:00 INFO  service_stopping version=1.0.0
+2026-10-01T21:55:59+09:00 INFO  service_started version=1.0.0 schema=v1_initial
 ```
 
 RL-06 の reaper の `--version`（`<HOME>` には削除モジュールが導入されていない（削除は無効）ので、リハーサルの `.app` の中のものを確かめた）:
