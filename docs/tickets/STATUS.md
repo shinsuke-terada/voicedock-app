@@ -191,7 +191,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | もの | 場所・値 |
 |---|---|
 | `.app` の作り方 | `make vendor`（whisper.cpp / llama.cpp）→ `make app` → `dist/VoiceDock.app`（開発用の署名）。配布版は `make release` → `dist/VoiceDock-<版>.dmg`（Developer ID・公証。`main` のタグの上で作業ツリーを clean にして行う） |
-| 配布 | **v0.9.0**: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v0.9.0（非公開リポジトリなので招待された人だけ）。いまの `dist/VoiceDock.app` は v0.9.0 の配布版（ビルド 436） |
+| 配布 | **v0.9.0**: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v0.9.0（2026-09-28 にリポジトリを公開したので、いまは誰でも落とせる。F-101）。いまの `dist/VoiceDock.app` は v0.9.0 の配布版（ビルド 436） |
 | 公証 | キーチェーンのプロファイル `VOICEDOCK_NOTARY`（2026-09-26 に利用者が登録し直した。`xcrun notarytool history --keychain-profile VOICEDOCK_NOTARY` で確かめられる） |
 | `<HOME>` | `~/Library/Application Support/VoiceDock`（`config.json`・`ui-state.json`・`voicedock.sqlite`・`logs/`・`inbox`・`staging`・`queue`・`bin`・`models`） |
 | whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin`（547 MB） |
