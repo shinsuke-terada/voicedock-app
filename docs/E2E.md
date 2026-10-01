@@ -147,7 +147,7 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-10 | 削除 ON で通し | ON | ✅ PASS | §3.10 |
 | E2E-11 | 過去分の削除・手動で消した分の完了 | ON | ✅ PASS | §3.11 |
 | E2E-12 | 文字起こし中に強制終了 | OFF | ✅ PASS | §3.12 |
-| E2E-13 | 処理中にスリープ | OFF | ⬜ 未実施 | §3.13 |
+| E2E-13 | 処理中にスリープ | OFF | ✅ PASS | §3.13 |
 | E2E-14 | アプリが動いていない間に接続 | OFF | ✅ PASS | §3.14 |
 | E2E-15 | 取り下げ | — | — 対象外 | §3.15 |
 | E2E-16 | リムーバブルボリュームの許可を拒否 | OFF | ✅ PASS | §3.16 |
@@ -1425,7 +1425,8 @@ $ grep "part_discovered" "$VD_HOME/logs/app.log" | grep -c "MIC020_20260924_2212
 **スリープの直前に `pmset -g assertions | grep -E '^ *PreventSystemSleep '` が `PreventSystemSleep 0` であることを確かめる。**
 ほかのプロセスが `PreventSystemSleep` を持っていると（Claude Code は自分の子プロセスとして `caffeinate -ims` を動かす）、明示的なスリープが **DarkWake** になり、CPU が止まらないまま処理が進んで試験が空振りする（2026-09-25 に 2 回。下の記録）。
 Claude Code などを終了し、`pmset -g assertions | grep -c "on behalf of 'claude'"` が `0` になってから行う。
-眠ったかどうかは、後で `pmset -g log | grep -E ' (Sleep|Wake|DarkWake) '` の行が `Entering Sleep state`（`Entering DarkWake state` ではない）であることで確かめる。
+Claude Code のほかに、**Orca.app も起動している間ずっと自分で `/usr/bin/caffeinate -i -s`（`asserting forever`）を動かす**（2026-10-01 に確認）。Orca の中で Claude Code を動かしているときは Orca ごと終了する。
+眠ったかどうかは、後で `pmset -g log | awk '$4=="Sleep"||$4=="Wake"||$4=="DarkWake"'` の行が `Entering Sleep state`（`Entering DarkWake state` ではない）であることで確かめる（`grep -E ' (Sleep|Wake|DarkWake) '` では `Kernel Client Acks` の長い行まで拾う）。
 ふたの無い Mac（Mac mini など）では、手順 4 の「ふたを開けて復帰」をキーボードかマウスで起こすと読み替える。
 
 #### 手順
@@ -1445,7 +1446,7 @@ Claude Code などを終了し、`pmset -g assertions | grep -c "on behalf of 'c
 #### 記録
 2 と（待機中に戻ったあとの）`pmset -g assertions` の 2 回分、[C-3]、スリープと復帰の時刻。
 
-**2026-09-25 に 2 回行い、2 回とも空振り（Mac が眠らなかった）。判定は未実施のまま。**
+**2026-09-25 に 2 回行い、2 回とも空振り（Mac が眠らなかった）。2026-10-01 の 3 回目で本当に眠ったことを確かめ、PASS（下の「3 回目」）。**
 2 回とも、アップルメニューのスリープが `Entering DarkWake state` になり、CPU が止まらずに処理が進み続けた。
 原因は、エージェントの Claude Code（pid 57888）が子プロセスとして動かしていた `caffeinate -ims`（pid 57889）の `PreventSystemSleep`（1 回目は別の Claude Code のセッションの pid 21078 も）。
 VoiceDock が持っていたのは `PreventUserIdleSystemSleep` だけである。
@@ -1671,8 +1672,207 @@ Sleep/Wakes since boot:0   Dark Wake Count in this sleep cycle:0
 2026-09-25 16:39:05 +0900 Wake                	DarkWake to FullWake from Deep Idle [CDNVA] : due to HID Activity Using AC (Charge:0%)           
 ```
 
+3 回目（2026-10-01 18:00〜18:17。削除 OFF。新しい録音 3 本 MIC018 23.4 分・MIC019 11.2 分・MIC020 15.0 分。2026-10-01 の 12:58〜14:25 に録った）
+
+実施: DEV=VOICEDOCK。`$BACKUP=$HOME/VoiceDockE2E-E13`（手順書 `e2e13-steps.md` と生の出力の控え）。アプリは v0.9.0 のビルド 436（`dist/VoiceDock.app`、pid 97711。develop `919c55e` と `Sources` は同じ）。
+削除は 14:05:09 に「無効にする」で無効にした（`deletion_disabled`）。そのときの [C-11]（利用者のスクリーンショットから書き写した）:
+
+```text
+無効
+ロック 1  : アプリ=無効, reaper.conf=無効
+ロック 2-A: 削除モジュール=未導入
+ロック 2-B: 設定=ro, デバイス未接続
+```
+
+**1・2 回目との差**:
+- 挿す前に Claude Code を 4 つと **Orca.app** を終了した。Orca は Claude Code とは別に、2026-09-26 10:19 から `/usr/bin/caffeinate -i -s`（`asserting forever`。`PreventSystemSleep`）を持ち続けていた。挿す前の記録で `PreventSystemSleep 0`・claude の行が 0 件であることを確かめた
+- 合図を `llm_server_started` から**最初の `normalize_completed`**（文字起こしの開始）に変えた。新しい日の Session は、無通信が 30 分続くまで要約が始まらないため
+- 3 本の Raw が保存された後、18:15:15 にパネルの「今すぐ要約」を押して Session を閉じた（F-66。無通信の 30 分は待たなかった）
+
+**観察**（どれも FAIL ではない）:
+- 眠っている間に、ネットワークの受信（`wifibt … E_RX_IP_PACKET`。システム設定の「ネットワークアクセスによるスリープ解除」が入っている）による DarkWake が 4 回あった。その間（約 45 秒ずつ）は処理が進んだ。本当に眠っていたのは 13 + 93 + 7 + 11 = 124 秒で、アップルメニューのスリープ（18:02:34）から利用者が起こす（18:07:11）までは 4 分 37 秒
+- MIC018 の文字起こしは `elapsed_s=167.0 rtf=0.119`（普段は rtf 0.02〜0.04）。眠っている間は `whisper-cli` が止まり、DarkWake と復帰の後に続きを処理した。MIC020 は復帰の後の 18:07:43 に終わった
+- 挿した直後（18:01:40）に `copy_failed reason=read_error` が 3 件出た。次の走査（18:02:27〜）で 3 本とも `recopy=false` でコピーされている。スリープの前の出来事で、2026-09-25 の 15:02:41（E2E-02）と 18:34:43（R-02）にも、挿した直後に同じ形で出ている
+- `pmset -g log` の絞り込みは、1・2 回目の `grep -E ' (Sleep|Wake|DarkWake) '` では `Kernel Client Acks` の行（`Delays to Wake notifications`）まで拾うので、4 列目で絞った（`Wake Requests` の行は残る）
+
+期待との対応:
+- 2: 合図の時点（18:02:28）の一覧に `pid 97711(VoiceDock) … PreventUserIdleSystemSleep` がある。`pmset -g log` の名前は `"VoiceDock が録音を処理しています"`。挿す前（18:00:58）と後（18:16:49）の一覧には VoiceDock の行が無い
+- 3: VoiceDock がアサーションを持っている間（18:02:29〜18:05:19）の 18:02:34 に、**`Entering Sleep state due to 'Software Sleep pid=406'`**（DarkWake ではない）
+- 4: 復帰（18:07:11 `DarkWake to FullWake … due to HID Activity`）の後も処理が続き、3 本とも `RAW_SAVED` → Session が `COMPLETED`（18:16:37 `source_delete_skipped`）。recordings の COMPLETED は 33 → 36、sessions の COMPLETED は 3 → 4。`FAILED` は 0、ERROR は 0 行、WARNING は上の `copy_failed` の 3 行だけ
+
+挿す前（[C-1]・削除の設定・アサーション）:
+```text
+terada@teramacminim4 voicedock_app % { date; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;"; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions GROUP BY status ORDER BY status;"; grep -E '"deleteSourceAudio"|"mountMode"' "$VD_HOME/config.json"; cat "$VD_HOME/bin/reaper.conf"; echo "claude の caffeinate の行数:"; pmset -g assertions | grep -c "on behalf of 'claude'"; pmset -g assertions | grep -E '^ *PreventSystemSleep '; pmset -g assertions | sed -n '/Listed by owning process/,/Kernel Assertions/p'; } 2>&1 | tee "$BACKUP/e2e13-try3-before.txt"
+2026年 10月 1日 木曜日 18時00分58秒 JST
+COMPLETED|33
+SKIPPED|1
+COMPLETED|3
+    "deleteSourceAudio" : false
+    "mountMode" : "ro",
+SCHEMA=1
+DELETE_SOURCE_AUDIO=false
+VOLUMES_ROOT=/Volumes
+claude の caffeinate の行数:
+0
+   PreventSystemSleep             0
+Listed by owning process:
+   pid 630(sharingd): [0x0016d7c4000198e4] 00:01:46 PreventUserIdleSystemSleep named: "Handoff"  
+   pid 395(bluetoothd): [0x0016d811000198f7] 00:00:29 PreventUserIdleSystemSleep named: "com.apple.BTStack"  
+   pid 752(useractivityd): [0x0016d829000198fc] 00:00:04 PreventUserIdleSystemSleep named: "BTLEAdvertisement.FD7689AA-F9BE-4EA5-A843-3ADA7821B139"  
+	Timeout will fire in 55 secs Action=TimeoutActionTurnOff
+   pid 344(powerd): [0x00168f170001970d] 05:11:51 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:10017586a service:AppleUserHIDEventService product:HHKB-Studio1 eventType:3"  
+	Timeout will fire in 600 secs Action=TimeoutActionRelease
+Kernel Assertions: 0x104=USB,MAGICWAKE
+```
+
+合図（最初の `normalize_completed`）で自動で取ったアサーション。プロンプトが戻った直後にアップルメニューからスリープした:
+```text
+terada@teramacminim4 voicedock_app % L="$VD_HOME/logs/app.log"; n=$(wc -l < "$L"); until tail -n +$((n+1)) "$L" | grep -q normalize_completed; do sleep 0.5; done; { date; pmset -g assertions | grep -A3 'Listed by owning process'; echo ----; pmset -g assertions | sed -n '/Listed by owning process/,/Kernel Assertions/p'; } 2>&1 | tee "$BACKUP/e2e13-try3-during.txt"
+2026年 10月 1日 木曜日 18時02分28秒 JST
+Listed by owning process:
+   pid 630(sharingd): [0x0016d7c4000198e4] 00:03:15 PreventUserIdleSystemSleep named: "Handoff"  
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:15 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:100175882 service:AppleUserHIDEventService product:MX Master 3S eventType:17"  
+	Timeout will fire in 585 secs Action=TimeoutActionRelease
+----
+Listed by owning process:
+   pid 630(sharingd): [0x0016d7c4000198e4] 00:03:15 PreventUserIdleSystemSleep named: "Handoff"  
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:15 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:100175882 service:AppleUserHIDEventService product:MX Master 3S eventType:17"  
+	Timeout will fire in 585 secs Action=TimeoutActionRelease
+   pid 359(mds): [0x0016d84b000b990b] 00:01:00 BackgroundTask named: "com.apple.metadata.mds.power"  
+   pid 97711(VoiceDock): [0x0016d88700019915] 00:00:00 PreventUserIdleSystemSleep named: ""  
+   pid 547(mds_stores): [0x0016d887000b9916] 00:00:00 BackgroundTask named: "com.apple.metadata.mds_stores.power"  
+   pid 344(powerd): [0x00168f170001970d] 05:13:20 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 344(powerd): [0x0016d87200089911] 00:00:21 ExternalMedia named: "com.apple.powermanagement.externalmediamounted"  
+Kernel Assertions: 0x104=USB,MAGICWAKE
+```
+
+見張り（ターミナル B。スリープの 18:02:34〜復帰の 18:07:11 を挟んで進んでいる）:
+```text
+terada@teramacminim4 voicedock_app % tail -n 0 -f "$HOME/Library/Application Support/VoiceDock/logs/app.log" | grep --line-buffered -E 'part_discovered|copy_|normalize_|transcription_|diarization_|raw_note_saved|session_merged|llm_|obsidian_saved|source_delete_skipped|volume_|ERROR|WARNING' | tee "$HOME/VoiceDockE2E-E13/e2e13-try3-watch.txt"
+2026-10-01T18:01:40+09:00 WARNING copy_failed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav reason=read_error
+2026-10-01T18:01:40+09:00 WARNING copy_failed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav reason=read_error
+2026-10-01T18:01:40+09:00 WARNING copy_failed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav reason=read_error
+2026-10-01T18:02:27+09:00 INFO  part_discovered recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav duration_s=1401.62
+2026-10-01T18:02:27+09:00 INFO  copy_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav bytes=201866056 recopy=false
+2026-10-01T18:02:27+09:00 INFO  normalize_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav in_bytes=201866056 out_bytes=44855936 elapsed_s=0.3
+2026-10-01T18:02:35+09:00 INFO  part_discovered recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav duration_s=674.19
+2026-10-01T18:02:35+09:00 INFO  copy_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav bytes=97116136 recopy=false
+2026-10-01T18:02:57+09:00 INFO  part_discovered recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav duration_s=901.78
+2026-10-01T18:02:57+09:00 INFO  copy_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav bytes=129889096 recopy=false
+2026-10-01T18:05:19+09:00 INFO  transcription_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav elapsed_s=167.0 chars=11495 rtf=0.119 speech_ratio=0.98
+2026-10-01T18:05:19+09:00 INFO  diarization_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav speakers=1 elapsed_s=4.9
+2026-10-01T18:05:19+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20261001 parts=1 bytes=12871
+2026-10-01T18:05:20+09:00 INFO  normalize_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav in_bytes=97116136 out_bytes=21578176 elapsed_s=0.3
+2026-10-01T18:06:30+09:00 INFO  transcription_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav elapsed_s=66.0 chars=4931 rtf=0.098 speech_ratio=0.961
+2026-10-01T18:06:30+09:00 INFO  diarization_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav speakers=3 elapsed_s=4.4
+2026-10-01T18:06:30+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20261001 parts=2 bytes=27749
+2026-10-01T18:06:31+09:00 INFO  normalize_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav in_bytes=129889096 out_bytes=28861056 elapsed_s=0.7
+2026-10-01T18:07:43+09:00 INFO  transcription_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav elapsed_s=71.1 chars=5525 rtf=0.079 speech_ratio=0.955
+2026-10-01T18:07:43+09:00 INFO  diarization_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav speakers=2 elapsed_s=1.6
+2026-10-01T18:07:43+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20261001 parts=3 bytes=44960
+2026-10-01T18:15:15+09:00 INFO  session_merged session_key=VOICEDOCK:20261001 parts=3 excluded=0 chars=21951
+2026-10-01T18:15:19+09:00 INFO  llm_server_started port=64970 elapsed_s=3.1
+2026-10-01T18:16:37+09:00 INFO  llm_completed session_key=VOICEDOCK:20261001 chunks=2 elapsed_s=78.0
+2026-10-01T18:16:37+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20261001 path="Daily/Voice/Wiki/20261001/2026-10-01 Voice.md" bytes=6749
+2026-10-01T18:16:37+09:00 INFO  source_delete_skipped session_key=VOICEDOCK:20261001 reason=delete_source_audio_disabled
+2026-10-01T18:16:37+09:00 INFO  llm_server_stopped port=64970
+```
+
+完走（「今すぐ要約」の後）と、ほかの行:
+```text
+$ grep -E 'session_merged|llm_|obsidian_saved|source_delete_skipped' "$VD_HOME/logs/app.log" | grep '^2026-10-01T18'
+2026-10-01T18:15:15+09:00 INFO  session_merged session_key=VOICEDOCK:20261001 parts=3 excluded=0 chars=21951
+2026-10-01T18:15:19+09:00 INFO  llm_server_started port=64970 elapsed_s=3.1
+2026-10-01T18:16:37+09:00 INFO  llm_completed session_key=VOICEDOCK:20261001 chunks=2 elapsed_s=78.0
+2026-10-01T18:16:37+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20261001 path="Daily/Voice/Wiki/20261001/2026-10-01 Voice.md" bytes=6749
+2026-10-01T18:16:37+09:00 INFO  source_delete_skipped session_key=VOICEDOCK:20261001 reason=delete_source_audio_disabled
+2026-10-01T18:16:37+09:00 INFO  llm_server_stopped port=64970
+
+$ grep -E '^2026-10-01T1[4-8]' "$VD_HOME/logs/app.log" | grep -vE 'part_discovered|copy_|normalize_|transcription_|diarization_|raw_note_saved|session_merged|llm_|obsidian_saved|source_delete_skipped'
+2026-10-01T14:05:09+09:00 INFO  deletion_disabled
+2026-10-01T18:02:57+09:00 INFO  scan_completed devices=1 copied=3 elapsed_s=50.3
+```
+
+VoiceDock のアサーション（`pmset -g log`）:
+```text
+$ pmset -g log | awk '$1=="2026-10-01" && $2>="17:55" && $4=="Assertions" && /VoiceDock/' | cut -c1-200
+2026-10-01 18:02:29 +0900 Assertions          	PID 97711(VoiceDock) Summary PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:00:01  id:0x0x100009915 [System: PrevIdle DeclUser SRPrevSleep IPushSrvc kCPU kDisp]          
+2026-10-01 18:05:19 +0900 Assertions          	PID 97711(VoiceDock) Released PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:02:52  id:0x0x100009915 [System: DeclUser SRPrevSleep kCPU kDisp]          
+2026-10-01 18:06:30 +0900 Assertions          	PID 97711(VoiceDock) Released PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:01:10  id:0x0x100009948 [System: DeclUser SRPrevSleep kCPU kDisp]          
+2026-10-01 18:07:43 +0900 Assertions          	PID 97711(VoiceDock) Released PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:01:13  id:0x0x100009993 [System: PrevIdle DeclUser kDisp]          
+2026-10-01 18:16:37 +0900 Assertions          	PID 97711(VoiceDock) Released PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:01:21  id:0x0x100009bdc [System: PrevIdle PrevSleep DeclUser kCPU kDi
+```
+
+後（[C-1]・待機中のアサーション・スリープと復帰の時刻。claude と Orca の caffeinate は、利用者が Claude Code と Orca を起動し直した後のもの）:
+```text
+$ { date; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;"; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions GROUP BY status ORDER BY status;"; pmset -g assertions | grep -A3 'Listed by owning process'; echo '----'; pmset -g assertions | sed -n '/Listed by owning process/,/Kernel Assertions/p'; echo '----'; pmset -g log | awk '$1=="2026-10-01" && $2>="18:00" && ($4=="Sleep"||$4=="Wake"||$4=="DarkWake")'; } 2>&1 | tee "$BACKUP/e2e13-try3-after.txt"
+Thu Oct  1 18:16:49 JST 2026
+COMPLETED|36
+SKIPPED|1
+COMPLETED|4
+Listed by owning process:
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:10017602c service:AppleUserHIDEventService product:MX Master 3S eventType:17"  
+	Timeout will fire in 600 secs Action=TimeoutActionRelease
+   pid 26022(caffeinate): [0x0016da9b00019b96] 00:03:37 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+----
+Listed by owning process:
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:10017602c service:AppleUserHIDEventService product:MX Master 3S eventType:17"  
+	Timeout will fire in 600 secs Action=TimeoutActionRelease
+   pid 26022(caffeinate): [0x0016da9b00019b96] 00:03:37 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting forever
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 26022(caffeinate): [0x0016da9b00079b97] 00:03:37 PreventSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting forever
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 395(bluetoothd): [0x0016db6b00019bf9] 00:00:08 PreventUserIdleSystemSleep named: "com.apple.BTStack"  
+   pid 395(bluetoothd): [0x0016d932000999d5] 00:09:38 UserIsActive named: "Bluetooth LE HID Activity"  
+	Timeout will fire in 22 secs Action=TimeoutActionRelease
+   pid 27812(caffeinate): [0x0016dab400019ba4] 00:03:12 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 27811)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 27812(caffeinate): [0x0016dab400079ba5] 00:03:12 PreventSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 27811)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 27812(caffeinate): [0x0016dab4000f9ba6] 00:03:12 PreventDiskIdle named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 27811)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 33459(caffeinate): [0x0016db6900019bf7] 00:00:10 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting for 300 secs
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+	Timeout will fire in 289 secs Action=TimeoutActionRelease
+   pid 630(sharingd): [0x0016daed00019bd4] 00:02:14 PreventUserIdleSystemSleep named: "Handoff"  
+   pid 344(powerd): [0x0016d932000199d6] 00:09:38 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 344(powerd): [0x0016d87200089911] 00:14:42 ExternalMedia named: "com.apple.powermanagement.externalmediamounted"  
+   pid 33069(caffeinate): [0x0016db5f00019bf2] 00:00:21 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 33068)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 33069(caffeinate): [0x0016db5f00079bf3] 00:00:21 PreventSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 33068)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 33069(caffeinate): [0x0016db5f000f9bf4] 00:00:21 PreventDiskIdle named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 33068)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 359(mds): [0x0016d84b000b990b] 00:15:21 BackgroundTask named: "com.apple.metadata.mds.power"  
+Kernel Assertions: 0x104=USB,MAGICWAKE
+----
+2026-10-01 18:02:34 +0900 Sleep               	Entering Sleep state due to 'Software Sleep pid=406':TCPKeepAlive=active Using AC (Charge:0%)           
+2026-10-01 18:02:35 +0900 Wake Requests       	[*process=dasd request=SleepService deltaSecs=934 wakeAt=2026-10-01 18:18:09 info="com.apple.dasd:501:com.apple.chronod.nextScheduledTimelineRefresh"] [process=dasd request=TimerPlugin deltaSecs=1051 wakeAt=2026-10-01 18:20:06 info="com.apple.dasd:205:com.apple.private.contacts.accounts.validate-cache"] [process=mDNSResponder request=Maintenance deltaSecs=5862 wakeAt=2026-10-01 19:40:18 info="DHCP lease renewal"] [process=NotificationCenter request=Maintenance deltaSecs=14292 wakeAt=2026-10-01 22:00:48 info="com.apple.notificationcenter.dnd"] [process=powerd request=CSPNEvaluation deltaSecs=7253 wakeAt=2026-10-01 20:03:29] [process=powerd request=UserWake deltaSecs=14244 wakeAt=2026-10-01 22:00:00 info="com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer,599"]           
+2026-10-01 18:02:47 +0900 DarkWake            	DarkWake from Deep Idle [CDNP] : due to smc.sysState.Wake(0x70070000) wifibt SMC.OutboxNotEmpty E_RX_IP_PACKET ARPT/ Using AC (Charge:0%) 45 secs   
+2026-10-01 18:03:32 +0900 Sleep               	Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using AC (Charge:0%) 93 secs   
+2026-10-01 18:03:33 +0900 Wake Requests       	[process=dasd request=SleepService deltaSecs=1055 wakeAt=2026-10-01 18:21:09 info="com.apple.dasd:501:com.apple.chronod.nextScheduledTimelineRefresh"] [*process=dasd request=TimerPlugin deltaSecs=1011 wakeAt=2026-10-01 18:20:25 info="com.apple.dasd:205:com.apple.private.contacts.accounts.validate-cache"] [process=mDNSResponder request=Maintenance deltaSecs=5810 wakeAt=2026-10-01 19:40:24 info="DHCP lease renewal"] [process=NotificationCenter request=Maintenance deltaSecs=14235 wakeAt=2026-10-01 22:00:49 info="com.apple.notificationcenter.dnd"] [process=powerd request=CSPNEvaluation deltaSecs=7195 wakeAt=2026-10-01 20:03:29] [process=powerd request=UserWake deltaSecs=14186 wakeAt=2026-10-01 22:00:00 info="com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer,599"]           
+2026-10-01 18:05:05 +0900 DarkWake            	DarkWake from Deep Idle [CDNP] : due to smc.sysState.Wake(0x70070000) wifibt SMC.OutboxNotEmpty E_RX_IP_PACKET ARPT/ Using AC (Charge:0%) 45 secs   
+2026-10-01 18:05:50 +0900 Sleep               	Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using AC (Charge:0%) 7 secs    
+2026-10-01 18:05:51 +0900 Wake Requests       	[*process=dasd request=SleepService deltaSecs=1047 wakeAt=2026-10-01 18:23:19 info="com.apple.dasd:501:com.apple.chronod.nextScheduledTimelineRefresh"] [process=dasd request=TimerPlugin deltaSecs=1056 wakeAt=2026-10-01 18:23:28 info="com.apple.dasd:205:com.apple.private.contacts.accounts.validate-cache"] [process=mDNSResponder request=Maintenance deltaSecs=5686 wakeAt=2026-10-01 19:40:38 info="DHCP lease renewal"] [process=NotificationCenter request=Maintenance deltaSecs=14184 wakeAt=2026-10-01 22:02:16 info="com.apple.notificationcenter.dnd"] [process=powerd request=CSPNEvaluation deltaSecs=7057 wakeAt=2026-10-01 20:03:29] [process=powerd request=UserWake deltaSecs=14048 wakeAt=2026-10-01 22:00:00 info="com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer,599"]           
+2026-10-01 18:05:57 +0900 DarkWake            	DarkWake from Deep Idle [CDNP] : due to smc.sysState.Wake(0x70070000) wifibt SMC.OutboxNotEmpty E_RX_IP_PACKET ARPT/ Using AC (Charge:0%) 45 secs   
+2026-10-01 18:06:42 +0900 Sleep               	Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using AC (Charge:0%) 11 secs   
+2026-10-01 18:06:44 +0900 Wake Requests       	[process=dasd request=SleepService deltaSecs=1070 wakeAt=2026-10-01 18:24:34 info="com.apple.dasd:501:com.apple.chronod.nextScheduledTimelineRefresh"] [*process=dasd request=TimerPlugin deltaSecs=1012 wakeAt=2026-10-01 18:23:36 info="com.apple.dasd:205:com.apple.private.contacts.accounts.validate-cache"] [process=mDNSResponder request=Maintenance deltaSecs=5638 wakeAt=2026-10-01 19:40:42 info="DHCP lease renewal"] [process=NotificationCenter request=Maintenance deltaSecs=14050 wakeAt=2026-10-01 22:00:54 info="com.apple.notificationcenter.dnd"] [process=powerd request=CSPNEvaluation deltaSecs=7005 wakeAt=2026-10-01 20:03:29] [process=powerd request=UserWake deltaSecs=13996 wakeAt=2026-10-01 22:00:00 info="com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer,599"]           
+2026-10-01 18:06:53 +0900 DarkWake            	DarkWake from Deep Idle [CDNP] : due to smc.sysState.Wake(0x70070000) wifibt SMC.OutboxNotEmpty E_RX_IP_PACKET ARPT/ Using AC (Charge:0%) 18 secs   
+2026-10-01 18:07:11 +0900 Wake                	DarkWake to FullWake from Deep Idle [CDNVA] : due to HID Activity Using AC (Charge:0%)           
+```
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.14 E2E-14 — アプリが動いていない間に接続
 
@@ -1935,12 +2135,12 @@ PLAN 付録 B.3 の E2E-18 の行（取り下げ）。
 | # | 条件 | 判定 | 記録 |
 |---|---|---|---|
 | G-1 | 付録 B.1 の ND が全件 PASS（アプリ層・reaper 層とも。正の対照を含む） | ✅ PASS | §4.1 |
-| G-2 | 付録 B.3 の E2E が全件 PASS（E2E-06 は運用の中で確認してよいが、確認が済むまでゲートは開かない） | ⬜ 未実施 | §2 |
+| G-2 | 付録 B.3 の E2E が全件 PASS（E2E-06 は運用の中で確認してよいが、確認が済むまでゲートは開かない） | ✅ PASS | §2 |
 | G-3 | `.diskImage` のテストが CI か手元で PASS し、その記録が PR にある | ✅ PASS | §4.3 |
 | G-4 | 実機で「三重ロックを全部外して 1 日流す」を行った | ✅ PASS | §5 |
 | G-5 | 削除 ON で E2E-01〜09 を再実行した（本書 §6） | ✅ PASS | §6 |
 
-**ゲート: 閉**
+**ゲート: 開**
 
 - 最後の 1 行は `**ゲート: 開**` か `**ゲート: 閉**` のどちらかである。散文にしない
 - **`開` と書けるのは、判定表（§2）の 18 件と上の G と §6 の R がすべて `✅` か `—` のときだけ**である。`開` と書いたまま 1 件でも `⬜` か `✗` が残っていれば `Tests/PolicyTests/RunbookGateTests.swift` が落ちる

@@ -1,4 +1,4 @@
-# 進捗と再開の手順（2026-10-01・**v0.9.0 を公開した後**。E2E-06・R-06・G-4 が PASS。v1.0 に向けて E2E-13 だけが残る）
+# 進捗と再開の手順（2026-10-01・**v0.9.0 を公開した後**。E2E-13 が PASS し、**削除のゲートが開いた**。次は T-44 v1.0）
 
 **この文書だけ読めば再開できる**ように書いてある。次のセッションはここから始める。
 
@@ -9,7 +9,7 @@
 | チケット（T-01〜T-51） | 51 本（T-46〜T-51 は話者分離。PLAN F-89） |
 | マージ済み | **49 本**（T-46〜T-51 が加わった） |
 | 取り下げ | 1 本（T-33。PLAN F-60） |
-| 残り | 1 本（T-44 v1.0 リリース。未着手。削除のゲートが開いてから） |
+| 残り | 1 本（T-44 v1.0 リリース。未着手。**削除のゲートは 2026-10-01 に開いた**） |
 | 配布 | **v0.9.0 を公開済み**（2026-09-26。§1.6） |
 
 **`main` の先頭は `aea41da`（PR #186。注釈付きタグ `v0.9.0`）、`develop` の先頭は `03a3fa4`（PR #185）**。2026-09-25 夜〜26 の作業は §1.6。以下はそれより前の記録: 話者分離は #153（計画）→ #160〜#165（実装）→ #166（後始末）→ #167（コードレビューの修正。F-90）でマージ済み。**2026-09-24 に利用者が実機の録音で確認し、issue #104 を閉じた**（`diarization_completed speakers=2 elapsed_s=4.5`）。**2026-09-25 未明、削除 ON の 13 本のうち 10 本（E2E-10・11・17、R-01・03・04・05・07・08・09）を実施・全件 PASS**（下の §2.6。PR #170 ほか）。**2026-09-25 午後、E2E-02（削除 OFF）と G-1・G-3 を PASS**（§2.7）。
@@ -38,6 +38,15 @@
 |---|---|---|---|---|---|---|
 
 T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマージ済み**で、**実機での実施が残っている**。
+
+## 1.9 2026-10-01 夕方に進めたこと（E2E-13 → ゲートが開いた）
+
+**E2E-13（処理中にスリープ）を 3 回目で ✅ PASS**（記録は `docs/E2E.md` §3.13。生の出力の控えは `~/VoiceDockE2E-E13/`）。これで §2 の判定表がすべて ✅ か —、§4 の G-1〜G-5 がすべて ✅ になり、**`**ゲート: 開**`**。issue #81・#95 は記録の PR のマージで閉じる。
+
+- 14:05:09 に削除を**無効**にした（`deletion_disabled`）。いまも無効のまま（§3）
+- 1・2 回目（2026-09-25）が空振りした原因の `PreventSystemSleep` は、Claude Code の `caffeinate -ims` だけでなく、**Orca.app 自身の `/usr/bin/caffeinate -i -s`（`asserting forever`）**にもあった（2026-09-26 10:19 から）。Claude Code 4 つと Orca を終了し、`PreventSystemSleep 0` を確かめてから行った
+- 合図は最初の `normalize_completed`。18:02:34 に `Entering Sleep state due to 'Software Sleep'`、ネットワークの受信による DarkWake を 4 回挟んで 18:07:11 に起こした。MIC018 の文字起こしは眠っている間止まり（`rtf=0.119`）、復帰後に 3 本とも Raw まで進んだ。18:15:15 に「今すぐ要約」→ 18:16:37 に Session が `COMPLETED`。`FAILED` 0・ERROR 0
+- 観察: 挿した直後に `copy_failed reason=read_error` が 3 件（次の走査でコピーされた。9/25 にも同じ形で出ている。スリープとは無関係）
 
 ## 1.8 2026-09-30〜10-01 に進めたこと（G-4）
 
@@ -190,7 +199,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | LLM モデル | `<HOME>/models/llm/custom-3605803b982cb64a.gguf`（2.5 GB。4B と同一。`verified: false`）と `Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`（18.6 GB。カタログから取り込み。**`verified: true`**。2026-09-24） |
 | 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
-| 削除 | **有効**（2026-09-30 02:07:58 に R-06 のために有効にし、利用者の決定でそのまま。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` は 0.9.0。**抜く前に Finder で取り出す**）。以下はそれより前の記録: **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
+| 削除 | **無効**（2026-10-01 14:05:09 に E2E-13 のために「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。以下はそれより前の記録: **有効**（2026-09-30 02:07:58 に R-06 のために有効にし、利用者の決定でそのまま。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` は 0.9.0。**抜く前に Finder で取り出す**）。以下はそれより前の記録: **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
 | 取り込むデバイスの名前 | **`VOICEDOCK`**。2026-09-25 に利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直して「設定を読み直す」を押した（F-94。アプリの既定も `["VOICEDOCK"]`）。その前にデータを初期化した（F-95。`data_reset count=79 failed=0`）ので、`DJIMIC3` として取り込んだ行は残っていない。控えの `config.json.bak` は F-81 の時点のもの |
 | 実機 | E2E の試験でたびたび `/Volumes/VOICEDOCK`（F-94 の改名の前は `/Volumes/DJIMIC3`）に接続する（削除 OFF の間は読み取り専用でマウント）。次のセッションはまず `ls /Volumes` で確かめる |
 
@@ -242,10 +251,9 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 
 ### 開いている issue
 
-| issue | 中身 | 誰がやるか |
-|---|---|---|
-| #81 | T-35 実機 E2E（削除 OFF） | 手順書とテストはマージ済み（#82）。**12/16 本が PASS**（2026-09-24 夜に E2E-01・03・04・05・07・08・09・12・14・16、2026-09-25 に E2E-02、2026-09-30 に E2E-06）。残り: E2E-13（スリープ。削除 OFF で行う） |
-| #95 | T-42 実機 E2E（削除 ON）とゲート | 手順書とテストはマージ済み（#96）。**実施は【利用者が行う】**。**13/13 本が PASS**（2026-09-25 未明に E2E-10・11・17・R-01・03・04・05・07・08・09、18 時台に R-02、2026-09-30 に R-06）と **§5 G-4 も PASS**（2026-10-01）。削除は 2026-09-30 02:07:58 から**有効**（§3）。`docs/E2E.md` §4 のゲートは G-1・G-3・G-4・G-5 が PASS、G-2（E2E-13 待ち）だけが未実施で **ゲート: 閉** |
+なし（T-44 の issue は v1.0 の作業を始めるときに作る）。
+
+**2026-10-01 に閉じた issue（E2E-13 の記録の PR のマージの後）**: #81（T-35 実機 E2E・削除 OFF。E2E-13 の PASS で 14 本すべて PASS。E2E-15・18 は取り下げ）、#95（T-42 実機 E2E・削除 ON とゲート。13/13 と G-1〜G-5 がすべて PASS し、**ゲート: 開**）。
 
 **2026-10-01 に閉じた issue**: #103（Bluetooth での読み込みと削除の調査。P0-14 で ✗ FAIL を確かめて完了。`docs/POC.md` 17 章。Wi-Fi の経路を調べるなら別の issue にする）。
 
@@ -256,7 +264,7 @@ PR がマージされても issue が開いたままなのは、**実機・実�
 ### T-43 と T-44 の前提
 
 - **T-43（README）** — **完了（PR #140。2026-09-24）**。F-93 で README を利用者向けに書き直し、ライセンスを置いた（issue #139 は閉じた）。F-98・F-100 でデータの初期化と Releases のリンクを足した
-- **T-44（v1.0 リリース）** — 前提は T-43・T-42・T-34 と、話者分離の T-46〜T-51（F-89）。`docs/RELEASE.md`・`docs/release-notes/TEMPLATE.md`・`ReleaseChecklistTests.swift`、`VERSION` と `AppVersion.string` を `1.0.0` へ（同じ PR で両方）。**削除のゲートが開いていないと出せない**
+- **T-44（v1.0 リリース）** — 前提は T-43・T-42・T-34 と、話者分離の T-46〜T-51（F-89）。`docs/RELEASE.md`・`docs/release-notes/TEMPLATE.md`・`ReleaseChecklistTests.swift`、`VERSION` と `AppVersion.string` を `1.0.0` へ（同じ PR で両方）。**削除のゲートは 2026-10-01 に開いた**（§1.9）。利用者の決定（2026-10-01）: リポジトリは 2026-09-28 から公開なので F-101 で PLAN・README・T-44 の「非公開」を直す、RL-11 は `<HOME>` の退避で代える、ゲートの外の未確認の項目（F-76 のログアウト中の終了など・P0-04〜09・11）は v1.0 の範囲外として RELEASE.md §5.6 に書く
 
 ### 話者分離（F-89・F-90。issue #104。v1.0 に含める。**完了**。2026-09-24 に利用者が実機で確認）
 
@@ -280,13 +288,11 @@ T-44（v1.0 リリース）は T-46〜T-51 の後。
 ## 6. 次のセッションで最初にやること
 
 1. `git fetch origin && git switch develop && git pull`（`main` は v0.9.0。次に `main` へ入れるのは v1.0.0 のとき）
-2. `ls /Volumes` で**実機（`VOICEDOCK`）の接続状態**と、§3 の「削除」の行の状態（いまは**有効**。抜く前に Finder で取り出す）を確かめる。ディスクを触る作業（`make test-disk`・`make release`・dmg の作成）の前には利用者に抜いてもらう
+2. `ls /Volumes` で**実機（`VOICEDOCK`）の接続状態**と、§3 の「削除」の行の状態（いまは**無効**）を確かめる。ディスクを触る作業（`make test-disk`・`make release`・dmg の作成）の前には利用者に抜いてもらう
 3. `python3 docs/porting-notes/check-tickets.py` が 0 件、`make lint && make test` が緑であることを確かめる
 4. `gh pr list --state open` で開いている PR が無いことを確かめる
-5. **残っている実機作業は E2E（issue #81 → #95）とゲート**:
-   - 削除 OFF: **E2E-13**（スリープ。Claude Code を終了し `PreventSystemSleep 0` を確かめてから。手順は `~/VoiceDockE2E-ON/e2e13-retry.md`）。削除を無効にしてから行う。これが PASS すると G-2 が満たされる
-   - データを初期化し実機を `VOICEDOCK` に改名したので、E2E の手順の `$DEV` は `VOICEDOCK`
-6. ゲートが開いたら T-44（v1.0 リリース）: 版を 1.0.0 に上げる PR → `develop` → `main` → タグ `v1.0.0` → `make release` → Releases
+5. **実機の E2E とゲートは済んだ**（§1.9）。データを初期化し実機を `VOICEDOCK` に改名したので、E2E の手順の `$DEV` は `VOICEDOCK`
+6. **T-44（v1.0 リリース）**: issue を作る → `feat/T-44-release-v1` で版を 1.0.0 に上げる PR（RELEASE.md の確認表 RL-01〜12。RL-10 はブランチでの `make release` のリハーサル、RL-11 は `<HOME>` を退避しての導入）→ `develop` → `main` → タグ `v1.0.0` → `make release` → Releases → 本番の記録の PR
 7. **ブランチを切り替える前に、必ず `git status --short` で作業ツリーが clean か確かめる**（`local/` のような gitignore 対象でも、切り替え元でコミットされていると `git switch` で消えることがある。2026-09-24 にこれで事故を起こした。§1.5 参照）
 
 ## 7. 進め方の決まり
