@@ -29,6 +29,8 @@
 | `VERSION` | `1.0.0` と改行 1 つ（`0.9.0` から上げる。F-100 で先に 0.9.0 を出した） |
 | `Sources/VDContract/Version.swift` | `AppVersion.string = "1.0.0"`（**同じ PR で両方を変える**。T-06 の照合テストが落ちて気づく） |
 | `docs/DEVELOPMENT.md` | `## 状態` の表だけを更新（Phase 9 の行を `—` でなくする。F-93 で README から移った） |
+| `docs/release-notes/<版>.md` | §4.6 の雛形から作るリリースノート（v1.0 では `1.0.0.md`）。確認の 2 行は §3.4 の後に埋める |
+| `docs/release-logs/` | `make lint`・`make test`・`make test-disk`・`make release` の全出力（`<日付>-*.txt`）。RELEASE.md の §5 には集計の行か抜粋を貼る |
 
 ## 4. `docs/RELEASE.md`
 
@@ -60,15 +62,21 @@
 
 ### 4.2 `## 0. この文書の約束`（逐語）
 
+見出しの上（`# …` の直後）に正本であることの 1 文を置き、`## 0.` の下に約束の箇条を置く。版の書き方・実機・公開の操作の確認の 3 つは、レビューの指摘で RELEASE.md に合わせて足した。
+
 ```markdown
 # VoiceDock for Mac のリリース手順
 
 **この文書がリリース手順の正本である。**手順を issue や PR の本文に置かない。
 
+## 0. この文書の約束
+
 - **すべて手元の Mac で行う。**証明書とキーチェーンのプロファイルを CI に置かない（PLAN §10.8）
 - 判定は `✅ PASS` / `✗ FAIL` / `⬜ 未実施` / `— 対象外` のいずれかで始める。**空欄にしない**
 - **1 件でも未実施なら出さない**（§2 の確認表が全部 `✅` か `—` になるまで待つ）
-- 版番号をこの文書に直書きしない。版は `VERSION` が唯一の出所である（PLAN §11.4）
+- 版番号をこの文書に直書きしない。版は `VERSION` が唯一の出所である（PLAN §11.4）。コマンドでは `$version`（`VERSION` から読む）、文では `<版>` と書く。`## 5. 記録` に貼る生の出力（コードフェンスの中）には版が出てよい
+- 実機（DJI Mic 3）に触れる手順は無い。`make test-disk` と `make release` の前に、**実機が抜いてあることを利用者が確かめる**（`ls /Volumes` が `Macintosh HD` だけ）
+- タグの push と `gh release create` は外部に公開する操作なので、**その都度利用者の確認を得てから**行う。`main` への PR のマージは利用者が行う
 ```
 
 ### 4.3 `## 1. 版の決め方`
@@ -94,8 +102,8 @@
 |---|---|---|
 | RL-01 | `docs/E2E.md` の `**ゲート: 開**`（`G-1`〜`G-5` がすべて `✅` か `—`） | `make test-policy`（`RunbookGateTests`）と目視 |
 | RL-02 | E2E-06（1 日分）が `✅ PASS`（運用の中での確認が済んでいる） | `docs/E2E.md` §2 と §3.6 |
-| RL-03 | `make test` が緑（ND → policy → 残り） | 全出力を §5.2 に貼る |
-| RL-04 | `make test-disk` が緑（`.diskImage` を含む） | 全出力を §5.3 に貼る |
+| RL-03 | `make test` が緑（ND → policy → 残り） | 全出力を `docs/release-logs/` に置き、集計の行を §5.2 に貼る |
+| RL-04 | `make test-disk` が緑（`.diskImage` を含む） | 全出力を `docs/release-logs/` に置き、集計の行を §5.3 に貼る |
 | RL-05 | `make lint` が緑 | 出力を貼る |
 | RL-06 | `VERSION` と `AppVersion.string` と reaper の `--version` が一致 | `make test`（T-06 の照合テスト）＋ `"$VD_HOME/bin/voicedock-reaper" --version`（導入済みのとき） |
 | RL-07 | `README.md` の件数が SPEC と一致し、参照切れが無い | `make test-policy`（`ReadmeTests`） |
@@ -105,21 +113,23 @@
 | RL-11 | 別のユーザアカウント、またはいまのアカウントで `<HOME>` を退避した状態（どちらも `<HOME>` が無い状態）で、リハーサルの dmg から導入し、「はじめに」を最後まで通せた | 手順と結果を §5.5 に書く（退避で代えたときは、TCC の初回の許可を確かめていないことも書く） |
 | RL-12 | 未解決の FAIL・未起票の不具合が無い | issue の一覧を §5.6 に書く |
 
-- **RL-01 と RL-02 と RL-10 は `ReleaseChecklistTests` が機械で見る**（§5）。残りは記録で見る
+- **`ReleaseChecklistTests` が機械で見るのは、RL-01（`docs/E2E.md` のゲートが開）と RL-02（判定表の E2E-06 が `✅`）と、確認表の判定欄の記号だけ**（§5）。RL-10 の `verify-bundle` の出力などの中身は記録で見る
 - 判定は 4 つの記号のどれかで始める
 
 ### 4.5 `## 3. 手順`
 
+本文は `docs/RELEASE.md` の `## 3.` と同じ（レビューの指摘で、RELEASE.md を正として写し直した）。
+
 #### `### 3.1 版を上げる PR`
 
-1. `develop` から `feat/T-44-release-v1` を切る
-2. `VERSION` を `1.0.0` に、`Sources/VDContract/Version.swift` の `AppVersion.string` を `"1.0.0"` にする
-3. `docs/DEVELOPMENT.md` の `## 状態` の表を更新する（Phase 9 の行。F-93）
+1. `develop` から `feat/<チケット>-release-<短い名前>` を切る
+2. `VERSION` と `Sources/VDContract/Version.swift` の `AppVersion.string` を新しい版にする
+3. `docs/DEVELOPMENT.md` の `## 状態` の表を更新する（F-93）
 4. ここまでをコミットし、作業ツリーが clean な状態で **`make release` の 2〜7 段をリハーサルとして回す**（下のコードブロック）。
-   1 段目の `make test` は、確認表が埋まるまで `everyChecklistPassesBeforeRelease` で落ちるので、ここでは回さない。
+   1 段目の lint と test（`make test`）は、確認表が埋まるまで `everyChecklistPassesBeforeRelease` で落ちるので、ここでは回さない。
    このリハーサルの dmg で RL-10（`verify-bundle`）と RL-11（`<HOME>` が無い状態での導入）を確かめる
-5. `docs/RELEASE.md` の `## 2` の確認表と `## 5` の記録を埋める（`docs/release-notes/<版>.md` も書く）
-6. `make lint && make test && make test-disk` を回し、全出力を PR 本文と `## 5` に貼る
+5. この文書の `## 2` の確認表と `## 5` の記録を埋め、`docs/release-notes/<版>.md` を書く（§3.5 の雛形）
+6. `make lint && make test && make test-disk` を回し、全出力を `docs/release-logs/<日付>-*.txt` に置いて、集計の行を PR 本文と `## 5` に貼る（`make test` と `make test-disk` の全出力は約 1 MB ずつあり、本文に入らない）
 7. PR を `develop` へ。利用者が確かめてマージする
 
 ```bash
@@ -153,7 +163,7 @@ git tag -a "v$(tr -d '[:space:]' < VERSION)" -m "VoiceDock $(tr -d '[:space:]' <
 git push origin "v$(tr -d '[:space:]' < VERSION)"
 ```
 
-- タグは `v<VERSION>`（`v1.0.0`）。**注釈付きタグ**（`-a`）にする
+- タグは `v<VERSION>`。**注釈付きタグ**（`-a`）にする
 - **タグは `make release` の前に打つ**（`CFBundleVersion` はコミット数なので、タグを打ってもビルドは変わらない。タグと成果物のコミットを一致させるため）
 - 打ち間違えたら `git tag -d` と `git push --delete origin <tag>` で消してから打ち直す（**リリースを作った後のタグは消さない**）
 
@@ -165,10 +175,13 @@ make release
 ```
 
 - `make release` = `scripts/release.sh`（T-34）。lint → test → `.app` の組み立てと Developer ID 署名 → 公証 → staple → dmg → dmg の署名 → 公証 → staple → `verify-bundle.sh`
+- **実機を抜いてから**行う（`ls /Volumes` が `Macintosh HD` だけ）
 - **`verify-bundle.sh` の全出力（V-1〜V-10）と `shasum -a 256` と `git rev-parse HEAD` を `## 5` に貼る**
 - 失敗したら §4 の戻し方へ
 
 #### `### 3.5 GitHub のリリースを作る（公開リポジトリ）`
+
+先に `docs/release-notes/<版>.md` の `## 確認` の 2 行（SHA-256 とコミット）を、§3.4 の `shasum -a 256` と `git rev-parse HEAD` の出力で埋める（埋めないと、プレースホルダのままリリースの本文になる）。この変更は §3.6 の 2 でコミットする。
 
 ```bash
 version="$(tr -d '[:space:]' < VERSION)"
@@ -180,7 +193,8 @@ gh release create "v$version" "dist/VoiceDock-$version.dmg" \
 ```
 
 - `--verify-tag`: **タグが無ければ作らない**（`gh` は既定でタグを勝手に作るので必ず付ける）
-- `--notes-file`: `docs/release-notes/<版>.md` を先に書く（§4.6 の雛形）
+- `--notes-file`: `docs/release-notes/<版>.md` を先に書く（雛形は `docs/release-notes/TEMPLATE.md`。`cp docs/release-notes/TEMPLATE.md docs/release-notes/"$version".md` して埋める）
+- `--latest`: README の「最新版の dmg をダウンロード」は `releases/latest` を指す。プレリリースにすると `latest` が指さない
 - **公開リポジトリのリリースの見え方**（2026-09-28 に公開した。PLAN F-101）:
   - リリースの本文も添付の dmg も、**GitHub にサインインしていない人でも（匿名で）見られ、落とせる**
   - 配る相手には、リリースのページ（`releases/latest`）から落としてもらう。`gh` を使う人は `gh release download "v$version" --repo shinsuke-terada/voicedock-app --pattern '*.dmg'` でも落とせる
@@ -190,10 +204,11 @@ gh release create "v$version" "dist/VoiceDock-$version.dmg" \
 #### `### 3.6 リリース後`
 
 1. `gh release view "v$version"` の出力を `## 5` に貼る
-2. `/Applications/VoiceDock.app` を**リリースした dmg から入れ直し**、パネルの「詳細」の版表示が `VERSION` と同じであることを確かめる
-3. 削除を有効にしている場合は、**削除モジュールの版も上がっている**ことを確かめる（パネルに「削除モジュールの更新が必要です」が出たら、有効化の操作をもう一度通す）
-4. issue を閉じる（`develop` へのマージでは自動で閉じない。PLAN §12.1）
-5. `dist/` は消してよい（`.gitignore` に入っている）
+2. `docs/release-notes/<版>.md`（§3.5 で埋めた確認の 2 行）と、この文書の §5.4 に足した本番の出力と 1 の出力をコミットし、`develop` へ PR する（`main` には次の版の §3.2 で入る）
+3. `/Applications/VoiceDock.app` を**リリースした dmg から入れ直し**、パネルの「詳細」の版表示が `VERSION` と同じであることを確かめる
+4. 削除を有効にしている場合は、**削除モジュールの版も上がっている**ことを確かめる（パネルに「削除モジュールの更新が必要です」が出たら、有効化の操作をもう一度通す）
+5. issue を閉じる（`develop` へのマージでは自動で閉じない。PLAN §12.1）
+6. `dist/` は消してよい（`.gitignore` に入っている）
 
 ### 4.6 `docs/release-notes/TEMPLATE.md`（全文）
 
@@ -237,7 +252,7 @@ gh release create "v$version" "dist/VoiceDock-$version.dmg" \
 ### 4.8 `## 5. 記録`
 
 `### 5.1 削除のゲート` / `### 5.2 make test` / `### 5.3 make test-disk` / `### 5.4 make release と verify-bundle` / `### 5.5 別アカウントでの導入` / `### 5.6 未解決の issue` の 6 節。
-各節に**生の出力**を ```text で貼る（`docs/E2E.md` と同じ規約）。§5.5 と §5.6 は文でよい。
+各節に**生の出力**を ```text で貼る（`docs/E2E.md` と同じ規約）。`make test`・`make test-disk`・`make release` のように長い出力は、全出力を `docs/release-logs/<日付>-*.txt` に置き、節には集計の行か、どこを抜き出したかを書いた抜粋を貼る（G-1・G-3 と同じ）。§5.5 と §5.6 は文でよい。
 
 ## 5. 文書テスト
 
@@ -295,7 +310,7 @@ struct ReleaseDoc: Sendable {
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `theComponentParserIsExact()` | **陽性対照**: 版の読み取りが正確 | 文字列を直に渡す | `"1.0.0"` → `(1,0,0)`、`"1.10.0"` → `(1,10,0)`、`"1.0"` → nil、`"1.0.0 "` → nil、`"1.0.0a"` → nil、`"01.0.0"` → `(1,0,0)` |
+| `theComponentParserIsExact()` | **陽性対照**: 版の読み取りが正確 | 文字列を直に渡す | `"1.0.0"` → `(1,0,0)`、`"1.10.0"` → `(1,10,0)`、`"1.0"` → nil、`"1.0.0 "` → nil、`"1.0.0a"` → nil、`"01.0.0"` → `(1,0,0)`、`"1.0.0.0"` → nil、`"1..0"` → nil、`""` → nil（TEST-28） |
 | `theVersionIsOnePointZeroOrLater()` | 版が 1.0.0 以上 | `VERSION` | `components` が読め、`(major, minor, patch) >= (1, 0, 0)`（**辞書順で比べない**） |
 | `theReleaseDocExists()` | docs/RELEASE.md が在る | — | `ReleaseDoc.load()` が投げない |
 | `theReleaseHeadingsAreInOrder()` | 見出しが §4.1 のとおり | 見出しの列 | 深さと本文が **19 行**と完全一致 |
@@ -337,7 +352,7 @@ struct ReleaseDoc: Sendable {
 | 11 | `### 3.5` から `gh release download` の説明を消す | `theReleaseDocExplainsPublicDistribution` |
 | 12 | `docs/release-notes/TEMPLATE.md` を消す | `theReleaseNotesTemplateExists` |
 | 12b | `docs/release-notes/TEMPLATE.md` の `<版>` を `1.0.0` にする | `theTemplateDoesNotPinTheVersion("1.0.0")` |
-| 13 | `ReleaseDoc.components` を `s.split(separator: ".").count >= 3` に緩める | `theComponentParserIsExact`（`"1.0.0 "` が nil でなくなる） |
+| 13 | `ReleaseDoc.components` を `s.split(separator: ".").count >= 3` に緩める | `theComponentParserIsExact`（`"1.0.0.0"` が nil でなくなる。`"1.0.0 "` は最後の要素の数字の検査で nil のままなので、それだけでは気づけない） |
 | 14 | `## 3. 手順` と `## 4. 失敗したときの戻し方` の順を入れ替える | `theReleaseHeadingsAreInOrder` |
 
 ## 7. 受け入れ条件
@@ -347,7 +362,7 @@ struct ReleaseDoc: Sendable {
 - [ ] `docs/DEVELOPMENT.md` の `## 状態` の Phase 9 が更新されている（F-93）
 - [ ] `docs/E2E.md` が `**ゲート: 開**` で、E2E-06 が `✅ PASS`
 - [ ] 【利用者が行う】`### 3.2`〜`### 3.6` を実際に行い、`docs/RELEASE.md` の `## 5` に生の出力を貼った:
-  - [ ] `make test` と `make test-disk` と `make lint` の全出力
+  - [ ] `make test` と `make test-disk` と `make lint` の全出力（`docs/release-logs/`）と集計の行（`## 5`）
   - [ ] `make release` の全出力（`verify-bundle.sh` の V-1〜V-10 が全部 OK）
   - [ ] `shasum -a 256 dist/VoiceDock-1.0.0.dmg` と `git rev-parse HEAD` と `git tag -l v1.0.0 -n1`
   - [ ] `gh release view v1.0.0` の出力
@@ -369,11 +384,9 @@ struct ReleaseDoc: Sendable {
 
 ## 10. API 地図への変更提案
 
-1. §14 の `PolicyTests` の「主な中身」に `ReleaseChecklistTests`（T-44）を足す
-2. `ReleaseDoc.components` は `AppVersion.components`（VDContract、T-06）の**写し**になる。
-   `PolicyTests` は `TestSupport` にしか依存しないので VDContract を直接呼べない。**`PolicyTests` の依存に `VDContract` を足す**か、
-   `TestSupport` に `SemanticVersion.parse` を置いて両方から使うか、どちらかを地図で決めたい（写しが 2 つあるのは CR-06 に反する）。
-   **提案: 地図 §14 の `PolicyTests` の依存を `TestSupport, VDContract` にする**（VDContract は Foundation と Darwin だけに依存するので、PolicyTests の独立性を損なわない）
+1. §14 の `PolicyTests` の「主な中身」に `ReleaseChecklistTests`（T-44）を足す。→ 地図には反映済み（00-api-map.md §14）
+2. `ReleaseDoc.components` は `AppVersion.components`（VDContract、T-06）の**写し**になる（CR-06）。**地図 §14 はすでに `PolicyTests` の依存を `TestSupport, VDContract` としているが、PLAN §10.3（「PolicyTests は TestSupport にしか依存しない」）と `Package.swift` の `PolicyTests` は `TestSupport` だけのまま**で、食い違っている。
+   この PR は PLAN に合わせて写しのままにした（2 つの写しが一致していることを確かめるテストは無い）。どちらに寄せるか（PLAN と Package.swift に VDContract を足して写しを消す / 地図を TestSupport だけに戻す）は利用者が決める
 3. PLAN §11.4 に「タグは `v<VERSION>` の注釈付きタグ」「`gh release create` は `--verify-tag` を付ける」「**非公開リポジトリのリリースは匿名で配れない**」を足すことを提案する（§11.4 は版の付け方だけで、リリースの作り方に触れていない）。→ 反映済み。2026-09-28 にリポジトリを公開したので、F-101 で「匿名で落とせる」に直した
 4. PLAN §12.3 の Phase 9 の行（T-44）の「成果物」は `dmg` だが、実際には **`docs/RELEASE.md`（手順の正本）と `docs/release-notes/<版>.md`** も成果物になる。表への追記を提案する
 5. `docs/release-notes/`（`TEMPLATE.md` と `<版>.md`）と `docs/RELEASE.md` は PLAN §3.2 のリポジトリの木に無い。追記を提案する

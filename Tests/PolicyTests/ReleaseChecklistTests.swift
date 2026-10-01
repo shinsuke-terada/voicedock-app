@@ -127,6 +127,9 @@ struct ReleaseChecklistTests {
         #expect(Self.parsed("1.0.0 ") == nil)
         #expect(Self.parsed("1.0.0a") == nil)
         #expect(Self.parsed("01.0.0") == [1, 0, 0])
+        // 要素の数がちょうど 3 つ（`>= 3` に緩めると落ちる）・空の要素は不可
+        #expect(Self.parsed("1.0.0.0") == nil)
+        #expect(Self.parsed("1..0") == nil)
         // 空の入力（TEST-28）
         #expect(Self.parsed("") == nil)
     }
@@ -184,7 +187,7 @@ struct ReleaseChecklistTests {
         }
     }
 
-    @Test("docs/DEVELOPMENT.md の Phase 9 が — のままでない")
+    @Test("docs/DEVELOPMENT.md の Phase 9 が — のままでない（F-93）")
     func theReadmeStatusIsUpdated() throws {
         guard Self.claimsOnePointZero() else { return }
         let guide = try MarkdownDocument.load(Readme.developmentPath)

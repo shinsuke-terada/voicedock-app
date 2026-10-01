@@ -25,8 +25,8 @@
 |---|---|---|---|---|
 | RL-01 | `docs/E2E.md` の `**ゲート: 開**`（`G-1`〜`G-5` がすべて `✅` か `—`） | `make test-policy`（`RunbookGateTests`）と目視 | ✅ PASS | §5.1 |
 | RL-02 | E2E-06（1 日分）が `✅ PASS`（運用の中での確認が済んでいる） | `docs/E2E.md` §2 と §3.6 | ✅ PASS | §5.1 |
-| RL-03 | `make test` が緑（ND → policy → 残り） | 全出力を §5.2 に貼る | ✅ PASS | §5.2 |
-| RL-04 | `make test-disk` が緑（`.diskImage` を含む） | 全出力を §5.3 に貼る | ✅ PASS | §5.3 |
+| RL-03 | `make test` が緑（ND → policy → 残り） | 全出力を `docs/release-logs/` に置き、集計の行を §5.2 に貼る | ✅ PASS | §5.2 |
+| RL-04 | `make test-disk` が緑（`.diskImage` を含む） | 全出力を `docs/release-logs/` に置き、集計の行を §5.3 に貼る | ✅ PASS | §5.3 |
 | RL-05 | `make lint` が緑 | 出力を貼る | ✅ PASS | §5.2 |
 | RL-06 | `VERSION` と `AppVersion.string` と reaper の `--version` が一致 | `make test`（T-06 の照合テスト）＋ `"$VD_HOME/bin/voicedock-reaper" --version`（導入済みのとき） | ✅ PASS | §5.2 |
 | RL-07 | `README.md` の件数が SPEC と一致し、参照切れが無い | `make test-policy`（`ReadmeTests`） | ✅ PASS | §5.2 |
@@ -36,7 +36,7 @@
 | RL-11 | 別のユーザアカウント、またはいまのアカウントで `<HOME>` を退避した状態（どちらも `<HOME>` が無い状態）で、リハーサルの dmg から導入し、「はじめに」を最後まで通せた | 手順と結果を §5.5 に書く（退避で代えたときは、TCC の初回の許可を確かめていないことも書く） | ✅ PASS | §5.5 |
 | RL-12 | 未解決の FAIL・未起票の不具合が無い | issue の一覧を §5.6 に書く | ✅ PASS | §5.6 |
 
-- **RL-01 と RL-02 と RL-10 は `ReleaseChecklistTests` が機械で見る**（版が 1 以上のとき、この表の全行が `✅` か `—` でないと `make test` が落ちる）。残りは記録で見る
+- **`ReleaseChecklistTests` が機械で見るのは、RL-01（`docs/E2E.md` のゲートが開）と RL-02（判定表の E2E-06 が `✅`）と、この表の判定欄の記号だけ**（版が 1 以上のとき、全行が `✅` か `—` でないと `make test` が落ちる）。RL-10 の `verify-bundle` の出力などの中身は記録で見る
 - 次の版を上げるときは、この表の判定を `⬜ 未実施` に戻してから始める（**前回の `✅` を残したまま出さない**）
 
 ## 3. 手順
@@ -47,10 +47,10 @@
 2. `VERSION` と `Sources/VDContract/Version.swift` の `AppVersion.string` を新しい版にする
 3. `docs/DEVELOPMENT.md` の `## 状態` の表を更新する（F-93）
 4. ここまでをコミットし、作業ツリーが clean な状態で **`make release` の 2〜7 段をリハーサルとして回す**（下のコードブロック）。
-   1 段目の `make test` は、確認表が埋まるまで `everyChecklistPassesBeforeRelease` で落ちるので、ここでは回さない。
+   1 段目の lint と test（`make test`）は、確認表が埋まるまで `everyChecklistPassesBeforeRelease` で落ちるので、ここでは回さない。
    このリハーサルの dmg で RL-10（`verify-bundle`）と RL-11（`<HOME>` が無い状態での導入）を確かめる
 5. この文書の `## 2` の確認表と `## 5` の記録を埋め、`docs/release-notes/<版>.md` を書く（§3.5 の雛形）
-6. `make lint && make test && make test-disk` を回し、全出力を PR 本文と `## 5` に貼る
+6. `make lint && make test && make test-disk` を回し、全出力を `docs/release-logs/<日付>-*.txt` に置いて、集計の行を PR 本文と `## 5` に貼る（`make test` と `make test-disk` の全出力は約 1 MB ずつあり、本文に入らない）
 7. PR を `develop` へ。利用者が確かめてマージする
 
 ```bash
@@ -102,6 +102,8 @@ make release
 
 ### 3.5 GitHub のリリースを作る（公開リポジトリ）
 
+先に `docs/release-notes/<版>.md` の `## 確認` の 2 行（SHA-256 とコミット）を、§3.4 の `shasum -a 256` と `git rev-parse HEAD` の出力で埋める（埋めないと、プレースホルダのままリリースの本文になる）。この変更は §3.6 の 2 でコミットする。
+
 ```bash
 version="$(tr -d '[:space:]' < VERSION)"
 gh release create "v$version" "dist/VoiceDock-$version.dmg" \
@@ -123,10 +125,11 @@ gh release create "v$version" "dist/VoiceDock-$version.dmg" \
 ### 3.6 リリース後
 
 1. `gh release view "v$version"` の出力を `## 5` に貼る
-2. `/Applications/VoiceDock.app` を**リリースした dmg から入れ直し**、パネルの「詳細」の版表示が `VERSION` と同じであることを確かめる
-3. 削除を有効にしている場合は、**削除モジュールの版も上がっている**ことを確かめる（パネルに「削除モジュールの更新が必要です」が出たら、有効化の操作をもう一度通す）
-4. issue を閉じる（`develop` へのマージでは自動で閉じない。PLAN §12.1）
-5. `dist/` は消してよい（`.gitignore` に入っている）
+2. `docs/release-notes/<版>.md`（§3.5 で埋めた確認の 2 行）と、この文書の §5.4 に足した本番の出力と 1 の出力をコミットし、`develop` へ PR する（`main` には次の版の §3.2 で入る）
+3. `/Applications/VoiceDock.app` を**リリースした dmg から入れ直し**、パネルの「詳細」の版表示が `VERSION` と同じであることを確かめる
+4. 削除を有効にしている場合は、**削除モジュールの版も上がっている**ことを確かめる（パネルに「削除モジュールの更新が必要です」が出たら、有効化の操作をもう一度通す）
+5. issue を閉じる（`develop` へのマージでは自動で閉じない。PLAN §12.1）
+6. `dist/` は消してよい（`.gitignore` に入っている）
 
 ## 4. 失敗したときの戻し方
 
@@ -252,26 +255,119 @@ exit=0
 
 ### 5.4 make release と verify-bundle
 
-**リハーサル**（§3.1 の 4）。2026-10-01 19:56〜19:58、`feat/T-44-release-v1` のコミット `f844f24`（版を上げたコミット。作業ツリーは clean）で `make release` の 2〜7 段を回した。実機は抜いてあり、VoiceDock は終了していた。
+**リハーサル**（§3.1 の 4）。2026-10-01 19:56〜19:58、`feat/T-44-release-v1` のコミット `f844f24`（版を上げたコミット。作業ツリーは clean）で `make release` の 2〜7 段を回した。
+VoiceDock は終了しており、始める直前に別のコマンドで `ls /Volumes` が `Macintosh HD` だけであることを確かめた（ログには入っていない）。
 全出力（230 行）は `docs/release-logs/2026-10-01-rehearsal-make-release.txt`。公証は 2 回とも `Accepted`、`verify-bundle` は V-1〜V-10 がすべて OK。
-本番（`main` のタグの上での §3.4）の出力は、リリースの後にこの節へ書き足す。
+本番（`main` のタグの上での §3.4）の出力は、リリースの後にこの節へ書き足す（§3.6 の 2）。
 
-下は全出力から、最初の 4 行・組み立てと公証の結果の行・`verify-bundle.sh` 以降をそのまま抜き出したもの（途中の行は全出力のファイルにある）。
+下は全出力の 1〜4 行目と 63〜230 行目（5〜62 行目は `swift build` の進捗）。115 行目と 155 行目は `notarytool` の進捗が `\r` で上書きされる 1 行なので、端末に最後に残る表示を貼った。
 
 ```text
 $ date; git rev-parse HEAD; git status --porcelain
 Thu Oct  1 19:56:16 JST 2026
 f844f243038f5344431731fe231842a7fda83441
 $ scripts/make-app.sh release
+==> 署名: Developer ID Application: Shinsuke Terada (ZCWP35H248)
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: replacing existing signature
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: valid on disk
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: satisfies its Designated Requirement
 OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app を署名しました（TeamIdentifier=ZCWP35H248）
+== V-1 バンドルの中身
+  OK   37 件が一致
+  OK   ディレクトリ 28 個が一致
+== V-2 Info.plist
+  OK   plist として読める
+  OK   CFBundleIdentifier = io.github.shinsuke-terada.VoiceDock
+  OK   CFBundleName = VoiceDock
+  OK   CFBundleExecutable = VoiceDock
+  OK   CFBundlePackageType = APPL
+  OK   CFBundleShortVersionString = 1.0.0
+  OK   LSMinimumSystemVersion = 15.0
+  OK   LSUIElement = true
+  OK   NSRemovableVolumesUsageDescription が在る
+  OK   NSDocumentsFolderUsageDescription が在る
+  OK   NSDesktopFolderUsageDescription が在る
+  OK   NSDownloadsFolderUsageDescription が在る
+== V-3 アーキテクチャ
+  OK   VoiceDock = arm64
+  OK   voicedock-reaper = arm64
+  OK   whisper-cli = arm64
+  OK   llama-server = arm64
+  OK   argmax-cli = arm64
+== V-4 otool -L
+  OK   リンク先は /usr/lib と /System/Library だけ
+OK: --files-only の検査に通りました
 OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app（版 1.0.0、ビルド 448、署名 developerid）
+$ scripts/notarize.sh dist/VoiceDock.app
+==> xcrun notarytool submit（キーチェーンプロファイル VOICEDOCK_NOTARY）
+Conducting pre-submission checks for VoiceDock-notarize.zip and initiating connection to the Apple notary service...
+Submission ID received
+  id: 99995d9f-9862-44ba-ac1f-eceaa6a07229
+Successfully uploaded file
+  id: 99995d9f-9862-44ba-ac1f-eceaa6a07229
+  path: /Users/terada/Projects/voicedock_app/dist/VoiceDock-notarize.zip
+Waiting for processing to complete.
 Current status: Accepted......Processing complete
+  id: 99995d9f-9862-44ba-ac1f-eceaa6a07229
   status: Accepted
+
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The staple and validate action worked!
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The validate action worked!
 OK: dist/VoiceDock.app を公証・staple しました（submission 99995d9f-9862-44ba-ac1f-eceaa6a07229）
+$ scripts/make-dmg.sh dist/VoiceDock.app
+created: /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/VoiceDock-rw.dmg
+OK: 作業用のイメージを /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/mnt にマウントしました（/dev/disk21）
+2 images written to /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/mnt/.background/background.tiff.
 OK: /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/mnt/.DS_Store
+イメージ作成エンジンを準備中…
+ディスク全体（Apple_HFS: 0）を読み込み中…
+   （CRC32 $0B932EE0:ディスク全体（Apple_HFS: 0））
+リソースを追加中…
+経過時間:  53.479ms
+ファイルサイズ: 23403482バイト、チェックサム: CRC32 $A21DB5E0
+処理されたセクタ数: 151552、103873圧縮されました
+速度: 948.4Mバイト/秒
+節約率: 69.8%
+created: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
 OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+$ scripts/sign.sh developerid dist/VoiceDock-1.0.0.dmg
+==> 署名: Developer ID Application: Shinsuke Terada (ZCWP35H248)
+dist/VoiceDock-1.0.0.dmg: valid on disk
+dist/VoiceDock-1.0.0.dmg: satisfies its Designated Requirement
+OK: dmg を署名しました
+$ scripts/notarize.sh dist/VoiceDock-1.0.0.dmg
+==> xcrun notarytool submit（キーチェーンプロファイル VOICEDOCK_NOTARY）
+Conducting pre-submission checks for VoiceDock-1.0.0.dmg and initiating connection to the Apple notary service...
+Submission ID received
+  id: 3671c9d5-f1c2-4ff9-8bf6-957552814a46
+Successfully uploaded file
+  id: 3671c9d5-f1c2-4ff9-8bf6-957552814a46
+  path: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+Waiting for processing to complete.
 Current status: Accepted......Processing complete
+  id: 3671c9d5-f1c2-4ff9-8bf6-957552814a46
   status: Accepted
+
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The staple and validate action worked!
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The validate action worked!
 OK: dist/VoiceDock-1.0.0.dmg を公証・staple しました（submission 3671c9d5-f1c2-4ff9-8bf6-957552814a46）
 $ scripts/verify-bundle.sh dist/VoiceDock.app dist/VoiceDock-1.0.0.dmg
 == V-1 バンドルの中身
@@ -356,29 +452,39 @@ LLM の 30B（18.6 GB）だけは、ダウンロードし直さないよう先�
 
 手順（利用者が行った）:
 1. VoiceDock を終了 → `mv "$HOME/Library/Application Support/VoiceDock/models/llm/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf" ~/Downloads/` → `mv "$HOME/Library/Application Support/VoiceDock" ~/.Trash/VoiceDock-old`
-2. §5.4 のリハーサルの dmg（`dist/VoiceDock-<版>.dmg`）を開き、`VoiceDock` を `Applications` へドラッグ → 取り出し
+2. §5.4 のリハーサルの dmg（`dist/VoiceDock-<版>.dmg`）を開き、`VoiceDock` を `Applications` へドラッグ（dmg の取り出しは忘れていて、20:41 の時点でもマウントされたままだった。§5.2 を取り直す前に取り出した）
 3. `/Applications/VoiceDock.app` を起動し、「はじめに」①〜④を上から: Vault（`~/VoiceDockTestVault`）・Whisper モデルの「入手する」・LLM の「ファイルから読み込む…」（`~/Downloads/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`）・ログイン時に起動
-4. 「はじめに」が消え、パネルは「待機中 / 最終接続 まだありません・未処理なし」。Whisper モデル・VAD モデル・LLM モデル（「読み込んだモデル (6c997b8a)」）に ✓、元音声の削除は「無効」（利用者のスクリーンショット）
+4. 「はじめに」が消え、パネルは「待機中 / 最終接続 まだありません・未処理なし」。Whisper モデル・VAD モデル・LLM モデル（「読み込んだモデル（6c997b8a）」）に ✓、元音声の削除は「無効」（利用者のスクリーンショット）
 
 **詰まった箇所は無かった。**
 
 - ファイルから読み込んだ LLM は、カタログの 30B と同じファイル（SHA-256 が `Resources/ModelCatalog.json` と一致）でも `custom:<sha256>` として登録され、「読み込んだモデル」と表示される。PLAN の「ファイルから読み込む」の規則どおり（カタログの ID には寄せない）
 - 確かめていないこと: **TCC の初回の許可**（同じアカウントなので、リムーバブルボリュームの許可は以前のまま残っている）と、**ダウンロードした dmg の Gatekeeper**（手元で作った dmg には quarantine が付かない）。Gatekeeper は §3.6 でリリースの dmg を落とし直して確かめる
 
+次は 20:41 に打ち直した生の出力（`<HOME>` の作り直しから後、アプリは何も取り込んでいない）。
+
 ```text
+$ date
+Thu Oct  1 20:41:43 JST 2026
 $ cat "$HOME/Library/Application Support/VoiceDock/logs/app.log"
 2026-10-01T20:10:07+09:00 INFO  service_started version=1.0.0 schema=v1_initial
 2026-10-01T20:10:42+09:00 INFO  model_downloaded id=silero-v5.1.2
 2026-10-01T20:10:59+09:00 INFO  model_downloaded id=large-v3-turbo-q5_0
 $ ls -la "$HOME/Library/Application Support/VoiceDock/models/llm"
+total 36268032
+drwxr-xr-x@ 3 terada  staff           96 Oct  1 20:11 .
+drwxr-xr-x@ 5 terada  staff          160 Oct  1 20:10 ..
 -rw-r--r--@ 1 terada  staff  18556686752 Oct  1 20:11 custom-6c997b8af17debdf.gguf
-$ grep -E '"modelID"|"path"|"deleteSourceAudio"' "$HOME/Library/Application Support/VoiceDock/config.json"
-    "deleteSourceAudio" : false
- "modelID": "custom:6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0",
-    "path" : "/Users/terada/VoiceDockTestVault"
+$ grep -nE '"modelID"|"path"|"deleteSourceAudio"' "$HOME/Library/Application Support/VoiceDock/config.json"
+22:    "deleteSourceAudio" : false
+98:    "modelID" : "custom:6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0",
+162:      "modelID" : "silero-v5.1.2",
+170:    "path" : "/Users/terada/VoiceDockTestVault"
 $ defaults read /Applications/VoiceDock.app/Contents/Info.plist CFBundleShortVersionString; defaults read /Applications/VoiceDock.app/Contents/Info.plist CFBundleVersion
 1.0.0
 448
+$ grep -n '6c997b8af17debdf' Resources/ModelCatalog.json
+12:               "sha256": "6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0", "bytes": 18556686752,
 ```
 
 ### 5.6 未解決の issue
