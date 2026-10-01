@@ -170,21 +170,19 @@ $ grep -E "^\| E2E-(06|13) " docs/E2E.md
 
 ### 5.2 make test
 
-実施: 2026-10-01 20:14〜20:16。`feat/T-44-release-v1`（`f844f24` に、この確認表と記録・リリースノートを足した作業ツリー。確認表はすべて ✅ にしてから回した。`everyChecklistPassesBeforeRelease` がそれを見る）。実機は接続されていない（`/Volumes` の `VoiceDock <版>` は §5.5 で開いた dmg）。
-全出力は `docs/release-logs/2026-10-01-make-lint.txt` と `docs/release-logs/2026-10-01-make-test.txt`（約 1 MB。G-1・G-3 と同じく、本文には集計の行だけを貼る）。どちらも終了コード 0、失敗 0。
+実施: 2026-10-01 20:48〜20:50。`feat/T-44-release-v1` のコミット `e31247f`（確認表をすべて ✅ にし、レビューの指摘を直した後。`everyChecklistPassesBeforeRelease` が確認表を見る）。作業ツリーは clean（RL-05 の出力の `git status` に出る 1 行は、書き込んでいる途中のこのログのファイル自身）。実機は接続されていない（`ls /Volumes` が `Macintosh HD` だけ）。
+この節と §5.3 の記録を書いた後のコミットでは、文書テストだけを回し直した（記録の本文はテストの対象の外）。
+全出力は `docs/release-logs/2026-10-01-make-lint.txt` と `docs/release-logs/2026-10-01-make-test.txt`（約 1 MB。G-1・G-3 と同じく、本文には先頭の 4 行と集計の行だけを貼る）。どちらも終了コード 0、失敗 0。
 `with 3 known issues` は `GoldenSupportTests` が「違えば記録する」ことを `withKnownIssue` で確かめている 3 件で、想定どおり（`docs/E2E.md` §4.3 と同じ）。
 
 RL-05（`make lint`）:
 
 ```text
-$ ls /Volumes
+$ date; ls /Volumes; git rev-parse HEAD; git status --porcelain
+Thu Oct  1 20:48:48 JST 2026
 Macintosh HD
-VoiceDock 1.0.0
-$ git rev-parse HEAD; git status --short
-f844f243038f5344431731fe231842a7fda83441
- M docs/RELEASE.md
-?? docs/release-logs/
-?? docs/release-notes/1.0.0.md
+e31247fbb9a93b56ce45b97c0519da35c7decbbf
+ M docs/release-logs/2026-10-01-make-lint.txt
 $ make lint; echo "exit=$?"
 swift format lint --strict --recursive Sources Tests
 exit=0
@@ -193,24 +191,28 @@ exit=0
 RL-03（`make test`。ND → policy → 残り。RL-06 の版の照合・RL-07 の `ReadmeTests`・RL-01 の `RunbookGateTests` を含む）:
 
 ```text
+$ date; ls /Volumes; git rev-parse HEAD
+Thu Oct  1 20:48:52 JST 2026
+Macintosh HD
+e31247fbb9a93b56ce45b97c0519da35c7decbbf
 $ make test; echo "exit=$?"
-􁁛  Test run with 10 tests in 1 suite passed after 0.324 seconds.
-􁁛  Test run with 119 tests in 10 suites passed after 9.340 seconds.
-􁁛  Test run with 33 tests in 3 suites passed after 1.664 seconds.
-􁁛  Test run with 34 tests in 1 suite passed after 0.684 seconds.
-􀢂  Test run with 324 tests in 36 suites passed after 10.416 seconds with 3 known issues.
-􁁛  Test run with 317 tests in 39 suites passed after 0.521 seconds.
-􁁛  Test run with 132 tests in 17 suites passed after 22.437 seconds.
-􁁛  Test run with 78 tests in 8 suites passed after 0.374 seconds.
-􁁛  Test run with 43 tests in 5 suites passed after 11.278 seconds.
-􁁛  Test run with 861 tests in 89 suites passed after 17.677 seconds.
-􁁛  Test run with 314 tests in 22 suites passed after 0.725 seconds.
-􁁛  Test run with 65 tests in 6 suites passed after 0.815 seconds.
-􁁛  Test run with 202 tests in 19 suites passed after 13.384 seconds.
-􁁛  Test run with 205 tests in 19 suites passed after 3.869 seconds.
-􁁛  Test run with 393 tests in 45 suites passed after 2.085 seconds.
-􁁛  Test run with 156 tests in 24 suites passed after 0.090 seconds.
-􁁛  Test run with 85 tests in 7 suites passed after 0.853 seconds.
+􁁛  Test run with 10 tests in 1 suite passed after 0.293 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 9.041 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.139 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.713 seconds.
+􀢂  Test run with 325 tests in 36 suites passed after 9.573 seconds with 3 known issues.
+􁁛  Test run with 317 tests in 39 suites passed after 0.472 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 22.201 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.379 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 11.593 seconds.
+􁁛  Test run with 861 tests in 89 suites passed after 17.978 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.677 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.736 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 12.547 seconds.
+􁁛  Test run with 205 tests in 19 suites passed after 3.283 seconds.
+􁁛  Test run with 393 tests in 45 suites passed after 1.980 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 0.156 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.735 seconds.
 exit=0
 ```
 
@@ -227,29 +229,32 @@ Package.resolved
 
 ### 5.3 make test-disk
 
-実施: 2026-10-01 20:16〜20:20。§5.2 と同じ作業ツリー。**実機は接続されていない**（実行の直前の `ls /Volumes` が `Macintosh HD` と、§5.5 で開いた dmg の `VoiceDock <版>` だけ）。利用者の許可を得てエージェントが実行した。
+実施: 2026-10-01 20:50〜20:53。§5.2 と同じコミット `e31247f`。**実機は接続されていない**（実行の直前の `ls /Volumes` が `Macintosh HD` だけ）。利用者の許可を得てエージェントが実行した。
 全出力は `docs/release-logs/2026-10-01-make-test-disk.txt`（約 960 KB）。終了コード 0、失敗 0。`VOICEDOCK_DISK_TESTS=1` なので R3（ディスクイメージ）の Suite も走った（ND の 119 件が 48 秒）。
 
 ```text
-$ ls /Volumes
+$ date; ls /Volumes; git rev-parse HEAD
+Thu Oct  1 20:50:34 JST 2026
+Macintosh HD
+e31247fbb9a93b56ce45b97c0519da35c7decbbf
 $ make test-disk; echo "exit=$?"
-􁁛  Test run with 10 tests in 1 suite passed after 0.252 seconds.
-􁁛  Test run with 119 tests in 10 suites passed after 47.969 seconds.
-􁁛  Test run with 33 tests in 3 suites passed after 1.064 seconds.
-􁁛  Test run with 34 tests in 1 suite passed after 0.635 seconds.
-􀢂  Test run with 324 tests in 36 suites passed after 10.299 seconds with 3 known issues.
-􁁛  Test run with 317 tests in 39 suites passed after 0.536 seconds.
-􁁛  Test run with 132 tests in 17 suites passed after 21.920 seconds.
-􁁛  Test run with 78 tests in 8 suites passed after 0.451 seconds.
-􁁛  Test run with 43 tests in 5 suites passed after 9.355 seconds.
-􁁛  Test run with 861 tests in 89 suites passed after 17.254 seconds.
-􁁛  Test run with 314 tests in 22 suites passed after 0.733 seconds.
-􁁛  Test run with 65 tests in 6 suites passed after 0.683 seconds.
-􁁛  Test run with 202 tests in 19 suites passed after 12.215 seconds.
-􁁛  Test run with 205 tests in 19 suites passed after 6.745 seconds.
-􁁛  Test run with 393 tests in 45 suites passed after 1.905 seconds.
-􁁛  Test run with 156 tests in 24 suites passed after 9.337 seconds.
-􁁛  Test run with 85 tests in 7 suites passed after 0.765 seconds.
+􁁛  Test run with 10 tests in 1 suite passed after 0.319 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 47.809 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.224 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.735 seconds.
+􀢂  Test run with 325 tests in 36 suites passed after 8.995 seconds with 3 known issues.
+􁁛  Test run with 317 tests in 39 suites passed after 0.491 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 23.005 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.382 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 9.137 seconds.
+􁁛  Test run with 861 tests in 89 suites passed after 18.130 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.600 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.793 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 12.785 seconds.
+􁁛  Test run with 205 tests in 19 suites passed after 6.506 seconds.
+􁁛  Test run with 393 tests in 45 suites passed after 1.874 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 9.263 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.725 seconds.
 exit=0
 ```
 

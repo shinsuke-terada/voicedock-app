@@ -1,11 +1,8 @@
-$ ls /Volumes
+$ date; ls /Volumes; git rev-parse HEAD; git status --porcelain
+Thu Oct  1 20:48:48 JST 2026
 Macintosh HD
-VoiceDock 1.0.0
-$ git rev-parse HEAD; git status --short
-f844f243038f5344431731fe231842a7fda83441
- M docs/RELEASE.md
-?? docs/release-logs/
-?? docs/release-notes/1.0.0.md
+e31247fbb9a93b56ce45b97c0519da35c7decbbf
+ M docs/release-logs/2026-10-01-make-lint.txt
 $ make lint; echo "exit=$?"
 swift format lint --strict --recursive Sources Tests
 exit=0
