@@ -1,0 +1,230 @@
+$ date; git rev-parse HEAD; git status --porcelain
+Thu Oct  1 19:56:16 JST 2026
+f844f243038f5344431731fe231842a7fda83441
+$ scripts/make-app.sh release
+==> swift build -c release --arch arm64
+Building for production...
+[Provisioning 17 / 19]
+[Pre-planning 1 / 475]
+[Constructing 1 / 1028]
+[14 / 45] VDTranscribe
+[15 / 58]
+[24 / 70]
+[27 / 70]
+[29 / 70] CYaml
+[34 / 75] Yams
+[58 / 187]
+[71 / 187]
+[89 / 188]
+[99 / 188]
+[110 / 188]
+[119 / 188]
+[133 / 188]
+[137 / 188]
+[143 / 188]
+[146 / 188]
+[150 / 188] VDContract
+[155 / 192] VDCore
+[157 / 193] Yams
+[159 / 189] VDCore
+[165 / 193] VDNotes
+[169 / 197] VDAudio
+[182 / 223]
+[184 / 223]
+[186 / 223]
+[191 / 223]
+[193 / 223]
+[194 / 223] VDProcess
+[199 / 220]
+[202 / 222] VDAudio
+[203 / 221] VDTranscribe
+[205 / 221] VDNotes
+[206 / 220] VDLLM
+[207 / 219] GRDB
+[210 / 221] VDStore
+[212 / 222] VDStore
+[217 / 226] VDDevice
+[228 / 237]
+[229 / 237] VDDevice
+[240 / 247] VDPipeline
+[242 / 248] VDPipeline
+[245 / 246] VoiceDockApp-product
+[248 / 249] VoiceDockApp-product
+[251 / 253] VoiceDockApp-product
+[252 / 253] VoiceDockApp-product
+Build complete! (40.51秒)
+Building for production...
+[Planning deferred tasks]
+[1 / 4]
+[2 / 5] voicedock-reaper-product
+[3 / 6] voicedock-reaper-product
+[5 / 6] voicedock-reaper-product
+Build complete! (2.29秒)
+==> 署名: Developer ID Application: Shinsuke Terada (ZCWP35H248)
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper: replacing existing signature
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: replacing existing signature
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: valid on disk
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: satisfies its Designated Requirement
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app を署名しました（TeamIdentifier=ZCWP35H248）
+== V-1 バンドルの中身
+  OK   37 件が一致
+  OK   ディレクトリ 28 個が一致
+== V-2 Info.plist
+  OK   plist として読める
+  OK   CFBundleIdentifier = io.github.shinsuke-terada.VoiceDock
+  OK   CFBundleName = VoiceDock
+  OK   CFBundleExecutable = VoiceDock
+  OK   CFBundlePackageType = APPL
+  OK   CFBundleShortVersionString = 1.0.0
+  OK   LSMinimumSystemVersion = 15.0
+  OK   LSUIElement = true
+  OK   NSRemovableVolumesUsageDescription が在る
+  OK   NSDocumentsFolderUsageDescription が在る
+  OK   NSDesktopFolderUsageDescription が在る
+  OK   NSDownloadsFolderUsageDescription が在る
+== V-3 アーキテクチャ
+  OK   VoiceDock = arm64
+  OK   voicedock-reaper = arm64
+  OK   whisper-cli = arm64
+  OK   llama-server = arm64
+  OK   argmax-cli = arm64
+== V-4 otool -L
+  OK   リンク先は /usr/lib と /System/Library だけ
+OK: --files-only の検査に通りました
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app（版 1.0.0、ビルド 448、署名 developerid）
+$ scripts/notarize.sh dist/VoiceDock.app
+==> xcrun notarytool submit（キーチェーンプロファイル VOICEDOCK_NOTARY）
+Conducting pre-submission checks for VoiceDock-notarize.zip and initiating connection to the Apple notary service...
+Submission ID received
+  id: 99995d9f-9862-44ba-ac1f-eceaa6a07229
+Successfully uploaded file
+  id: 99995d9f-9862-44ba-ac1f-eceaa6a07229
+  path: /Users/terada/Projects/voicedock_app/dist/VoiceDock-notarize.zip
+Waiting for processing to complete.
+Current status: In Progress...Current status: In Progress....Current status: In Progress.....Current status: Accepted......Processing complete
+  id: 99995d9f-9862-44ba-ac1f-eceaa6a07229
+  status: Accepted
+
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The staple and validate action worked!
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The validate action worked!
+OK: dist/VoiceDock.app を公証・staple しました（submission 99995d9f-9862-44ba-ac1f-eceaa6a07229）
+$ scripts/make-dmg.sh dist/VoiceDock.app
+created: /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/VoiceDock-rw.dmg
+OK: 作業用のイメージを /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/mnt にマウントしました（/dev/disk21）
+2 images written to /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/mnt/.background/background.tiff.
+OK: /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/mnt/.DS_Store
+イメージ作成エンジンを準備中…
+ディスク全体（Apple_HFS: 0）を読み込み中…
+   （CRC32 $0B932EE0:ディスク全体（Apple_HFS: 0））
+リソースを追加中…
+経過時間:  53.479ms
+ファイルサイズ: 23403482バイト、チェックサム: CRC32 $A21DB5E0
+処理されたセクタ数: 151552、103873圧縮されました
+速度: 948.4Mバイト/秒
+節約率: 69.8%
+created: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+$ scripts/sign.sh developerid dist/VoiceDock-1.0.0.dmg
+==> 署名: Developer ID Application: Shinsuke Terada (ZCWP35H248)
+dist/VoiceDock-1.0.0.dmg: valid on disk
+dist/VoiceDock-1.0.0.dmg: satisfies its Designated Requirement
+OK: dmg を署名しました
+$ scripts/notarize.sh dist/VoiceDock-1.0.0.dmg
+==> xcrun notarytool submit（キーチェーンプロファイル VOICEDOCK_NOTARY）
+Conducting pre-submission checks for VoiceDock-1.0.0.dmg and initiating connection to the Apple notary service...
+Submission ID received
+  id: 3671c9d5-f1c2-4ff9-8bf6-957552814a46
+Successfully uploaded file
+  id: 3671c9d5-f1c2-4ff9-8bf6-957552814a46
+  path: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+Waiting for processing to complete.
+Current status: In Progress...Current status: In Progress....Current status: In Progress.....Current status: Accepted......Processing complete
+  id: 3671c9d5-f1c2-4ff9-8bf6-957552814a46
+  status: Accepted
+
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The staple and validate action worked!
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The validate action worked!
+OK: dist/VoiceDock-1.0.0.dmg を公証・staple しました（submission 3671c9d5-f1c2-4ff9-8bf6-957552814a46）
+$ scripts/verify-bundle.sh dist/VoiceDock.app dist/VoiceDock-1.0.0.dmg
+== V-1 バンドルの中身
+  OK   38 件が一致
+  OK   ディレクトリ 28 個が一致
+== V-2 Info.plist
+  OK   plist として読める
+  OK   CFBundleIdentifier = io.github.shinsuke-terada.VoiceDock
+  OK   CFBundleName = VoiceDock
+  OK   CFBundleExecutable = VoiceDock
+  OK   CFBundlePackageType = APPL
+  OK   CFBundleShortVersionString = 1.0.0
+  OK   LSMinimumSystemVersion = 15.0
+  OK   LSUIElement = true
+  OK   NSRemovableVolumesUsageDescription が在る
+  OK   NSDocumentsFolderUsageDescription が在る
+  OK   NSDesktopFolderUsageDescription が在る
+  OK   NSDownloadsFolderUsageDescription が在る
+== V-3 アーキテクチャ
+  OK   VoiceDock = arm64
+  OK   voicedock-reaper = arm64
+  OK   whisper-cli = arm64
+  OK   llama-server = arm64
+  OK   argmax-cli = arm64
+== V-4 otool -L
+  OK   リンク先は /usr/lib と /System/Library だけ
+== V-5 codesign
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+dist/VoiceDock.app: valid on disk
+dist/VoiceDock.app: satisfies its Designated Requirement
+  OK   署名が有効
+== V-6 本体の署名の中身
+  OK   Identifier=io.github.shinsuke-terada.VoiceDock
+  OK   TeamIdentifier=ZCWP35H248
+  OK   Hardened Runtime
+  OK   Developer ID Application で署名
+== V-7 reaper の署名
+  OK   Identifier=io.github.shinsuke-terada.VoiceDock.reaper
+  OK   TeamIdentifier=ZCWP35H248
+  OK   アプリが使う要件文字列を満たす
+== V-8 エンタイトルメント
+  OK   本体 のエンタイトルメントは空の dict
+  OK   reaper のエンタイトルメントは空の dict
+== V-9 spctl と staple
+  OK   spctl: Notarized Developer ID
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The validate action worked!
+  OK   stapler validate（app）
+== V-10 dmg
+  OK   spctl（dmg）
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The validate action worked!
+  OK   stapler validate（dmg）
+  OK   dmg の名前が版と一致
+OK: verify-bundle のすべての検査に通りました（版 1.0.0）
+$ shasum -a 256 dist/VoiceDock-1.0.0.dmg; git rev-parse HEAD
+bff598339164653da77aa9fa5b3d9174ca7eafb69742f08b753361dba59c4406  dist/VoiceDock-1.0.0.dmg
+f844f243038f5344431731fe231842a7fda83441
+Thu Oct  1 19:58:07 JST 2026
+exit=0

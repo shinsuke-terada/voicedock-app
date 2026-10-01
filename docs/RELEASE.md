@@ -23,18 +23,18 @@
 
 | # | 条件 | 確かめ方 | 判定 | 記録 |
 |---|---|---|---|---|
-| RL-01 | `docs/E2E.md` の `**ゲート: 開**`（`G-1`〜`G-5` がすべて `✅` か `—`） | `make test-policy`（`RunbookGateTests`）と目視 | ⬜ 未実施 | §5.1 |
-| RL-02 | E2E-06（1 日分）が `✅ PASS`（運用の中での確認が済んでいる） | `docs/E2E.md` §2 と §3.6 | ⬜ 未実施 | §5.1 |
-| RL-03 | `make test` が緑（ND → policy → 残り） | 全出力を §5.2 に貼る | ⬜ 未実施 | §5.2 |
-| RL-04 | `make test-disk` が緑（`.diskImage` を含む） | 全出力を §5.3 に貼る | ⬜ 未実施 | §5.3 |
-| RL-05 | `make lint` が緑 | 出力を貼る | ⬜ 未実施 | §5.2 |
-| RL-06 | `VERSION` と `AppVersion.string` と reaper の `--version` が一致 | `make test`（T-06 の照合テスト）＋ `"$VD_HOME/bin/voicedock-reaper" --version`（導入済みのとき） | ⬜ 未実施 | §5.2 |
-| RL-07 | `README.md` の件数が SPEC と一致し、参照切れが無い | `make test-policy`（`ReadmeTests`） | ⬜ 未実施 | §5.2 |
-| RL-08 | `docs/SPEC.md` が `docs/PLAN.md` の写しとして最新 | `make spec` して `git diff --quiet docs/SPEC.md` | ⬜ 未実施 | §5.2 |
-| RL-09 | `Package.resolved` がコミット済みで、依存が `exact:` で固定されている | `git status` と `Package.swift` | ⬜ 未実施 | §5.2 |
-| RL-10 | `scripts/verify-bundle.sh` の全項目が OK | §3.1 のリハーサルの出力を §5.4 に貼る（本番の §3.4 の出力はリリースの後に追記する） | ⬜ 未実施 | §5.4 |
-| RL-11 | 別のユーザアカウント、またはいまのアカウントで `<HOME>` を退避した状態（どちらも `<HOME>` が無い状態）で、リハーサルの dmg から導入し、「はじめに」を最後まで通せた | 手順と結果を §5.5 に書く（退避で代えたときは、TCC の初回の許可を確かめていないことも書く） | ⬜ 未実施 | §5.5 |
-| RL-12 | 未解決の FAIL・未起票の不具合が無い | issue の一覧を §5.6 に書く | ⬜ 未実施 | §5.6 |
+| RL-01 | `docs/E2E.md` の `**ゲート: 開**`（`G-1`〜`G-5` がすべて `✅` か `—`） | `make test-policy`（`RunbookGateTests`）と目視 | ✅ PASS | §5.1 |
+| RL-02 | E2E-06（1 日分）が `✅ PASS`（運用の中での確認が済んでいる） | `docs/E2E.md` §2 と §3.6 | ✅ PASS | §5.1 |
+| RL-03 | `make test` が緑（ND → policy → 残り） | 全出力を §5.2 に貼る | ✅ PASS | §5.2 |
+| RL-04 | `make test-disk` が緑（`.diskImage` を含む） | 全出力を §5.3 に貼る | ✅ PASS | §5.3 |
+| RL-05 | `make lint` が緑 | 出力を貼る | ✅ PASS | §5.2 |
+| RL-06 | `VERSION` と `AppVersion.string` と reaper の `--version` が一致 | `make test`（T-06 の照合テスト）＋ `"$VD_HOME/bin/voicedock-reaper" --version`（導入済みのとき） | ✅ PASS | §5.2 |
+| RL-07 | `README.md` の件数が SPEC と一致し、参照切れが無い | `make test-policy`（`ReadmeTests`） | ✅ PASS | §5.2 |
+| RL-08 | `docs/SPEC.md` が `docs/PLAN.md` の写しとして最新 | `make spec` して `git diff --quiet docs/SPEC.md` | ✅ PASS | §5.2 |
+| RL-09 | `Package.resolved` がコミット済みで、依存が `exact:` で固定されている | `git status` と `Package.swift` | ✅ PASS | §5.2 |
+| RL-10 | `scripts/verify-bundle.sh` の全項目が OK | §3.1 のリハーサルの出力を §5.4 に貼る（本番の §3.4 の出力はリリースの後に追記する） | ✅ PASS | §5.4 |
+| RL-11 | 別のユーザアカウント、またはいまのアカウントで `<HOME>` を退避した状態（どちらも `<HOME>` が無い状態）で、リハーサルの dmg から導入し、「はじめに」を最後まで通せた | 手順と結果を §5.5 に書く（退避で代えたときは、TCC の初回の許可を確かめていないことも書く） | ✅ PASS | §5.5 |
+| RL-12 | 未解決の FAIL・未起票の不具合が無い | issue の一覧を §5.6 に書く | ✅ PASS | §5.6 |
 
 - **RL-01 と RL-02 と RL-10 は `ReleaseChecklistTests` が機械で見る**（版が 1 以上のとき、この表の全行が `✅` か `—` でないと `make test` が落ちる）。残りは記録で見る
 - 次の版を上げるときは、この表の判定を `⬜ 未実施` に戻してから始める（**前回の `✅` を残したまま出さない**）
@@ -143,24 +143,254 @@ gh release create "v$version" "dist/VoiceDock-$version.dmg" \
 
 ### 5.1 削除のゲート
 
-⬜ 未実施
+実施: 2026-10-01。RL-01・RL-02 の根拠。`docs/E2E.md` の §4（ゲート）と §2（E2E-06・E2E-13 の行）の写し。`RunbookGateTests` と `ReleaseChecklistTests` は §5.2 の `make test` の中で通った。
+
+```text
+$ sed -n "/^## 4\. 削除のゲート/,/^\*\*ゲート/p" docs/E2E.md
+## 4. 削除のゲート（PLAN §12.4）
+
+**v1.0 を出す前にすべてを満たす。緩めない。**G-1〜G-5 は PLAN §12.4 の 1〜5 と同じ順・同じ意味である。
+
+| # | 条件 | 判定 | 記録 |
+|---|---|---|---|
+| G-1 | 付録 B.1 の ND が全件 PASS（アプリ層・reaper 層とも。正の対照を含む） | ✅ PASS | §4.1 |
+| G-2 | 付録 B.3 の E2E が全件 PASS（E2E-06 は運用の中で確認してよいが、確認が済むまでゲートは開かない） | ✅ PASS | §2 |
+| G-3 | `.diskImage` のテストが CI か手元で PASS し、その記録が PR にある | ✅ PASS | §4.3 |
+| G-4 | 実機で「三重ロックを全部外して 1 日流す」を行った | ✅ PASS | §5 |
+| G-5 | 削除 ON で E2E-01〜09 を再実行した（本書 §6） | ✅ PASS | §6 |
+
+**ゲート: 開**
+$ grep -E "^\| E2E-(06|13) " docs/E2E.md
+| E2E-06 | 1 日分を 1 セッションに | OFF | ✅ PASS | §3.6 |
+| E2E-13 | 処理中にスリープ | OFF | ✅ PASS | §3.13 |
+```
 
 ### 5.2 make test
 
-⬜ 未実施
+実施: 2026-10-01 20:14〜20:16。`feat/T-44-release-v1`（`f844f24` に、この確認表と記録・リリースノートを足した作業ツリー。確認表はすべて ✅ にしてから回した。`everyChecklistPassesBeforeRelease` がそれを見る）。実機は接続されていない（`/Volumes` の `VoiceDock <版>` は §5.5 で開いた dmg）。
+全出力は `docs/release-logs/2026-10-01-make-lint.txt` と `docs/release-logs/2026-10-01-make-test.txt`（約 1 MB。G-1・G-3 と同じく、本文には集計の行だけを貼る）。どちらも終了コード 0、失敗 0。
+`with 3 known issues` は `GoldenSupportTests` が「違えば記録する」ことを `withKnownIssue` で確かめている 3 件で、想定どおり（`docs/E2E.md` §4.3 と同じ）。
+
+RL-05（`make lint`）:
+
+```text
+$ ls /Volumes
+Macintosh HD
+VoiceDock 1.0.0
+$ git rev-parse HEAD; git status --short
+f844f243038f5344431731fe231842a7fda83441
+ M docs/RELEASE.md
+?? docs/release-logs/
+?? docs/release-notes/1.0.0.md
+$ make lint; echo "exit=$?"
+swift format lint --strict --recursive Sources Tests
+exit=0
+```
+
+RL-03（`make test`。ND → policy → 残り。RL-06 の版の照合・RL-07 の `ReadmeTests`・RL-01 の `RunbookGateTests` を含む）:
+
+```text
+$ make test; echo "exit=$?"
+􁁛  Test run with 10 tests in 1 suite passed after 0.324 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 9.340 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.664 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.684 seconds.
+􀢂  Test run with 324 tests in 36 suites passed after 10.416 seconds with 3 known issues.
+􁁛  Test run with 317 tests in 39 suites passed after 0.521 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 22.437 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.374 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 11.278 seconds.
+􁁛  Test run with 861 tests in 89 suites passed after 17.677 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.725 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.815 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 13.384 seconds.
+􁁛  Test run with 205 tests in 19 suites passed after 3.869 seconds.
+􁁛  Test run with 393 tests in 45 suites passed after 2.085 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 0.090 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.853 seconds.
+exit=0
+```
+
+RL-08（SPEC）と RL-09（依存の固定）:
+
+```text
+$ make spec >/dev/null 2>&1; git diff --quiet docs/SPEC.md; echo "spec_diff_exit=$?"
+spec_diff_exit=0
+$ git status --porcelain Package.resolved; git ls-files Package.resolved; grep -n 'exact:' Package.swift
+Package.resolved
+27:        .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.11.1"),
+28:        .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
+```
 
 ### 5.3 make test-disk
 
-⬜ 未実施
+実施: 2026-10-01 20:16〜20:20。§5.2 と同じ作業ツリー。**実機は接続されていない**（実行の直前の `ls /Volumes` が `Macintosh HD` と、§5.5 で開いた dmg の `VoiceDock <版>` だけ）。利用者の許可を得てエージェントが実行した。
+全出力は `docs/release-logs/2026-10-01-make-test-disk.txt`（約 960 KB）。終了コード 0、失敗 0。`VOICEDOCK_DISK_TESTS=1` なので R3（ディスクイメージ）の Suite も走った（ND の 119 件が 48 秒）。
+
+```text
+$ ls /Volumes
+$ make test-disk; echo "exit=$?"
+􁁛  Test run with 10 tests in 1 suite passed after 0.252 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 47.969 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.064 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.635 seconds.
+􀢂  Test run with 324 tests in 36 suites passed after 10.299 seconds with 3 known issues.
+􁁛  Test run with 317 tests in 39 suites passed after 0.536 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 21.920 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.451 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 9.355 seconds.
+􁁛  Test run with 861 tests in 89 suites passed after 17.254 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.733 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.683 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 12.215 seconds.
+􁁛  Test run with 205 tests in 19 suites passed after 6.745 seconds.
+􁁛  Test run with 393 tests in 45 suites passed after 1.905 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 9.337 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.765 seconds.
+exit=0
+```
 
 ### 5.4 make release と verify-bundle
 
-⬜ 未実施
+**リハーサル**（§3.1 の 4）。2026-10-01 19:56〜19:58、`feat/T-44-release-v1` のコミット `f844f24`（版を上げたコミット。作業ツリーは clean）で `make release` の 2〜7 段を回した。実機は抜いてあり、VoiceDock は終了していた。
+全出力（230 行）は `docs/release-logs/2026-10-01-rehearsal-make-release.txt`。公証は 2 回とも `Accepted`、`verify-bundle` は V-1〜V-10 がすべて OK。
+本番（`main` のタグの上での §3.4）の出力は、リリースの後にこの節へ書き足す。
+
+下は全出力から、最初の 4 行・組み立てと公証の結果の行・`verify-bundle.sh` 以降をそのまま抜き出したもの（途中の行は全出力のファイルにある）。
+
+```text
+$ date; git rev-parse HEAD; git status --porcelain
+Thu Oct  1 19:56:16 JST 2026
+f844f243038f5344431731fe231842a7fda83441
+$ scripts/make-app.sh release
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app を署名しました（TeamIdentifier=ZCWP35H248）
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app（版 1.0.0、ビルド 448、署名 developerid）
+Current status: Accepted......Processing complete
+  status: Accepted
+OK: dist/VoiceDock.app を公証・staple しました（submission 99995d9f-9862-44ba-ac1f-eceaa6a07229）
+OK: /Users/terada/Projects/voicedock_app/dist/.dmg-stage.XN5D3y/mnt/.DS_Store
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+Current status: Accepted......Processing complete
+  status: Accepted
+OK: dist/VoiceDock-1.0.0.dmg を公証・staple しました（submission 3671c9d5-f1c2-4ff9-8bf6-957552814a46）
+$ scripts/verify-bundle.sh dist/VoiceDock.app dist/VoiceDock-1.0.0.dmg
+== V-1 バンドルの中身
+  OK   38 件が一致
+  OK   ディレクトリ 28 個が一致
+== V-2 Info.plist
+  OK   plist として読める
+  OK   CFBundleIdentifier = io.github.shinsuke-terada.VoiceDock
+  OK   CFBundleName = VoiceDock
+  OK   CFBundleExecutable = VoiceDock
+  OK   CFBundlePackageType = APPL
+  OK   CFBundleShortVersionString = 1.0.0
+  OK   LSMinimumSystemVersion = 15.0
+  OK   LSUIElement = true
+  OK   NSRemovableVolumesUsageDescription が在る
+  OK   NSDocumentsFolderUsageDescription が在る
+  OK   NSDesktopFolderUsageDescription が在る
+  OK   NSDownloadsFolderUsageDescription が在る
+== V-3 アーキテクチャ
+  OK   VoiceDock = arm64
+  OK   voicedock-reaper = arm64
+  OK   whisper-cli = arm64
+  OK   llama-server = arm64
+  OK   argmax-cli = arm64
+== V-4 otool -L
+  OK   リンク先は /usr/lib と /System/Library だけ
+== V-5 codesign
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+dist/VoiceDock.app: valid on disk
+dist/VoiceDock.app: satisfies its Designated Requirement
+  OK   署名が有効
+== V-6 本体の署名の中身
+  OK   Identifier=io.github.shinsuke-terada.VoiceDock
+  OK   TeamIdentifier=ZCWP35H248
+  OK   Hardened Runtime
+  OK   Developer ID Application で署名
+== V-7 reaper の署名
+  OK   Identifier=io.github.shinsuke-terada.VoiceDock.reaper
+  OK   TeamIdentifier=ZCWP35H248
+  OK   アプリが使う要件文字列を満たす
+== V-8 エンタイトルメント
+  OK   本体 のエンタイトルメントは空の dict
+  OK   reaper のエンタイトルメントは空の dict
+== V-9 spctl と staple
+  OK   spctl: Notarized Developer ID
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The validate action worked!
+  OK   stapler validate（app）
+== V-10 dmg
+  OK   spctl（dmg）
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.0.dmg
+The validate action worked!
+  OK   stapler validate（dmg）
+  OK   dmg の名前が版と一致
+OK: verify-bundle のすべての検査に通りました（版 1.0.0）
+$ shasum -a 256 dist/VoiceDock-1.0.0.dmg; git rev-parse HEAD
+bff598339164653da77aa9fa5b3d9174ca7eafb69742f08b753361dba59c4406  dist/VoiceDock-1.0.0.dmg
+f844f243038f5344431731fe231842a7fda83441
+Thu Oct  1 19:58:07 JST 2026
+exit=0
+```
+
+RL-06 の reaper の `--version`（`<HOME>` には削除モジュールが導入されていない（削除は無効）ので、リハーサルの `.app` の中のものを確かめた）:
+
+```text
+$ dist/VoiceDock.app/Contents/Helpers/voicedock-reaper --version
+1.0.0
+exit=0
+```
 
 ### 5.5 別アカウントでの導入
 
-⬜ 未実施
+実施: 2026-10-01 20:05〜20:12。**別のアカウントではなく、いまのアカウントで `<HOME>` を無い状態にして行った**（利用者の決定。2026-09-24 の issue #139 と同じやり方）。利用者が「いまのデータは消えてよい」と決めたので、退避して戻すのではなく、`<HOME>` をゴミ箱へ移し、新しい `<HOME>` をそのまま使い続ける。
+LLM の 30B（18.6 GB）だけは、ダウンロードし直さないよう先に `~/Downloads` へ移しておき、「ファイルから読み込む…」で取り込んだ。
+
+手順（利用者が行った）:
+1. VoiceDock を終了 → `mv "$HOME/Library/Application Support/VoiceDock/models/llm/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf" ~/Downloads/` → `mv "$HOME/Library/Application Support/VoiceDock" ~/.Trash/VoiceDock-old`
+2. §5.4 のリハーサルの dmg（`dist/VoiceDock-<版>.dmg`）を開き、`VoiceDock` を `Applications` へドラッグ → 取り出し
+3. `/Applications/VoiceDock.app` を起動し、「はじめに」①〜④を上から: Vault（`~/VoiceDockTestVault`）・Whisper モデルの「入手する」・LLM の「ファイルから読み込む…」（`~/Downloads/Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`）・ログイン時に起動
+4. 「はじめに」が消え、パネルは「待機中 / 最終接続 まだありません・未処理なし」。Whisper モデル・VAD モデル・LLM モデル（「読み込んだモデル (6c997b8a)」）に ✓、元音声の削除は「無効」（利用者のスクリーンショット）
+
+**詰まった箇所は無かった。**
+
+- ファイルから読み込んだ LLM は、カタログの 30B と同じファイル（SHA-256 が `Resources/ModelCatalog.json` と一致）でも `custom:<sha256>` として登録され、「読み込んだモデル」と表示される。PLAN の「ファイルから読み込む」の規則どおり（カタログの ID には寄せない）
+- 確かめていないこと: **TCC の初回の許可**（同じアカウントなので、リムーバブルボリュームの許可は以前のまま残っている）と、**ダウンロードした dmg の Gatekeeper**（手元で作った dmg には quarantine が付かない）。Gatekeeper は §3.6 でリリースの dmg を落とし直して確かめる
+
+```text
+$ cat "$HOME/Library/Application Support/VoiceDock/logs/app.log"
+2026-10-01T20:10:07+09:00 INFO  service_started version=1.0.0 schema=v1_initial
+2026-10-01T20:10:42+09:00 INFO  model_downloaded id=silero-v5.1.2
+2026-10-01T20:10:59+09:00 INFO  model_downloaded id=large-v3-turbo-q5_0
+$ ls -la "$HOME/Library/Application Support/VoiceDock/models/llm"
+-rw-r--r--@ 1 terada  staff  18556686752 Oct  1 20:11 custom-6c997b8af17debdf.gguf
+$ grep -E '"modelID"|"path"|"deleteSourceAudio"' "$HOME/Library/Application Support/VoiceDock/config.json"
+    "deleteSourceAudio" : false
+ "modelID": "custom:6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0",
+    "path" : "/Users/terada/VoiceDockTestVault"
+$ defaults read /Applications/VoiceDock.app/Contents/Info.plist CFBundleShortVersionString; defaults read /Applications/VoiceDock.app/Contents/Info.plist CFBundleVersion
+1.0.0
+448
+```
 
 ### 5.6 未解決の issue
 
-⬜ 未実施
+実施: 2026-10-01。開いている issue はこのリリースの T-44（#192）だけ。E2E の #81・#95 は E2E-13 の PASS（PR #191）で閉じた。
+
+```text
+$ gh issue list --state open
+192	OPEN	T-44 v1.0 のリリース		2026-10-01T09:39:22Z
+```
+
+**v1.0 の範囲外とした未確認の項目**（削除のゲートの外。利用者の決定。2026-10-01）:
+- F-76: 終了の後始末の最中にログアウトしても中断されず子が残らないこと、モデルの読み込み中に終了すると 10 秒以内に終わること（コードで確かめた。実機では未確認）
+- F-84: 「再試行」の後の状態の詳細の読み直し、「モデルの節を開く」の枠がファイル選択の後も残ること（FAILED や要対応が出たときに確かめる）
+- Phase 0 の未実施の実測: P0-04〜07・09・11（whisper / llama の実測）と P0-08（SMAppService）。`docs/POC.md`

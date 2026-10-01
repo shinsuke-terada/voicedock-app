@@ -26,7 +26,7 @@
 | `docs/RELEASE.md` | 下記 §4 の全文（リリース手順の正本） |
 | `docs/release-notes/TEMPLATE.md` | 下記 §4.6 の雛形（`<版>` のまま。コピーして `<版>.md` を作る） |
 | `Tests/PolicyTests/ReleaseChecklistTests.swift` | 下記 §5 の全文 |
-| `VERSION` | `1.0.0` と改行 1 つ（`0.1.0` から上げる） |
+| `VERSION` | `1.0.0` と改行 1 つ（`0.9.0` から上げる。F-100 で先に 0.9.0 を出した） |
 | `Sources/VDContract/Version.swift` | `AppVersion.string = "1.0.0"`（**同じ PR で両方を変える**。T-06 の照合テストが落ちて気づく） |
 | `docs/DEVELOPMENT.md` | `## 状態` の表だけを更新（Phase 9 の行を `—` でなくする。F-93 で README から移った） |
 
