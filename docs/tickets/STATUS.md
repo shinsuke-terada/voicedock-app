@@ -216,7 +216,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin`（547 MB。2026-10-01 に入手し直した） |
 | VAD モデル | `<HOME>/models/vad/ggml-silero-v5.1.2.bin`（2026-10-01 に入手し直した） |
 | LLM モデル | `<HOME>/models/llm/custom-6c997b8af17debdf.gguf`（18.6 GB。カタログの 30B（`qwen3-30b-a3b-instruct-2507-q4_k_m`）と同じファイルを「ファイルから読み込む…」で取り込んだので `custom:` の ID。2026-10-01）。以前の 4B（`custom-3605803b…`）と、カタログから取り込んだ 30B は前の `<HOME>` と一緒にゴミ箱へ |
-| 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
+| Vault | `~/Documents/Obsidian Vault`（2026-10-01 から。試験用の `~/VoiceDockTestVault` は同じ日に消した） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
 | 削除 | **無効**（v1.0.0 の後も無効のまま。利用者の決定。2026-10-01）。2026-10-01 14:05:09 に E2E-13 のために「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。以下はそれより前の記録: **有効**（2026-09-30 02:07:58 に R-06 のために有効にし、利用者の決定でそのまま。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` は 0.9.0。**抜く前に Finder で取り出す**）。以下はそれより前の記録: **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
 | 取り込むデバイスの名前 | **`VOICEDOCK`**。2026-09-25 に利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直して「設定を読み直す」を押した（F-94。アプリの既定も `["VOICEDOCK"]`）。その前にデータを初期化した（F-95。`data_reset count=79 failed=0`）ので、`DJIMIC3` として取り込んだ行は残っていない。控えの `config.json.bak` は F-81 の時点のもの |
@@ -276,6 +276,8 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 なし（#192（T-44）は 2026-10-01 に閉じた）。
 
 **2026-10-01 に利用者が決めたこと**: `PolicyTests` の依存は地図に揃える（F-103。`VDContract` を足し、版の読み取りの写しをやめた）・**削除は無効のまま**・前の `<HOME>`（`~/.Trash/VoiceDock-old`）は消した。
+
+**2026-10-01 に利用者の決定で `~/VoiceDock*` を消した**: `~/VoiceDockE2E`・`-0930`・`-G4`・`-E13`（E2E の生の出力の控えと手順書。要るところは `docs/E2E.md` にある）、`~/VoiceDockE2E-ON`（実機の録音の退避。試験で実機から消えた録音の最後の写しだった）、`~/VoiceDockPoC`（Phase 0・BLE の実験の道具。`.claude/settings.json` の `additionalDirectories` からも外した。ディスクイメージを手で試すときは `mkdir -p ~/VoiceDockPoC/mnt/<名前>` から始める）、`~/VoiceDockTestVault`（試験用の Vault。アプリは `~/Documents/Obsidian Vault` を使う）。`docs/E2E.md` などに書いた「生の出力の控えは `~/VoiceDockE2E-…`」の場所は、もう無い。
 
 **2026-10-01 に閉じた issue（E2E-13 の記録の PR のマージの後）**: #81（T-35 実機 E2E・削除 OFF。E2E-13 の PASS で 14 本すべて PASS。E2E-15・18 は取り下げ）、#95（T-42 実機 E2E・削除 ON とゲート。13/13 と G-1〜G-5 がすべて PASS し、**ゲート: 開**）。
 

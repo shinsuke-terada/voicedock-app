@@ -46,9 +46,6 @@
       "Bash(gh pr create *)",
       "Bash(gh pr view *)",
       "Bash(gh issue *)"
-    ],
-    "additionalDirectories": [
-      "/Users/terada/VoiceDockPoC"
     ]
   },
   "env": {
