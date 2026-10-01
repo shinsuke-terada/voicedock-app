@@ -2,6 +2,7 @@
 import Foundation
 import TestSupport
 import Testing
+import VDContract
 
 struct ReleaseDoc: Sendable {
     static let path = "docs/RELEASE.md"
@@ -29,18 +30,6 @@ struct ReleaseDoc: Sendable {
     static func versionString() throws -> String {
         try String(contentsOf: PackageRoot.file("VERSION"), encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    /// `X.Y.Z` を数値の組にする（`AppVersion.components` と同じ規則。PolicyTests は VDContract に依存しないので写す）。
-    static func components(_ s: String) -> (major: Int, minor: Int, patch: Int)? {
-        let parts = s.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 3 else { return nil }
-        var numbers: [Int] = []
-        for part in parts {
-            guard !part.isEmpty, part.allSatisfy({ $0.isASCII && $0.isNumber }), let n = Int(part) else { return nil }
-            numbers.append(n)
-        }
-        return (numbers[0], numbers[1], numbers[2])
     }
 }
 
@@ -78,7 +67,7 @@ struct ReleaseChecklistTests {
 
     /// 版の組。`VERSION` が読めなければ nil（`theVersionIsOnePointZeroOrLater` が落ちる）。
     static func version() -> (major: Int, minor: Int, patch: Int)? {
-        (try? ReleaseDoc.versionString()).flatMap(ReleaseDoc.components)
+        (try? ReleaseDoc.versionString()).flatMap(AppVersion.components)
     }
 
     /// v1.0 を名乗っているか（`major >= 1`）。0.x.y の間はゲートの 3 本が素通りする。
@@ -116,7 +105,7 @@ struct ReleaseChecklistTests {
 
     /// 比べやすいように配列にする（タプルは Equatable でない）。
     static func parsed(_ s: String) -> [Int]? {
-        ReleaseDoc.components(s).map { [$0.major, $0.minor, $0.patch] }
+        AppVersion.components(s).map { [$0.major, $0.minor, $0.patch] }
     }
 
     @Test("陽性対照: 版の読み取りが正確")

@@ -44,7 +44,7 @@ T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマー�
 PR #193（T-44）→ PR #194（`develop` → `main`）→ 注釈付きタグ `v1.0.0`（21:35。`9042132`）→ `main` で `make release`（21:35〜21:40。17 バンドル passed、公証 2 回 Accepted、`verify-bundle` V-1〜V-10 OK、ビルド 455）→ 利用者の確認を得て `gh release create v1.0.0 … --verify-tag --latest`（https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.0）。記録は `docs/RELEASE.md` §5.4（全出力は `docs/release-logs/2026-10-01-make-release-main.txt`）。
 
 - dmg の SHA-256 は `0b29d2b29f6e0dbf2a42d76edfff67c9f44276fd7ef080e99db09da3ddbea1d5`。`releases/latest` は v1.0.0 を指す。サインインなしの `curl` と `gh release download` で落とし直して一致を確かめた
-- 利用者がプライベートウィンドウから落とし直して `/Applications` に入れ、Gatekeeper に止められずに起動し、版の表示が 1.0.0 であることを確かめた（ビルド 455。`spctl` は `Notarized Developer ID`）
+- 利用者がプライベートウィンドウ（Chrome）から落とし直して `/Applications` に入れ、Gatekeeper に止められずに起動し、版の表示が 1.0.0 であることを確かめた（ビルド 455。`spctl` は `Notarized Developer ID`）。落とした dmg（ゴミ箱に残っていた。quarantine は Chrome）の SHA-256 も公開したものと一致
 - issue #192（T-44）は、記録の PR（`docs/release-1.0.0`）のマージで閉じる
 
 ## 1.10 2026-10-01 夜に進めたこと（T-44 の版を上げる PR）
@@ -212,13 +212,13 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | `.app` の作り方 | `make vendor`（whisper.cpp / llama.cpp）→ `make app` → `dist/VoiceDock.app`（開発用の署名）。配布版は `make release` → `dist/VoiceDock-<版>.dmg`（Developer ID・公証。`main` のタグの上で作業ツリーを clean にして行う） |
 | 配布 | **v1.0.0**: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.0（公開リポジトリなので誰でも落とせる。F-101）。`dist/VoiceDock.app` と `dist/VoiceDock-1.0.0.dmg` は本番の `make release`（ビルド 455。`9042132`）。`/Applications/VoiceDock.app` は利用者が Releases から入れ直した 1.0.0（ビルド 455）。以前の v0.9.0: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v0.9.0 |
 | 公証 | キーチェーンのプロファイル `VOICEDOCK_NOTARY`（2026-09-26 に利用者が登録し直した。`xcrun notarytool history --keychain-profile VOICEDOCK_NOTARY` で確かめられる） |
-| `<HOME>` | `~/Library/Application Support/VoiceDock`（`config.json`・`ui-state.json`・`voicedock.sqlite`・`logs/`・`inbox`・`staging`・`queue`・`bin`・`models`）。**2026-10-01 20:05 に作り直した**（RL-11。利用者の決定で前の `<HOME>` は `~/.Trash/VoiceDock-old` へ。DB・設定・ログは新しくなり、話者分離などの設定は既定に戻った） |
+| `<HOME>` | `~/Library/Application Support/VoiceDock`（`config.json`・`ui-state.json`・`voicedock.sqlite`・`logs/`・`inbox`・`staging`・`queue`・`bin`・`models`）。**2026-10-01 20:05 に作り直した**（RL-11。利用者の決定で前の `<HOME>` は `~/.Trash/VoiceDock-old` へ移し、同じ日に消した。DB・設定・ログは新しくなり、話者分離などの設定は既定に戻った） |
 | whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin`（547 MB。2026-10-01 に入手し直した） |
 | VAD モデル | `<HOME>/models/vad/ggml-silero-v5.1.2.bin`（2026-10-01 に入手し直した） |
 | LLM モデル | `<HOME>/models/llm/custom-6c997b8af17debdf.gguf`（18.6 GB。カタログの 30B（`qwen3-30b-a3b-instruct-2507-q4_k_m`）と同じファイルを「ファイルから読み込む…」で取り込んだので `custom:` の ID。2026-10-01）。以前の 4B（`custom-3605803b…`）と、カタログから取り込んだ 30B は前の `<HOME>` と一緒にゴミ箱へ |
-| 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
+| Vault | `~/Documents/Obsidian Vault`（2026-10-01 から。試験用の `~/VoiceDockTestVault` は同じ日に消した） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
-| 削除 | **無効**（2026-10-01 14:05:09 に E2E-13 のために「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。以下はそれより前の記録: **有効**（2026-09-30 02:07:58 に R-06 のために有効にし、利用者の決定でそのまま。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` は 0.9.0。**抜く前に Finder で取り出す**）。以下はそれより前の記録: **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
+| 削除 | **無効**（v1.0.0 の後も無効のまま。利用者の決定。2026-10-01）。2026-10-01 14:05:09 に E2E-13 のために「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。以下はそれより前の記録: **有効**（2026-09-30 02:07:58 に R-06 のために有効にし、利用者の決定でそのまま。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` は 0.9.0。**抜く前に Finder で取り出す**）。以下はそれより前の記録: **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
 | 取り込むデバイスの名前 | **`VOICEDOCK`**。2026-09-25 に利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直して「設定を読み直す」を押した（F-94。アプリの既定も `["VOICEDOCK"]`）。その前にデータを初期化した（F-95。`data_reset count=79 failed=0`）ので、`DJIMIC3` として取り込んだ行は残っていない。控えの `config.json.bak` は F-81 の時点のもの |
 | 実機 | E2E の試験でたびたび `/Volumes/VOICEDOCK`（F-94 の改名の前は `/Volumes/DJIMIC3`）に接続する（削除 OFF の間は読み取り専用でマウント）。次のセッションはまず `ls /Volumes` で確かめる |
 
@@ -265,17 +265,19 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | F-98 | **（利用者の依頼）** README に「データを初期化する」（F-95）を足し、RK-28 の文を「名前を変えると残っている録音をもう一度取り込んで重複になる」に直した。`config.json` を変えた後はつなぎ直すことを「困ったとき」に | #184 |
 | F-99 | **（利用者の依頼と決定）** dmg を開くと背景（矢印と案内）の上に左にアプリ・右に Applications が並ぶウィンドウに。ボリューム名は `VoiceDock <版>`（実機の `VOICEDOCK` とぶつけない） | #185 |
 | F-100 | **（利用者の決定）** 削除のゲートが閉じたままなので v1.0.0 ではなく **v0.9.0** を先に出す（§12.4 は緩めない）。README に Releases のリンク（非公開なので招待された人だけ）。リリースノート `docs/release-notes/0.9.0.md` | #185 |
+| F-101 | **（利用者の決定）** リポジトリは 2026-09-28 から公開。PLAN・README・CLAUDE.md・T-44 の「非公開」を事実に合わせた（Releases の dmg はサインインせずに落とせる） | #193 |
+| F-102 | **（利用者の依頼）** `main` のブランチ保護（必須のチェック `check`・PR 必須（承認 0 人）・管理者にも適用・force push と削除は禁止）。`develop` は保護しない | #195 |
+| F-103 | **（利用者の決定）** `PolicyTests` の依存を地図に揃えて `VDContract` を足し、`ReleaseChecklistTests` の版の読み取りの写しをやめた | この PR |
 
 ## 5. 残っている作業
 
 ### 開いている issue
 
-なし（#192（T-44）は v1.0.0 の記録の PR のマージで閉じる）。
+なし（#192（T-44）は 2026-10-01 に閉じた）。
 
-**決めてほしいこと**（issue にはしていない）:
-- `PolicyTests` の依存が、`00-api-map.md` §14（`TestSupport, VDContract`）と PLAN §10.3・`Package.swift`（`TestSupport` だけ）で食い違っている。T-44 は PLAN に合わせて `ReleaseDoc.components` を写しにした（T-44 §10 の 2）
-- 削除を有効に戻すか（いまは無効。戻すときは三重ロックを外す操作。削除モジュールは 1.0.0 が入る）
-- 前の `<HOME>` は `~/.Trash/VoiceDock-old` にある（ゴミ箱を空にするまでは戻せる）
+**2026-10-01 に利用者が決めたこと**: `PolicyTests` の依存は地図に揃える（F-103。`VDContract` を足し、版の読み取りの写しをやめた）・**削除は無効のまま**・前の `<HOME>`（`~/.Trash/VoiceDock-old`）は消した。
+
+**2026-10-01 に利用者の決定で `~/VoiceDock*` を消した**: `~/VoiceDockE2E`・`-0930`・`-G4`・`-E13`（E2E の生の出力の控えと手順書。要るところは `docs/E2E.md` にある）、`~/VoiceDockE2E-ON`（実機の録音の退避。試験で実機から消えた録音の最後の写しだった）、`~/VoiceDockPoC`（Phase 0・BLE の実験の道具。`.claude/settings.json` の `additionalDirectories` からも外した。ディスクイメージを手で試すときは `mkdir -p ~/VoiceDockPoC/mnt/<名前>` から始める）、`~/VoiceDockTestVault`（試験用の Vault。アプリは `~/Documents/Obsidian Vault` を使う）。`docs/E2E.md` などに書いた「生の出力の控えは `~/VoiceDockE2E-…`」の場所は、もう無い。
 
 **2026-10-01 に閉じた issue（E2E-13 の記録の PR のマージの後）**: #81（T-35 実機 E2E・削除 OFF。E2E-13 の PASS で 14 本すべて PASS。E2E-15・18 は取り下げ）、#95（T-42 実機 E2E・削除 ON とゲート。13/13 と G-1〜G-5 がすべて PASS し、**ゲート: 開**）。
 
