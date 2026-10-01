@@ -140,14 +140,14 @@ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c -E '
 | E2E-03 | 文字起こし中に抜く | OFF | ✅ PASS | §3.3 |
 | E2E-04 | Vault を利用不可にする | OFF | ✅ PASS | §3.4 |
 | E2E-05 | 抜き挿しを 6 回以上 | OFF | ✅ PASS | §3.5 |
-| E2E-06 | 1 日分を 1 セッションに | OFF | ⬜ 未実施 | §3.6 |
+| E2E-06 | 1 日分を 1 セッションに | OFF | ✅ PASS | §3.6 |
 | E2E-07 | 無音の Part を混ぜる | OFF | ✅ PASS | §3.7 |
 | E2E-08 | 1 本だけ文字起こしを失敗させる | OFF | ✅ PASS | §3.8 |
 | E2E-09 | 保存後に同じ日の Part を追加 | OFF | ✅ PASS | §3.9 |
 | E2E-10 | 削除 ON で通し | ON | ✅ PASS | §3.10 |
 | E2E-11 | 過去分の削除・手動で消した分の完了 | ON | ✅ PASS | §3.11 |
 | E2E-12 | 文字起こし中に強制終了 | OFF | ✅ PASS | §3.12 |
-| E2E-13 | 処理中にスリープ | OFF | ⬜ 未実施 | §3.13 |
+| E2E-13 | 処理中にスリープ | OFF | ✅ PASS | §3.13 |
 | E2E-14 | アプリが動いていない間に接続 | OFF | ✅ PASS | §3.14 |
 | E2E-15 | 取り下げ | — | — 対象外 | §3.15 |
 | E2E-16 | リムーバブルボリュームの許可を拒否 | OFF | ✅ PASS | §3.16 |
@@ -698,11 +698,129 @@ sessions:   COMPLETED|3
 3 と 4 の時刻と差、`sqlite3 "$VD_DB" "SELECT session_key, part_count, failed_part_count, recorded_seconds, status FROM sessions;"`、
 `transcription_completed` の `rtf=` の一覧（`grep transcription_completed "$VD_HOME/logs/app.log" | grep -o 'rtf=[0-9.]*'`）。
 
+実施: 2026-09-30 01:10〜02:00。DEV=VOICEDOCK。削除 OFF（[C-11] は `ロック 1  : アプリ=無効, reaper.conf=無効`・`ロック 2-A: 削除モジュール=未導入`・`ロック 2-B: 設定=ro, デバイス未接続`）。`$BACKUP=$HOME/VoiceDockE2E-0930`、`$VAULT=<HOME>/VoiceDockTestVault`。アプリは v0.9.0 のビルド 436（develop `03a3fa4`）。
+2026-09-25 のデータの初期化（F-95）の後、初めての接続（DB は空）。
+
+**手順書との差（利用者の判断）**:
+- 録音は 10 時間分ではなく、2026-09-29 の勤務時間中に普段どおり録った **約 7 時間 4 分**（30 分 × 14 本と約 4 分 1 本の 15 本。11:48〜18:52）。利用者は「8 時間分くらい」と見ていた
+- デバイスには 2026-09-26 の 11 秒の録音 2 本も残っていた（別の Session `VOICEDOCK:20260926` になる。判定は 2026-09-29 の Session で見る）
+- [C-10] は取らずに、R-06 のためのデータの初期化へ進んだ（状態は下の [C-1]・`sessions`・WARNING / ERROR が 0 件であることで代える）。ノートは目視せずに利用者が消した（§3.6 の記録の項目に目視は無い）
+
 ```text
+$ date '+%F %T' | tee "$BACKUP/e2e06-plugged-at.txt"        ← 3（挿した時刻）
+2026-09-30 01:11:11
+[C-8]
+/dev/disk21 on /Volumes/VOICEDOCK (msdos, local, nodev, nosuid, read-only, noowners, noatime, fskit)
+[C-7]（前）
+1632616 1790388106 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC001_20260926_110147_orig.wav
+1632616 1790388122 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC002_20260926_110202_orig.wav
+259254376 1790650092 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC003_20260929_114813_orig.wav
+259254376 1790651894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC004_20260929_121814_orig.wav
+259254376 1790653694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC005_20260929_124814_orig.wav
+259254376 1790655494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC006_20260929_131814_orig.wav
+259254376 1790657294 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC007_20260929_134814_orig.wav
+259254376 1790659094 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC008_20260929_141814_orig.wav
+259254376 1790660894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC009_20260929_144814_orig.wav
+259254376 1790662694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC010_20260929_151815_orig.wav
+259254376 1790664494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC011_20260929_154815_orig.wav
+259254376 1790666294 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC012_20260929_161815_orig.wav
+259254376 1790668094 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC013_20260929_164815_orig.wav
+259254376 1790669894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC014_20260929_171815_orig.wav
+259254376 1790671694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC015_20260929_174815_orig.wav
+259254376 1790673494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC016_20260929_181815_orig.wav
+34484776 1790675296 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav
+      17
+Filesystem     Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk21    28Gi   3.4Gi    25Gi    13%       0     0     -   /Volumes/VOICEDOCK
+
+$ [C-1]（前。01:10:15）
+（recordings・sessions とも 0 行）
+
+$ 工程のログ（grep -vE 'normalize_completed|diarization_completed|part_discovered|copy_completed|transcription_completed' の抜粋。01:09 以降）
+2026-09-30T01:09:47+09:00 INFO  service_started version=0.9.0 schema=v1_initial
+2026-09-30T01:11:21+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260926 parts=1 bytes=396
+2026-09-30T01:11:23+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260926 parts=2 bytes=537
+2026-09-30T01:12:12+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=1 bytes=7817
+2026-09-30T01:12:32+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=2 bytes=12873
+2026-09-30T01:12:59+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=3 bytes=21277
+2026-09-30T01:13:19+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=4 bytes=26498
+2026-09-30T01:13:52+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=5 bytes=37964
+2026-09-30T01:14:26+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=6 bytes=47769
+2026-09-30T01:14:38+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=7 bytes=48252
+2026-09-30T01:16:11+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=8 bytes=82224
+2026-09-30T01:16:23+09:00 INFO  scan_completed devices=1 copied=17 elapsed_s=310.9
+2026-09-30T01:16:58+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=9 bytes=99522
+2026-09-30T01:17:35+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=10 bytes=112001
+2026-09-30T01:17:54+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=11 bytes=116074
+2026-09-30T01:18:36+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=12 bytes=127700
+2026-09-30T01:19:11+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=13 bytes=139144
+2026-09-30T01:19:26+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=14 bytes=142912
+2026-09-30T01:19:27+09:00 INFO  part_skipped recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav reason=no_speech
+2026-09-30T01:41:24+09:00 INFO  session_merged session_key=VOICEDOCK:20260926 parts=2 excluded=0 chars=25
+2026-09-30T01:41:27+09:00 INFO  llm_server_started port=58081 elapsed_s=3.1
+2026-09-30T01:41:29+09:00 INFO  llm_completed session_key=VOICEDOCK:20260926 chunks=1 elapsed_s=2.6
+2026-09-30T01:41:29+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20260926 path="Daily/Voice/Wiki/20260926/2026-09-26 Voice.md" bytes=1126
+2026-09-30T01:41:29+09:00 INFO  source_delete_skipped session_key=VOICEDOCK:20260926 reason=delete_source_audio_disabled
+2026-09-30T01:41:29+09:00 INFO  llm_server_stopped port=58081
+2026-09-30T01:49:44+09:00 INFO  session_merged session_key=VOICEDOCK:20260929 parts=14 excluded=1 chars=49990
+2026-09-30T01:49:47+09:00 INFO  llm_server_started port=58651 elapsed_s=3.1
+2026-09-30T01:57:16+09:00 INFO  analysis_trimmed session_key=VOICEDOCK:20260929 fields="reduce1: key_points: 21 -> 20; reduce1: key_points: 27 -> 20; reduce: key_points: 27 -> 20"
+2026-09-30T01:57:16+09:00 INFO  llm_completed session_key=VOICEDOCK:20260929 chunks=7 elapsed_s=448.7
+2026-09-30T01:57:16+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20260929 path="Daily/Voice/Wiki/20260929/2026-09-29 Voice.md" bytes=23830
+2026-09-30T01:57:16+09:00 INFO  source_delete_skipped session_key=VOICEDOCK:20260929 reason=delete_source_audio_disabled
+2026-09-30T01:57:17+09:00 INFO  llm_server_stopped port=58651
+
+$ 4（待機中に戻った時刻）: 2026-09-30 01:57:17（llm_server_stopped。以後ログに行が無い）
+
+$ [C-1]（後。01:58:18）
+COMPLETED|16
+SKIPPED|1
+COMPLETED|2
+$ sqlite3 "$VD_DB" "SELECT session_key, part_count, failed_part_count, recorded_seconds, status FROM sessions;"
+VOICEDOCK:20260926|2|0|22.22|COMPLETED
+VOICEDOCK:20260929|15|1|25441.35|COMPLETED
+$ awk '$1>="2026-09-30T01:09"' "$VD_HOME/logs/app.log" | grep transcription_completed | grep -o 'rtf=[0-9.]*'
+rtf=0.107
+rtf=0.08
+rtf=0.018
+rtf=0.009
+rtf=0.013
+rtf=0.009
+rtf=0.017
+rtf=0.017
+rtf=0.005
+rtf=0.05
+rtf=0.024
+rtf=0.019
+rtf=0.009
+rtf=0.022
+rtf=0.017
+rtf=0.007
+$ [C-9]（後。01:10 の 8 ファイルに次の 4 ファイルが増えた）
+1126 1790700089 <VAULT>/Daily/Voice/Wiki/20260926/2026-09-26 Voice.md
+142912 1790698766 <VAULT>/Daily/Voice/Raw/20260929/2026-09-29 raw.md
+23830 1790701036 <VAULT>/Daily/Voice/Wiki/20260929/2026-09-29 Voice.md
+537 1790698283 <VAULT>/Daily/Voice/Raw/20260926/2026-09-26 raw.md
+$ 01:09 以降の WARNING / ERROR の行
+（無し）
+$ [C-6]
+queue/delete・queue/result・queue/rejected とも空
+
+$ [C-7]（後。02:00）と前との diff
+[C-8]
+/dev/disk21 on /Volumes/VOICEDOCK (msdos, local, nodev, nosuid, read-only, noowners, noatime, fskit)
+[C-7]
+      17
+diff_exit=0
 ```
 
+- 3 と 4 の差: 01:11:11 → 01:57:17 で **46 分**（24 時間未満）。内訳は、コピー・16 kHz 変換・文字起こし・話者分離・Raw ノートの保存が約 8 分（01:11〜01:19:27。scan は `elapsed_s=310.9`）、無通信で Session が閉じるまでの 30 分（`idleCloseSeconds=1800`。最後の活動 01:19:27 → `session_merged` 01:49:44）、要約が **448.7 秒（7 チャンク、本文 49,990 字）**
+- 2026-09-29 の Session は 1 行で、`part_count=15` はデバイスの 2026-09-29 の本数と一致する。`failed_part_count=1` は無音で除外された MIC017（`part_skipped reason=no_speech`・`session_merged excluded=1`。PLAN §5 の `failed_part_count = 除外数`）
+- Raw 1 枚（`Raw/20260929/2026-09-29 raw.md`）・Daily 1 枚（`Wiki/20260929/2026-09-29 Voice.md`）
+- 元音声は残った（[C-7] の前後が一致。`source_delete_skipped reason=delete_source_audio_disabled`）
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.7 E2E-07 — 無音の Part を混ぜる
 
@@ -1307,7 +1425,8 @@ $ grep "part_discovered" "$VD_HOME/logs/app.log" | grep -c "MIC020_20260924_2212
 **スリープの直前に `pmset -g assertions | grep -E '^ *PreventSystemSleep '` が `PreventSystemSleep 0` であることを確かめる。**
 ほかのプロセスが `PreventSystemSleep` を持っていると（Claude Code は自分の子プロセスとして `caffeinate -ims` を動かす）、明示的なスリープが **DarkWake** になり、CPU が止まらないまま処理が進んで試験が空振りする（2026-09-25 に 2 回。下の記録）。
 Claude Code などを終了し、`pmset -g assertions | grep -c "on behalf of 'claude'"` が `0` になってから行う。
-眠ったかどうかは、後で `pmset -g log | grep -E ' (Sleep|Wake|DarkWake) '` の行が `Entering Sleep state`（`Entering DarkWake state` ではない）であることで確かめる。
+Claude Code のほかに、**Orca.app も起動している間ずっと自分で `/usr/bin/caffeinate -i -s`（`asserting forever`）を動かす**（2026-10-01 に確認）。Orca の中で Claude Code を動かしているときは Orca ごと終了する。
+眠ったかどうかは、後で `pmset -g log | awk '$4=="Sleep"||$4=="Wake"||$4=="DarkWake"'` の行が `Entering Sleep state`（`Entering DarkWake state` ではない）であることで確かめる（`grep -E ' (Sleep|Wake|DarkWake) '` では `Kernel Client Acks` の長い行まで拾う）。
 ふたの無い Mac（Mac mini など）では、手順 4 の「ふたを開けて復帰」をキーボードかマウスで起こすと読み替える。
 
 #### 手順
@@ -1327,7 +1446,7 @@ Claude Code などを終了し、`pmset -g assertions | grep -c "on behalf of 'c
 #### 記録
 2 と（待機中に戻ったあとの）`pmset -g assertions` の 2 回分、[C-3]、スリープと復帰の時刻。
 
-**2026-09-25 に 2 回行い、2 回とも空振り（Mac が眠らなかった）。判定は未実施のまま。**
+**2026-09-25 に 2 回行い、2 回とも空振り（Mac が眠らなかった）。2026-10-01 の 3 回目で本当に眠ったことを確かめ、PASS（下の「3 回目」）。**
 2 回とも、アップルメニューのスリープが `Entering DarkWake state` になり、CPU が止まらずに処理が進み続けた。
 原因は、エージェントの Claude Code（pid 57888）が子プロセスとして動かしていた `caffeinate -ims`（pid 57889）の `PreventSystemSleep`（1 回目は別の Claude Code のセッションの pid 21078 も）。
 VoiceDock が持っていたのは `PreventUserIdleSystemSleep` だけである。
@@ -1553,8 +1672,207 @@ Sleep/Wakes since boot:0   Dark Wake Count in this sleep cycle:0
 2026-09-25 16:39:05 +0900 Wake                	DarkWake to FullWake from Deep Idle [CDNVA] : due to HID Activity Using AC (Charge:0%)           
 ```
 
+3 回目（2026-10-01 18:00〜18:17。削除 OFF。新しい録音 3 本 MIC018 23.4 分・MIC019 11.2 分・MIC020 15.0 分。2026-10-01 の 12:58〜14:25 に録った）
+
+実施: DEV=VOICEDOCK。`$BACKUP=$HOME/VoiceDockE2E-E13`（手順書 `e2e13-steps.md` と生の出力の控え）。アプリは v0.9.0 のビルド 436（`dist/VoiceDock.app`、pid 97711。develop `919c55e` と `Sources` は同じ）。
+削除は 14:05:09 に「無効にする」で無効にした（`deletion_disabled`）。そのときの [C-11]（利用者のスクリーンショットから書き写した）:
+
+```text
+無効
+ロック 1  : アプリ=無効, reaper.conf=無効
+ロック 2-A: 削除モジュール=未導入
+ロック 2-B: 設定=ro, デバイス未接続
+```
+
+**1・2 回目との差**:
+- 挿す前に Claude Code を 4 つと **Orca.app** を終了した。Orca は Claude Code とは別に、2026-09-26 10:19 から `/usr/bin/caffeinate -i -s`（`asserting forever`。`PreventSystemSleep`）を持ち続けていた。挿す前の記録で `PreventSystemSleep 0`・claude の行が 0 件であることを確かめた
+- 合図を `llm_server_started` から**最初の `normalize_completed`**（文字起こしの開始）に変えた。新しい日の Session は、無通信が 30 分続くまで要約が始まらないため
+- 3 本の Raw が保存された後、18:15:15 にパネルの「今すぐ要約」を押して Session を閉じた（F-66。無通信の 30 分は待たなかった）
+
+**観察**（どれも FAIL ではない）:
+- 眠っている間に、ネットワークの受信（`wifibt … E_RX_IP_PACKET`。システム設定の「ネットワークアクセスによるスリープ解除」が入っている）による DarkWake が 4 回あった。その間（約 45 秒ずつ）は処理が進んだ。本当に眠っていたのは 13 + 93 + 7 + 11 = 124 秒で、アップルメニューのスリープ（18:02:34）から利用者が起こす（18:07:11）までは 4 分 37 秒
+- MIC018 の文字起こしは `elapsed_s=167.0 rtf=0.119`（普段は rtf 0.02〜0.04）。眠っている間は `whisper-cli` が止まり、DarkWake と復帰の後に続きを処理した。MIC020 は復帰の後の 18:07:43 に終わった
+- 挿した直後（18:01:40）に `copy_failed reason=read_error` が 3 件出た。次の走査（18:02:27〜）で 3 本とも `recopy=false` でコピーされている。スリープの前の出来事で、2026-09-25 の 15:02:41（E2E-02）と 18:34:43（R-02）にも、挿した直後に同じ形で出ている
+- `pmset -g log` の絞り込みは、1・2 回目の `grep -E ' (Sleep|Wake|DarkWake) '` では `Kernel Client Acks` の行（`Delays to Wake notifications`）まで拾うので、4 列目で絞った（`Wake Requests` の行は残る）
+
+期待との対応:
+- 2: 合図の時点（18:02:28）の一覧に `pid 97711(VoiceDock) … PreventUserIdleSystemSleep` がある。`pmset -g log` の名前は `"VoiceDock が録音を処理しています"`。挿す前（18:00:58）と後（18:16:49）の一覧には VoiceDock の行が無い
+- 3: VoiceDock がアサーションを持っている間（18:02:29〜18:05:19）の 18:02:34 に、**`Entering Sleep state due to 'Software Sleep pid=406'`**（DarkWake ではない）
+- 4: 復帰（18:07:11 `DarkWake to FullWake … due to HID Activity`）の後も処理が続き、3 本とも `RAW_SAVED` → Session が `COMPLETED`（18:16:37 `source_delete_skipped`）。recordings の COMPLETED は 33 → 36、sessions の COMPLETED は 3 → 4。`FAILED` は 0、ERROR は 0 行、WARNING は上の `copy_failed` の 3 行だけ
+
+挿す前（[C-1]・削除の設定・アサーション）:
+```text
+terada@teramacminim4 voicedock_app % { date; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;"; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions GROUP BY status ORDER BY status;"; grep -E '"deleteSourceAudio"|"mountMode"' "$VD_HOME/config.json"; cat "$VD_HOME/bin/reaper.conf"; echo "claude の caffeinate の行数:"; pmset -g assertions | grep -c "on behalf of 'claude'"; pmset -g assertions | grep -E '^ *PreventSystemSleep '; pmset -g assertions | sed -n '/Listed by owning process/,/Kernel Assertions/p'; } 2>&1 | tee "$BACKUP/e2e13-try3-before.txt"
+2026年 10月 1日 木曜日 18時00分58秒 JST
+COMPLETED|33
+SKIPPED|1
+COMPLETED|3
+    "deleteSourceAudio" : false
+    "mountMode" : "ro",
+SCHEMA=1
+DELETE_SOURCE_AUDIO=false
+VOLUMES_ROOT=/Volumes
+claude の caffeinate の行数:
+0
+   PreventSystemSleep             0
+Listed by owning process:
+   pid 630(sharingd): [0x0016d7c4000198e4] 00:01:46 PreventUserIdleSystemSleep named: "Handoff"  
+   pid 395(bluetoothd): [0x0016d811000198f7] 00:00:29 PreventUserIdleSystemSleep named: "com.apple.BTStack"  
+   pid 752(useractivityd): [0x0016d829000198fc] 00:00:04 PreventUserIdleSystemSleep named: "BTLEAdvertisement.FD7689AA-F9BE-4EA5-A843-3ADA7821B139"  
+	Timeout will fire in 55 secs Action=TimeoutActionTurnOff
+   pid 344(powerd): [0x00168f170001970d] 05:11:51 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:10017586a service:AppleUserHIDEventService product:HHKB-Studio1 eventType:3"  
+	Timeout will fire in 600 secs Action=TimeoutActionRelease
+Kernel Assertions: 0x104=USB,MAGICWAKE
+```
+
+合図（最初の `normalize_completed`）で自動で取ったアサーション。プロンプトが戻った直後にアップルメニューからスリープした:
+```text
+terada@teramacminim4 voicedock_app % L="$VD_HOME/logs/app.log"; n=$(wc -l < "$L"); until tail -n +$((n+1)) "$L" | grep -q normalize_completed; do sleep 0.5; done; { date; pmset -g assertions | grep -A3 'Listed by owning process'; echo ----; pmset -g assertions | sed -n '/Listed by owning process/,/Kernel Assertions/p'; } 2>&1 | tee "$BACKUP/e2e13-try3-during.txt"
+2026年 10月 1日 木曜日 18時02分28秒 JST
+Listed by owning process:
+   pid 630(sharingd): [0x0016d7c4000198e4] 00:03:15 PreventUserIdleSystemSleep named: "Handoff"  
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:15 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:100175882 service:AppleUserHIDEventService product:MX Master 3S eventType:17"  
+	Timeout will fire in 585 secs Action=TimeoutActionRelease
+----
+Listed by owning process:
+   pid 630(sharingd): [0x0016d7c4000198e4] 00:03:15 PreventUserIdleSystemSleep named: "Handoff"  
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:15 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:100175882 service:AppleUserHIDEventService product:MX Master 3S eventType:17"  
+	Timeout will fire in 585 secs Action=TimeoutActionRelease
+   pid 359(mds): [0x0016d84b000b990b] 00:01:00 BackgroundTask named: "com.apple.metadata.mds.power"  
+   pid 97711(VoiceDock): [0x0016d88700019915] 00:00:00 PreventUserIdleSystemSleep named: ""  
+   pid 547(mds_stores): [0x0016d887000b9916] 00:00:00 BackgroundTask named: "com.apple.metadata.mds_stores.power"  
+   pid 344(powerd): [0x00168f170001970d] 05:13:20 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 344(powerd): [0x0016d87200089911] 00:00:21 ExternalMedia named: "com.apple.powermanagement.externalmediamounted"  
+Kernel Assertions: 0x104=USB,MAGICWAKE
+```
+
+見張り（ターミナル B。スリープの 18:02:34〜復帰の 18:07:11 を挟んで進んでいる）:
+```text
+terada@teramacminim4 voicedock_app % tail -n 0 -f "$HOME/Library/Application Support/VoiceDock/logs/app.log" | grep --line-buffered -E 'part_discovered|copy_|normalize_|transcription_|diarization_|raw_note_saved|session_merged|llm_|obsidian_saved|source_delete_skipped|volume_|ERROR|WARNING' | tee "$HOME/VoiceDockE2E-E13/e2e13-try3-watch.txt"
+2026-10-01T18:01:40+09:00 WARNING copy_failed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav reason=read_error
+2026-10-01T18:01:40+09:00 WARNING copy_failed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav reason=read_error
+2026-10-01T18:01:40+09:00 WARNING copy_failed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav reason=read_error
+2026-10-01T18:02:27+09:00 INFO  part_discovered recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav duration_s=1401.62
+2026-10-01T18:02:27+09:00 INFO  copy_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav bytes=201866056 recopy=false
+2026-10-01T18:02:27+09:00 INFO  normalize_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav in_bytes=201866056 out_bytes=44855936 elapsed_s=0.3
+2026-10-01T18:02:35+09:00 INFO  part_discovered recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav duration_s=674.19
+2026-10-01T18:02:35+09:00 INFO  copy_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav bytes=97116136 recopy=false
+2026-10-01T18:02:57+09:00 INFO  part_discovered recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav duration_s=901.78
+2026-10-01T18:02:57+09:00 INFO  copy_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav bytes=129889096 recopy=false
+2026-10-01T18:05:19+09:00 INFO  transcription_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav elapsed_s=167.0 chars=11495 rtf=0.119 speech_ratio=0.98
+2026-10-01T18:05:19+09:00 INFO  diarization_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20261001_125824_orig.wav speakers=1 elapsed_s=4.9
+2026-10-01T18:05:19+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20261001 parts=1 bytes=12871
+2026-10-01T18:05:20+09:00 INFO  normalize_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav in_bytes=97116136 out_bytes=21578176 elapsed_s=0.3
+2026-10-01T18:06:30+09:00 INFO  transcription_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav elapsed_s=66.0 chars=4931 rtf=0.098 speech_ratio=0.961
+2026-10-01T18:06:30+09:00 INFO  diarization_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20261001_135919_orig.wav speakers=3 elapsed_s=4.4
+2026-10-01T18:06:30+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20261001 parts=2 bytes=27749
+2026-10-01T18:06:31+09:00 INFO  normalize_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav in_bytes=129889096 out_bytes=28861056 elapsed_s=0.7
+2026-10-01T18:07:43+09:00 INFO  transcription_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav elapsed_s=71.1 chars=5525 rtf=0.079 speech_ratio=0.955
+2026-10-01T18:07:43+09:00 INFO  diarization_completed recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20261001_141038_orig.wav speakers=2 elapsed_s=1.6
+2026-10-01T18:07:43+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20261001 parts=3 bytes=44960
+2026-10-01T18:15:15+09:00 INFO  session_merged session_key=VOICEDOCK:20261001 parts=3 excluded=0 chars=21951
+2026-10-01T18:15:19+09:00 INFO  llm_server_started port=64970 elapsed_s=3.1
+2026-10-01T18:16:37+09:00 INFO  llm_completed session_key=VOICEDOCK:20261001 chunks=2 elapsed_s=78.0
+2026-10-01T18:16:37+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20261001 path="Daily/Voice/Wiki/20261001/2026-10-01 Voice.md" bytes=6749
+2026-10-01T18:16:37+09:00 INFO  source_delete_skipped session_key=VOICEDOCK:20261001 reason=delete_source_audio_disabled
+2026-10-01T18:16:37+09:00 INFO  llm_server_stopped port=64970
+```
+
+完走（「今すぐ要約」の後）と、ほかの行:
+```text
+$ grep -E 'session_merged|llm_|obsidian_saved|source_delete_skipped' "$VD_HOME/logs/app.log" | grep '^2026-10-01T18'
+2026-10-01T18:15:15+09:00 INFO  session_merged session_key=VOICEDOCK:20261001 parts=3 excluded=0 chars=21951
+2026-10-01T18:15:19+09:00 INFO  llm_server_started port=64970 elapsed_s=3.1
+2026-10-01T18:16:37+09:00 INFO  llm_completed session_key=VOICEDOCK:20261001 chunks=2 elapsed_s=78.0
+2026-10-01T18:16:37+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20261001 path="Daily/Voice/Wiki/20261001/2026-10-01 Voice.md" bytes=6749
+2026-10-01T18:16:37+09:00 INFO  source_delete_skipped session_key=VOICEDOCK:20261001 reason=delete_source_audio_disabled
+2026-10-01T18:16:37+09:00 INFO  llm_server_stopped port=64970
+
+$ grep -E '^2026-10-01T1[4-8]' "$VD_HOME/logs/app.log" | grep -vE 'part_discovered|copy_|normalize_|transcription_|diarization_|raw_note_saved|session_merged|llm_|obsidian_saved|source_delete_skipped'
+2026-10-01T14:05:09+09:00 INFO  deletion_disabled
+2026-10-01T18:02:57+09:00 INFO  scan_completed devices=1 copied=3 elapsed_s=50.3
+```
+
+VoiceDock のアサーション（`pmset -g log`）:
+```text
+$ pmset -g log | awk '$1=="2026-10-01" && $2>="17:55" && $4=="Assertions" && /VoiceDock/' | cut -c1-200
+2026-10-01 18:02:29 +0900 Assertions          	PID 97711(VoiceDock) Summary PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:00:01  id:0x0x100009915 [System: PrevIdle DeclUser SRPrevSleep IPushSrvc kCPU kDisp]          
+2026-10-01 18:05:19 +0900 Assertions          	PID 97711(VoiceDock) Released PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:02:52  id:0x0x100009915 [System: DeclUser SRPrevSleep kCPU kDisp]          
+2026-10-01 18:06:30 +0900 Assertions          	PID 97711(VoiceDock) Released PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:01:10  id:0x0x100009948 [System: DeclUser SRPrevSleep kCPU kDisp]          
+2026-10-01 18:07:43 +0900 Assertions          	PID 97711(VoiceDock) Released PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:01:13  id:0x0x100009993 [System: PrevIdle DeclUser kDisp]          
+2026-10-01 18:16:37 +0900 Assertions          	PID 97711(VoiceDock) Released PreventUserIdleSystemSleep "VoiceDock が録音を処理しています" 00:01:21  id:0x0x100009bdc [System: PrevIdle PrevSleep DeclUser kCPU kDi
+```
+
+後（[C-1]・待機中のアサーション・スリープと復帰の時刻。claude と Orca の caffeinate は、利用者が Claude Code と Orca を起動し直した後のもの）:
+```text
+$ { date; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM recordings GROUP BY status ORDER BY status;"; sqlite3 "$VD_DB" "SELECT status, COUNT(*) FROM sessions GROUP BY status ORDER BY status;"; pmset -g assertions | grep -A3 'Listed by owning process'; echo '----'; pmset -g assertions | sed -n '/Listed by owning process/,/Kernel Assertions/p'; echo '----'; pmset -g log | awk '$1=="2026-10-01" && $2>="18:00" && ($4=="Sleep"||$4=="Wake"||$4=="DarkWake")'; } 2>&1 | tee "$BACKUP/e2e13-try3-after.txt"
+Thu Oct  1 18:16:49 JST 2026
+COMPLETED|36
+SKIPPED|1
+COMPLETED|4
+Listed by owning process:
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:10017602c service:AppleUserHIDEventService product:MX Master 3S eventType:17"  
+	Timeout will fire in 600 secs Action=TimeoutActionRelease
+   pid 26022(caffeinate): [0x0016da9b00019b96] 00:03:37 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+----
+Listed by owning process:
+   pid 403(WindowServer): [0x0016b0e4000985f0] 00:00:00 UserIsActive named: "com.apple.iohideventsystem.queue.tickle serviceID:10017602c service:AppleUserHIDEventService product:MX Master 3S eventType:17"  
+	Timeout will fire in 600 secs Action=TimeoutActionRelease
+   pid 26022(caffeinate): [0x0016da9b00019b96] 00:03:37 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting forever
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 26022(caffeinate): [0x0016da9b00079b97] 00:03:37 PreventSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting forever
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 395(bluetoothd): [0x0016db6b00019bf9] 00:00:08 PreventUserIdleSystemSleep named: "com.apple.BTStack"  
+   pid 395(bluetoothd): [0x0016d932000999d5] 00:09:38 UserIsActive named: "Bluetooth LE HID Activity"  
+	Timeout will fire in 22 secs Action=TimeoutActionRelease
+   pid 27812(caffeinate): [0x0016dab400019ba4] 00:03:12 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 27811)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 27812(caffeinate): [0x0016dab400079ba5] 00:03:12 PreventSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 27811)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 27812(caffeinate): [0x0016dab4000f9ba6] 00:03:12 PreventDiskIdle named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 27811)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 33459(caffeinate): [0x0016db6900019bf7] 00:00:10 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting for 300 secs
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+	Timeout will fire in 289 secs Action=TimeoutActionRelease
+   pid 630(sharingd): [0x0016daed00019bd4] 00:02:14 PreventUserIdleSystemSleep named: "Handoff"  
+   pid 344(powerd): [0x0016d932000199d6] 00:09:38 PreventUserIdleSystemSleep named: "Powerd - Prevent sleep while display is on"  
+   pid 344(powerd): [0x0016d87200089911] 00:14:42 ExternalMedia named: "com.apple.powermanagement.externalmediamounted"  
+   pid 33069(caffeinate): [0x0016db5f00019bf2] 00:00:21 PreventUserIdleSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 33068)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 33069(caffeinate): [0x0016db5f00079bf3] 00:00:21 PreventSystemSleep named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 33068)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 33069(caffeinate): [0x0016db5f000f9bf4] 00:00:21 PreventDiskIdle named: "caffeinate command-line tool"  
+	Details: caffeinate asserting on behalf of 'claude' (pid 33068)
+	Localized=THE CAFFEINATE TOOL IS PREVENTING SLEEP.
+   pid 359(mds): [0x0016d84b000b990b] 00:15:21 BackgroundTask named: "com.apple.metadata.mds.power"  
+Kernel Assertions: 0x104=USB,MAGICWAKE
+----
+2026-10-01 18:02:34 +0900 Sleep               	Entering Sleep state due to 'Software Sleep pid=406':TCPKeepAlive=active Using AC (Charge:0%)           
+2026-10-01 18:02:35 +0900 Wake Requests       	[*process=dasd request=SleepService deltaSecs=934 wakeAt=2026-10-01 18:18:09 info="com.apple.dasd:501:com.apple.chronod.nextScheduledTimelineRefresh"] [process=dasd request=TimerPlugin deltaSecs=1051 wakeAt=2026-10-01 18:20:06 info="com.apple.dasd:205:com.apple.private.contacts.accounts.validate-cache"] [process=mDNSResponder request=Maintenance deltaSecs=5862 wakeAt=2026-10-01 19:40:18 info="DHCP lease renewal"] [process=NotificationCenter request=Maintenance deltaSecs=14292 wakeAt=2026-10-01 22:00:48 info="com.apple.notificationcenter.dnd"] [process=powerd request=CSPNEvaluation deltaSecs=7253 wakeAt=2026-10-01 20:03:29] [process=powerd request=UserWake deltaSecs=14244 wakeAt=2026-10-01 22:00:00 info="com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer,599"]           
+2026-10-01 18:02:47 +0900 DarkWake            	DarkWake from Deep Idle [CDNP] : due to smc.sysState.Wake(0x70070000) wifibt SMC.OutboxNotEmpty E_RX_IP_PACKET ARPT/ Using AC (Charge:0%) 45 secs   
+2026-10-01 18:03:32 +0900 Sleep               	Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using AC (Charge:0%) 93 secs   
+2026-10-01 18:03:33 +0900 Wake Requests       	[process=dasd request=SleepService deltaSecs=1055 wakeAt=2026-10-01 18:21:09 info="com.apple.dasd:501:com.apple.chronod.nextScheduledTimelineRefresh"] [*process=dasd request=TimerPlugin deltaSecs=1011 wakeAt=2026-10-01 18:20:25 info="com.apple.dasd:205:com.apple.private.contacts.accounts.validate-cache"] [process=mDNSResponder request=Maintenance deltaSecs=5810 wakeAt=2026-10-01 19:40:24 info="DHCP lease renewal"] [process=NotificationCenter request=Maintenance deltaSecs=14235 wakeAt=2026-10-01 22:00:49 info="com.apple.notificationcenter.dnd"] [process=powerd request=CSPNEvaluation deltaSecs=7195 wakeAt=2026-10-01 20:03:29] [process=powerd request=UserWake deltaSecs=14186 wakeAt=2026-10-01 22:00:00 info="com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer,599"]           
+2026-10-01 18:05:05 +0900 DarkWake            	DarkWake from Deep Idle [CDNP] : due to smc.sysState.Wake(0x70070000) wifibt SMC.OutboxNotEmpty E_RX_IP_PACKET ARPT/ Using AC (Charge:0%) 45 secs   
+2026-10-01 18:05:50 +0900 Sleep               	Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using AC (Charge:0%) 7 secs    
+2026-10-01 18:05:51 +0900 Wake Requests       	[*process=dasd request=SleepService deltaSecs=1047 wakeAt=2026-10-01 18:23:19 info="com.apple.dasd:501:com.apple.chronod.nextScheduledTimelineRefresh"] [process=dasd request=TimerPlugin deltaSecs=1056 wakeAt=2026-10-01 18:23:28 info="com.apple.dasd:205:com.apple.private.contacts.accounts.validate-cache"] [process=mDNSResponder request=Maintenance deltaSecs=5686 wakeAt=2026-10-01 19:40:38 info="DHCP lease renewal"] [process=NotificationCenter request=Maintenance deltaSecs=14184 wakeAt=2026-10-01 22:02:16 info="com.apple.notificationcenter.dnd"] [process=powerd request=CSPNEvaluation deltaSecs=7057 wakeAt=2026-10-01 20:03:29] [process=powerd request=UserWake deltaSecs=14048 wakeAt=2026-10-01 22:00:00 info="com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer,599"]           
+2026-10-01 18:05:57 +0900 DarkWake            	DarkWake from Deep Idle [CDNP] : due to smc.sysState.Wake(0x70070000) wifibt SMC.OutboxNotEmpty E_RX_IP_PACKET ARPT/ Using AC (Charge:0%) 45 secs   
+2026-10-01 18:06:42 +0900 Sleep               	Entering Sleep state due to 'Maintenance Sleep':TCPKeepAlive=active Using AC (Charge:0%) 11 secs   
+2026-10-01 18:06:44 +0900 Wake Requests       	[process=dasd request=SleepService deltaSecs=1070 wakeAt=2026-10-01 18:24:34 info="com.apple.dasd:501:com.apple.chronod.nextScheduledTimelineRefresh"] [*process=dasd request=TimerPlugin deltaSecs=1012 wakeAt=2026-10-01 18:23:36 info="com.apple.dasd:205:com.apple.private.contacts.accounts.validate-cache"] [process=mDNSResponder request=Maintenance deltaSecs=5638 wakeAt=2026-10-01 19:40:42 info="DHCP lease renewal"] [process=NotificationCenter request=Maintenance deltaSecs=14050 wakeAt=2026-10-01 22:00:54 info="com.apple.notificationcenter.dnd"] [process=powerd request=CSPNEvaluation deltaSecs=7005 wakeAt=2026-10-01 20:03:29] [process=powerd request=UserWake deltaSecs=13996 wakeAt=2026-10-01 22:00:00 info="com.apple.alarm.user-visible-com.apple.donotdisturb.server.ScheduleLifetimeMonitor.timer,599"]           
+2026-10-01 18:06:53 +0900 DarkWake            	DarkWake from Deep Idle [CDNP] : due to smc.sysState.Wake(0x70070000) wifibt SMC.OutboxNotEmpty E_RX_IP_PACKET ARPT/ Using AC (Charge:0%) 18 secs   
+2026-10-01 18:07:11 +0900 Wake                	DarkWake to FullWake from Deep Idle [CDNVA] : due to HID Activity Using AC (Charge:0%)           
+```
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 3.14 E2E-14 — アプリが動いていない間に接続
 
@@ -1817,12 +2135,12 @@ PLAN 付録 B.3 の E2E-18 の行（取り下げ）。
 | # | 条件 | 判定 | 記録 |
 |---|---|---|---|
 | G-1 | 付録 B.1 の ND が全件 PASS（アプリ層・reaper 層とも。正の対照を含む） | ✅ PASS | §4.1 |
-| G-2 | 付録 B.3 の E2E が全件 PASS（E2E-06 は運用の中で確認してよいが、確認が済むまでゲートは開かない） | ⬜ 未実施 | §2 |
+| G-2 | 付録 B.3 の E2E が全件 PASS（E2E-06 は運用の中で確認してよいが、確認が済むまでゲートは開かない） | ✅ PASS | §2 |
 | G-3 | `.diskImage` のテストが CI か手元で PASS し、その記録が PR にある | ✅ PASS | §4.3 |
-| G-4 | 実機で「三重ロックを全部外して 1 日流す」を行った | ⬜ 未実施 | §5 |
-| G-5 | 削除 ON で E2E-01〜09 を再実行した（本書 §6） | ⬜ 未実施 | §6 |
+| G-4 | 実機で「三重ロックを全部外して 1 日流す」を行った | ✅ PASS | §5 |
+| G-5 | 削除 ON で E2E-01〜09 を再実行した（本書 §6） | ✅ PASS | §6 |
 
-**ゲート: 閉**
+**ゲート: 開**
 
 - 最後の 1 行は `**ゲート: 開**` か `**ゲート: 閉**` のどちらかである。散文にしない
 - **`開` と書けるのは、判定表（§2）の 18 件と上の G と §6 の R がすべて `✅` か `—` のときだけ**である。`開` と書いたまま 1 件でも `⬜` か `✗` が残っていれば `Tests/PolicyTests/RunbookGateTests.swift` が落ちる
@@ -1909,11 +2227,331 @@ Raw が 1 枚・Daily が 1 枚（その日の分）。`FAILED` が 0 件（あ�
 #### 記録
 1 と 3 の全部、4 の目視の所見（**何を見て問題ないと判断したか**を文で）、5 の全出力、その日に起きた異常（あれば）。
 
+実施: 2026-09-30 11:12:49 〜 2026-10-01 11:17。DEV=VOICEDOCK。`$BACKUP=$HOME/VoiceDockE2E-G4`、`$VAULT=<HOME>/VoiceDockTestVault`。アプリは v0.9.0 のビルド 436（develop `03a3fa4`）。
+前提: E2E-10・11・17 と §6 の R-01〜09 がすべて PASS（R-06 は 2026-09-30 未明）。削除は 2026-09-30 02:07:58 の `deletion_enabled` から有効のまま。
+その日の流れ: 開始の記録 → デバイスを取り出して抜く → 利用者が 11:14〜19:44 頃に普段どおり録音（30 分ごとに 17 本、計 30146.16 秒＝約 8 時間 22 分）→ 19:57 に帰宅して挿す → 20:45 に完走 → 利用者が Finder で取り出して抜く → 翌 11:15 に締めの記録（挿し直して [C-7]・[C-15]）。試験用の操作は足していない。アプリは 24 時間起動したまま。
+
 ```text
+$ 1（開始。ホーム側）
+[開始] 2026-09-30 11:12:49
+[C-1]
+COMPLETED|16
+SKIPPED|1
+COMPLETED|2
+[C-9]
+1168 1790088062 <VAULT>/Daily/Voice/Raw/20260922/2026-09-22 raw.md
+1168 1790703760 <VAULT>/Daily/Voice/Wiki/20260926/2026-09-26 Voice.md
+128698 1790329395 <VAULT>/Daily/Voice/Raw/20260925/2026-09-25 raw.md
+142912 1790702424 <VAULT>/Daily/Voice/Raw/20260929/2026-09-29 raw.md
+1775 1790089210 <VAULT>/Daily/Voice/Wiki/20260922/2026-09-22 Voice.md
+18414 1790704652 <VAULT>/Daily/Voice/Wiki/20260929/2026-09-29 Voice.md
+18465 1790329754 <VAULT>/Daily/Voice/Wiki/20260925/2026-09-25 Voice.md
+34923 1790262267 <VAULT>/Daily/Voice/Raw/20260924/2026-09-24 raw.md
+36252 1790172830 <VAULT>/Daily/Voice/Raw/20260923/2026-09-23 raw.md
+4673 1790250559 <VAULT>/Daily/Voice/Wiki/20260923/2026-09-23 Voice.md
+537 1790701930 <VAULT>/Daily/Voice/Raw/20260926/2026-09-26 raw.md
+9670 1790262353 <VAULT>/Daily/Voice/Wiki/20260924/2026-09-24 Voice.md
+[C-16]
+total 968
+-rw-r--r--@ 1 terada  staff      56 Sep 30 02:07 reaper.conf
+	com.apple.provenance	    11 
+-rwxr-xr-x@ 1 terada  staff  488848 Sep 30 02:07 voicedock-reaper
+	com.apple.provenance	    11 
+SCHEMA=1
+DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=/Volumes
+[C-6]
+/Users/terada/Library/Application Support/VoiceDock/queue/delete:
+
+/Users/terada/Library/Application Support/VoiceDock/queue/rejected:
+
+/Users/terada/Library/Application Support/VoiceDock/queue/result:
+[config]
+21:    "deleteSkippedSource" : false,
+22:    "deleteSourceAudio" : true
+23-  },
+--
+30:    "includeVolumes" : [
+31-      "VOICEDOCK"
+--
+34:    "mountMode" : "rw",
+35-    "scanIntervalSeconds" : 300,
+--
+143:    "idleCloseSeconds" : 1800,
+144-    "maxDurationSeconds" : 86400,
+[app.log 行数・ERROR 数]
+    1221
+14
+[reaper.log 行数]
+     128
+$ 1（開始。デバイス側。11:13 に挿して読み書き可能でマウントされたことを確かめた）
+[C-8]
+/dev/disk21 on /Volumes/VOICEDOCK (msdos, local, nodev, nosuid, noowners, noatime, fskit)
+[C-7]
+34484776 1790675296 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav
+[C-15]
+Filesystem     Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk21    28Gi    59Mi    28Gi     1%       0     0     -   /Volumes/VOICEDOCK
+[C-11]（2026-09-30 11:14:04 のスクリーンショットから書き写し）
+有効
+ロック 1  : アプリ=有効, reaper.conf=有効
+ロック 2-A: 削除モジュール=導入済み (署名 OK, 版 0.9.0)
+ロック 2-B: 設定=rw, VOICEDOCK=読み書き可能（観測）
+
+$ 3（終了。開始から 24 時間後。ホーム側）
+[終了] 2026-10-01 11:15:12
+[C-1]
+COMPLETED|33
+SKIPPED|1
+COMPLETED|3
+[sessions]
+VOICEDOCK:20260926|2|0|22.22|COMPLETED
+VOICEDOCK:20260929|15|1|25441.35|COMPLETED
+VOICEDOCK:20260930|17|0|30146.16|COMPLETED
+[C-13 (2026-09-30 の Part)]
+partkey                                                                   status     delete_request_id  source_deleted_at        
+------------------------------------------------------------------------  ---------  -----------------  -------------------------
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20260930_111450_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20260930_114451_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20260930_121451_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC021_20260930_124451_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC022_20260930_131451_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC023_20260930_134451_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC024_20260930_141451_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC025_20260930_144452_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC026_20260930_151452_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC027_20260930_154452_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC028_20260930_161452_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC029_20260930_164452_orig.wav  COMPLETED                     2026-09-30T20:04:15+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC030_20260930_171452_orig.wav  COMPLETED                     2026-09-30T20:06:13+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC031_20260930_174452_orig.wav  COMPLETED                     2026-09-30T20:06:13+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC032_20260930_181453_orig.wav  COMPLETED                     2026-09-30T20:06:13+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC033_20260930_184453_orig.wav  COMPLETED                     2026-09-30T20:06:13+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC034_20260930_191453_orig.wav  COMPLETED                     2026-09-30T20:06:13+09:00
+[SKIPPED / FAILED]
+partkey                                                                   status   error_code          source_deleted_at
+------------------------------------------------------------------------  -------  ------------------  -----------------
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav  SKIPPED  NO_SPEECH_DETECTED                   
+[C-14 (11:12 以降)]
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-3b5f0819cf482939-98e83f recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20260930_111450_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-a07df9f1d3710398-cdb889 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20260930_114451_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-0b6bdf7724ed6258-213702 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20260930_121451_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-e9f0d5a6c930977c-f3bb31 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC021_20260930_124451_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-1d0f5bb00b19709a-30dbee recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC022_20260930_131451_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-52dc7540b0108d23-96aac2 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC023_20260930_134451_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-0bd21f08fa96ebf6-31049e recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC024_20260930_141451_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-06668163b61c73c2-856096 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC025_20260930_144452_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-35d415cf02bc2749-eb1edb recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC026_20260930_151452_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-0f1ab3569298736b-3936fb recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC027_20260930_154452_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:00+09:00 INFO  delete_requested request_id=20260930T110400Z-9d28ebaadccf7fb8-427d06 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC028_20260930_161452_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:15+09:00 INFO  delete_requested request_id=20260930T110415Z-efaf2b992bed7dd0-e14ead recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC029_20260930_164452_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:15+09:00 INFO  reaper_run exit=0
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC025_20260930_144452_orig.wav request_id=20260930T110400Z-06668163b61c73c2-856096
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20260930_121451_orig.wav request_id=20260930T110400Z-0b6bdf7724ed6258-213702
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC024_20260930_141451_orig.wav request_id=20260930T110400Z-0bd21f08fa96ebf6-31049e
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC027_20260930_154452_orig.wav request_id=20260930T110400Z-0f1ab3569298736b-3936fb
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC022_20260930_131451_orig.wav request_id=20260930T110400Z-1d0f5bb00b19709a-30dbee
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC026_20260930_151452_orig.wav request_id=20260930T110400Z-35d415cf02bc2749-eb1edb
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20260930_111450_orig.wav request_id=20260930T110400Z-3b5f0819cf482939-98e83f
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC023_20260930_134451_orig.wav request_id=20260930T110400Z-52dc7540b0108d23-96aac2
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC028_20260930_161452_orig.wav request_id=20260930T110400Z-9d28ebaadccf7fb8-427d06
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20260930_114451_orig.wav request_id=20260930T110400Z-a07df9f1d3710398-cdb889
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC021_20260930_124451_orig.wav request_id=20260930T110400Z-e9f0d5a6c930977c-f3bb31
+2026-09-30T20:04:15+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC029_20260930_164452_orig.wav request_id=20260930T110415Z-efaf2b992bed7dd0-e14ead
+2026-09-30T20:04:29+09:00 INFO  delete_requested request_id=20260930T110429Z-72318cabdc38ca33-b22bfc recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC030_20260930_171452_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:04:38+09:00 INFO  delete_requested request_id=20260930T110438Z-94be478286d97c55-620704 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC031_20260930_174452_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:05:20+09:00 INFO  delete_requested request_id=20260930T110520Z-8a51d5cab9ec1403-87f4e4 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC032_20260930_181453_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:05:59+09:00 INFO  delete_requested request_id=20260930T110559Z-a6478fef40fc2a7d-3eb363 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC033_20260930_184453_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:06:13+09:00 INFO  delete_requested request_id=20260930T110613Z-caf8c42c13a168da-d71d60 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC034_20260930_191453_orig.wav session_key=VOICEDOCK:20260930
+2026-09-30T20:06:13+09:00 INFO  reaper_run exit=0
+2026-09-30T20:06:13+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC030_20260930_171452_orig.wav request_id=20260930T110429Z-72318cabdc38ca33-b22bfc
+2026-09-30T20:06:13+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC031_20260930_174452_orig.wav request_id=20260930T110438Z-94be478286d97c55-620704
+2026-09-30T20:06:13+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC032_20260930_181453_orig.wav request_id=20260930T110520Z-8a51d5cab9ec1403-87f4e4
+2026-09-30T20:06:13+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC033_20260930_184453_orig.wav request_id=20260930T110559Z-a6478fef40fc2a7d-3eb363
+2026-09-30T20:06:13+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC034_20260930_191453_orig.wav request_id=20260930T110613Z-caf8c42c13a168da-d71d60
+[C-12 (11:12 以降)]
+2026-09-30T20:04:15+09:00 INFO  reaper_started
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-06668163b61c73c2-856096 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC025_20260930_144452_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-0b6bdf7724ed6258-213702 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC020_20260930_121451_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-0bd21f08fa96ebf6-31049e partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC024_20260930_141451_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-0f1ab3569298736b-3936fb partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC027_20260930_154452_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-1d0f5bb00b19709a-30dbee partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC022_20260930_131451_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-35d415cf02bc2749-eb1edb partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC026_20260930_151452_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-3b5f0819cf482939-98e83f partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC018_20260930_111450_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-52dc7540b0108d23-96aac2 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC023_20260930_134451_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-9d28ebaadccf7fb8-427d06 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC028_20260930_161452_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-a07df9f1d3710398-cdb889 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC019_20260930_114451_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110400Z-e9f0d5a6c930977c-f3bb31 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC021_20260930_124451_orig.wav
+2026-09-30T20:04:15+09:00 INFO  source_deleted request_id=20260930T110415Z-efaf2b992bed7dd0-e14ead partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC029_20260930_164452_orig.wav
+2026-09-30T20:04:15+09:00 INFO  reaper_completed requests=12
+2026-09-30T20:06:13+09:00 INFO  reaper_started
+2026-09-30T20:06:13+09:00 INFO  source_deleted request_id=20260930T110429Z-72318cabdc38ca33-b22bfc partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC030_20260930_171452_orig.wav
+2026-09-30T20:06:13+09:00 INFO  source_deleted request_id=20260930T110438Z-94be478286d97c55-620704 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC031_20260930_174452_orig.wav
+2026-09-30T20:06:13+09:00 INFO  source_deleted request_id=20260930T110520Z-8a51d5cab9ec1403-87f4e4 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC032_20260930_181453_orig.wav
+2026-09-30T20:06:13+09:00 INFO  source_deleted request_id=20260930T110559Z-a6478fef40fc2a7d-3eb363 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC033_20260930_184453_orig.wav
+2026-09-30T20:06:13+09:00 INFO  source_deleted request_id=20260930T110613Z-caf8c42c13a168da-d71d60 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC034_20260930_191453_orig.wav
+2026-09-30T20:06:13+09:00 INFO  reaper_completed requests=5
+[C-6]
+/Users/terada/Library/Application Support/VoiceDock/queue/delete:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 30 20:06 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+
+/Users/terada/Library/Application Support/VoiceDock/queue/rejected:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 22 23:17 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+
+/Users/terada/Library/Application Support/VoiceDock/queue/result:
+total 0
+drwxr-xr-x@ 2 terada  staff   64 Sep 30 20:06 .
+drwxr-xr-x@ 5 terada  staff  160 Sep 22 23:17 ..
+[C-9]
+1168 1790088062 <VAULT>/Daily/Voice/Raw/20260922/2026-09-22 raw.md
+1168 1790703760 <VAULT>/Daily/Voice/Wiki/20260926/2026-09-26 Voice.md
+128698 1790329395 <VAULT>/Daily/Voice/Raw/20260925/2026-09-25 raw.md
+129716 1790766373 <VAULT>/Daily/Voice/Raw/20260930/2026-09-30 raw.md
+142912 1790702424 <VAULT>/Daily/Voice/Raw/20260929/2026-09-29 raw.md
+1775 1790089210 <VAULT>/Daily/Voice/Wiki/20260922/2026-09-22 Voice.md
+18414 1790704652 <VAULT>/Daily/Voice/Wiki/20260929/2026-09-29 Voice.md
+18465 1790329754 <VAULT>/Daily/Voice/Wiki/20260925/2026-09-25 Voice.md
+18970 1790768714 <VAULT>/Daily/Voice/Wiki/20260930/2026-09-30 Voice.md
+34923 1790262267 <VAULT>/Daily/Voice/Raw/20260924/2026-09-24 raw.md
+36252 1790172830 <VAULT>/Daily/Voice/Raw/20260923/2026-09-23 raw.md
+4673 1790250559 <VAULT>/Daily/Voice/Wiki/20260923/2026-09-23 Voice.md
+537 1790701930 <VAULT>/Daily/Voice/Raw/20260926/2026-09-26 raw.md
+9670 1790262353 <VAULT>/Daily/Voice/Wiki/20260924/2026-09-24 Voice.md
+[C-16]
+total 968
+-rw-r--r--@ 1 terada  staff      56 Sep 30 02:07 reaper.conf
+	com.apple.provenance	    11 
+-rwxr-xr-x@ 1 terada  staff  488848 Sep 30 02:07 voicedock-reaper
+	com.apple.provenance	    11 
+SCHEMA=1
+DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=/Volumes
+[ERROR の数（app.log.1 + app.log）]
+14
+[WARNING の行（11:12 以降）]
+[ERROR の行（11:12 以降）]
+[reaper の拒否と見送り（11:12 以降）]
+[工程のログ（11:12 以降）]
+2026-09-30T19:58:06+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=1 bytes=3006
+2026-09-30T19:58:15+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=2 bytes=3565
+2026-09-30T19:58:48+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=3 bytes=5905
+2026-09-30T19:59:43+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=4 bytes=22113
+2026-09-30T19:59:58+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=5 bytes=23737
+2026-09-30T20:00:39+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=6 bytes=31628
+2026-09-30T20:01:25+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=7 bytes=45084
+2026-09-30T20:02:00+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=8 bytes=53733
+2026-09-30T20:02:26+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=9 bytes=61503
+2026-09-30T20:03:13+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=10 bytes=76646
+2026-09-30T20:03:27+09:00 INFO  scan_completed devices=1 copied=17 elapsed_s=364.1
+2026-09-30T20:04:00+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=11 bytes=90928
+2026-09-30T20:04:15+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=12 bytes=93886
+2026-09-30T20:04:15+09:00 INFO  reaper_run exit=0
+2026-09-30T20:04:29+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=13 bytes=96765
+2026-09-30T20:04:38+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=14 bytes=96962
+2026-09-30T20:05:20+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=15 bytes=112820
+2026-09-30T20:05:59+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=16 bytes=125686
+2026-09-30T20:06:13+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260930 parts=17 bytes=129716
+2026-09-30T20:06:13+09:00 INFO  reaper_run exit=0
+2026-09-30T20:36:42+09:00 INFO  session_merged session_key=VOICEDOCK:20260930 parts=17 excluded=0 chars=48181
+2026-09-30T20:36:45+09:00 INFO  llm_server_started port=62116 elapsed_s=3.2
+2026-09-30T20:45:14+09:00 INFO  analysis_trimmed session_key=VOICEDOCK:20260930 fields="reduce1: key_points: 40 -> 20; reduce1: key_points: 29 -> 20; reduce: key_points: 44 -> 20; reduce: tags: 19 -> 15"
+2026-09-30T20:45:14+09:00 INFO  llm_completed session_key=VOICEDOCK:20260930 chunks=9 elapsed_s=508.8
+2026-09-30T20:45:14+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20260930 path="Daily/Voice/Wiki/20260930/2026-09-30 Voice.md" bytes=18970
+2026-09-30T20:45:15+09:00 INFO  llm_server_stopped port=62116
+[rtf]
+rtf=0.01 rtf=0.003 rtf=0.009 rtf=0.027 rtf=0.007 rtf=0.021 rtf=0.024 rtf=0.018 rtf=0.012 rtf=0.025 rtf=0.024 rtf=0.007 rtf=0.006 rtf=0.003 rtf=0.022 rtf=0.02 rtf=0.009 
+
+$ 3（終了。デバイス側）
+2026-10-01 11:16:09
+[C-8]
+/dev/disk21 on /Volumes/VOICEDOCK (msdos, local, nodev, nosuid, noowners, noatime, fskit)
+[C-7]
+34484776 1790675296 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav
+$ diff "$BACKUP/g4-c7-start.txt" "$BACKUP/g4-c7-end.txt"; echo "diff_exit=$?"
+diff_exit=0
+[C-15]
+Filesystem     Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk21    28Gi    59Mi    28Gi     1%       0     0     -   /Volumes/VOICEDOCK
+$ Raw ノートに載った録音と、source_deleted の録音を突き合わせる
+$ grep -oE 'TX00_MIC0[0-9]+_20260930_[0-9]+' "<VAULT>/Daily/Voice/Raw/20260930/2026-09-30 raw.md" | sort -u | wc -l
+17
+$ （[C-14] の source_deleted から同じ形で抜き出したもの）| wc -l
+17
+$ diff g4-raw-parts.txt g4-deleted-parts.txt; echo "match_exit=$?"
+match_exit=0
+[C-10]（2026-10-01 11:16:32 のスクリーンショットから書き写し）
+待機中（アイコンの横に赤いゴミ箱）
+最終接続 接続中 (VOICEDOCK) · 未処理なし
+デバイスの空き容量 VOICEDOCK 27.9 GiB
+（要対応の欄は無し）
+元音声の削除: 有効
+[状態の詳細]（11:16:48・11:17:04）
+Part: DISCOVERED 0 / NORMALIZING 0 / NORMALIZED 0 / TRANSCRIBING 0 / TRANSCRIBED 0 / RAW_WRITING 0 / RAW_SAVED 0 / SOURCE_DELETING 0 / SOURCE_DELETE_PENDING 0 / COMPLETED 33 / SKIPPED 1 / FAILED 0（次回接続時に再試行）
+Session: OPEN 0 / READY 0 / MERGING 0 / MERGED 0 / ANALYZING 0 / ANALYZED 0 / WRITING 0 / SAVED 0 / SOURCE_DELETING 0 / SOURCE_DELETE_PENDING 0 / CLEANUP 0 / COMPLETED 3 / FAILED 0
+未処理: 未処理なし
+削除キュー: 要求 0 件、結果待ち 0 件
+staging: 0.0 GiB / 5.0 GiB
+inbox: 処理待ち 0 件 0.0 GiB、取り残し 0 件 0.0 GiB
+デバイス: VOICEDOCK 読み書き可能 空き 27.9 GiB
+[C-11]（11:17:29）
+有効
+ロック 1  : アプリ=有効, reaper.conf=有効
+ロック 2-A: 削除モジュール=導入済み (署名 OK, 版 0.9.0)
+ロック 2-B: 設定=rw, VOICEDOCK=読み書き可能（観測）
+
+$ 5
+$ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep -c ERROR
+14
+$ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep ERROR
+2026-09-24T22:02:58+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC016_20260924_220154_orig.wav error_code=WHISPER_FAILED
+2026-09-24T22:03:02+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC016_20260924_220154_orig.wav error_code=WHISPER_FAILED
+2026-09-24T22:03:12+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC016_20260924_220154_orig.wav error_code=WHISPER_FAILED
+2026-09-24T22:04:00+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC016_20260924_220154_orig.wav error_code=WHISPER_FAILED
+2026-09-24T22:04:04+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC016_20260924_220154_orig.wav error_code=WHISPER_FAILED
+2026-09-24T22:04:14+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC016_20260924_220154_orig.wav error_code=WHISPER_FAILED
+2026-09-24T22:05:47+09:00 ERROR normalize_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC016_20260924_220154_orig.wav error_code=NORMALIZED_MISSING reason=input
+2026-09-25T01:02:25+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_010102_orig.wav error_code=WHISPER_FAILED
+2026-09-25T01:02:29+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_010102_orig.wav error_code=WHISPER_FAILED
+2026-09-25T01:02:39+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_010102_orig.wav error_code=WHISPER_FAILED
+2026-09-25T01:02:39+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_010102_orig.wav error_code=WHISPER_FAILED
+2026-09-25T01:02:42+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_010102_orig.wav error_code=WHISPER_FAILED
+2026-09-25T01:02:53+09:00 ERROR transcription_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_010102_orig.wav error_code=WHISPER_FAILED
+2026-09-25T01:04:00+09:00 ERROR normalize_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC025_20260925_010102_orig.wav error_code=NORMALIZED_MISSING reason=input
+$ cat "$VD_HOME/logs/app.log.1" "$VD_HOME/logs/app.log" 2>/dev/null | grep WARNING
+2026-09-23T22:33:20+09:00 WARNING volume_skipped name=BACKUP reason=not_included
+2026-09-24T21:27:16+09:00 WARNING pipeline_paused reason=vault_unavailable
+2026-09-24T22:25:23+09:00 WARNING volume_skipped name=DJIMIC3 reason=not_listable detail=1
+2026-09-25T00:01:30+09:00 WARNING pipeline_paused reason=vault_unavailable
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC026_20260925_131441_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC027_20260925_132206_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC028_20260925_135011_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC029_20260925_142011_orig.wav reason=read_error
+2026-09-25T15:02:41+09:00 WARNING volume_skipped name=DJIMIC3 reason=not_listable
+2026-09-25T18:34:43+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC037_20260925_175033_orig.wav reason=read_error
+2026-09-25T18:34:43+09:00 WARNING copy_failed recording_key=DJIMIC3/TX_MIC001_20260915_165730/TX00_MIC038_20260925_182034_orig.wav reason=read_error
+2026-09-25T22:43:17+09:00 WARNING volume_skipped name=VOICEDOCK reason=not_included
+2026-09-25T23:11:16+09:00 WARNING volume_skipped name=VOICEDOCK reason=not_included
+2026-09-25T23:14:38+09:00 WARNING volume_skipped name=VOICEDOCK reason=not_included
+2026-09-25T23:16:52+09:00 WARNING volume_skipped name=VOICEDOCK reason=not_included
+$ grep -E 'source_delete_rejected|request_rejected|device_absent|mount_readonly|reaper_busy|reaper_disabled' "$VD_HOME/logs/reaper.log"
+（reaper の拒否と見送りは 0 行）
 ```
 
+- **4 の目視**: 利用者が `Wiki/20260930/2026-09-30 Voice.md`（Daily）と `Raw/20260930/2026-09-30 raw.md`（Raw）を Obsidian で読み、途中で切れていない・文字化けや同じ文の繰り返しが無い・警告の行が無いことを見て「問題ありません」と判断した。聞き違い（「ワークツリー」が「ワークスリー」など）は文字起こしの精度の問題で、壊れていることには数えていない。アプリが書く警告の行は Raw / Daily のどちらにも無い（`grep -n '警告'` が当たった 1 か所は文字起こしの本文の語）
+- **消えた録音**: その日の 17 本すべて（MIC018〜MIC034）。Raw ノートに載った 17 本と `source_deleted` の 17 件が一致し、デバイスにはその日の録音が 1 本も残らず、開始時からあった無音の MIC017（`SKIPPED`）は残った（[C-7] の開始と終了が一致）。終了時の [C-15] は開始時と同じ 59Mi（その日の 17 本が録られた分は、すべて消えて戻った）
+- **期待との照合**: Raw 1 枚・Daily 1 枚（2026-09-30）。`FAILED` 0。`queue/delete`・`queue/result`・`queue/rejected` は空。[C-14] に `reaper_failed` は無い（`reaper_run exit=0` が 2 回）。`reaper.log` に `source_delete_rejected`・`request_rejected` は無い
+- **ERROR の 14 行**: すべて G-4 の開始より前のもので、開始時と終了時で数が変わらない（G-4 の 24 時間の ERROR は 0 行）。2026-09-24 22:02〜22:05 の 7 行は E2E-08（§3.8。1 本だけ文字起こしを失敗させる）、2026-09-25 01:02〜01:04 の 7 行は R-08（§6.8）の意図した失敗
+- **WARNING の 15 行**: すべて G-4 の開始より前のもので、G-4 の 24 時間の WARNING は 0 行。内訳は E2E-04 / R-04 の `pipeline_paused reason=vault_unavailable`、E2E-02・R-02 のコピー中に抜いたことによる `copy_failed reason=read_error` と `volume_skipped reason=not_listable`、F-94 の改名から `includeVolumes` を直すまでの `volume_skipped name=VOICEDOCK reason=not_included`、退避用のボリュームの `volume_skipped name=BACKUP reason=not_included`
+- **所要**: 挿してから（19:57:45 `part_discovered`）完走まで（20:45:15 `llm_server_stopped`）47 分半。コピーは `scan_completed elapsed_s=364.1`、文字起こしは今回の 17 本で `rtf=0.003〜0.027`、無通信の待ちが 30 分（最後の活動 20:06:13 → `session_merged` 20:36:42）、要約が 508.8 秒（9 チャンク・48,181 字）
+- **その日に起きた異常**: 無し。中断していない。§6.6 と同じく、走査が終わる前に Raw ノートを保存した 1〜10 本目は、走査の後の最初の Raw の直後（20:04:00）にまとめて要求された（遅れる側。異常ではない）
+- 実施の後、削除は**有効のまま**（利用者の判断）
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ## 6. 削除 ON での E2E-01〜09 の再実行
 
@@ -1939,7 +2577,7 @@ Raw が 1 枚・Daily が 1 枚（その日の分）。`FAILED` が 0 件（あ�
 | R-03 | E2E-03 | 文字起こし中に抜くと、デバイスが未接続なので削除せずに待つ（`sessions.delete_attempts` が増える）。挿し直すと消える。未接続を「書き込み可能」と誤認しない | ✅ PASS | §6.3 |
 | R-04 | E2E-04 | Vault が使えない間は 1 本も消えない（Raw ノートが書けない ＝ 根拠 A が成立しない）。戻したら消える | ✅ PASS | §6.4 |
 | R-05 | E2E-05 | 抜き挿し 6 回で要求が二重に書かれない（`request_id` が重複しない。`reaper.log` に `reason=replayed` が出ない） | ✅ PASS | §6.5 |
-| R-06 | E2E-06 | 1 日分でも要求の回収が追いつく（`queue/result` が溜まらない）。空き容量が録音 1 日分ぶん戻る | ⬜ 未実施 | §6.6 |
+| R-06 | E2E-06 | 1 日分でも要求の回収が追いつく（`queue/result` が溜まらない）。空き容量が録音 1 日分ぶん戻る | ✅ PASS | §6.6 |
 | R-07 | E2E-07 | 無音の Part は消えない（根拠 B は既定 false）。根拠 B を有効にすると消える。有効にしたら必ず元に戻す | ✅ PASS | §6.7 |
 | R-08 | E2E-08 | `WHISPER_FAILED` の Part は消えない。他の Part は消える。再コピー → 完走の後に消える | ✅ PASS | §6.8 |
 | R-09 | E2E-09 | 再オープンしても、すでに消えた Part を消し直さない（`source_deleted_at` が在る Part に要求を書かない） | ✅ PASS | §6.9 |
@@ -2581,11 +3219,269 @@ $ reason=replayed の件数
 #### 記録
 §3.6 の記録に加えて、[C-6] と [C-15] の前後、[C-7] の前後の `diff`、[C-13]、[C-14]。
 
+実施: 2026-09-30 02:02〜11:00。DEV=VOICEDOCK。§3.6 の E2E-06 に続けて行った。`$BACKUP=$HOME/VoiceDockE2E-0930`、`$VAULT=<HOME>/VoiceDockTestVault`。アプリは v0.9.0 のビルド 436（develop `03a3fa4`）。
+
+**手順書との差（利用者の判断）**: 新しい 1 日分を録る代わりに、**E2E-06 と同じ録音（デバイスに残っていた 17 本）**を取り込み直した。
+順序: E2E-06 の完了 → 利用者が E2E-06 のノート（2026-09-26・2026-09-29 の Raw・Daily の 4 枚）を消す → デバイスを抜く → データの初期化（F-95。02:02:38 `data_reset reason=requested` → 02:04:14 `data_reset count=26 failed=0`。DB・inbox・staging・queue が空）→ 削除を有効化（E2E-10 の手順 2 と同じ。02:07:58 `deletion_enabled`）→ 挿す。
+アプリから見ると、DB が空の状態で 1 日分の録音を初めて取り込むので、§3.6 と同じ条件になる。録音の長さの差（10 時間ではなく約 7 時間 4 分）は §3.6 と同じ。
+
 ```text
+$ 有効化の直後（02:08）
+[C-11]（パネルの書き写し）
+有効
+ロック 1  : アプリ=有効, reaper.conf=有効
+ロック 2-A: 削除モジュール=導入済み (署名 OK, 版 0.9.0)
+ロック 2-B: 設定=rw, デバイス未接続
+読み書きできるようになるのはデバイスを挿し直した後です
+[C-16]
+-rw-r--r--@ 1 terada  staff      56 Sep 30 02:07 reaper.conf
+-rwxr-xr-x@ 1 terada  staff  488848 Sep 30 02:07 voicedock-reaper
+SCHEMA=1
+DELETE_SOURCE_AUDIO=true
+VOLUMES_ROOT=/Volumes
+$ "$VD_HOME/bin/voicedock-reaper" --version
+0.9.0
+$ config.json
+"deleteSkippedSource" : false,
+"deleteSourceAudio" : true
+"mountMode" : "rw",
+$ [C-6]（前）: queue/delete・queue/result・queue/rejected とも空
+$ [C-1]（前）: recordings・sessions とも 0 行
+
+$ date '+%F %T' | tee "$BACKUP/r06-plugged-at.txt"        ← 挿した時刻
+2026-09-30 02:12:07
+[C-8]
+/dev/disk21 on /Volumes/VOICEDOCK (msdos, local, nodev, nosuid, noowners, noatime, fskit)
+[C-7]（前。r06-c7-plugged.txt。02:00 の §3.6 の [C-7]（後）と diff_exit=0 で一致）
+1632616 1790388106 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC001_20260926_110147_orig.wav
+1632616 1790388122 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC002_20260926_110202_orig.wav
+259254376 1790650092 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC003_20260929_114813_orig.wav
+259254376 1790651894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC004_20260929_121814_orig.wav
+259254376 1790653694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC005_20260929_124814_orig.wav
+259254376 1790655494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC006_20260929_131814_orig.wav
+259254376 1790657294 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC007_20260929_134814_orig.wav
+259254376 1790659094 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC008_20260929_141814_orig.wav
+259254376 1790660894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC009_20260929_144814_orig.wav
+259254376 1790662694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC010_20260929_151815_orig.wav
+259254376 1790664494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC011_20260929_154815_orig.wav
+259254376 1790666294 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC012_20260929_161815_orig.wav
+259254376 1790668094 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC013_20260929_164815_orig.wav
+259254376 1790669894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC014_20260929_171815_orig.wav
+259254376 1790671694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC015_20260929_174815_orig.wav
+259254376 1790673494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC016_20260929_181815_orig.wav
+34484776 1790675296 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav
+[C-15]（前）
+Filesystem     Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk21    28Gi   3.4Gi    25Gi    13%       0     0     -   /Volumes/VOICEDOCK
+
+$ 工程のログ（raw_note_saved・session_merged・llm_completed・obsidian_saved と scan / skip / LLM の行。02:04 以降）
+2026-09-30T02:12:09+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260926 parts=1 bytes=396
+2026-09-30T02:12:10+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260926 parts=2 bytes=537
+2026-09-30T02:13:06+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=1 bytes=7817
+2026-09-30T02:13:27+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=2 bytes=12873
+2026-09-30T02:13:55+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=3 bytes=21277
+2026-09-30T02:14:15+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=4 bytes=26498
+2026-09-30T02:14:50+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=5 bytes=37964
+2026-09-30T02:15:23+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=6 bytes=47769
+2026-09-30T02:15:35+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=7 bytes=48252
+2026-09-30T02:17:07+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=8 bytes=82224
+2026-09-30T02:17:15+09:00 INFO  scan_completed devices=1 copied=17 elapsed_s=307.3
+2026-09-30T02:17:54+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=9 bytes=99522
+2026-09-30T02:18:32+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=10 bytes=112001
+2026-09-30T02:18:51+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=11 bytes=116074
+2026-09-30T02:19:34+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=12 bytes=127700
+2026-09-30T02:20:08+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=13 bytes=139144
+2026-09-30T02:20:24+09:00 INFO  raw_note_saved session_key=VOICEDOCK:20260929 parts=14 bytes=142912
+2026-09-30T02:20:25+09:00 INFO  part_skipped recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav reason=no_speech
+2026-09-30T02:42:34+09:00 INFO  session_merged session_key=VOICEDOCK:20260926 parts=2 excluded=0 chars=25
+2026-09-30T02:42:37+09:00 INFO  llm_server_started port=61245 elapsed_s=3.2
+2026-09-30T02:42:40+09:00 INFO  llm_completed session_key=VOICEDOCK:20260926 chunks=1 elapsed_s=2.5
+2026-09-30T02:42:40+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20260926 path="Daily/Voice/Wiki/20260926/2026-09-26 Voice.md" bytes=1168
+2026-09-30T02:42:40+09:00 INFO  llm_server_stopped port=61245
+2026-09-30T02:50:24+09:00 INFO  session_merged session_key=VOICEDOCK:20260929 parts=14 excluded=1 chars=49990
+2026-09-30T02:50:25+09:00 INFO  llm_server_started port=61387 elapsed_s=1.0
+2026-09-30T02:57:32+09:00 INFO  analysis_trimmed session_key=VOICEDOCK:20260929 fields="reduce1: key_points: 27 -> 20; reduce1: key_points: 28 -> 20"
+2026-09-30T02:57:32+09:00 INFO  llm_completed session_key=VOICEDOCK:20260929 chunks=7 elapsed_s=427.0
+2026-09-30T02:57:32+09:00 INFO  obsidian_saved session_key=VOICEDOCK:20260929 path="Daily/Voice/Wiki/20260929/2026-09-29 Voice.md" bytes=18414
+2026-09-30T02:57:33+09:00 INFO  llm_server_stopped port=61387
+
+$ 待機中に戻った時刻: 2026-09-30 02:57:33（llm_server_stopped。以後ログに行が無い）
+
+$ [C-14]（02:04 以降）
+2026-09-30T02:07:58+09:00 INFO  deletion_enabled
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-472170ef28bb3728-41ebdc recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC003_20260929_114813_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-534fe807929921b4-c411b6 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC004_20260929_121814_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-3f2309d33b8cb3d6-c550bf recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC005_20260929_124814_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-408aa957b8a0300d-aa83f6 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC006_20260929_131814_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-f3ea36b791251c46-ac3a36 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC007_20260929_134814_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-667153db5385ec7e-9884fc recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC008_20260929_141814_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-3d2b609bfa77bf86-1be45f recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC009_20260929_144814_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-59a90d9859099871-94b2ac recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC010_20260929_151815_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:54+09:00 INFO  delete_requested request_id=20260929T171754Z-cd83036ebd40fde3-56a6b3 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC011_20260929_154815_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:17:55+09:00 INFO  reaper_run exit=0
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC009_20260929_144814_orig.wav request_id=20260929T171754Z-3d2b609bfa77bf86-1be45f
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC005_20260929_124814_orig.wav request_id=20260929T171754Z-3f2309d33b8cb3d6-c550bf
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC006_20260929_131814_orig.wav request_id=20260929T171754Z-408aa957b8a0300d-aa83f6
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC003_20260929_114813_orig.wav request_id=20260929T171754Z-472170ef28bb3728-41ebdc
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC004_20260929_121814_orig.wav request_id=20260929T171754Z-534fe807929921b4-c411b6
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC010_20260929_151815_orig.wav request_id=20260929T171754Z-59a90d9859099871-94b2ac
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC008_20260929_141814_orig.wav request_id=20260929T171754Z-667153db5385ec7e-9884fc
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC011_20260929_154815_orig.wav request_id=20260929T171754Z-cd83036ebd40fde3-56a6b3
+2026-09-30T02:17:55+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC007_20260929_134814_orig.wav request_id=20260929T171754Z-f3ea36b791251c46-ac3a36
+2026-09-30T02:18:32+09:00 INFO  delete_requested request_id=20260929T171832Z-282d682b3634b76f-fec555 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC012_20260929_161815_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:18:51+09:00 INFO  delete_requested request_id=20260929T171851Z-ede7c27b18c1033d-58938a recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC013_20260929_164815_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:19:34+09:00 INFO  delete_requested request_id=20260929T171934Z-e64aafdd28d48ab4-5e50aa recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC014_20260929_171815_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:20:08+09:00 INFO  delete_requested request_id=20260929T172008Z-a8bd64dafeef1da6-d3015f recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC015_20260929_174815_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:20:24+09:00 INFO  delete_requested request_id=20260929T172024Z-0dc8127be000cf4e-5e31e3 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC016_20260929_181815_orig.wav session_key=VOICEDOCK:20260929
+2026-09-30T02:20:25+09:00 INFO  reaper_run exit=0
+2026-09-30T02:20:25+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC012_20260929_161815_orig.wav request_id=20260929T171832Z-282d682b3634b76f-fec555
+2026-09-30T02:20:25+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC013_20260929_164815_orig.wav request_id=20260929T171851Z-ede7c27b18c1033d-58938a
+2026-09-30T02:20:25+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC014_20260929_171815_orig.wav request_id=20260929T171934Z-e64aafdd28d48ab4-5e50aa
+2026-09-30T02:20:25+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC015_20260929_174815_orig.wav request_id=20260929T172008Z-a8bd64dafeef1da6-d3015f
+2026-09-30T02:20:25+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC016_20260929_181815_orig.wav request_id=20260929T172024Z-0dc8127be000cf4e-5e31e3
+2026-09-30T02:42:40+09:00 INFO  delete_requested request_id=20260929T174240Z-ec97c5747414246c-7fd280 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC001_20260926_110147_orig.wav session_key=VOICEDOCK:20260926
+2026-09-30T02:42:40+09:00 INFO  delete_requested request_id=20260929T174240Z-161470db60bf4cf3-8b1649 recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC002_20260926_110202_orig.wav session_key=VOICEDOCK:20260926
+2026-09-30T02:42:40+09:00 INFO  reaper_run exit=0
+2026-09-30T02:42:40+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC002_20260926_110202_orig.wav request_id=20260929T174240Z-161470db60bf4cf3-8b1649
+2026-09-30T02:42:40+09:00 INFO  source_deleted recording_key=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC001_20260926_110147_orig.wav request_id=20260929T174240Z-ec97c5747414246c-7fd280
+
+$ [C-12]（02:04 以降）
+2026-09-30T02:17:54+09:00 INFO  reaper_started
+2026-09-30T02:17:54+09:00 INFO  source_deleted request_id=20260929T171754Z-3d2b609bfa77bf86-1be45f partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC009_20260929_144814_orig.wav
+2026-09-30T02:17:54+09:00 INFO  source_deleted request_id=20260929T171754Z-3f2309d33b8cb3d6-c550bf partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC005_20260929_124814_orig.wav
+2026-09-30T02:17:54+09:00 INFO  source_deleted request_id=20260929T171754Z-408aa957b8a0300d-aa83f6 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC006_20260929_131814_orig.wav
+2026-09-30T02:17:54+09:00 INFO  source_deleted request_id=20260929T171754Z-472170ef28bb3728-41ebdc partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC003_20260929_114813_orig.wav
+2026-09-30T02:17:54+09:00 INFO  source_deleted request_id=20260929T171754Z-534fe807929921b4-c411b6 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC004_20260929_121814_orig.wav
+2026-09-30T02:17:55+09:00 INFO  source_deleted request_id=20260929T171754Z-59a90d9859099871-94b2ac partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC010_20260929_151815_orig.wav
+2026-09-30T02:17:55+09:00 INFO  source_deleted request_id=20260929T171754Z-667153db5385ec7e-9884fc partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC008_20260929_141814_orig.wav
+2026-09-30T02:17:55+09:00 INFO  source_deleted request_id=20260929T171754Z-cd83036ebd40fde3-56a6b3 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC011_20260929_154815_orig.wav
+2026-09-30T02:17:55+09:00 INFO  source_deleted request_id=20260929T171754Z-f3ea36b791251c46-ac3a36 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC007_20260929_134814_orig.wav
+2026-09-30T02:17:55+09:00 INFO  reaper_completed requests=9
+2026-09-30T02:20:25+09:00 INFO  reaper_started
+2026-09-30T02:20:25+09:00 INFO  source_deleted request_id=20260929T171832Z-282d682b3634b76f-fec555 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC012_20260929_161815_orig.wav
+2026-09-30T02:20:25+09:00 INFO  source_deleted request_id=20260929T171851Z-ede7c27b18c1033d-58938a partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC013_20260929_164815_orig.wav
+2026-09-30T02:20:25+09:00 INFO  source_deleted request_id=20260929T171934Z-e64aafdd28d48ab4-5e50aa partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC014_20260929_171815_orig.wav
+2026-09-30T02:20:25+09:00 INFO  source_deleted request_id=20260929T172008Z-a8bd64dafeef1da6-d3015f partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC015_20260929_174815_orig.wav
+2026-09-30T02:20:25+09:00 INFO  source_deleted request_id=20260929T172024Z-0dc8127be000cf4e-5e31e3 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC016_20260929_181815_orig.wav
+2026-09-30T02:20:25+09:00 INFO  reaper_completed requests=5
+2026-09-30T02:42:40+09:00 INFO  reaper_started
+2026-09-30T02:42:40+09:00 INFO  source_deleted request_id=20260929T174240Z-161470db60bf4cf3-8b1649 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC002_20260926_110202_orig.wav
+2026-09-30T02:42:40+09:00 INFO  source_deleted request_id=20260929T174240Z-ec97c5747414246c-7fd280 partkey=VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC001_20260926_110147_orig.wav
+2026-09-30T02:42:40+09:00 INFO  reaper_completed requests=2
+$ awk '$1>="2026-09-30T02:04"' "$VD_HOME/logs/reaper.log" | grep -cE 'source_delete_rejected|request_rejected|device_absent|mount_readonly|reaper_busy|reaper_disabled'
+0
+
+$ [C-1]（後。02:58）
+COMPLETED|16
+SKIPPED|1
+COMPLETED|2
+$ sqlite3 "$VD_DB" "SELECT session_key, part_count, failed_part_count, recorded_seconds, status FROM sessions;"
+VOICEDOCK:20260926|2|0|22.22|COMPLETED
+VOICEDOCK:20260929|15|1|25441.35|COMPLETED
+$ [C-13]
+partkey                                                                   status     delete_request_id  source_deleted_at        
+------------------------------------------------------------------------  ---------  -----------------  -------------------------
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC001_20260926_110147_orig.wav  COMPLETED                     2026-09-30T02:42:40+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC002_20260926_110202_orig.wav  COMPLETED                     2026-09-30T02:42:40+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC003_20260929_114813_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC004_20260929_121814_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC005_20260929_124814_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC006_20260929_131814_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC007_20260929_134814_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC008_20260929_141814_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC009_20260929_144814_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC010_20260929_151815_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC011_20260929_154815_orig.wav  COMPLETED                     2026-09-30T02:17:55+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC012_20260929_161815_orig.wav  COMPLETED                     2026-09-30T02:20:25+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC013_20260929_164815_orig.wav  COMPLETED                     2026-09-30T02:20:25+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC014_20260929_171815_orig.wav  COMPLETED                     2026-09-30T02:20:25+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC015_20260929_174815_orig.wav  COMPLETED                     2026-09-30T02:20:25+09:00
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC016_20260929_181815_orig.wav  COMPLETED                     2026-09-30T02:20:25+09:00
+$ SKIPPED の Part
+partkey                                                                   status   error_code          delete_request_id  source_deleted_at
+------------------------------------------------------------------------  -------  ------------------  -----------------  -----------------
+VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav  SKIPPED  NO_SPEECH_DETECTED                                      
+$ awk '$1>="2026-09-30T02:04"' "$VD_HOME/logs/app.log" | grep transcription_completed | grep -o 'rtf=[0-9.]*'
+rtf=0.093
+rtf=0.072
+rtf=0.018
+rtf=0.01
+rtf=0.014
+rtf=0.01
+rtf=0.017
+rtf=0.017
+rtf=0.005
+rtf=0.05
+rtf=0.025
+rtf=0.019
+rtf=0.009
+rtf=0.022
+rtf=0.018
+rtf=0.007
+$ [C-9]（後）
+1168 1790088062 <VAULT>/Daily/Voice/Raw/20260922/2026-09-22 raw.md
+1168 1790703760 <VAULT>/Daily/Voice/Wiki/20260926/2026-09-26 Voice.md
+128698 1790329395 <VAULT>/Daily/Voice/Raw/20260925/2026-09-25 raw.md
+142912 1790702424 <VAULT>/Daily/Voice/Raw/20260929/2026-09-29 raw.md
+1775 1790089210 <VAULT>/Daily/Voice/Wiki/20260922/2026-09-22 Voice.md
+18414 1790704652 <VAULT>/Daily/Voice/Wiki/20260929/2026-09-29 Voice.md
+18465 1790329754 <VAULT>/Daily/Voice/Wiki/20260925/2026-09-25 Voice.md
+34923 1790262267 <VAULT>/Daily/Voice/Raw/20260924/2026-09-24 raw.md
+36252 1790172830 <VAULT>/Daily/Voice/Raw/20260923/2026-09-23 raw.md
+4673 1790250559 <VAULT>/Daily/Voice/Wiki/20260923/2026-09-23 Voice.md
+537 1790701930 <VAULT>/Daily/Voice/Raw/20260926/2026-09-26 raw.md
+9670 1790262353 <VAULT>/Daily/Voice/Wiki/20260924/2026-09-24 Voice.md
+$ 02:04 以降の WARNING / ERROR の行
+（無し）
+$ [C-6]（後。02:58）
+queue/delete・queue/result・queue/rejected とも空（total 0）
+
+$ [C-7]（後。10:57）
+34484776 1790675296 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC017_20260929_184816_orig.wav
+$ diff "$BACKUP/r06-c7-plugged.txt" "$BACKUP/r06-c7-after.txt"; echo "diff_exit=$?"
+1,16d0
+< 1632616 1790388106 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC001_20260926_110147_orig.wav
+< 1632616 1790388122 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC002_20260926_110202_orig.wav
+< 259254376 1790650092 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC003_20260929_114813_orig.wav
+< 259254376 1790651894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC004_20260929_121814_orig.wav
+< 259254376 1790653694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC005_20260929_124814_orig.wav
+< 259254376 1790655494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC006_20260929_131814_orig.wav
+< 259254376 1790657294 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC007_20260929_134814_orig.wav
+< 259254376 1790659094 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC008_20260929_141814_orig.wav
+< 259254376 1790660894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC009_20260929_144814_orig.wav
+< 259254376 1790662694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC010_20260929_151815_orig.wav
+< 259254376 1790664494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC011_20260929_154815_orig.wav
+< 259254376 1790666294 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC012_20260929_161815_orig.wav
+< 259254376 1790668094 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC013_20260929_164815_orig.wav
+< 259254376 1790669894 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC014_20260929_171815_orig.wav
+< 259254376 1790671694 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC015_20260929_174815_orig.wav
+< 259254376 1790673494 /Volumes/VOICEDOCK/TX_MIC001_20260915_165730/TX00_MIC016_20260929_181815_orig.wav
+diff_exit=1
+$ [C-15]（後）
+Filesystem     Size    Used   Avail Capacity iused ifree %iused  Mounted on
+/dev/disk21    28Gi    59Mi    28Gi     1%       0     0     -   /Volumes/VOICEDOCK
+$ diff の `<` の 16 行の relpath と [C-14] の source_deleted の recording_key 16 件を sort して diff
+16
+16
+match_exit=0
+$ [C-10]（10:57。パネルの書き写し）
+待機中（アイコンの横に赤いゴミ箱）
+最終接続 接続中 (VOICEDOCK) · 未処理なし
+デバイスの空き容量 VOICEDOCK 27.9 GiB
+（要対応の欄は無し）
+元音声の削除: 有効
+状態の詳細: Part は COMPLETED: 16・SKIPPED: 1・FAILED: 0（次回接続時に再試行）、ほかは 0。Session は OPEN〜CLEANUP がすべて 0
 ```
 
+- §3.6 の期待: 挿した時刻 02:12:07 → 待機中 02:57:33 で **45 分**（24 時間未満）。2026-09-29 の Session は 1 行で `part_count=15`、Raw 1 枚（`Raw/20260929/2026-09-29 raw.md`）・Daily 1 枚（`Wiki/20260929/2026-09-29 Voice.md`）。連番付きの別名は無い。要約は 427.0 秒（7 チャンク）
+- 回収が追いつく: reaper は 3 回起動し（`reaper_completed requests=9` / `5` / `2`）、`queue/delete`・`queue/result`・`queue/rejected` は空に戻った。`reaper_failed`・`source_delete_rejected`・`request_rejected` は 0 件
+- 空き容量: Used 3.4Gi → 59Mi、Avail 25Gi → 28Gi（消えた 16 本、計 3,632,826,496 バイト）
+- [C-7] の差分: 消えたのは MIC001〜MIC016 の 16 本で、[C-14] の `source_deleted` の 16 件と完全に一致した。無音の MIC017（`SKIPPED`・`NO_SPEECH_DETECTED`）は残った（根拠 B は既定 false）
+- **観察（FAIL ではない）**: 要求の時刻が Raw ノートの保存より遅れた Part がある。走査の終了（02:17:15 `scan_completed`）より前に Raw ノートを保存した Part（2026-09-29 の 1〜8 本目、2026-09-26 の 2 本）は、その保存の直後には要求が書かれなかった（ログに `delete_requested` が無い）。2026-09-29 の分は、走査の後の最初の Raw の直後（02:17:54）に、その時点の `RAW_SAVED` の 9 本がまとめて要求された。2026-09-26 の分は、その後に Raw の直後の評価が来ないので、`SAVED` の直後（02:42:40）に要求された（PLAN §8.9.5 の評価の契機は Raw の直後・`SAVED` の直後・`evaluateDeletions` で、`OPEN` の Session は `evaluateDeletions` の対象外）。遅れる側に倒れているだけで、Raw ノートの検証の前に消えたものは無い
+- 実施の後、削除は利用者の判断で**有効のまま**にした（次は §5 G-4 の候補）
+
 #### 判定
-⬜ 未実施
+✅ PASS
 
 ### 6.7 R-07 — 無音の Part を混ぜる（削除 ON）
 

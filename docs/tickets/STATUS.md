@@ -1,4 +1,4 @@
-# 進捗と再開の手順（2026-09-24 夜・話者分離の実装の後。**実装中**）
+# 進捗と再開の手順（2026-10-01・**v0.9.0 を公開した後**。E2E-13 が PASS し、**削除のゲートが開いた**。次は T-44 v1.0）
 
 **この文書だけ読めば再開できる**ように書いてある。次のセッションはここから始める。
 
@@ -9,9 +9,10 @@
 | チケット（T-01〜T-51） | 51 本（T-46〜T-51 は話者分離。PLAN F-89） |
 | マージ済み | **49 本**（T-46〜T-51 が加わった） |
 | 取り下げ | 1 本（T-33。PLAN F-60） |
-| 残り | 1 本（T-44 v1.0 リリース。未着手） |
+| 残り | 1 本（T-44 v1.0 リリース。**PR 中**（issue #192）。削除のゲートは 2026-10-01 に開いた） |
+| 配布 | **v0.9.0 を公開済み**（2026-09-26。§1.6） |
 
-`develop` の先頭は `ed0fba4`（PR #173 のマージ）。話者分離は #153（計画）→ #160〜#165（実装）→ #166（後始末）→ #167（コードレビューの修正。F-90）でマージ済み。**2026-09-24 に利用者が実機の録音で確認し、issue #104 を閉じた**（`diarization_completed speakers=2 elapsed_s=4.5`）。**2026-09-25 未明、削除 ON の 13 本のうち 10 本（E2E-10・11・17、R-01・03・04・05・07・08・09）を実施・全件 PASS**（下の §2.6。PR #170 ほか）。**2026-09-25 午後、E2E-02（削除 OFF）と G-1・G-3 を PASS**（§2.7）。
+**`main` の先頭は `aea41da`（PR #186。注釈付きタグ `v0.9.0`）、`develop` の先頭は `03a3fa4`（PR #185）**。2026-09-25 夜〜26 の作業は §1.6。以下はそれより前の記録: 話者分離は #153（計画）→ #160〜#165（実装）→ #166（後始末）→ #167（コードレビューの修正。F-90）でマージ済み。**2026-09-24 に利用者が実機の録音で確認し、issue #104 を閉じた**（`diarization_completed speakers=2 elapsed_s=4.5`）。**2026-09-25 未明、削除 ON の 13 本のうち 10 本（E2E-10・11・17、R-01・03・04・05・07・08・09）を実施・全件 PASS**（下の §2.6。PR #170 ほか）。**2026-09-25 午後、E2E-02（削除 OFF）と G-1・G-3 を PASS**（§2.7）。
 
 2026-09-23 に**全体コードレビュー**を行い、見つかった不具合を F-71〜F-78 の 8 本の PR と、残り（issue #118・#119）を F-79〜F-84 の 6 本の PR で直した（§4）。レビューの issue（#112〜#120・#124）はすべて閉じた。
 
@@ -30,13 +31,65 @@
 | T-11 | #26 | T-26 | #35 | T-41 | #94 |
 | T-12 | #30 | T-27 | #41 | T-42 | #96 |
 | T-13 | #47 | T-28 | #49 | T-43 | #140 |
-| T-14 | #53 | T-29 | #66 | T-44 | **未着手** |
+| T-14 | #53 | T-29 | #66 | T-44 | **PR 中**（issue #192） |
 | T-15 | #57 | T-30 | #73 | T-45 | #10 |
 
 | 話者分離 | T-46 #160 | T-47 #161 | T-48 #163 | T-49 #165 | T-50 #162 | T-51 #164 |
 |---|---|---|---|---|---|---|
 
 T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマージ済み**で、**実機での実施が残っている**。
+
+## 1.10 2026-10-01 夜に進めたこと（T-44 の版を上げる PR）
+
+issue #192・`feat/T-44-release-v1`。`VERSION` と `AppVersion.string` を 1.0.0 に上げ、`docs/RELEASE.md`（確認表 RL-01〜RL-12 はすべて ✅）・`docs/release-notes/TEMPLATE.md`・`docs/release-notes/1.0.0.md`・`ReleaseChecklistTests` を置いた。
+
+- **F-101**（利用者の決定）: リポジトリは 2026-09-28 から公開。PLAN・README・CLAUDE.md・T-44 の「非公開」を直した（Releases の dmg はサインインせずに落とせる）
+- **リハーサル**: 版を上げたコミット `f844f24` で `make release` の 2〜7 段を回した。公証 2 回 Accepted、`verify-bundle` V-1〜V-10 OK（ビルド 448）。全出力は `docs/release-logs/`
+- **RL-11**: 利用者の決定で、いまの `<HOME>` をゴミ箱（`~/.Trash/VoiceDock-old`）へ移して作り直し、リハーサルの dmg から `/Applications` へ入れて「はじめに」を最後まで通した（詰まり無し）。新しい `<HOME>` をそのまま使う（§3）
+- `make lint`・`make test`・`make test-disk` はすべて緑。破壊による証明は 15 項目すべて期待どおり（10 で空振りが見つかり `theReleaseCommandVerifiesTheTag` を足した）
+- 観察: `make test-other` の 1 回で VoiceDockAppTests が止まった（CPU を使わずに 10 分）。単独で 6 回、`make test` と `make test-disk` の中で 2 回は 0.5 秒で全部通り、再現しなかった
+- **残り**: PR のマージ → develop → main の PR → タグ `v1.0.0` → main で `make release` → `gh release create` → 落とし直しての確認 → 本番の記録の PR → #192 を閉じる
+
+## 1.9 2026-10-01 夕方に進めたこと（E2E-13 → ゲートが開いた）
+
+**E2E-13（処理中にスリープ）を 3 回目で ✅ PASS**（記録は `docs/E2E.md` §3.13。生の出力の控えは `~/VoiceDockE2E-E13/`）。これで §2 の判定表がすべて ✅ か —、§4 の G-1〜G-5 がすべて ✅ になり、**`**ゲート: 開**`**。issue #81・#95 は記録の PR のマージで閉じる。
+
+- 14:05:09 に削除を**無効**にした（`deletion_disabled`）。いまも無効のまま（§3）
+- 1・2 回目（2026-09-25）が空振りした原因の `PreventSystemSleep` は、Claude Code の `caffeinate -ims` だけでなく、**Orca.app 自身の `/usr/bin/caffeinate -i -s`（`asserting forever`）**にもあった（2026-09-26 10:19 から）。Claude Code 4 つと Orca を終了し、`PreventSystemSleep 0` を確かめてから行った
+- 合図は最初の `normalize_completed`。18:02:34 に `Entering Sleep state due to 'Software Sleep'`、ネットワークの受信による DarkWake を 4 回挟んで 18:07:11 に起こした。MIC018 の文字起こしは眠っている間止まり（`rtf=0.119`）、復帰後に 3 本とも Raw まで進んだ。18:15:15 に「今すぐ要約」→ 18:16:37 に Session が `COMPLETED`。`FAILED` 0・ERROR 0
+- 観察: 挿した直後に `copy_failed reason=read_error` が 3 件（次の走査でコピーされた。9/25 にも同じ形で出ている。スリープとは無関係）
+
+## 1.8 2026-09-30〜10-01 に進めたこと（G-4）
+
+**§5 G-4（三重ロックを全部外して 1 日）を行い ✅ PASS**（記録は `docs/E2E.md` §5。生の出力の控えは `~/VoiceDockE2E-G4/`）。2026-09-30 11:12:49 に開始の記録を取り、利用者が普段どおり約 8 時間 22 分（17 本）を録って 19:57 に挿し、20:45 に完走、2026-10-01 11:15 に締めの記録を取った。
+
+- その日の 17 本がすべて消え、Raw ノートに載った 17 本と `source_deleted` の 17 件が一致。開始時からあった無音の 1 本は残った。Raw 1 枚・Daily 1 枚、`FAILED` 0、キューは空、`reaper_failed`・拒否は 0、24 時間の ERROR・WARNING は 0 行。Daily / Raw は利用者が目視して「問題ありません」
+- 要約は 508.8 秒（9 チャンク・48,181 字）。挿してから完走まで 47 分半
+- **ゲートは G-2（E2E-13）だけが残る**。削除は有効のまま
+
+## 1.7 2026-09-30 に進めたこと（E2E-06・R-06）
+
+利用者が 2026-09-29 の勤務時間中に普段どおり録った約 7 時間 4 分（30 分 × 14 本と約 4 分 1 本）で、**E2E-06（削除 OFF）と R-06（削除 ON）を続けて行い、どちらも ✅ PASS**（記録は `docs/E2E.md` §3.6・§6.6。生の出力の控えは `~/VoiceDockE2E-0930/`）。§6 の R-01〜09 がすべて PASS になったので **G-5 も ✅**。
+
+- **E2E-06**（01:11〜01:57。46 分）: 2026-09-29 の Session が 1 行（`part_count=15`）、Raw 1 枚・Daily 1 枚、元音声は残った。内訳は文字起こしまで約 8 分・無通信の待ち 30 分・要約 448.7 秒（7 チャンク・49,990 字）
+- **R-06**（02:12〜02:57。45 分）: E2E-06 の後に利用者がノートを消し、**データを初期化し、削除を有効にして、同じ録音を取り込み直した**（利用者の判断。記録に差として書いた）。消えた 16 本と `source_deleted` の 16 件が完全に一致、無音の 1 本は残った、`queue/*` は空、空き容量が 3.4 GiB 戻った
+- 観察（FAIL ではない）: 走査が終わる前に Raw ノートを保存した Part は、Raw の直後には要求されず、後の契機（次の Raw の直後・`SAVED` の直後）でまとめて要求された。遅れる側に倒れているだけ（§6.6 の箇条書き）
+- **削除は有効のまま**（利用者の決定。2026-09-30 02:07:58 `deletion_enabled`）
+
+## 1.6 2026-09-25 夜〜26 に進めたこと（v0.9.0 の公開まで）
+
+| PR | F | 内容 |
+|---|---|---|
+| #179 | F-94 | 取り込むデバイスの名前の既定を `VOICEDOCK` に（利用者が実機を Finder で改名する。アプリは改名しない） |
+| #181 | F-95 | 「詳細・診断」にデータの初期化（3 秒の長押しで予約して終了し、次の起動で DB を開く前に消す） |
+| #183 | F-96・F-97 | 「初期化して終了」で固まる不具合（Task の中から `terminate`）と、F-94〜F-96 のコードレビューの指摘（予約の段階・結果の表示・終了の返事を main run loop から） |
+| #184 | F-98 | README にデータの初期化を足し、RK-28 の文を直す |
+| #185 | F-99・F-100 | dmg を開くと背景の上にアプリと Applications が並ぶウィンドウに（ボリューム名は `VoiceDock <版>`）。**v1.0.0 ではなく v0.9.0**（削除のゲートが閉じているため。PLAN §12.4 は緩めない）。README に Releases のリンク |
+| #186 | — | `develop` → `main`（v0.9.0） |
+
+- **利用者の環境で行ったこと**（2026-09-25 23:07〜23:35）: 削除を無効に → データを初期化（`data_reset count=79 failed=0`）→ 実機を `VOICEDOCK` に改名 → `config.json` の `includeVolumes` を `["VOICEDOCK"]` に。以前の DB（`DJIMIC3` の行）は残っていない
+- **v0.9.0 の公開**（2026-09-26）: `main` に注釈付きタグ `v0.9.0` → `make release`（全テスト・Developer ID 署名・公証 2 回とも Accepted・dmg・verify-bundle すべて OK。ビルド 436）→ `gh release create v0.9.0 --verify-tag`（通常のリリース。プレリリースにすると README の `releases/latest` が指さない）。dmg の SHA-256 は `85d170254c353916e14267931dce9c58f958b0ad5c785971ffd3f2eae74f57e1`（Releases から落とし直して一致を確かめた）
+- **v1.0.0 の前に残るもの**: 実機の確認（E2E-13 だけ。E2E-06・R-06・G-5 は 2026-09-30、G-4 は 2026-10-01 に PASS。§1.7・§1.8）→ 削除のゲートが開く → T-44（`docs/RELEASE.md`・`ReleaseChecklistTests`・版を 1.0.0 に）
 
 ## 1.5 2026-09-24 に進めたこと
 
@@ -148,14 +201,16 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 
 | もの | 場所・値 |
 |---|---|
-| `.app` の作り方 | `make vendor`（whisper.cpp / llama.cpp）→ `make app` → `dist/VoiceDock.app` |
-| `<HOME>` | `~/Library/Application Support/VoiceDock`（`config.json`・`ui-state.json`・`voicedock.sqlite`・`logs/`・`inbox`・`staging`・`queue`・`bin`・`models`） |
-| whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin`（547 MB） |
-| VAD モデル | `<HOME>/models/vad/ggml-silero-v5.1.2.bin` |
-| LLM モデル | `<HOME>/models/llm/custom-3605803b982cb64a.gguf`（2.5 GB。4B と同一。`verified: false`）と `Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf`（18.6 GB。カタログから取り込み。**`verified: true`**。2026-09-24） |
+| `.app` の作り方 | `make vendor`（whisper.cpp / llama.cpp）→ `make app` → `dist/VoiceDock.app`（開発用の署名）。配布版は `make release` → `dist/VoiceDock-<版>.dmg`（Developer ID・公証。`main` のタグの上で作業ツリーを clean にして行う） |
+| 配布 | **v0.9.0**: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v0.9.0（2026-09-28 にリポジトリを公開したので、いまは誰でも落とせる。F-101）。いまの `dist/VoiceDock.app` と `dist/VoiceDock-1.0.0.dmg` は、T-44 のリハーサルで作った 1.0.0（ビルド 448。コミット `f844f24`。署名・公証済み）。`/Applications/VoiceDock.app` にもこの 1.0.0 を入れた（RL-11） |
+| 公証 | キーチェーンのプロファイル `VOICEDOCK_NOTARY`（2026-09-26 に利用者が登録し直した。`xcrun notarytool history --keychain-profile VOICEDOCK_NOTARY` で確かめられる） |
+| `<HOME>` | `~/Library/Application Support/VoiceDock`（`config.json`・`ui-state.json`・`voicedock.sqlite`・`logs/`・`inbox`・`staging`・`queue`・`bin`・`models`）。**2026-10-01 20:05 に作り直した**（RL-11。利用者の決定で前の `<HOME>` は `~/.Trash/VoiceDock-old` へ。DB・設定・ログは新しくなり、話者分離などの設定は既定に戻った） |
+| whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin`（547 MB。2026-10-01 に入手し直した） |
+| VAD モデル | `<HOME>/models/vad/ggml-silero-v5.1.2.bin`（2026-10-01 に入手し直した） |
+| LLM モデル | `<HOME>/models/llm/custom-6c997b8af17debdf.gguf`（18.6 GB。カタログの 30B（`qwen3-30b-a3b-instruct-2507-q4_k_m`）と同じファイルを「ファイルから読み込む…」で取り込んだので `custom:` の ID。2026-10-01）。以前の 4B（`custom-3605803b…`）と、カタログから取り込んだ 30B は前の `<HOME>` と一緒にゴミ箱へ |
 | 試験用 Vault | `~/VoiceDockTestVault`（`.obsidian` あり） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
-| 削除 | **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
+| 削除 | **無効**（2026-10-01 14:05:09 に E2E-13 のために「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。以下はそれより前の記録: **有効**（2026-09-30 02:07:58 に R-06 のために有効にし、利用者の決定でそのまま。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` は 0.9.0。**抜く前に Finder で取り出す**）。以下はそれより前の記録: **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
 | 取り込むデバイスの名前 | **`VOICEDOCK`**。2026-09-25 に利用者が実機を Finder で `VOICEDOCK` に改名し、`config.json` の `device.includeVolumes` を手で `["VOICEDOCK"]` に直して「設定を読み直す」を押した（F-94。アプリの既定も `["VOICEDOCK"]`）。その前にデータを初期化した（F-95。`data_reset count=79 failed=0`）ので、`DJIMIC3` として取り込んだ行は残っていない。控えの `config.json.bak` は F-81 の時点のもの |
 | 実機 | E2E の試験でたびたび `/Volumes/VOICEDOCK`（F-94 の改名の前は `/Volumes/DJIMIC3`）に接続する（削除 OFF の間は読み取り専用でマウント）。次のセッションはまず `ls /Volumes` で確かめる |
 
@@ -207,12 +262,11 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 
 ### 開いている issue
 
-| issue | 中身 | 誰がやるか |
-|---|---|---|
-| #139 | T-43 README と文書テスト | 実装はマージ済み（#140）。新しいアカウント相当での導入確認は済み（2026-09-24）。実機未確認だった文言は E2E-16・E2E-10・E2E-17・F-91 と DB の `OPEN→READY idle` の記録で裏付けが取れた。**F-93 の PR（README の書き直し・ライセンス）のマージで閉じる** |
-| #81 | T-35 実機 E2E（削除 OFF） | 手順書とテストはマージ済み（#82）。**11/16 本が PASS**（2026-09-24 夜に E2E-01・03・04・05・07・08・09・12・14・16、2026-09-25 に E2E-02）。残り: E2E-13（スリープ）、E2E-06（1日分）は実運用で確認 |
-| #95 | T-42 実機 E2E（削除 ON）とゲート | 手順書とテストはマージ済み（#96）。**実施は【利用者が行う】**。**11/13 本が PASS**（2026-09-25 未明に E2E-10・11・17・R-01・03・04・05・07・08・09、18 時台に R-02）。残り R-06（1 日分）・§5 G-4（24 時間）。`docs/E2E.md` §4 のゲートは G-1・G-3 が PASS、G-2・G-4・G-5 が未実施で **ゲート: 閉** |
-| #103 | Bluetooth 接続での読み込みと削除の調査・実験 | **v1.0 の後**。調査はエージェント、実験は【利用者が行う】 |
+なし（T-44 の issue は v1.0 の作業を始めるときに作る）。
+
+**2026-10-01 に閉じた issue（E2E-13 の記録の PR のマージの後）**: #81（T-35 実機 E2E・削除 OFF。E2E-13 の PASS で 14 本すべて PASS。E2E-15・18 は取り下げ）、#95（T-42 実機 E2E・削除 ON とゲート。13/13 と G-1〜G-5 がすべて PASS し、**ゲート: 開**）。
+
+**2026-10-01 に閉じた issue**: #103（Bluetooth での読み込みと削除の調査。P0-14 で ✗ FAIL を確かめて完了。`docs/POC.md` 17 章。Wi-Fi の経路を調べるなら別の issue にする）。
 
 **2026-09-24 に閉じた issue**: #67（T-24。30B が `verified: true` に。v1.0 で選べる LLM が 1 つ以上になった）、#77（T-34。`make release` が通り、署名・公証・dmg まで確認済み）。
 
@@ -220,8 +274,8 @@ PR がマージされても issue が開いたままなのは、**実機・実�
 
 ### T-43 と T-44 の前提
 
-- **T-43（README）** — **完了（PR #140。2026-09-24）**。実機で確かめる文言は E2E の記録で裏付けが取れた。F-93 で README を利用者向けに書き直し、ライセンスを置いた（issue #139 はその PR で閉じる）
-- **T-44（v1.0 リリース）** — 前提は T-43・T-42・T-34 と、話者分離の T-46〜T-51（F-89）。`docs/RELEASE.md`・`docs/release-notes/TEMPLATE.md`・`ReleaseChecklistTests.swift`、`VERSION` と `AppVersion.string` を `1.0.0` へ（同じ PR で両方）。**削除のゲートが開いていないと出せない**
+- **T-43（README）** — **完了（PR #140。2026-09-24）**。F-93 で README を利用者向けに書き直し、ライセンスを置いた（issue #139 は閉じた）。F-98・F-100 でデータの初期化と Releases のリンクを足した
+- **T-44（v1.0 リリース）** — 前提は T-43・T-42・T-34 と、話者分離の T-46〜T-51（F-89）。`docs/RELEASE.md`・`docs/release-notes/TEMPLATE.md`・`ReleaseChecklistTests.swift`、`VERSION` と `AppVersion.string` を `1.0.0` へ（同じ PR で両方）。**削除のゲートは 2026-10-01 に開いた**（§1.9）。利用者の決定（2026-10-01）: リポジトリは 2026-09-28 から公開なので F-101 で PLAN・README・T-44 の「非公開」を直す、RL-11 は `<HOME>` の退避で代える、ゲートの外の未確認の項目（F-76 のログアウト中の終了など・P0-04〜09・11）は v1.0 の範囲外として RELEASE.md §5.6 に書く
 
 ### 話者分離（F-89・F-90。issue #104。v1.0 に含める。**完了**。2026-09-24 に利用者が実機で確認）
 
@@ -244,12 +298,12 @@ T-44（v1.0 リリース）は T-46〜T-51 の後。
 
 ## 6. 次のセッションで最初にやること
 
-1. `git fetch origin && git switch develop && git pull`
-2. `ls /Volumes` で**実機の接続状態**と、§3 の「削除」の行の状態（いまは無効）を確かめる。ディスクを触る作業（`make test-disk` 等）の前には利用者に抜いてもらう
+1. `git fetch origin && git switch develop && git pull`（`main` は v0.9.0。次に `main` へ入れるのは v1.0.0 のとき）
+2. `ls /Volumes` で**実機（`VOICEDOCK`）の接続状態**と、§3 の「削除」の行の状態（いまは**無効**）を確かめる。ディスクを触る作業（`make test-disk`・`make release`・dmg の作成）の前には利用者に抜いてもらう
 3. `python3 docs/porting-notes/check-tickets.py` が 0 件、`make lint && make test` が緑であることを確かめる
 4. `gh pr list --state open` で開いている PR が無いことを確かめる
-5. **残っている実機作業は E2E（issue #81 → #95）**。削除 OFF は 16 本中 11 本、削除 ON は 13 本中 11 本、ゲートは G-1・G-3 が完了（§2.6・§2.7）。`make vendor && make app` で `dist/VoiceDock.app` を最新にしてから（すでに公証済みの `dist/VoiceDock.app`／`dist/VoiceDock-0.1.0.dmg` があるが、develop が進んでいれば作り直す）、**残り** E2E-13・06（削除 OFF）→ R-06・§5 G-4（削除 ON）→ §4 のゲートを、**手順を提示して利用者に渡す**形で進める。（R-02 は 2026-09-25 に PASS。退避はアプリを止めた状態で行った。§6.2）結果は `docs/E2E.md` に貼る
-6. #81・#95 が両方終われば T-44（v1.0 リリース）に進める（#139 は F-93 の PR で閉じる）
+5. **実機の E2E とゲートは済んだ**（§1.9）。データを初期化し実機を `VOICEDOCK` に改名したので、E2E の手順の `$DEV` は `VOICEDOCK`
+6. **T-44（v1.0 リリース）**: issue を作る → `feat/T-44-release-v1` で版を 1.0.0 に上げる PR（RELEASE.md の確認表 RL-01〜12。RL-10 はブランチでの `make release` のリハーサル、RL-11 は `<HOME>` を退避しての導入）→ `develop` → `main` → タグ `v1.0.0` → `make release` → Releases → 本番の記録の PR
 7. **ブランチを切り替える前に、必ず `git status --short` で作業ツリーが clean か確かめる**（`local/` のような gitignore 対象でも、切り替え元でコミットされていると `git switch` で消えることがある。2026-09-24 にこれで事故を起こした。§1.5 参照）
 
 ## 7. 進め方の決まり

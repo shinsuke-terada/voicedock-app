@@ -43,6 +43,8 @@ T-01 に要るのは章 14 の BUNDLE_ID・TEAM_ID・Xcode の版だけなので
 | 13 | P0-12 | Vault が書類フォルダ・iCloud Drive にあるときの TCC | PLAN §8.7、§8.11 DR-10、T-28、T-32 | ✅ PASS（NSOpenPanel で選んだ Vault は再起動後もパネル無しで書ける。拒否の経路は再現できず） |
 | 14 | — | Phase 0 で決めたこと | PLAN §3.1、§3.3、§8.1、`identity.env` | ⬜ 一部決定（識別子と Xcode は確定。下記） |
 | 15 | — | LLM 受け入れ試験（10 本・修復率・220,000 文字の時間） | PLAN §8.10・§10.6、T-24 | ⬜ |
+| 16 | P0-13 | 話者分離（argmax-cli）のビルド・オフライン・速度・区間の時刻 | PLAN §8.4.1、T-46〜T-51 | ✅ PASS（オフラインで動く・約 69 倍速・区間の時刻が whisper と合う。精度は人の声で未測定） |
+| 17 | P0-14 | Bluetooth（BLE）でのファイル操作の可否（issue #103） | issue #103（PLAN の変更なし） | ✗ FAIL（BLE はペアリングと Wi-Fi の接続情報の受け渡しだけ。ファイルは Wi-Fi） |
 
 ## 1. ホスト環境
 
@@ -1158,3 +1160,148 @@ macOS の `say` の日本語の声 3 つ（Kyoko・Reed・Shelley）で 12 発�
 
 - **✅ VAD ありでも区間の時刻は元の音声の時刻**（例: 正解 150.1–154.4 秒の発話が 150.13–154.29）
 - whisper の区間は発話の切れ目で分かれないことがある（29 区間のうち 9 区間が 2 人以上にまたがった。発話の間が 0.6 秒の合成音声）。`-ml 30` で区間を短くしても 41 区間のうち 9 区間で変わらなかったので、**`-ml` は使わない**。区間には重なりの最も長い話者を 1 人付ける（PLAN §8.4.1）。区間の中で話者が替わると、その区間は多い側の話者になる（既知の制約）
+
+## 17. P0-14 Bluetooth（BLE）でのファイル操作の可否（issue #103）
+
+判定: ✗ FAIL（**Bluetooth だけではファイルの一覧・取得・削除はできない**。BLE はペアリング・機器情報・送信機の Wi-Fi の接続情報の受け渡しにしか使われておらず、ファイルは Wi-Fi で流れる。DJI Mimo には削除の機能自体が無い）
+
+実施: 2026-09-26。記録（DJI Mimo の操作と iPhone での Bluetooth の記録）は利用者、解析はエージェント。範囲は **Bluetooth のみ**（Wi-Fi 側の通信は解析しない。2026-09-26 利用者の決定）。
+方法: iPhone に Apple の Bluetooth Logging プロファイル（`iOSBluetoothLogging.mobileconfig`。4 日で失効）を入れ、Mac の PacketLogger（Additional Tools for Xcode 27）の **File → New iOS Trace** で記録した。その状態で Mimo から送信機に接続し、ファイル一覧を開いて、試験の録音をダウンロードした。
+解析: `tshark` 4.6.9 で ATT を取り出し、使い捨ての DUML デコーダ（`~/VoiceDockPoC/ble/duml.py`。リポジトリの外）でフレームにした。生の記録（`~/VoiceDockPoC/ble/captures/*.pklg`）には周囲の Bluetooth 機器のやりとりも入るので、リポジトリには入れない。
+
+### 17.1 環境
+
+| 項目 | 値 |
+|---|---|
+| Mac | `Mac16,11` / `Apple M4 Pro` / macOS `26.6.2`（25G83）、Xcode 27.0、`tshark` 4.6.9 |
+| iPhone | `iPhone16,1`、`Software: Version 27.0 (Build 24A437)`、`Bluetooth Host: MobileBluetooth-2700.51.1.3`（PacketLogger の記録の冒頭の注記） |
+| 送信機 | 広告名 `DJI Mic 3 TX-17e599`、`00/01` の応答の型番 `DM303_TX` |
+| DJI Mimo の版・送信機のファームウェアの版 | **控えていない**（限界を参照） |
+
+### 17.2 1 回目の記録（接続が写らなかった）
+
+`2026.09.26 10.55.05.pklg`（10:55:05〜10:55:37）と `2026.09.26 10.55.50.pklg`（10:55:50〜10:56:04）の 2 本には、送信機の広告しか写っていなかった。iPhone から送信機への接続は無い。広告は接続を受け付ける種類で、名前（AD type 0x09）しか入っておらず、サービスの UUID もメーカー独自のデータも無い。同じ時間に写っていたのは Apple Watch（`com.apple.terminusLink`）とのクラシックの接続だけだった。記録の時間が短く、Mimo の操作がその外で行われたため。
+→ 接続・一覧・ダウンロードを 1 本の記録で通して取り直した（17.3 以降）。
+
+### 17.3 GATT（2 回目の記録 `all.pklg`）
+
+```
+$ capinfos -c -u -a -e all.pklg
+Number of packets:   7,115
+Capture duration:    733.058329 seconds
+Earliest packet time: 2026-09-26 19:51:19.610000
+Latest packet time:   2026-09-26 20:03:32.668329
+
+$ tshark -r all.pklg -Y 'frame.number==1226' -T fields -e btatt.handle -e btatt.characteristic_properties -e btatt.uuid16
+0x8001,0x8002,0x8004,0x8005,0x8007,0x8008	0x3a,0x3a,0x36	0x2803,0xfff3,0x2803,0xfff4,0x2803,0xfff5,0x2803
+```
+
+PacketLogger の iOS の記録の時刻は、`tshark` の表示では 9 時間進んで見える（ファイルは 11:06 に保存。17.4 の時刻は `frame.time_epoch` を日本時間に直した値）。
+
+| サービス | キャラクタリスティック | 値ハンドル | プロパティ | 使われ方 |
+|---|---|---|---|---|
+| `0x1800`（GAP）・`0x1801`（GATT） | — | — | — | 標準 |
+| **`0xfff0`**（DJI 独自。ハンドル 0x8000〜） | `fff3` | 0x8002 | 0x3a（read・write・notify・indicate） | 使われていない |
+| | `fff4` | 0x8005 | 0x3a | **送信機 → iPhone の DUML（通知）** |
+| | `fff5` | 0x8008 | 0x36（read・writeWithoutResponse・notify・indicate） | **iPhone → 送信機の DUML（Write Command）** |
+
+Osmo Pocket 3 の公開解析（lib-osmo-ble、MIT）と同じ配置だった。DUML の CRC の初期値は **crc8 0x77 / crc16 0x3692**（多項式はそれぞれ 0x31・0x1021 の反転）。lib-osmo-ble の既知フレーム 2 本と今回の 43 フレームで一致した。lib-osmo-ble の README にある 0xEE・0x496C は、表の作り方が違うため、そのままでは使えない。
+
+### 17.4 送信機との BLE のやりとりの全部（接続ハンドル 0x004b）
+
+`duml.py parse` の出力（送信機のデバイス番号は 58＝0x3a、アプリは 2。**シリアル番号・Wi-Fi のパスワード・ペアリングの鍵と PIN は `*` で伏せた**）:
+
+```
+ 1008 11:02:32.993 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1060 11:02:33.441 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1157 11:02:34.280 rx  58->2   req  set=0x5b id=0x03 len=35 crc=BAD 03200002000000001a550e04663a0265ab005b0405f209553404ac3a02aaac005b0303 ". .......U..f:.e..[....U4..:....[.."
+ 1181 11:02:34.461 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1218 11:02:34.701 rx  58->2   req  set=0x5b id=0x03 len=35 crc=ok 03200002000000001a90240401007800003d023d02e000190101000000000300030000 ". ........$...x..=.=..............."
+ 1244 11:02:34.940 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1303 11:02:35.361 tx   2->240 req  set=0x00 id=0x2b len= 2 crc=ok 0400 
+ 1303 11:02:35.361 tx   2->58  req  set=0x00 id=0x32 len= 1 crc=ok 11 
+ 1303 11:02:35.361 tx   2->58  req  set=0x07 id=0x45 len=38 crc=ok <ペアリングの鍵 32 文字と PIN 4 桁を伏せた> 
+ 1303 11:02:35.361 tx   2->58  req  set=0x00 id=0x01 len= 0 crc=ok  
+ 1312 11:02:35.421 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1318 11:02:35.480 rx  58->2   resp set=0x00 id=0x32 len=24 crc=ok 0001ea07090e0e1e310e2a2a2a2a2a2a2a2a2a2a2a2a2a2a "........1.**************"
+ 1319 11:02:35.480 rx  58->2   resp set=0x00 id=0x01 len=30 crc=ok 0001444d3330335f5458000000000000000010051963010b000201000000 "..DM303_TX...........c........"
+ 1413 11:02:36.440 rx  58->2   resp set=0x07 id=0x45 len= 2 crc=ok 0002 
+ 1414 11:02:36.440 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1415 11:02:36.440 rx  58->2   req  set=0x5b id=0x03 len=39 crc=ok 032400010000000012010b00022a2a2a2a2a2a2a2a2a2a2a2a2a2a040000000006313765353939 ".$...........**************......17e599"
+ 1445 11:02:36.681 rx  58->2   req  set=0x5b id=0x03 len=35 crc=ok 03200002000000001a90240401007800003d023d02e000190101000000000300030000 ". ........$...x..=.=..............."
+ 1463 11:02:36.920 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1504 11:02:37.337 tx   2->240 req  set=0x00 id=0x2b len= 2 crc=ok 0400 
+ 1511 11:02:37.399 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1538 11:02:37.640 rx  58->2   req  set=0x5b id=0x03 len=35 crc=ok 03200002000000001a90240401007800003d023d02e000190101000000000300030000 ". ........$...x..=.=..............."
+ 1565 11:02:38.000 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1613 11:02:38.421 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1614 11:02:38.421 rx  58->2   req  set=0x5b id=0x03 len=39 crc=ok 032400010000000012010b00022a2a2a2a2a2a2a2a2a2a2a2a2a2a040000000006313765353939 ".$...........**************......17e599"
+ 1648 11:02:38.722 rx  58->2   req  set=0x5b id=0x03 len=35 crc=ok 03200002000000001a90240401007800003d023d02e000190101000000000300030000 ". ........$...x..=.=..............."
+ 1678 11:02:39.019 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1712 11:02:39.381 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1713 11:02:39.381 rx  58->2   req  set=0x07 id=0x46 len= 2 crc=ok 0100 
+ 1714 11:02:39.381 tx   2->58  resp set=0x07 id=0x46 len= 1 crc=ok 00 
+ 1717 11:02:39.407 tx   2->58  req  set=0x00 id=0x32 len= 1 crc=ok 11 
+ 1730 11:02:39.562 rx  58->2   resp set=0x00 id=0x32 len=24 crc=ok 0001ea07090e0e1e310e2a2a2a2a2a2a2a2a2a2a2a2a2a2a "........1.**************"
+ 1731 11:02:39.562 rx  58->2   req  set=0x07 id=0x46 len= 2 crc=ok 0100 
+ 1732 11:02:39.562 rx  58->2   req  set=0x5b id=0x03 len=35 crc=ok 03200002000000001a90240401007800003d023d02e000190101000000000300030000 ". ........$...x..=.=..............."
+ 1733 11:02:39.563 tx   2->58  resp set=0x07 id=0x46 len= 1 crc=ok 00 
+ 1763 11:02:39.837 tx   2->240 req  set=0x00 id=0x2b len= 2 crc=ok 0400 
+ 1765 11:02:39.861 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1783 11:02:40.078 tx   2->58  req  set=0x07 id=0x18 len= 4 crc=ok 4a500000 "JP.."
+ 1789 11:02:40.159 rx  58->2   resp set=0x07 id=0x18 len= 1 crc=ok 00 
+ 1790 11:02:40.164 tx   2->58  req  set=0x07 id=0x07 len= 1 crc=ok 00 
+ 1798 11:02:40.193 tx   2->58  req  set=0x07 id=0x0e len= 1 crc=ok 00 
+ 1819 11:02:40.400 rx  58->2   resp set=0x07 id=0x07 len=21 crc=ok 0013444a49204d696320332054582d313765353939 "..DJI Mic 3 TX-17e599"
+ 1820 11:02:40.400 rx  58->2   resp set=0x07 id=0x0e len=10 crc=ok 00082a2a2a2a2a2a2a2a "..********"
+ 1821 11:02:40.400 rx  58->2   req  set=0x5b id=0x04 len= 1 crc=ok 05 
+ 1822 11:02:40.401 rx  58->2   req  set=0x5b id=0x03 len=39 crc=ok 032400010000000012010b00022a2a2a2a2a2a2a2a2a2a2a2a2a2a040000000006313765353939 ".$...........**************......17e599"
+```
+
+```
+$ tshark -r all.pklg -Y bthci_acl -T fields -e bthci_acl.chandle -e frame.len | awk '{s[$1]+=$2;n[$1]++} END{for(k in s) print k, n[k]" frames", s[k]" bytes"}'
+0x004b 73 frames 2149 bytes
+0x0041 125 frames 13102 bytes
+
+$ tshark -r all.pklg -Y 'bthci_evt.code==0x05' -T fields -e frame.number -e frame.time -e bthci_evt.connection_handle -e bthci_evt.reason -e _ws.col.Info
+1838	2026-09-26T20:02:40.460000000+0900	0x004b	0x16	Rcvd Disconnect Complete
+
+$ tshark -r all.pklg -Y 'packetlogger.type==0xfc' -T fields -e frame.time -e packetlogger.info | tail -6
+20:02:40.471000000+0900	Thread: Current state is OFF
+20:02:48.167000000+0900	WiFi State: On, Band: Unknown
+20:02:48.291000000+0900	Thread: Current state is OFF
+20:02:48.829000000+0900	WiFi State: On, Band: 5 GHz
+20:02:48.874000000+0900	Thread: Current state is OFF
+20:03:32.668329000+0900	iOS Device connection has been lost
+```
+
+| 時刻（日本時間） | 出来事 | 根拠 |
+|---|---|---|
+| 11:02:32 | iPhone が BLE で送信機に接続し、MTU を 251 に交換 | フレーム 980 |
+| 11:02:35〜39 | ペアリング（`07/45` の要求 → 応答 `0002`、送信機から `07/46` の承認 `0100` が来て iPhone が応える）、機器情報（`00/01` の型番・`00/32` のシリアル番号） | 1303〜1733 |
+| 11:02:40.08〜40.40 | **Mimo が Wi-Fi の設定を問い合わせる**: `07/18`（国コード `JP`）、`07/07`（送信機の Wi-Fi のネットワーク名 → `DJI Mic 3 TX-17e599`）、`07/0e`（パスワード → 8 桁。伏せた） | 1783〜1820 |
+| 11:02:40.46 | **iPhone が自分から BLE を切断**（reason 0x16＝ローカルのホストが切った） | 1838 |
+| 11:02:48 | iPhone の Wi-Fi が切り替わる（`Band: Unknown` → `5 GHz`） | PacketLogger の注記 |
+| 11:02:48〜11:03:32 | 送信機との BLE の通信は**無い**（最後の ATT は 11:02:40.401）。この間に Mimo でファイル一覧とダウンロードを行い、ダウンロードは iPhone に届いた（利用者の観察） | ACL の集計 |
+
+- 送信機との BLE の通信は全部で **2,149 バイト**（ACL 73 フレーム）。5 秒の録音（48 kHz・24 bit で約 720 KB）すら運べない量で、**ファイルは BLE を流れていない**
+- ファイル操作に当たるコマンド（dji-firmware-tools の辞書で General `0x20` File List・`0x21` File Info・`0x22` File Send・`0x28` FileTrans Delete、Camera `0x79` File Delete）は、**1 件も現れなかった**
+- `5b/03`・`5b/04` は、送信機から約 0.5 秒おきに届く状態の通知（中身は解読していない）。`00/2b` はアプリから宛先 240 への同報
+- CRC が合わない行（フレーム 1157）が 1 つある。MTU の交換より前の通知（フレーム 1088。宣言長 48 バイトが 20 バイトで切れていた）の残りを、デコーダが次の通知の頭に継いだためで、送信機が壊れたフレームを送ったわけではない
+- 接続ハンドル 0x0041 は Apple の機器どうしのチャネル（`com.apple.terminusLink` など）で、送信機とは関係ない
+
+### 17.5 削除
+
+DJI Mimo には**送信機の録音を削除する操作が無い**（利用者の観察）。削除のフレームは記録できなかった。
+
+### 17.6 Mac からの再現（計画の Phase D）
+
+— 対象外（BLE にファイル操作が流れていないので、Mac の CoreBluetooth から送って確かめるコマンドが無い）。
+解読できていないコマンド（辞書の File List などの推測）は**実機に送らない**（送信機の設定やファームウェアを壊すおそれがあるため）。そのため、送信機のファームウェアが BLE で使えるファイル用のコマンドを隠し持っているかどうかは、確かめていない。
+
+### 17.7 限界
+
+- 送信機のファームウェアと DJI Mimo の版を控えていない。DJI の更新で振る舞いが変わりうる
+- 記録は 1 回・1 台（送信機 1 台・iPhone 1 台）だけ
+- Wi-Fi 側の通信（ファイル一覧・ダウンロードの中身）は範囲外なので解析していない。「Wi-Fi で流れた」という結論の根拠は、BLE の切断・iPhone の Wi-Fi の切り替わり・BLE の通信量の 3 つ
+- 参考（範囲外）: 送信機の Wi-Fi のネットワーク名とパスワードは BLE で取れるので、「BLE でペアリング → 送信機の Wi-Fi に参加 → Wi-Fi でファイル操作」という経路は技術的にはあり得る。調べるなら別の計画にする。製品に入れる場合は PT-02（`Network` を VDModels・LoopbackHTTP 以外で禁止）と PR-11・§8.9 の削除の設計を PLAN で改める必要がある
