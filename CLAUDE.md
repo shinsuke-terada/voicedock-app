@@ -7,7 +7,7 @@ Python + Docker の参照実装 `voicedock` を Swift で書き直すもの。�
 ## いまの状態
 
 **実装中。** git リポジトリは `shinsuke-terada/voicedock-app`（2026-09-28 から公開。外部からの PR の CI は承認が要る）。`main` ← `develop` ← `feat/T-nn-*` の PR で進め、**マージは利用者が行う**。
-CI は開発機のセルフホストランナー `voicedock-local`（`~/actions-runner`。PLAN §10.8）。ブランチ保護は設定していない（非公開の間は無料プランで使えなかった。公開後は使えるが未設定。PLAN F-101）ので、CI が緑のときだけマージする運用。
+CI は開発機のセルフホストランナー `voicedock-local`（`~/actions-runner`。PLAN §10.8）。`main` は保護してある（2026-10-01。必須のチェック `check`・PR 必須（承認 0 人）・管理者にも適用・force push と削除は禁止。PLAN F-102）。`develop` は保護していないので、CI が緑のときだけマージする運用は続ける。
 
 進捗（どのチケットがマージ済みか、次に何ができるか）は `docs/tickets/STATUS.md` にある。
 
