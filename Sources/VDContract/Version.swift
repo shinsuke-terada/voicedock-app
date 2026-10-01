@@ -3,7 +3,7 @@ import Foundation
 
 public enum AppVersion {
     /// VERSION ファイルの中身（前後の空白・改行を除いたもの）と同じ文字列。版を上げる PR で両方を変える。
-    public static let string = "0.9.0"
+    public static let string = "1.0.0"
 
     /// "X.Y.Z"（各要素は ASCII の 10 進。符号・空要素・余計な要素は不可）を数値の組にする。形式外は nil。
     public static func components(_ s: String) -> (major: Int, minor: Int, patch: Int)? {
