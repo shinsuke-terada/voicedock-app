@@ -871,7 +871,7 @@ Timeline の見出しと `ZonedTime.iso` はタイムゾーンの規則で描く
   },
   "session": { "blockGapSeconds": 3600, "idleCloseSeconds": 1800, "allowReopen": true, "maxParts": 64, "maxDurationSeconds": 86400 },
   "transcription": {
-    "whisperModelID": "large-v3-turbo-q5_0", "language": "ja", "threads": 0,
+    "whisperModelID": "large-v3-turbo-q8_0", "language": "ja", "threads": 0,
     "timeoutFactor": 3.0, "minTimeoutSeconds": 600, "maxTimeoutSeconds": 21600, "minChars": 1,
     "vad": { "enabled": true, "modelID": "silero-v5.1.2", "threshold": 0.5,
              "minSpeechDurationMs": 250, "minSilenceDurationMs": 1000, "speechPadMs": 200 },
@@ -1431,7 +1431,7 @@ used + expected > stagingMaxBytes  → 「staging 使用量 <used> + 想定 <exp
 argv（既定値。voicedock `build_argv` と同じ並び。`vad.enabled == false` なら VAD の 6 フラグを 1 つも渡さない。SPEC S11。先頭の語は実行ファイルで argv に含めない。`<threads>` は下の threads）:
 
 ```text
-<bundle>/Contents/Helpers/whisper-cli -m <HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin -f <HOME>/staging/<slug>/audio16k.wav
+<bundle>/Contents/Helpers/whisper-cli -m <HOME>/models/whisper/ggml-large-v3-turbo-q8_0.bin -f <HOME>/staging/<slug>/audio16k.wav
   -l ja -t <threads>
   --vad --vad-model <HOME>/models/vad/ggml-silero-v5.1.2.bin --vad-threshold 0.5
   --vad-min-speech-duration-ms 250 --vad-min-silence-duration-ms 1000 --vad-speech-pad-ms 200
@@ -2450,7 +2450,10 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 ```json
 {
   "schema": 1,
-  "whisper": [{"id": "large-v3-turbo-q5_0", "displayName": "Whisper large-v3-turbo (q5_0)", "file": "ggml-large-v3-turbo-q5_0.bin",
+  "whisper": [{"id": "large-v3-turbo-q8_0", "displayName": "Whisper large-v3-turbo (q8_0)", "file": "ggml-large-v3-turbo-q8_0.bin",
+               "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin",
+               "sha256": "317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1", "bytes": 874188075, "license": "MIT"},
+              {"id": "large-v3-turbo-q5_0", "displayName": "Whisper large-v3-turbo (q5_0)", "file": "ggml-large-v3-turbo-q5_0.bin",
                "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q5_0.bin",
                "sha256": "394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2", "bytes": 574041195, "license": "MIT"}],
   "vad":     [{"id": "silero-v5.1.2", "displayName": "Silero VAD v5.1.2", "file": "ggml-silero-v5.1.2.bin",
@@ -2470,6 +2473,7 @@ config 側（`deleteSourceAudio` / `deleteSkippedSource` / `mountMode`）は `Co
 ```
 
 - **値（URL のコミット SHA、sha256、bytes、license）は推測で埋めない。**上の値は HF API（`/api/models/<repo>?blobs=true` の LFS oid と size）で確かめたもの。T-24 で再確認し、LLM の `verified` は §10.6 の受け入れ試験に合格したものだけ `true` にする
+- whisper の既定は `large-v3-turbo-q8_0`（F-104）。それまでの既定 `large-v3-turbo-q5_0` はカタログに残す（その `config.json` が CV-44 に落ちて「設定エラー」にならないように。設定の版は上げない）。q8_0 の値は 2026-10-05 に HF API（`/api/models/ggerganov/whisper.cpp/paths-info/<commit>` の LFS oid と size）で確かめた
 - LLM は公式（Qwen）の GGUF が無く、ggml-org には Q4_K_M が無い（2026-09 時点）。unsloth と lmstudio-community の 2 つが候補で、T-24 で決める（上は unsloth を仮に置いた）。
   **思考モード付きのモデルは載せない**（`<think>` 除去はあるが、出力が長くなり時間を食う）
 - 一覧に載せる条件（`verified: true`）: §10.6 の LLM 受け入れ試験に合格、ライセンスが再配布ではなく利用者のダウンロードを許すこと。`verified: false` のものは一覧に出さない（T-24 まではテスト用に読み込むだけ）
@@ -2930,7 +2934,7 @@ reaper は偽物を作らず本物を起動する。本物は「結果を書い�
 - 遷移表と復旧写像は `text` フェンスの中の `A→B` を辺として読む（`|` 区切り、`★` と括弧の注記は無視）。付録 A.2 はフェンスの直前の段落 `Part:` / `Session:` でエンティティを分け、付録 A.1 の復旧写像のフェンスは行頭の `Part:` / `Session:` で分ける
 - ログイベントは付録 A.4 の `text` フェンスを空白と改行で分け、出現順 = `LogEvent` の宣言順
 - `docs/SPEC.md` が無ければ **skip ではなく fail**
-- S10〜S13・S20〜S23（F-68）は PLAN の該当節の表（S11 だけは §8.4 の最初の `text` フェンス）を 1 つずつ写したもの。照合のテストは実装の型を import できる各モジュールのテストターゲットに置き（PolicyTests は TestSupport にしか依存しない）、`SpecDocument` の読み取り口で SPEC を読む。理由語は付録 B.2 の「理由語」の列のバッククォートの語を出現順に読み、`IdentityReason.all` と一致すること
+- S10〜S13・S20〜S23（F-68）は PLAN の該当節の表（S11 だけは §8.4 の最初の `text` フェンス）を 1 つずつ写したもの。照合のテストは実装の型を import できる各モジュールのテストターゲットに置き（PolicyTests は TestSupport と VDContract にだけ依存する。F-103）、`SpecDocument` の読み取り口で SPEC を読む。理由語は付録 B.2 の「理由語」の列のバッククォートの語を出現順に読み、`IdentityReason.all` と一致すること
 - RN / DN は S12 の表の「#」に RN- / DN- を付けた ID（— の欄は無い）の集合と、テストの表示名の先頭の ID（`RN-5 / DN-6 …` のように ` / ` で並べてよい）の集合が一致すること
 - ND・RV・CV・DR は「SPEC の表の ID の集合」と「テストの表示名の先頭の ID の集合」が一致すること。ND は付録 B.1 の「層」の列に書いた層（A / R1 / R2 / R3）ごとに 1 本以上のテストがあること（テストの表示名は `ND-18 [R2] …` のように ID の後に層を角括弧で書く）。DR の表は ID が先頭の列
 
@@ -3023,7 +3027,7 @@ jobs:
 - 警告はエラー: `-Xswiftc -warnings-as-errors` ではなく、`Package.swift` の自分のターゲットに `swiftSettings: [.treatAllWarnings(as: .error)]`（SE-0480、tools-version 6.2 以上。リモートの依存には掛からない）
 - ランナー: 開発機（実機 DJI Mic 3 がつながることがある Mac）のセルフホストランナー。ラベルは既定の `self-hosted`・`macOS`・`ARM64` で固定し、`runs-on` に `latest` を使わない（PT-13）。
   CI では `sudo` を使わず、Xcode の版は `make check-toolchain` で確かめるだけにする（`.xcode-version` と開発機の Xcode を利用者がそろえる）
-- `main` のブランチ保護で `check` を必須にする（**非公開リポジトリで GitHub の無料プランだとブランチ保護が使えない**（API が 403）。その場合は T-02 に記録し、「保護した」とは書かない）。2026-09-28 に公開したので無料プランでも使えるようになったが、2026-10-01 の時点では設定していない（`Branch not protected`。設定するかは利用者が決める。F-101）
+- `main` のブランチ保護で `check` を必須にする（**非公開リポジトリで GitHub の無料プランだとブランチ保護が使えない**（API が 403）。その場合は T-02 に記録し、「保護した」とは書かない）。2026-09-28 に公開したので無料プランでも使えるようになり、**2026-10-01 に `main` を保護した**（必須のチェック `check`・PR 必須（承認 0 人）・管理者にも適用・force push と削除は禁止・最新への追従は求めない。F-102）。`develop` は保護していない
 - 公開リポジトリでもランナーは開発機のまま。**外部からの PR はワークフローの実行に承認が要る**設定（fork の PR の承認 `all_external_contributors`）にし、承認なしに開発機でコードが走らないようにする（F-101）
 - `.diskImage` のテストは **CI で走らせない**（`VOICEDOCK_DISK_TESTS` を付けない）。ランナーが開発機なので、CI が走るたびに実機が抜いてあることを保証できないため（P0-10 は行わない）。
   CI の ND は層 1・2 だけになることを `docs/DEVELOPMENT.md` に書き（F-93 で README から移した）、**削除に触れる PR では、実機を抜いたことを利用者が確かめてから手元で `make test-disk` を回した結果を PR 本文に貼る**ことを必須にする
@@ -3873,3 +3877,6 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-99 | 事 | §11.3（3） | （2026-09-26。利用者の依頼「dmg をクリックすると他のアプリみたいにウィンドウが出て、アプリアイコンと Applications が出てドラッグ＆ドロップでインストールするように」と決定: 背景と矢印つき・ビルドのときだけ Python の ds_store・mac_alias を使ってよい）dmg に背景（矢印と「VoiceDock を Applications フォルダへドラッグしてください」。`tools/dmg/make-background.swift` で作り `Resources/dmg/` にコミット）と Finder の表示設定（`.DS_Store`）を入れた。表示設定は作業用のイメージを `/Volumes` の外にマウントしたまま `tools/dmg/write-ds-store.py` が書く（Finder を使わない）。ボリューム名を `VoiceDock <版>` にした（`VoiceDock` だけだと実機の `VOICEDOCK` と大文字小文字だけ違い、後からつないだ実機が `VOICEDOCK 1` になって取り込まれない）。`ReleaseBundleTests.makeDmgLaysOutTheWindow` |
 | F-100 | 事 | §11.4・§12.4 | （2026-09-26。利用者の決定: 削除のゲート（§12.4。E2E-06・G-4・G-5 が未実施）が閉じたままなので、v1.0.0 ではなく **v0.9.0** を先に出す。§12.4 は緩めない。配布は非公開リポジトリの Releases のまま）`VERSION` と `AppVersion.string` を 0.9.0 に上げ、README の「dmg から入れる」に Releases の最新版へのリンクと、非公開なので招待されてサインインした人だけが開けることを書いた。v1.0.0 は T-44（`docs/RELEASE.md`・`ReleaseChecklistTests`）とゲートが開いてから出す。リリースノートは `docs/release-notes/0.9.0.md` |
 | F-101 | 事 | D-6・§3.2・§10.8・§11.4 | （2026-10-01。利用者の決定: リポジトリは 2026-09-28 に利用者の依頼で**公開**した。文書の「非公開」を事実に合わせる）§11.4 のリリースは「dmg は匿名で落とせる」に、§10.8 は見出しを公開リポジトリにし、ブランチ保護は無料プランでも使えるが設定していないこと（2026-10-01 の時点）と、ランナーは開発機のままで外部からの PR はワークフローの実行に承認が要る（`all_external_contributors`）ことを書いた。D-6・§3.2 は作ったときの記録として残し、公開したことを足した。README の Releases の案内、T-44 の §3.5 と受け入れ条件、`docs/RELEASE.md` も合わせた（T-44）。過去の記録（T-01・T-02・T-43・`docs/POC.md` 章 11・付録 F の F-100）は書き換えない |
+| F-102 | 事 | §10.8 | （2026-10-01。利用者の依頼「保護しておいて」）公開リポジトリになって無料プランでも使えるようになった `main` のブランチ保護を設定した。必須のチェックは CI の `check`（GitHub Actions）、PR 必須（承認は 0 人。利用者が自分の PR をマージできる）、管理者にも適用（CI を飛ばしてマージしない）、force push と削除は禁止、`develop` に追いついていることは求めない。`develop` は保護しない。CLAUDE.md・`docs/RELEASE.md` §3.2・T-44・STATUS を合わせた |
+| F-103 | 曖 | §10.3 | （2026-10-01。利用者の決定。T-44 §10 の 2）`PolicyTests` の依存が、00-api-map.md §14（`TestSupport, VDContract`）と §10.3・`Package.swift`（`TestSupport` だけ）で食い違っていた。地図に揃え、`Package.swift` の `PolicyTests` に `VDContract` を足し、`ReleaseChecklistTests` が写していた版の読み取り（`ReleaseDoc.components`）をやめて `AppVersion.components` を使う（CR-06。規則の写しを持たない）。TestSupport はもともと全ライブラリに依存しているのでビルドは変わらない。PT-07 は `Sources/` だけを見るので影響しない |
+| F-104 | 事 | §6.2・§8.4・§8.10 | （2026-10-05。利用者の決定。日本語の文字起こしの代替候補を調べた結果による）Whisper の既定を `large-v3-turbo-q5_0`（574,041,195 バイト）から `large-v3-turbo-q8_0`（874,188,075 バイト。同じ固定コミット `5359861c…`）に替える。日本語特化の公開モデルに turbo を上回る独立の根拠は無く、large-v3 は前の文脈を引き継ぐ既定の whisper-cli（`-mc` を渡さない）で長い音声が崩れる報告があるので、turbo のまま量子化の劣化が少ない q8_0 にした。`AppConfig.defaults` の `whisperModelID`、カタログ（q8_0 を先頭に足す）、§6.2 の例・§8.4 と SPEC S11 の argv の例を合わせた。q5_0 はカタログに残し、`schemaVersion` は上げない（既存の `config.json` はそのまま読め、q5_0 で動き続ける。切り替えは、この変更を含むビルドで `whisperModelID` を書き換えて「設定を読み直す」→ パネルでモデルを入手。それより前のビルドのカタログには q8_0 が無く CV-44 になる。Whisper のモデルを選ぶ GUI は無い）。T-09・T-17・T-24 の該当箇所も合わせた。過去の記録（E2E・RELEASE・POC・各ログ・porting-notes）は書き換えない |

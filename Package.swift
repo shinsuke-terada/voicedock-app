@@ -79,7 +79,7 @@ let package = Package(
             dependencies: ["VDContract", "voicedock-reaper", "TestSupport"],
             swiftSettings: strictSettings
         ),
-        .testTarget(name: "PolicyTests", dependencies: ["TestSupport"], swiftSettings: strictSettings),
+        .testTarget(name: "PolicyTests", dependencies: ["TestSupport", "VDContract"], swiftSettings: strictSettings),
         .testTarget(
             name: "LLMAcceptance", dependencies: ["VDPipeline", "VDLLM", "TestSupport"], swiftSettings: strictSettings),
     ],

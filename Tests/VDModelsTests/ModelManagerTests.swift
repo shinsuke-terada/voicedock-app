@@ -17,7 +17,7 @@ private struct World {
 
     /// TestCatalogs.minimal の whisper の項目（bytes 1、sha256 は "a" × 64）。
     var whisper: ModelEntry {
-        get throws { try #require(TestCatalogs.minimal.entry(kind: .whisper, id: "large-v3-turbo-q5_0")) }
+        get throws { try #require(TestCatalogs.minimal.entry(kind: .whisper, id: "large-v3-turbo-q8_0")) }
     }
 
     func url(_ e: ModelEntry, kind: ModelKind) -> URL {
@@ -70,21 +70,21 @@ struct ModelManagerTests {
     @Test("ファイルが無ければ absent")
     func absentWhenMissing() async throws {
         let w = try world()
-        #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q5_0") == .absent)
+        #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q8_0") == .absent)
     }
 
     @Test("在って size が一致すれば present")
     func presentWhenSizeMatches() async throws {
         let w = try world()
         try Data(count: 1).write(to: w.url(try w.whisper, kind: .whisper))
-        #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q5_0") == .present)
+        #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q8_0") == .present)
     }
 
     @Test("size が違えば absent（速い判定）")
     func wrongSizeIsAbsent() async throws {
         let w = try world()
         try Data().write(to: w.url(try w.whisper, kind: .whisper))
-        #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q5_0") == .absent)
+        #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q8_0") == .absent)
     }
 
     @Test("知らない ID は absent")
@@ -182,21 +182,21 @@ struct ModelManagerTests {
     @Test("失敗すると failed に日本語が出る")
     func failureIsShownAsAMessage() async throws {
         let w = try world()
-        let r = await w.manager.download("large-v3-turbo-q5_0", kind: .whisper, progress: { _, _ in })
+        let r = await w.manager.download("large-v3-turbo-q8_0", kind: .whisper, progress: { _, _ in })
         #expect(r == .failure(.network))
         #expect(
-            await w.manager.state(kind: .whisper, id: "large-v3-turbo-q5_0") == .failed("ネットワークに接続できませんでした"))
+            await w.manager.state(kind: .whisper, id: "large-v3-turbo-q8_0") == .failed("ネットワークに接続できませんでした"))
     }
 
     @Test("もう一度押すと失敗表示が消える")
     func downloadClearsThePreviousFailure() async throws {
         let w = try world()
-        _ = await w.manager.download("large-v3-turbo-q5_0", kind: .whisper, progress: { _, _ in })
+        _ = await w.manager.download("large-v3-turbo-q8_0", kind: .whisper, progress: { _, _ in })
         let file = w.url(try w.whisper, kind: .whisper)
         try Data(count: 1).write(to: file)
-        let r = await w.manager.download("large-v3-turbo-q5_0", kind: .whisper, progress: { _, _ in })
+        let r = await w.manager.download("large-v3-turbo-q8_0", kind: .whisper, progress: { _, _ in })
         #expect(r == .success(file))
-        #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q5_0") == .present)
+        #expect(await w.manager.state(kind: .whisper, id: "large-v3-turbo-q8_0") == .present)
     }
 
     @Test("落としている最中にもう一度押しても状態を変えずに断る")
@@ -235,7 +235,7 @@ struct ModelManagerTests {
 
     @Test("minMemoryGB が無ければ常に真")
     func meetsMemoryIsTrueWithoutLimit() throws {
-        let e = try #require(TestCatalogs.minimal.entry(kind: .whisper, id: "large-v3-turbo-q5_0"))
+        let e = try #require(TestCatalogs.minimal.entry(kind: .whisper, id: "large-v3-turbo-q8_0"))
         #expect(ModelManager.meetsMemory(e, physicalMemoryBytes: 0))
     }
 }

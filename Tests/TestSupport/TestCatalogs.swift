@@ -3,7 +3,7 @@ import Foundation
 import VDCore
 
 public enum TestCatalogs {
-    /// 既定の ID（large-v3-turbo-q5_0 / silero-v5.1.2）と LLM 1 つ（id "test-llm"）を持つ最小のカタログ。値は形式を満たす架空のもの。
+    /// 既定の ID（large-v3-turbo-q8_0 / silero-v5.1.2）と LLM 1 つ（id "test-llm"）を持つ最小のカタログ。値は形式を満たす架空のもの。
     public static let minimal: ModelCatalog = {
         let commit = String(repeating: "0", count: 40)
         let sha = String(repeating: "a", count: 64)
@@ -17,7 +17,7 @@ public enum TestCatalogs {
         }
         let json = """
             {"schema": 1,
-             "whisper": [\(item("large-v3-turbo-q5_0", "ggml-large-v3-turbo-q5_0.bin", llm: false))],
+             "whisper": [\(item("large-v3-turbo-q8_0", "ggml-large-v3-turbo-q8_0.bin", llm: false))],
              "vad": [\(item("silero-v5.1.2", "ggml-silero-v5.1.2.bin", llm: false))],
              "llm": [\(item("test-llm", "test-llm.gguf", llm: true))]}
             """

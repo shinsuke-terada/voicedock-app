@@ -151,7 +151,7 @@ gh pr create --base main --head develop --title "Release $(tr -d '[:space:]' < V
 ```
 
 - **`main` へは利用者が PR をマージする**（「Create a merge commit」で。エージェントは `gh pr merge` を実行しない）
-- **ブランチ保護は設定していない**（PLAN §10.8・F-101。公開リポジトリなので使えるが、2026-10-01 の時点では未設定）。「保護した」と書かない
+- **`main` はブランチ保護で `check` が緑でないとマージできない**（PLAN §10.8・F-102。PR 必須・管理者にも適用）。CI のランナー（開発機）が止まっているとマージできないので、先にランナーを動かす
 - マージの後、`main` で CI が緑になることを確かめる
 
 #### `### 3.3 タグを打つ`
@@ -258,13 +258,14 @@ gh release create "v$version" "dist/VoiceDock-$version.dmg" \
 
 ### `Tests/PolicyTests/ReleaseChecklistTests.swift`（構成）
 
-T-35 の `Runbook`、T-42 の `RunbookGate`、T-43 の `Readme` を**同じターゲットの中でそのまま使う**（import は要らない）。
+T-35 の `Runbook`、T-42 の `RunbookGate`、T-43 の `Readme` を**同じターゲットの中でそのまま使う**（import は要らない）。版の読み取りは `AppVersion.components`（VDContract。PLAN F-103 で `PolicyTests` の依存に `VDContract` を足した。写しは持たない）。
 
 ```swift
 // docs/RELEASE.md と、v1.0 を出せる状態かの検査（PLAN §11.4・§12.4。T-44）。
 import Foundation
 import TestSupport
 import Testing
+import VDContract
 
 struct ReleaseDoc: Sendable {
     static let path = "docs/RELEASE.md"
@@ -293,24 +294,12 @@ struct ReleaseDoc: Sendable {
         try String(contentsOf: PackageRoot.file("VERSION"), encoding: .utf8)
             .trimmingCharacters(in: .whitespacesAndNewlines)
     }
-
-    /// `X.Y.Z` を数値の組にする（`AppVersion.components` と同じ規則。PolicyTests は VDContract に依存しないので写す）。
-    static func components(_ s: String) -> (major: Int, minor: Int, patch: Int)? {
-        let parts = s.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 3 else { return nil }
-        var numbers: [Int] = []
-        for part in parts {
-            guard !part.isEmpty, part.allSatisfy({ $0.isASCII && $0.isNumber }), let n = Int(part) else { return nil }
-            numbers.append(n)
-        }
-        return (numbers[0], numbers[1], numbers[2])
-    }
 }
 ```
 
 | 関数名 | 表示名 | 準備 | 期待 |
 |---|---|---|---|
-| `theComponentParserIsExact()` | **陽性対照**: 版の読み取りが正確 | 文字列を直に渡す | `"1.0.0"` → `(1,0,0)`、`"1.10.0"` → `(1,10,0)`、`"1.0"` → nil、`"1.0.0 "` → nil、`"1.0.0a"` → nil、`"01.0.0"` → `(1,0,0)`、`"1.0.0.0"` → nil、`"1..0"` → nil、`""` → nil（TEST-28） |
+| `theComponentParserIsExact()` | **陽性対照**: 版の読み取り（`AppVersion.components`）が正確 | 文字列を直に渡す | `"1.0.0"` → `(1,0,0)`、`"1.10.0"` → `(1,10,0)`、`"1.0"` → nil、`"1.0.0 "` → nil、`"1.0.0a"` → nil、`"01.0.0"` → `(1,0,0)`、`"1.0.0.0"` → nil、`"1..0"` → nil、`""` → nil（TEST-28） |
 | `theVersionIsOnePointZeroOrLater()` | 版が 1.0.0 以上 | `VERSION` | `components` が読め、`(major, minor, patch) >= (1, 0, 0)`（**辞書順で比べない**） |
 | `theReleaseDocExists()` | docs/RELEASE.md が在る | — | `ReleaseDoc.load()` が投げない |
 | `theReleaseHeadingsAreInOrder()` | 見出しが §4.1 のとおり | 見出しの列 | 深さと本文が **19 行**と完全一致 |
@@ -352,7 +341,7 @@ struct ReleaseDoc: Sendable {
 | 11 | `### 3.5` から `gh release download` の説明を消す | `theReleaseDocExplainsPublicDistribution` |
 | 12 | `docs/release-notes/TEMPLATE.md` を消す | `theReleaseNotesTemplateExists` |
 | 12b | `docs/release-notes/TEMPLATE.md` の `<版>` を `1.0.0` にする | `theTemplateDoesNotPinTheVersion("1.0.0")` |
-| 13 | `ReleaseDoc.components` を `s.split(separator: ".").count >= 3` に緩める | `theComponentParserIsExact`（`"1.0.0.0"` が nil でなくなる。`"1.0.0 "` は最後の要素の数字の検査で nil のままなので、それだけでは気づけない） |
+| 13 | `Sources/VDContract/Version.swift` の `AppVersion.components` を `split(separator: ".")` と `count >= 3` に緩める | `theComponentParserIsExact`（`"1.0.0.0"` が nil でなくなる）と VDContractTests の「形式外は nil」（F-103 の後。それより前は `ReleaseDoc.components` の写しを壊していた） |
 | 14 | `## 3. 手順` と `## 4. 失敗したときの戻し方` の順を入れ替える | `theReleaseHeadingsAreInOrder` |
 
 ## 7. 受け入れ条件
@@ -385,8 +374,7 @@ struct ReleaseDoc: Sendable {
 ## 10. API 地図への変更提案
 
 1. §14 の `PolicyTests` の「主な中身」に `ReleaseChecklistTests`（T-44）を足す。→ 地図には反映済み（00-api-map.md §14）
-2. `ReleaseDoc.components` は `AppVersion.components`（VDContract、T-06）の**写し**になる（CR-06）。**地図 §14 はすでに `PolicyTests` の依存を `TestSupport, VDContract` としているが、PLAN §10.3（「PolicyTests は TestSupport にしか依存しない」）と `Package.swift` の `PolicyTests` は `TestSupport` だけのまま**で、食い違っている。
-   この PR は PLAN に合わせて写しのままにした（2 つの写しが一致していることを確かめるテストは無い）。どちらに寄せるか（PLAN と Package.swift に VDContract を足して写しを消す / 地図を TestSupport だけに戻す）は利用者が決める
+2. `ReleaseDoc.components` は `AppVersion.components` の写しだった（CR-06 に反する）。地図 §14 は `TestSupport, VDContract`、PLAN §10.3 と `Package.swift` は `TestSupport` だけで食い違っていた。→ **利用者の決定で地図に揃えた（PLAN F-103）**。`PolicyTests` の依存に `VDContract` を足し、写しをやめて `AppVersion.components` を使う
 3. PLAN §11.4 に「タグは `v<VERSION>` の注釈付きタグ」「`gh release create` は `--verify-tag` を付ける」「**非公開リポジトリのリリースは匿名で配れない**」を足すことを提案する（§11.4 は版の付け方だけで、リリースの作り方に触れていない）。→ 反映済み。2026-09-28 にリポジトリを公開したので、F-101 で「匿名で落とせる」に直した
 4. PLAN §12.3 の Phase 9 の行（T-44）の「成果物」は `dmg` だが、実際には **`docs/RELEASE.md`（手順の正本）と `docs/release-notes/<版>.md`** も成果物になる。表への追記を提案する
 5. `docs/release-notes/`（`TEMPLATE.md` と `<版>.md`）と `docs/RELEASE.md` は PLAN §3.2 のリポジトリの木に無い。追記を提案する

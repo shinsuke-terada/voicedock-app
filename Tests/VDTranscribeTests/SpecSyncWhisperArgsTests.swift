@@ -27,7 +27,7 @@ struct SpecSyncWhisperArgsTests {
         let words = try SpecDocument.load().whisperArgv()
         #expect(words.first == "<bundle>/Contents/Helpers/whisper-cli")
         let argv = WhisperArgs.build(
-            model: URL(fileURLWithPath: "\(Self.home)/models/whisper/ggml-large-v3-turbo-q5_0.bin"),
+            model: URL(fileURLWithPath: "\(Self.home)/models/whisper/ggml-large-v3-turbo-q8_0.bin"),
             input: URL(fileURLWithPath: "\(Self.home)/staging/\(Self.slug)/audio16k.wav"),
             outputBase: URL(fileURLWithPath: "\(Self.home)/staging/\(Self.slug)/whisper"),
             config: AppConfig.defaults(timeZone: "Asia/Tokyo").transcription,

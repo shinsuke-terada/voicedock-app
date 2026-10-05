@@ -35,7 +35,7 @@ struct DiagnosticsNoWriteTests {
         try FileManager.default.createDirectory(
             at: w.layout.staging.appendingPathComponent("x", isDirectory: true), withIntermediateDirectories: true)
         try Data(count: 8).write(to: w.layout.staging.appendingPathComponent("x/a.wav"))
-        try w.placeModel(kind: .whisper, file: "ggml-large-v3-turbo-q5_0.bin")
+        try w.placeModel(kind: .whisper, file: "ggml-large-v3-turbo-q8_0.bin")
         try w.placeModel(kind: .vad, file: "ggml-silero-v5.1.2.bin")
         try w.placeHelper(w.paths.whisperCLI)
         return (w, vaultPath)

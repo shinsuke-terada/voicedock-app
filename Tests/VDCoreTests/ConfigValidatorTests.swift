@@ -340,7 +340,7 @@ struct ConfigValidatorTests {
 
     @Test("CV-44 既定は通る")
     func cv44Boundary() {
-        #expect(Self.check { $0.transcription.whisperModelID = "large-v3-turbo-q5_0" }.isEmpty)
+        #expect(Self.check { $0.transcription.whisperModelID = "large-v3-turbo-q8_0" }.isEmpty)
     }
 
     @Test("CV-45 VAD が有効でカタログに無いモデルなら違反")
