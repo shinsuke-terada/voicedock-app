@@ -59,7 +59,7 @@ public enum FakeWhisper {
         }
         return "{\"systeminfo\": \"AVX = 0 | NEON = 1 |\", "
             + "\"model\": {\"type\": \"large\", \"multilingual\": true}, "
-            + "\"params\": {\"model\": \"ggml-large-v3-turbo-q5_0.bin\", \"language\": \(quote(language))}, "
+            + "\"params\": {\"model\": \"ggml-large-v3-turbo-q8_0.bin\", \"language\": \(quote(language))}, "
             + "\"result\": {\"language\": \(quote(language))}, "
             + "\"transcription\": [\(items.joined(separator: ", "))]}"
     }

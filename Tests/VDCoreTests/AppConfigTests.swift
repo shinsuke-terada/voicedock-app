@@ -28,7 +28,7 @@ struct AppConfigTests {
           },
           "session": { "blockGapSeconds": 3600, "idleCloseSeconds": 1800, "allowReopen": true, "maxParts": 64, "maxDurationSeconds": 86400 },
           "transcription": {
-            "whisperModelID": "large-v3-turbo-q5_0", "language": "ja", "threads": 0,
+            "whisperModelID": "large-v3-turbo-q8_0", "language": "ja", "threads": 0,
             "timeoutFactor": 3.0, "minTimeoutSeconds": 600, "maxTimeoutSeconds": 21600, "minChars": 1,
             "vad": { "enabled": true, "modelID": "silero-v5.1.2", "threshold": 0.5,
                      "minSpeechDurationMs": 250, "minSilenceDurationMs": 1000, "speechPadMs": 200 },

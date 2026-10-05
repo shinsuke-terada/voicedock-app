@@ -49,7 +49,7 @@ struct ModelCatalogTests {
         let catalog = try Self.bundled()
         #expect(catalog.rejected.isEmpty)
         #expect(catalog.schema == 1)
-        #expect(catalog.whisper.count == 1)
+        #expect(catalog.whisper.count == 2)
         #expect(catalog.vad.count == 1)
         #expect(catalog.llm.count == 2)
     }
@@ -57,8 +57,15 @@ struct ModelCatalogTests {
     @Test("既定の ID がカタログに在る")
     func bundledCatalogHasDefaultIDs() throws {
         let catalog = try Self.bundled()
-        #expect(catalog.entry(kind: .whisper, id: "large-v3-turbo-q5_0") != nil)
+        #expect(catalog.entry(kind: .whisper, id: "large-v3-turbo-q8_0") != nil)
         #expect(catalog.entry(kind: .vad, id: "silero-v5.1.2") != nil)
+    }
+
+    @Test("F-104 前の既定の Whisper（q5_0）もカタログに残る（その config.json が CV-44 に落ちない）")
+    func bundledCatalogKeepsPreviousWhisperDefault() throws {
+        let catalog = try Self.bundled()
+        #expect(catalog.whisper.map(\.id) == ["large-v3-turbo-q8_0", "large-v3-turbo-q5_0"])
+        #expect(catalog.entry(kind: .whisper, id: "large-v3-turbo-q5_0")?.file == "ggml-large-v3-turbo-q5_0.bin")
     }
 
     @Test("URL はコミット SHA で固定されている（PT-13 と同じ条件）")
