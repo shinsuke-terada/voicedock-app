@@ -172,11 +172,93 @@ $ grep -E "^\| E2E-(06|13) " docs/E2E.md
 
 ### 5.2 make test
 
-（§5.2 の記録は `make test` の後に書く）
+実施: 2026-10-05 23:40〜23:42。版を上げるブランチのコミット `91da979`（確認表をすべて ✅ にし、§5 の記録を書いた後。`everyChecklistPassesBeforeRelease` が確認表を見る）。作業ツリーは clean（RL-05 の出力の `git status` に出る 1 行は、書き込んでいる途中のこのログのファイル自身）。実機は接続されていない（`ls /Volumes` が `Macintosh HD` だけ）。
+この節と §5.3 の記録を書いた後のコミットでは、文書テストだけを回し直した（記録の本文はテストの対象の外）。
+全出力は `docs/release-logs/2026-10-05-make-lint.txt` と `docs/release-logs/2026-10-05-make-test.txt`（約 1 MB。本文には先頭の 4 行と集計の行だけを貼る）。どちらも終了コード 0、失敗 0。
+`with 3 known issues` は `GoldenSupportTests` が「違えば記録する」ことを `withKnownIssue` で確かめている 3 件で、想定どおり（`docs/E2E.md` §4.3 と同じ）。
+
+RL-05（`make lint`）:
+
+```text
+$ date; ls /Volumes; git rev-parse HEAD; git status --porcelain
+Mon Oct  5 23:40:04 JST 2026
+Macintosh HD
+91da97981db48765ff39665c21990ced8fab6377
+?? docs/release-logs/2026-10-05-make-lint.txt
+$ make lint; echo "exit=$?"
+swift format lint --strict --recursive Sources Tests
+exit=0
+```
+
+RL-03（`make test`。ND → policy → 残り。RL-06 の版の照合・RL-07 の `ReadmeTests`・RL-01 の `RunbookGateTests` を含む）:
+
+```text
+$ date; ls /Volumes; git rev-parse HEAD
+Mon Oct  5 23:40:08 JST 2026
+Macintosh HD
+91da97981db48765ff39665c21990ced8fab6377
+$ make test; echo "exit=$?"
+􁁛  Test run with 10 tests in 1 suite passed after 0.314 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 10.480 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.143 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.701 seconds.
+􀢂  Test run with 325 tests in 36 suites passed after 9.284 seconds with 3 known issues.
+􁁛  Test run with 317 tests in 39 suites passed after 0.496 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 23.895 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.392 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 12.234 seconds.
+􁁛  Test run with 861 tests in 89 suites passed after 19.294 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.690 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.707 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 12.778 seconds.
+􁁛  Test run with 205 tests in 19 suites passed after 3.333 seconds.
+􁁛  Test run with 394 tests in 45 suites passed after 1.823 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 0.129 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.687 seconds.
+exit=0
+```
+
+RL-08（SPEC）と RL-09（依存の固定）:
+
+```text
+$ make spec >/dev/null 2>&1; git diff --quiet docs/SPEC.md; echo "spec_diff_exit=$?"
+spec_diff_exit=0
+$ git status --porcelain Package.resolved; git ls-files Package.resolved; grep -n 'exact:' Package.swift
+Package.resolved
+27:        .package(url: "https://github.com/groue/GRDB.swift.git", exact: "7.11.1"),
+28:        .package(url: "https://github.com/jpsim/Yams.git", exact: "6.2.2"),
+```
 
 ### 5.3 make test-disk
 
-（§5.3 の記録は `make test-disk` の後に書く）
+実施: 2026-10-05 23:41〜23:44。§5.2 と同じコミット `91da979`。**実機は接続されていない**（実行の直前の `ls /Volumes` が `Macintosh HD` だけ。利用者はリリースが終わるまで抜いたままにすると答えた）。利用者の許可を得てエージェントが実行した。
+全出力は `docs/release-logs/2026-10-05-make-test-disk.txt`（約 1 MB）。終了コード 0、失敗 0。`VOICEDOCK_DISK_TESTS=1` なので R3（ディスクイメージ）の Suite も走った（ND の 119 件が 53 秒）。
+
+```text
+$ date; ls /Volumes; git rev-parse HEAD
+Mon Oct  5 23:41:55 JST 2026
+Macintosh HD
+91da97981db48765ff39665c21990ced8fab6377
+$ make test-disk; echo "exit=$?"
+􁁛  Test run with 10 tests in 1 suite passed after 0.326 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 53.481 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.190 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.704 seconds.
+􀢂  Test run with 325 tests in 36 suites passed after 10.591 seconds with 3 known issues.
+􁁛  Test run with 317 tests in 39 suites passed after 0.510 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 23.616 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.454 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 9.461 seconds.
+􁁛  Test run with 861 tests in 89 suites passed after 20.635 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.619 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.827 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 13.435 seconds.
+􁁛  Test run with 205 tests in 19 suites passed after 6.736 seconds.
+􁁛  Test run with 394 tests in 45 suites passed after 1.820 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 10.084 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.717 seconds.
+exit=0
+```
 
 ### 5.4 make release と verify-bundle
 
