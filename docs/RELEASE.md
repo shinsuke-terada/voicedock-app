@@ -23,18 +23,18 @@
 
 | # | 条件 | 確かめ方 | 判定 | 記録 |
 |---|---|---|---|---|
-| RL-01 | `docs/E2E.md` の `**ゲート: 開**`（`G-1`〜`G-5` がすべて `✅` か `—`） | `make test-policy`（`RunbookGateTests`）と目視 | ✅ PASS | §5.1 |
-| RL-02 | E2E-06（1 日分）が `✅ PASS`（運用の中での確認が済んでいる） | `docs/E2E.md` §2 と §3.6 | ✅ PASS | §5.1 |
-| RL-03 | `make test` が緑（ND → policy → 残り） | 全出力を `docs/release-logs/` に置き、集計の行を §5.2 に貼る | ✅ PASS | §5.2 |
-| RL-04 | `make test-disk` が緑（`.diskImage` を含む） | 全出力を `docs/release-logs/` に置き、集計の行を §5.3 に貼る | ✅ PASS | §5.3 |
-| RL-05 | `make lint` が緑 | 出力を貼る | ✅ PASS | §5.2 |
-| RL-06 | `VERSION` と `AppVersion.string` と reaper の `--version` が一致 | `make test`（T-06 の照合テスト）＋ `"$VD_HOME/bin/voicedock-reaper" --version`（導入済みのとき） | ✅ PASS | §5.2 |
-| RL-07 | `README.md` の件数が SPEC と一致し、参照切れが無い | `make test-policy`（`ReadmeTests`） | ✅ PASS | §5.2 |
-| RL-08 | `docs/SPEC.md` が `docs/PLAN.md` の写しとして最新 | `make spec` して `git diff --quiet docs/SPEC.md` | ✅ PASS | §5.2 |
-| RL-09 | `Package.resolved` がコミット済みで、依存が `exact:` で固定されている | `git status` と `Package.swift` | ✅ PASS | §5.2 |
-| RL-10 | `scripts/verify-bundle.sh` の全項目が OK | §3.1 のリハーサルの出力を §5.4 に貼る（本番の §3.4 の出力はリリースの後に追記する） | ✅ PASS | §5.4 |
-| RL-11 | 別のユーザアカウント、またはいまのアカウントで `<HOME>` を退避した状態（どちらも `<HOME>` が無い状態）で、リハーサルの dmg から導入し、「はじめに」を最後まで通せた | 手順と結果を §5.5 に書く（退避で代えたときは、TCC の初回の許可を確かめていないことも書く） | ✅ PASS | §5.5 |
-| RL-12 | 未解決の FAIL・未起票の不具合が無い | issue の一覧を §5.6 に書く | ✅ PASS | §5.6 |
+| RL-01 | `docs/E2E.md` の `**ゲート: 開**`（`G-1`〜`G-5` がすべて `✅` か `—`） | `make test-policy`（`RunbookGateTests`）と目視 | ⬜ 未実施 | §5.1 |
+| RL-02 | E2E-06（1 日分）が `✅ PASS`（運用の中での確認が済んでいる） | `docs/E2E.md` §2 と §3.6 | ⬜ 未実施 | §5.1 |
+| RL-03 | `make test` が緑（ND → policy → 残り） | 全出力を `docs/release-logs/` に置き、集計の行を §5.2 に貼る | ⬜ 未実施 | §5.2 |
+| RL-04 | `make test-disk` が緑（`.diskImage` を含む） | 全出力を `docs/release-logs/` に置き、集計の行を §5.3 に貼る | ⬜ 未実施 | §5.3 |
+| RL-05 | `make lint` が緑 | 出力を貼る | ⬜ 未実施 | §5.2 |
+| RL-06 | `VERSION` と `AppVersion.string` と reaper の `--version` が一致 | `make test`（T-06 の照合テスト）＋ `"$VD_HOME/bin/voicedock-reaper" --version`（導入済みのとき） | ⬜ 未実施 | §5.2 |
+| RL-07 | `README.md` の件数が SPEC と一致し、参照切れが無い | `make test-policy`（`ReadmeTests`） | ⬜ 未実施 | §5.2 |
+| RL-08 | `docs/SPEC.md` が `docs/PLAN.md` の写しとして最新 | `make spec` して `git diff --quiet docs/SPEC.md` | ⬜ 未実施 | §5.2 |
+| RL-09 | `Package.resolved` がコミット済みで、依存が `exact:` で固定されている | `git status` と `Package.swift` | ⬜ 未実施 | §5.2 |
+| RL-10 | `scripts/verify-bundle.sh` の全項目が OK | §3.1 のリハーサルの出力を §5.4 に貼る（本番の §3.4 の出力はリリースの後に追記する） | ⬜ 未実施 | §5.4 |
+| RL-11 | 別のユーザアカウント、またはいまのアカウントで `<HOME>` を退避した状態（どちらも `<HOME>` が無い状態）で、リハーサルの dmg から導入し、「はじめに」を最後まで通せた | 手順と結果を §5.5 に書く（退避で代えたときは、TCC の初回の許可を確かめていないことも書く） | ⬜ 未実施 | §5.5 |
+| RL-12 | 未解決の FAIL・未起票の不具合が無い | issue の一覧を §5.6 に書く | ⬜ 未実施 | §5.6 |
 
 - **`ReleaseChecklistTests` が機械で見るのは、RL-01（`docs/E2E.md` のゲートが開）と RL-02（判定表の E2E-06 が `✅`）と、この表の判定欄の記号だけ**（版が 1 以上のとき、全行が `✅` か `—` でないと `make test` が落ちる）。RL-10 の `verify-bundle` の出力などの中身は記録で見る
 - 次の版を上げるときは、この表の判定を `⬜ 未実施` に戻してから始める（**前回の `✅` を残したまま出さない**）
