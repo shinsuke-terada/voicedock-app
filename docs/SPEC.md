@@ -383,7 +383,7 @@ R1 と R2 にもそれぞれ「同じ準備で故障を入れなければ次の�
 ## S11. whisper-cli の argv（PLAN §8.4）
 
 ```text
-<bundle>/Contents/Helpers/whisper-cli -m <HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin -f <HOME>/staging/<slug>/audio16k.wav
+<bundle>/Contents/Helpers/whisper-cli -m <HOME>/models/whisper/ggml-large-v3-turbo-q8_0.bin -f <HOME>/staging/<slug>/audio16k.wav
   -l ja -t <threads>
   --vad --vad-model <HOME>/models/vad/ggml-silero-v5.1.2.bin --vad-threshold 0.5
   --vad-min-speech-duration-ms 250 --vad-min-silence-duration-ms 1000 --vad-speech-pad-ms 200

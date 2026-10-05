@@ -213,7 +213,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | 配布 | **v1.0.0**: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.0（公開リポジトリなので誰でも落とせる。F-101）。`dist/VoiceDock.app` と `dist/VoiceDock-1.0.0.dmg` は本番の `make release`（ビルド 455。`9042132`）。`/Applications/VoiceDock.app` は利用者が Releases から入れ直した 1.0.0（ビルド 455）。以前の v0.9.0: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v0.9.0 |
 | 公証 | キーチェーンのプロファイル `VOICEDOCK_NOTARY`（2026-09-26 に利用者が登録し直した。`xcrun notarytool history --keychain-profile VOICEDOCK_NOTARY` で確かめられる） |
 | `<HOME>` | `~/Library/Application Support/VoiceDock`（`config.json`・`ui-state.json`・`voicedock.sqlite`・`logs/`・`inbox`・`staging`・`queue`・`bin`・`models`）。**2026-10-01 20:05 に作り直した**（RL-11。利用者の決定で前の `<HOME>` は `~/.Trash/VoiceDock-old` へ移し、同じ日に消した。DB・設定・ログは新しくなり、話者分離などの設定は既定に戻った） |
-| whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin`（547 MB。2026-10-01 に入手し直した） |
+| whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin`（547 MB。2026-10-01 に入手し直した）。F-104 で既定は `large-v3-turbo-q8_0` になったが、この `<HOME>` の `config.json` は q5_0 のまま。切り替えは §5 の「2026-10-05 に利用者が決めたこと」 |
 | VAD モデル | `<HOME>/models/vad/ggml-silero-v5.1.2.bin`（2026-10-01 に入手し直した） |
 | LLM モデル | `<HOME>/models/llm/custom-6c997b8af17debdf.gguf`（18.6 GB。カタログの 30B（`qwen3-30b-a3b-instruct-2507-q4_k_m`）と同じファイルを「ファイルから読み込む…」で取り込んだので `custom:` の ID。2026-10-01）。以前の 4B（`custom-3605803b…`）と、カタログから取り込んだ 30B は前の `<HOME>` と一緒にゴミ箱へ |
 | Vault | `~/Documents/Obsidian Vault`（2026-10-01 から。試験用の `~/VoiceDockTestVault` は同じ日に消した） |
@@ -267,13 +267,16 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | F-100 | **（利用者の決定）** 削除のゲートが閉じたままなので v1.0.0 ではなく **v0.9.0** を先に出す（§12.4 は緩めない）。README に Releases のリンク（非公開なので招待された人だけ）。リリースノート `docs/release-notes/0.9.0.md` | #185 |
 | F-101 | **（利用者の決定）** リポジトリは 2026-09-28 から公開。PLAN・README・CLAUDE.md・T-44 の「非公開」を事実に合わせた（Releases の dmg はサインインせずに落とせる） | #193 |
 | F-102 | **（利用者の依頼）** `main` のブランチ保護（必須のチェック `check`・PR 必須（承認 0 人）・管理者にも適用・force push と削除は禁止）。`develop` は保護しない | #195 |
-| F-103 | **（利用者の決定）** `PolicyTests` の依存を地図に揃えて `VDContract` を足し、`ReleaseChecklistTests` の版の読み取りの写しをやめた | この PR |
+| F-103 | **（利用者の決定）** `PolicyTests` の依存を地図に揃えて `VDContract` を足し、`ReleaseChecklistTests` の版の読み取りの写しをやめた | #196 |
+| F-104 | **（利用者の決定。2026-10-05）** Whisper の既定を `large-v3-turbo-q5_0`（574 MB）から `large-v3-turbo-q8_0`（874 MB）に。日本語特化の公開モデルを調べたが turbo を上回る独立の根拠は無く、large-v3 は長い音声で崩れる報告があるので turbo のまま量子化を q8_0 に。q5_0 はカタログに残し設定の版は上げない（既存の `config.json` は q5_0 のまま動く） | この PR |
 
 ## 5. 残っている作業
 
 ### 開いている issue
 
 なし（#192（T-44）は 2026-10-01 に閉じた）。
+
+**2026-10-05 に利用者が決めたこと**: Whisper の既定を `large-v3-turbo-q8_0` にする（F-104）。新しく入れたときの既定が変わるだけで、今の `<HOME>` は q5_0 のまま動く（Whisper のモデルを選ぶ GUI は無い）。切り替えは【利用者が行う】。**この変更を含むビルドを入れてから**（v1.0.0 のカタログには q8_0 が無いので、先に書き換えると CV-44 の「設定エラー」になる）: `config.json` の `transcription.whisperModelID` を `"large-v3-turbo-q8_0"` に書き換えて保存 → パネルの「設定を読み直す」→ パネルのモデルの欄で Whisper を入手（874 MB）。入手するまで文字起こしは始まらない（前提の欠け。何も消さない）。古い `ggml-large-v3-turbo-q5_0.bin` は残るので、要らなければ手で消す。
 
 **2026-10-01 に利用者が決めたこと**: `PolicyTests` の依存は地図に揃える（F-103。`VDContract` を足し、版の読み取りの写しをやめた）・**削除は無効のまま**・前の `<HOME>`（`~/.Trash/VoiceDock-old`）は消した。
 

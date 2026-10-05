@@ -283,7 +283,7 @@ usage: whisper-cli [options] file0 file1 ...
 
 `rawDocument` の形（既定の発話で、この 1 行に**バイト単位で一致**させる。voicedock の `json.dumps(raw_document(), ensure_ascii=False)` の実測）:
 ```text
-{"systeminfo": "AVX = 0 | NEON = 1 |", "model": {"type": "large", "multilingual": true}, "params": {"model": "ggml-large-v3-turbo-q5_0.bin", "language": "ja"}, "result": {"language": "ja"}, "transcription": [{"timestamps": {"from": "00:00:00,000", "to": "00:00:03,200"}, "offsets": {"from": 0, "to": 3200}, "text": " おはようございます。"}, {"timestamps": {"from": "00:00:05,500", "to": "00:00:09,000"}, "offsets": {"from": 5500, "to": 9000}, "text": " 今日の予定を確認します。"}]}
+{"systeminfo": "AVX = 0 | NEON = 1 |", "model": {"type": "large", "multilingual": true}, "params": {"model": "ggml-large-v3-turbo-q8_0.bin", "language": "ja"}, "result": {"language": "ja"}, "transcription": [{"timestamps": {"from": "00:00:00,000", "to": "00:00:03,200"}, "offsets": {"from": 0, "to": 3200}, "text": " おはようございます。"}, {"timestamps": {"from": "00:00:05,500", "to": "00:00:09,000"}, "offsets": {"from": 5500, "to": 9000}, "text": " 今日の予定を確認します。"}]}
 ```
 - `offsets` = `Int((秒 × 1000).rounded(.toNearestOrEven))`（Python の `round`）
 - `timestamps` = `whole = Int(秒)`、`millis = Int(((秒 − Double(whole)) × 1000).rounded(.toNearestOrEven))`、`String(format: "%02d:%02d:%02d,%03d", whole / 3600, whole / 60 % 60, whole % 60, millis)`
@@ -326,7 +326,7 @@ exit <exitCode>
 ## 6. テスト
 
 共通の準備（`TranscriberTests`）: `TempDirectory()` の下に `HomeLayout(root:)`（`createDirectories()`）、`AppPaths(resources: <tmp>/resources, helpers: <tmp>/helpers)`。
-`FakeWhisper.write(to: paths.whisperCLI, …)`。カタログはテスト内の JSON（whisper `large-v3-turbo-q5_0` / file `ggml-large-v3-turbo-q5_0.bin` / bytes 4、vad `silero-v5.1.2` / file `ggml-silero-v5.1.2.bin` / bytes 4）を
+`FakeWhisper.write(to: paths.whisperCLI, …)`。カタログはテスト内の JSON（whisper `large-v3-turbo-q8_0` / file `ggml-large-v3-turbo-q8_0.bin` / bytes 4、vad `silero-v5.1.2` / file `ggml-silero-v5.1.2.bin` / bytes 4）を
 `ModelCatalog.load` で読み、両方のモデルファイルを 4 バイトで作る。CE のテスト（`ceWhisperModelID`・`ceVADModelID`）のために、この JSON には
 2 つ目の whisper（`medium-q5_0` / file `ggml-medium-q5_0.bin` / bytes 4）と 2 つ目の vad（`silero-v4` / file `ggml-silero-v4.bin` / bytes 4）も入れ、
 その 2 つのファイルも 4 バイトで作る。`config = AppConfig.defaults(timeZone: "Asia/Tokyo").transcription`。
@@ -337,7 +337,7 @@ exit <exitCode>
 
 | 関数名 / 表示名 | 入力 | 期待 |
 |---|---|---|
-| `argvMatchesPlan` / 「argv が PLAN §8.4 と逐語一致」 | 既定の config、model `<H>/models/whisper/ggml-large-v3-turbo-q5_0.bin`、input `<H>/staging/<slug>/audio16k.wav`、outputBase `<H>/staging/<slug>/whisper`、vadModel `<H>/models/vad/ggml-silero-v5.1.2.bin`、threads 6 | `["-m", "<H>/models/whisper/ggml-large-v3-turbo-q5_0.bin", "-f", "<H>/staging/<slug>/audio16k.wav", "-l", "ja", "-t", "6", "--vad", "--vad-model", "<H>/models/vad/ggml-silero-v5.1.2.bin", "--vad-threshold", "0.5", "--vad-min-speech-duration-ms", "250", "--vad-min-silence-duration-ms", "1000", "--vad-speech-pad-ms", "200", "-oj", "-of", "<H>/staging/<slug>/whisper", "-np"]` |
+| `argvMatchesPlan` / 「argv が PLAN §8.4 と逐語一致」 | 既定の config、model `<H>/models/whisper/ggml-large-v3-turbo-q8_0.bin`、input `<H>/staging/<slug>/audio16k.wav`、outputBase `<H>/staging/<slug>/whisper`、vadModel `<H>/models/vad/ggml-silero-v5.1.2.bin`、threads 6 | `["-m", "<H>/models/whisper/ggml-large-v3-turbo-q8_0.bin", "-f", "<H>/staging/<slug>/audio16k.wav", "-l", "ja", "-t", "6", "--vad", "--vad-model", "<H>/models/vad/ggml-silero-v5.1.2.bin", "--vad-threshold", "0.5", "--vad-min-speech-duration-ms", "250", "--vad-min-silence-duration-ms", "1000", "--vad-speech-pad-ms", "200", "-oj", "-of", "<H>/staging/<slug>/whisper", "-np"]` |
 | `ceVADThreshold` / 「CE transcription.vad.threshold の値が --vad-threshold に渡る」 | threshold 0.25 | `--vad-threshold` の次が `0.25`（既定なら `0.5`） |
 | `ceVADMinSpeechDurationMs` / 「CE transcription.vad.minSpeechDurationMs の値が渡る」 | 100 | `--vad-min-speech-duration-ms` の次が `100`（既定なら `250`） |
 | `ceVADMinSilenceDurationMs` / 「CE transcription.vad.minSilenceDurationMs の値が渡る」 | 500 | `--vad-min-silence-duration-ms` の次が `500`（既定なら `1000`） |
@@ -383,7 +383,7 @@ exit <exitCode>
 | `noSpeechIsNotFailure` / 「発話なしは失敗ではない」 | utterances 空 | `.noSpeech(t, "0 文字（min_chars=1）")`、`t.text == ""` |
 | `noSpeechStillWritesTranscript` / 「ASR-09 無音でも transcript を先に書く」 | 同上 | transcript のファイルが在り、decode でき、text が空 |
 | `minCharsIsRespected` / 「CE transcription.minChars を守る」 | 発話 `(0, 1, " あ")`、minChars 1（既定）と 2 | 1 → `.transcribed`、2 → `.noSpeech(_, "1 文字（min_chars=2）")`。結合文字の発話 `(0, 1, " か\u{3099}")`（2 スカラー・1 書記素）は minChars 2 で `.transcribed`（§7 の最後の行） |
-| `ceWhisperModelID` / 「CE transcription.whisperModelID を変えると -m のパスが変わる」 | `whisperModelID = "medium-q5_0"` | `recordedArgv` の `-m` の次が `<H>/models/whisper/ggml-medium-q5_0.bin`（既定なら `ggml-large-v3-turbo-q5_0.bin`） |
+| `ceWhisperModelID` / 「CE transcription.whisperModelID を変えると -m のパスが変わる」 | `whisperModelID = "medium-q5_0"` | `recordedArgv` の `-m` の次が `<H>/models/whisper/ggml-medium-q5_0.bin`（既定なら `ggml-large-v3-turbo-q8_0.bin`） |
 | `ceVADModelID` / 「CE transcription.vad.modelID を変えると --vad-model のパスが変わる」 | `vad.modelID = "silero-v4"` | `--vad-model` の次が `<H>/models/vad/ggml-silero-v4.bin`（既定なら `ggml-silero-v5.1.2.bin`） |
 | `missingCLIIsPrerequisite` / 「whisper-cli が無ければ前提の欠け」 | whisper-cli を消す | `.prerequisiteMissing(.whisperMissing)`、何も書かない |
 | `missingModelIsPrerequisite` / 「モデルが無い・大きさが違えば前提の欠け」 | whisper モデルを 3 バイトにする | `.prerequisiteMissing(.modelMissing)` |
@@ -478,7 +478,7 @@ exit <exitCode>
 ## S10. whisper-cli の argv
 
 ```text
--m <HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin -f <HOME>/staging/<slug>/audio16k.wav -l ja -t 6 --vad --vad-model <HOME>/models/vad/ggml-silero-v5.1.2.bin --vad-threshold 0.5 --vad-min-speech-duration-ms 250 --vad-min-silence-duration-ms 1000 --vad-speech-pad-ms 200 -oj -of <HOME>/staging/<slug>/whisper -np
+-m <HOME>/models/whisper/ggml-large-v3-turbo-q8_0.bin -f <HOME>/staging/<slug>/audio16k.wav -l ja -t 6 --vad --vad-model <HOME>/models/vad/ggml-silero-v5.1.2.bin --vad-threshold 0.5 --vad-min-speech-duration-ms 250 --vad-min-silence-duration-ms 1000 --vad-speech-pad-ms 200 -oj -of <HOME>/staging/<slug>/whisper -np
 ```
 ````
 

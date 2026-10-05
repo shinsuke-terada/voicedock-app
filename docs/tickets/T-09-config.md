@@ -170,7 +170,7 @@ public static func defaults(timeZone: String) -> AppConfig {
                            freeSpaceMultiplier: 2.0, freeSpaceMarginBytes: 2_147_483_648, stagingMaxBytes: 5_368_709_120,
                            hashChunkBytes: 1_048_576, inboxRetain: "normalized"),
         session: SessionConfig(blockGapSeconds: 3600, idleCloseSeconds: 1800, allowReopen: true, maxParts: 64, maxDurationSeconds: 86_400),
-        transcription: TranscriptionConfig(whisperModelID: "large-v3-turbo-q5_0", language: "ja", threads: 0,
+        transcription: TranscriptionConfig(whisperModelID: "large-v3-turbo-q8_0", language: "ja", threads: 0,
                                            timeoutFactor: 3.0, minTimeoutSeconds: 600, maxTimeoutSeconds: 21_600, minChars: 1,
                                            vad: VADConfig(enabled: true, modelID: "silero-v5.1.2", threshold: 0.5,
                                                           minSpeechDurationMs: 250, minSilenceDurationMs: 1000, speechPadMs: 200)),
@@ -561,7 +561,7 @@ golden のケース（T-25 の `GoldenCase`）の `timeZone` と `overrides` か
 
 ```swift
 public enum TestCatalogs {
-    /// 既定の ID（large-v3-turbo-q5_0 / silero-v5.1.2）と LLM 1 つ（id "test-llm"）を持つ最小のカタログ。値は形式を満たす架空のもの。
+    /// 既定の ID（large-v3-turbo-q8_0 / silero-v5.1.2）と LLM 1 つ（id "test-llm"）を持つ最小のカタログ。値は形式を満たす架空のもの。
     public static let minimal: ModelCatalog
 }
 ```
@@ -666,8 +666,9 @@ public enum TestCatalogs {
 
 | 関数名 | 表示名 | 期待 |
 |---|---|---|
-| `bundledCatalogLoads` | `同梱のカタログは捨てる項目なしで読める` | `PackageRoot.url/Resources/ModelCatalog.json` を読み、`rejected` が空、whisper 1・vad 1・llm 2 |
-| `bundledCatalogHasDefaultIDs` | `既定の ID がカタログに在る` | `entry(kind: .whisper, id: "large-v3-turbo-q5_0")` と `entry(kind: .vad, id: "silero-v5.1.2")` が nil でない |
+| `bundledCatalogLoads` | `同梱のカタログは捨てる項目なしで読める` | `PackageRoot.url/Resources/ModelCatalog.json` を読み、`rejected` が空、whisper 2・vad 1・llm 2 |
+| `bundledCatalogHasDefaultIDs` | `既定の ID がカタログに在る` | `entry(kind: .whisper, id: "large-v3-turbo-q8_0")` と `entry(kind: .vad, id: "silero-v5.1.2")` が nil でない |
+| `bundledCatalogKeepsPreviousWhisperDefault` | `F-104 前の既定の Whisper（q5_0）もカタログに残る（その config.json が CV-44 に落ちない）` | whisper の ID の並びが `["large-v3-turbo-q8_0", "large-v3-turbo-q5_0"]`、`large-v3-turbo-q5_0` の file が `ggml-large-v3-turbo-q5_0.bin`（PLAN F-104） |
 | `bundledURLsArePinned` | `URL はコミット SHA で固定されている（PT-13 と同じ条件）` | 全項目の url が `bad_url` の条件を満たさない（= 合格している）ことは `rejected` が空で示されるので、ここでは `/resolve/main/` を含まないことを直接見る |
 | `listedLLMsExcludeUnverified` | `verified が false の LLM は一覧に出ない` | 同梱（2 つとも false）で `listedLLMs.isEmpty` |
 | `emptyListsLoad` | `空のカタログは項目 0 件で読める` | 3 つの kind が `[]` → 項目も `rejected` も `listedLLMs` も空（TEST-28） |

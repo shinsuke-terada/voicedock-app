@@ -18,7 +18,7 @@ struct FakeWhisperTests {
     func rawDocumentMatchesVoicedock() {
         let expected =
             #"{"systeminfo": "AVX = 0 | NEON = 1 |", "model": {"type": "large", "multilingual": true}, "#
-            + #""params": {"model": "ggml-large-v3-turbo-q5_0.bin", "language": "ja"}, "result": {"language": "ja"}, "#
+            + #""params": {"model": "ggml-large-v3-turbo-q8_0.bin", "language": "ja"}, "result": {"language": "ja"}, "#
             + #""transcription": [{"timestamps": {"from": "00:00:00,000", "to": "00:00:03,200"}, "#
             + #""offsets": {"from": 0, "to": 3200}, "text": " おはようございます。"}, "#
             + #"{"timestamps": {"from": "00:00:05,500", "to": "00:00:09,000"}, "#

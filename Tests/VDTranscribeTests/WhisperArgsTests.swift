@@ -10,7 +10,7 @@ struct WhisperArgsTests {
     static let home = "/tmp/vd-home"
     static let slug = "0123456789abcdef"
 
-    static let model = URL(fileURLWithPath: "\(home)/models/whisper/ggml-large-v3-turbo-q5_0.bin")
+    static let model = URL(fileURLWithPath: "\(home)/models/whisper/ggml-large-v3-turbo-q8_0.bin")
     static let input = URL(fileURLWithPath: "\(home)/staging/\(slug)/audio16k.wav")
     static let outputBase = URL(fileURLWithPath: "\(home)/staging/\(slug)/whisper")
     static let vadModel = URL(fileURLWithPath: "\(home)/models/vad/ggml-silero-v5.1.2.bin")
@@ -34,7 +34,7 @@ struct WhisperArgsTests {
         let s = Self.slug
         #expect(
             Self.build(Self.defaults()) == [
-                "-m", "\(h)/models/whisper/ggml-large-v3-turbo-q5_0.bin", "-f", "\(h)/staging/\(s)/audio16k.wav",
+                "-m", "\(h)/models/whisper/ggml-large-v3-turbo-q8_0.bin", "-f", "\(h)/staging/\(s)/audio16k.wav",
                 "-l", "ja", "-t", "6", "--vad", "--vad-model", "\(h)/models/vad/ggml-silero-v5.1.2.bin",
                 "--vad-threshold", "0.5", "--vad-min-speech-duration-ms", "250", "--vad-min-silence-duration-ms",
                 "1000", "--vad-speech-pad-ms", "200", "-oj", "-of", "\(h)/staging/\(s)/whisper", "-np",

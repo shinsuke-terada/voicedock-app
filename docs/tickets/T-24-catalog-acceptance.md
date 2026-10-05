@@ -122,10 +122,11 @@ PY
 4. `license` が `apache-2.0` / `mit` のように**利用者のダウンロードを許すもの**であることを目で確かめる。カードに license が無いリポジトリは**載せない**
 5. 直したら `swift test --filter ModelCatalogTests` が緑であることを確かめる（T-09 の `bundledCatalogLoads` / `bundledURLsArePinned`）
 
-2026-09-18 に確認した値（移植メモ V7 §3。この表と HF の応答が一致すればカタログは正しい）:
+2026-09-18 に確認した値（移植メモ V7 §3。この表と HF の応答が一致すればカタログは正しい。`large-v3-turbo-q8_0` の行は 2026-10-05 に HF API で確かめて足した。PLAN F-104）:
 
 | id | repo | commit | bytes | sha256 | license |
 |---|---|---|---|---|---|
+| `large-v3-turbo-q8_0` | ggerganov/whisper.cpp | `5359861c739e955e79d9a303bcbc70fb988958b1` | 874,188,075 | `317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1` | mit |
 | `large-v3-turbo-q5_0` | ggerganov/whisper.cpp | `5359861c739e955e79d9a303bcbc70fb988958b1` | 574,041,195 | `394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2` | mit |
 | `silero-v5.1.2` | ggml-org/whisper-vad | `9ffd54a1e1ee413ddf265af9913beaf518d1639b` | 885,098 | `29940d98d42b91fbd05ce489f3ecf7c72f0a42f027e4875919a28fb4c04ea2cf` | mit |
 | `qwen3-30b-a3b-instruct-2507-q4_k_m` | unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF | `eea7b2be5805a5f151f8847ede8e5f9a9284bf77` | 18,556,686,752 | `6c997b8af17debdfb01d890214400ccbab00db6acc0ba8da5de1cc906c4774d0` | apache-2.0 |

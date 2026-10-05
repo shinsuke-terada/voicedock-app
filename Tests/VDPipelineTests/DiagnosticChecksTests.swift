@@ -53,7 +53,7 @@ struct DiagnosticsWorld {
         }
         let json = """
             {"schema": 1,
-             "whisper": [\(item("large-v3-turbo-q5_0", "ggml-large-v3-turbo-q5_0.bin", llm: false))],
+             "whisper": [\(item("large-v3-turbo-q8_0", "ggml-large-v3-turbo-q8_0.bin", llm: false))],
              "vad": [\(item("silero-v5.1.2", "ggml-silero-v5.1.2.bin", llm: false))],
              "llm": [\(item("test-llm", "test-llm.gguf", llm: true))]}
             """
@@ -363,12 +363,12 @@ struct DiagnosticChecksTests {
     @Test("DR-05 モデルが在り SHA-256 が一致すれば ok")
     func dr05OK() async throws {
         let w = try await DiagnosticsWorld.make()
-        try w.placeModel(kind: .whisper, file: "ggml-large-v3-turbo-q5_0.bin")
+        try w.placeModel(kind: .whisper, file: "ggml-large-v3-turbo-q8_0.bin")
         let r = await DiagnosticChecks.dr05(w.context())
         #expect(
             r
                 == DiagnosticResult(
-                    id: "DR-05", status: .ok, label: "Whisper モデル", details: ["large-v3-turbo-q5_0（SHA-256 一致）"]))
+                    id: "DR-05", status: .ok, label: "Whisper モデル", details: ["large-v3-turbo-q8_0（SHA-256 一致）"]))
     }
 
     @Test("DR-05 モデルが無ければ fail")
@@ -376,13 +376,13 @@ struct DiagnosticChecksTests {
         let w = try await DiagnosticsWorld.make()
         let r = await DiagnosticChecks.dr05(w.context())
         #expect(r.status == .fail)
-        #expect(r.details == ["ggml-large-v3-turbo-q5_0.bin がありません"])
+        #expect(r.details == ["ggml-large-v3-turbo-q8_0.bin がありません"])
     }
 
     @Test("DR-05 中身が違えば SHA-256 の不一致で fail")
     func dr05FailSHA() async throws {
         let w = try await DiagnosticsWorld.make()
-        try w.placeModel(kind: .whisper, file: "ggml-large-v3-turbo-q5_0.bin", content: Data("x".utf8))
+        try w.placeModel(kind: .whisper, file: "ggml-large-v3-turbo-q8_0.bin", content: Data("x".utf8))
         let r = await DiagnosticChecks.dr05(w.context())
         #expect(r.status == .fail)
         #expect(r.details == ["SHA-256 が一致しません"])
@@ -391,8 +391,8 @@ struct DiagnosticChecksTests {
     @Test("DR-05 2 回目は ModelVerificationCache の記録を使いハッシュを計算し直さない")
     func dr05UsesTheVerificationCache() async throws {
         let w = try await DiagnosticsWorld.make()
-        try w.placeModel(kind: .whisper, file: "ggml-large-v3-turbo-q5_0.bin")
-        let url = w.layout.modelFile(kind: "whisper", file: "ggml-large-v3-turbo-q5_0.bin")
+        try w.placeModel(kind: .whisper, file: "ggml-large-v3-turbo-q8_0.bin")
+        let url = w.layout.modelFile(kind: "whisper", file: "ggml-large-v3-turbo-q8_0.bin")
         let stamp = Date(timeIntervalSince1970: 1_700_000_000)
         try FileManager.default.setAttributes([.modificationDate: stamp], ofItemAtPath: url.path(percentEncoded: false))
         let first = await DiagnosticChecks.dr05(w.context())
@@ -404,7 +404,7 @@ struct DiagnosticChecksTests {
         try FileManager.default.setAttributes([.modificationDate: stamp], ofItemAtPath: url.path(percentEncoded: false))
         let second = await DiagnosticChecks.dr05(w.context())
         #expect(second.status == .ok)
-        #expect(second.details == ["large-v3-turbo-q5_0（SHA-256 一致）"])
+        #expect(second.details == ["large-v3-turbo-q8_0（SHA-256 一致）"])
     }
 
     // MARK: DR-06

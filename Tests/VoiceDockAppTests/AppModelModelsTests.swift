@@ -15,7 +15,7 @@ struct AppModelModelsTests {
     static let layout = HomeLayout(root: URL(fileURLWithPath: "/tmp/voicedock-t31-layout", isDirectory: true))
     static let customID = "custom:" + String(repeating: "c", count: 64)
 
-    /// whisper の項目（id "large-v3-turbo-q5_0"）が選ばれた観測
+    /// whisper の項目（id "large-v3-turbo-q8_0"）が選ばれた観測
     static func present() -> AppSnapshot {
         var s = AppSnapshot(now: fixed)
         s.configPresent = true
@@ -111,7 +111,7 @@ struct AppModelModelsTests {
         await task.value
         #expect(model.downloads[.whisper] == .idle)
         #expect(model.modelError == nil)
-        #expect(fake.cancelledIDs == ["large-v3-turbo-q5_0"])
+        #expect(fake.cancelledIDs == ["large-v3-turbo-q8_0"])
     }
 
     @Test("取り消し後の遅れた進捗を捨てる")

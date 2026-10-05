@@ -52,7 +52,7 @@ struct TranscriberTests {
         }
         return """
             {"schema": 1,
-             "whisper": [\(item("large-v3-turbo-q5_0", "ggml-large-v3-turbo-q5_0.bin")), \
+             "whisper": [\(item("large-v3-turbo-q8_0", "ggml-large-v3-turbo-q8_0.bin")), \
             \(item("medium-q5_0", "ggml-medium-q5_0.bin"))],
              "vad": [\(item("silero-v5.1.2", "ggml-silero-v5.1.2.bin")), \(item("silero-v4", "ggml-silero-v4.bin"))],
              "llm": []}
@@ -85,7 +85,7 @@ struct TranscriberTests {
             var root = layout.root.path(percentEncoded: false)
             if root.hasSuffix("/") { root.removeLast() }
             home = root
-            for file in ["ggml-large-v3-turbo-q5_0.bin", "ggml-medium-q5_0.bin"] {
+            for file in ["ggml-large-v3-turbo-q8_0.bin", "ggml-medium-q5_0.bin"] {
                 try Data("1234".utf8).write(to: layout.modelFile(kind: "whisper", file: file))
             }
             for file in ["ggml-silero-v5.1.2.bin", "ggml-silero-v4.bin"] {
@@ -165,7 +165,7 @@ struct TranscriberTests {
         let threads = String(min(ProcessInfo.processInfo.activeProcessorCount, 8))
         #expect(
             FakeWhisper.recordedArgv(f.script) == [
-                "-m", "\(h)/models/whisper/ggml-large-v3-turbo-q5_0.bin", "-f", "\(h)/staging/\(s)/audio16k.wav",
+                "-m", "\(h)/models/whisper/ggml-large-v3-turbo-q8_0.bin", "-f", "\(h)/staging/\(s)/audio16k.wav",
                 "-l", "ja", "-t", threads, "--vad", "--vad-model", "\(h)/models/vad/ggml-silero-v5.1.2.bin",
                 "--vad-threshold", "0.5", "--vad-min-speech-duration-ms", "250", "--vad-min-silence-duration-ms",
                 "1000", "--vad-speech-pad-ms", "200", "-oj", "-of", "\(h)/staging/\(s)/whisper", "-np",
@@ -367,7 +367,7 @@ struct TranscriberTests {
         _ = await base.run()
         #expect(
             Self.value(after: "-m", in: FakeWhisper.recordedArgv(base.script))
-                == "\(base.home)/models/whisper/ggml-large-v3-turbo-q5_0.bin")
+                == "\(base.home)/models/whisper/ggml-large-v3-turbo-q8_0.bin")
 
         let f = try Fixture()
         try FakeWhisper.write(to: f.script)
@@ -416,11 +416,11 @@ struct TranscriberTests {
     func missingModelIsPrerequisite() async throws {
         let f = try Fixture()
         try FakeWhisper.write(to: f.script)
-        try Data("123".utf8).write(to: f.layout.modelFile(kind: "whisper", file: "ggml-large-v3-turbo-q5_0.bin"))
+        try Data("123".utf8).write(to: f.layout.modelFile(kind: "whisper", file: "ggml-large-v3-turbo-q8_0.bin"))
         #expect(await f.run() == .prerequisiteMissing(.modelMissing))
         #expect(FakeWhisper.recordedArgv(f.script).isEmpty)
 
-        try f.remove(f.layout.modelFile(kind: "whisper", file: "ggml-large-v3-turbo-q5_0.bin"))
+        try f.remove(f.layout.modelFile(kind: "whisper", file: "ggml-large-v3-turbo-q8_0.bin"))
         #expect(await f.run() == .prerequisiteMissing(.modelMissing))
     }
 
@@ -439,7 +439,7 @@ struct TranscriberTests {
     @Test("欠けを全部返す")
     func missingPrerequisitesListsAll() throws {
         let f = try Fixture()
-        try f.remove(f.layout.modelFile(kind: "whisper", file: "ggml-large-v3-turbo-q5_0.bin"))
+        try f.remove(f.layout.modelFile(kind: "whisper", file: "ggml-large-v3-turbo-q8_0.bin"))
         try f.remove(f.layout.modelFile(kind: "vad", file: "ggml-silero-v5.1.2.bin"))
         #expect(f.transcriber().missingPrerequisites() == [.whisperMissing, .modelMissing, .vadModelMissing])
     }
