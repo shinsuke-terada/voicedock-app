@@ -1,4 +1,4 @@
-# 進捗と再開の手順（2026-10-01・**v1.0.0 を公開した**。チケットはすべて済み、開いている issue は無い）
+# 進捗と再開の手順（2026-10-06・**v1.0.1 を公開した**。チケットはすべて済み、開いている issue は無い）
 
 **この文書だけ読めば再開できる**ように書いてある。次のセッションはここから始める。
 
@@ -10,7 +10,7 @@
 | マージ済み | **50 本**（T-44 が加わった） |
 | 取り下げ | 1 本（T-33。PLAN F-60） |
 | 残り | **0 本** |
-| 配布 | **v1.0.0 を公開済み**（2026-10-01。§1.11）。その前は v0.9.0（2026-09-26。§1.6） |
+| 配布 | **v1.0.1 を公開済み**（2026-10-06。§1.12）。その前は v1.0.0（2026-10-01。§1.11）、v0.9.0（2026-09-26。§1.6） |
 
 **`main` の先頭は `9042132`（PR #194。注釈付きタグ `v1.0.0`）**。v1.0.0 の作業は §1.9〜§1.11。以下は v0.9.0 のときの記録: `main` の先頭は `aea41da`（PR #186。注釈付きタグ `v0.9.0`）、`develop` の先頭は `03a3fa4`（PR #185）。2026-09-25 夜〜26 の作業は §1.6。以下はそれより前の記録: 話者分離は #153（計画）→ #160〜#165（実装）→ #166（後始末）→ #167（コードレビューの修正。F-90）でマージ済み。**2026-09-24 に利用者が実機の録音で確認し、issue #104 を閉じた**（`diarization_completed speakers=2 elapsed_s=4.5`）。**2026-09-25 未明、削除 ON の 13 本のうち 10 本（E2E-10・11・17、R-01・03・04・05・07・08・09）を実施・全件 PASS**（下の §2.6。PR #170 ほか）。**2026-09-25 午後、E2E-02（削除 OFF）と G-1・G-3 を PASS**（§2.7）。
 
@@ -38,6 +38,16 @@
 |---|---|---|---|---|---|---|
 
 T-35（削除 OFF）と T-42（削除 ON）は**手順書とテストがマージ済み**で、**実機での実施が残っている**。
+
+## 1.12 2026-10-05〜06: v1.0.1 を公開した
+
+日本語の文字起こしの代替候補を調べ（日本語特化の公開モデルに turbo を上回る独立の根拠は無かった）、利用者の決定で Whisper の既定を `large-v3-turbo-q8_0` にした（F-104。PR #197）。そのまま利用者の依頼で 1.0.1 を出した。
+PR #198（版を上げる。確認表 RL-01〜RL-12 すべて ✅）→ PR #199（`develop` → `main`）→ 利用者の確認を得て注釈付きタグ `v1.0.1`（`b3b80c9`）を push → `main` で `make release`（2026-10-06 00:21〜00:25。17 回の実行すべて passed、公証 2 回 Accepted、`verify-bundle` V-1〜V-10 OK、ビルド 468）→ 利用者の確認を得て `gh release create v1.0.1 … --verify-tag --latest`（https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.1）。記録は `docs/RELEASE.md` §5（全出力は `docs/release-logs/2026-10-05-*`・`2026-10-06-make-release-main.txt`）。
+
+- dmg の SHA-256 は `bd7f71a8b7a39a412c0a06b9dc2eea7d32ab1a0262c35cbb3f92d964fb350177`。`releases/latest` は v1.0.1 を指す。サインインなしの `curl` で落とし直して一致を確かめた
+- RL-11 は前回と同じく、利用者の決定で `<HOME>` をゴミ箱（`~/.Trash/VoiceDock-old-1.0.0`）へ移し、リハーサルの dmg（ビルド 462）から新規導入した。新しい `<HOME>` では Whisper の既定の q8_0 が入手された（手での切り替えは要らなかった）
+- 【利用者が行う】Releases の dmg（ビルド 468）から `/Applications` に入れ直し、版の表示と Gatekeeper の警告が出ないことを確かめる（2026-10-06 の時点で `/Applications` はリハーサルのビルド 462）
+- 新しい `<HOME>` のデータベースは取り込み済みの記録を持たないので、デバイスに残っている録音は次に挿したときに取り込み直される（利用者に伝えた）
 
 ## 1.11 2026-10-01 夜: v1.0.0 を公開した
 
@@ -210,12 +220,12 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | もの | 場所・値 |
 |---|---|
 | `.app` の作り方 | `make vendor`（whisper.cpp / llama.cpp）→ `make app` → `dist/VoiceDock.app`（開発用の署名）。配布版は `make release` → `dist/VoiceDock-<版>.dmg`（Developer ID・公証。`main` のタグの上で作業ツリーを clean にして行う） |
-| 配布 | **v1.0.0**: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.0（公開リポジトリなので誰でも落とせる。F-101）。`dist/VoiceDock.app` と `dist/VoiceDock-1.0.0.dmg` は本番の `make release`（ビルド 455。`9042132`）。`/Applications/VoiceDock.app` は利用者が Releases から入れ直した 1.0.0（ビルド 455）。以前の v0.9.0: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v0.9.0 |
+| 配布 | **v1.0.1**: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.1（公開リポジトリなので誰でも落とせる。F-101）。`dist/VoiceDock.app` と `dist/VoiceDock-1.0.1.dmg` は本番の `make release`（ビルド 468。`b3b80c9`）。`/Applications/VoiceDock.app` は 2026-10-06 の時点でリハーサルの 1.0.1（ビルド 462）で、利用者が Releases から入れ直す。以前の版: v1.0.0 https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.0 、v0.9.0 https://github.com/shinsuke-terada/voicedock-app/releases/tag/v0.9.0 |
 | 公証 | キーチェーンのプロファイル `VOICEDOCK_NOTARY`（2026-09-26 に利用者が登録し直した。`xcrun notarytool history --keychain-profile VOICEDOCK_NOTARY` で確かめられる） |
-| `<HOME>` | `~/Library/Application Support/VoiceDock`（`config.json`・`ui-state.json`・`voicedock.sqlite`・`logs/`・`inbox`・`staging`・`queue`・`bin`・`models`）。**2026-10-01 20:05 に作り直した**（RL-11。利用者の決定で前の `<HOME>` は `~/.Trash/VoiceDock-old` へ移し、同じ日に消した。DB・設定・ログは新しくなり、話者分離などの設定は既定に戻った） |
-| whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q5_0.bin`（547 MB。2026-10-01 に入手し直した）。F-104 で既定は `large-v3-turbo-q8_0` になったが、この `<HOME>` の `config.json` は q5_0 のまま。切り替えは §5 の「2026-10-05 に利用者が決めたこと」 |
-| VAD モデル | `<HOME>/models/vad/ggml-silero-v5.1.2.bin`（2026-10-01 に入手し直した） |
-| LLM モデル | `<HOME>/models/llm/custom-6c997b8af17debdf.gguf`（18.6 GB。カタログの 30B（`qwen3-30b-a3b-instruct-2507-q4_k_m`）と同じファイルを「ファイルから読み込む…」で取り込んだので `custom:` の ID。2026-10-01）。以前の 4B（`custom-3605803b…`）と、カタログから取り込んだ 30B は前の `<HOME>` と一緒にゴミ箱へ |
+| `<HOME>` | `~/Library/Application Support/VoiceDock`（`config.json`・`ui-state.json`・`voicedock.sqlite`・`logs/`・`inbox`・`staging`・`queue`・`bin`・`models`）。**2026-10-05 23:35 に作り直した**（v1.0.1 の RL-11。利用者の決定で前の `<HOME>` は `~/.Trash/VoiceDock-old-1.0.0` へ移した。DB・設定・ログは新しくなり、話者分離などの設定は既定に戻った）。その前は 2026-10-01 20:05 に作り直した（v1.0.0 の RL-11） |
+| whisper モデル | `<HOME>/models/whisper/ggml-large-v3-turbo-q8_0.bin`（874 MB。2026-10-05 に新しい `<HOME>` で入手。F-104 の既定） |
+| VAD モデル | `<HOME>/models/vad/ggml-silero-v5.1.2.bin`（2026-10-05 に入手し直した） |
+| LLM モデル | `<HOME>/models/llm/custom-6c997b8af17debdf.gguf`（18.6 GB。カタログの 30B（`qwen3-30b-a3b-instruct-2507-q4_k_m`）と同じファイルを「ファイルから読み込む…」で取り込んだので `custom:` の ID。2026-10-05 に前の `<HOME>` から `~/Downloads` へ移して取り込み直した） |
 | Vault | `~/Documents/Obsidian Vault`（2026-10-01 から。試験用の `~/VoiceDockTestVault` は同じ日に消した） |
 | 退避先 | 2026-09-22〜23 は `~/VoiceDockE2E`（`device-backup`・`check-before.txt`・`check-after.txt`）に固定していたが、2026-09-24 に利用者の決定で `docs/E2E.md`・T-35・T-42 の固定パスを `$BACKUP`（利用者が試験のたびに決める環境変数）へ変えた（PR #150）。この行の値は当時の記録として残す |
 | 削除 | **無効**（v1.0.0 の後も無効のまま。利用者の決定。2026-10-01）。2026-10-01 14:05:09 に E2E-13 のために「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。以下はそれより前の記録: **有効**（2026-09-30 02:07:58 に R-06 のために有効にし、利用者の決定でそのまま。`config.json` は `cleanup.deleteSourceAudio=true`・`device.mountMode=rw`、`reaper.conf` は `DELETE_SOURCE_AUDIO=true`、`bin/voicedock-reaper` は 0.9.0。**抜く前に Finder で取り出す**）。以下はそれより前の記録: **無効**（2026-09-25 23:07 にデータの初期化の前に「無効にする」を押した。`config.json` は `cleanup.deleteSourceAudio=false`・`device.mountMode=ro`、`reaper.conf` は `DELETE_SOURCE_AUDIO=false`、`bin/voicedock-reaper` は無い）。それまでは 18:32 から有効だった（R-02） |
@@ -268,7 +278,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 | F-101 | **（利用者の決定）** リポジトリは 2026-09-28 から公開。PLAN・README・CLAUDE.md・T-44 の「非公開」を事実に合わせた（Releases の dmg はサインインせずに落とせる） | #193 |
 | F-102 | **（利用者の依頼）** `main` のブランチ保護（必須のチェック `check`・PR 必須（承認 0 人）・管理者にも適用・force push と削除は禁止）。`develop` は保護しない | #195 |
 | F-103 | **（利用者の決定）** `PolicyTests` の依存を地図に揃えて `VDContract` を足し、`ReleaseChecklistTests` の版の読み取りの写しをやめた | #196 |
-| F-104 | **（利用者の決定。2026-10-05）** Whisper の既定を `large-v3-turbo-q5_0`（574 MB）から `large-v3-turbo-q8_0`（874 MB）に。日本語特化の公開モデルを調べたが turbo を上回る独立の根拠は無く、large-v3 は長い音声で崩れる報告があるので turbo のまま量子化を q8_0 に。q5_0 はカタログに残し設定の版は上げない（既存の `config.json` は q5_0 のまま動く） | この PR |
+| F-104 | **（利用者の決定。2026-10-05）** Whisper の既定を `large-v3-turbo-q5_0`（574 MB）から `large-v3-turbo-q8_0`（874 MB）に。日本語特化の公開モデルを調べたが turbo を上回る独立の根拠は無く、large-v3 は長い音声で崩れる報告があるので turbo のまま量子化を q8_0 に。q5_0 はカタログに残し設定の版は上げない（既存の `config.json` は q5_0 のまま動く） | #197 |
 
 ## 5. 残っている作業
 
@@ -276,7 +286,7 @@ Developer ID の署名の準備（公証のキーチェーンプロファイル 
 
 なし（#192（T-44）は 2026-10-01 に閉じた）。
 
-**2026-10-05 に利用者が決めたこと**: Whisper の既定を `large-v3-turbo-q8_0` にする（F-104）。新しく入れたときの既定が変わるだけで、今の `<HOME>` は q5_0 のまま動く（Whisper のモデルを選ぶ GUI は無い）。切り替えは【利用者が行う】。**この変更を含むビルドを入れてから**（v1.0.0 のカタログには q8_0 が無いので、先に書き換えると CV-44 の「設定エラー」になる）: `config.json` の `transcription.whisperModelID` を `"large-v3-turbo-q8_0"` に書き換えて保存 → パネルの「設定を読み直す」→ パネルのモデルの欄で Whisper を入手（874 MB）。入手するまで文字起こしは始まらない（前提の欠け。何も消さない）。古い `ggml-large-v3-turbo-q5_0.bin` は残るので、要らなければ手で消す。
+**2026-10-05 に利用者が決めたこと**: Whisper の既定を `large-v3-turbo-q8_0` にする（F-104）。新しく入れたときの既定が変わる（既存の `config.json` は q5_0 のまま動く。Whisper のモデルを選ぶ GUI は無い）。利用者の `<HOME>` は v1.0.1 の RL-11 で作り直したので、もう q8_0 で動いている。1.0.0 から入れ替えた人の切り替え方は `docs/release-notes/1.0.1.md`（`config.json` の `transcription.whisperModelID` を書き換えて「設定を読み直す」→ 入手）。1.0.1 を出した（§1.12）
 
 **2026-10-01 に利用者が決めたこと**: `PolicyTests` の依存は地図に揃える（F-103。`VDContract` を足し、版の読み取りの写しをやめた）・**削除は無効のまま**・前の `<HOME>`（`~/.Trash/VoiceDock-old`）は消した。
 
@@ -316,7 +326,7 @@ T-44（v1.0 リリース）は T-46〜T-51 の後。
 
 ## 6. 次のセッションで最初にやること
 
-1. `git fetch origin && git switch develop && git pull`（`main` は v1.0.0。次に `main` へ入れるのは次の版のとき。手順は `docs/RELEASE.md`。**確認表の判定を `⬜ 未実施` に戻してから始める**）
+1. `git fetch origin && git switch develop && git pull`（`main` は v1.0.1。次に `main` へ入れるのは次の版のとき。手順は `docs/RELEASE.md`。**確認表の判定を `⬜ 未実施` に戻してから始める**）
 2. `ls /Volumes` で**実機（`VOICEDOCK`）の接続状態**と、§3 の「削除」の行の状態（いまは**無効**）を確かめる。ディスクを触る作業（`make test-disk`・`make release`・dmg の作成）の前には利用者に抜いてもらう
 3. `python3 docs/porting-notes/check-tickets.py` が 0 件、`make lint && make test` が緑であることを確かめる
 4. `gh pr list --state open` と `gh issue list --state open` を確かめる
