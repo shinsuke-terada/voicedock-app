@@ -267,15 +267,12 @@ VoiceDock は終了しており、始める直前に `ls /Volumes` が `Macintos
 全出力（220 行）は `docs/release-logs/2026-10-05-rehearsal-make-release.txt`。公証は 2 回とも `Accepted`、`verify-bundle` は V-1〜V-10 がすべて OK、ビルドは 462。
 本番（`main` のタグの上での §3.4）の出力は、リリースの後にこの節へ書き足す（§3.6 の 2）。
 
-公証（全出力の 97〜155 行目から、コマンドと結果の行だけ）:
+公証（全出力の 97〜155 行目から、コマンドと結果の行だけ。`notarytool` の進捗は `\r` で上書きされる 1 行なので、端末に最後に残る表示を貼った）:
 
 ```text
 OK: --files-only の検査に通りました
 OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app（版 1.0.1、ビルド 462、署名 developerid）
 $ scripts/notarize.sh dist/VoiceDock.app
-
-Current status: In Progress...
-Current status: In Progress....
 Current status: Accepted.....Processing complete
   status: Accepted
 OK: dist/VoiceDock.app を公証・staple しました（submission d1137e43-30fd-4720-b013-691f496d6bc2）
@@ -286,9 +283,6 @@ OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.1.dmg
 $ scripts/sign.sh developerid dist/VoiceDock-1.0.1.dmg
 OK: dmg を署名しました
 $ scripts/notarize.sh dist/VoiceDock-1.0.1.dmg
-
-Current status: In Progress...
-Current status: In Progress....
 Current status: Accepted.....Processing complete
   status: Accepted
 OK: dist/VoiceDock-1.0.1.dmg を公証・staple しました（submission 71dbff8e-0be7-4dcc-b59c-1bd6a654a4b8）
@@ -362,6 +356,155 @@ $ shasum / rev-parse
 68bf3af7a97f029f97e236abc08983de18ae635fb37fc9ca23853b10cef00b86  dist/VoiceDock-1.0.1.dmg
 6ca3f70fb86aa5a40c409d3f1c3113e263cd99db
 exit=0
+```
+
+**本番**（§3.4）。2026-10-06 00:21〜00:25、`main` のコミット `b3b80c9`（PR #199 のマージ。注釈付きタグを打って push した後。作業ツリーは clean）で `make release` を回した。実機は接続されていない（`ls /Volumes` が `Macintosh HD` だけ）。
+全出力（10,148 行）は `docs/release-logs/2026-10-06-make-release-main.txt`。1 段目の test は 17 回の実行すべて passed、公証は 2 回とも `Accepted`、`verify-bundle` は V-1〜V-10 がすべて OK、ビルドは 468。
+
+全出力の 1〜5 行目、1 段目の集計の行、2〜6 段の見出しと結果の行（`notarytool` の進捗は `\r` で上書きされる 1 行なので、端末に最後に残る表示を貼った）:
+
+```text
+$ date; ls /Volumes; git rev-parse HEAD; git status --porcelain
+Tue Oct  6 00:21:42 JST 2026
+Macintosh HD
+b3b80c94c8a6a22f457e11a7ff7f01d1da994d35
+$ make release; echo "exit=$?"
+􁁛  Test run with 10 tests in 1 suite passed after 0.340 seconds.
+􁁛  Test run with 119 tests in 10 suites passed after 9.548 seconds.
+􁁛  Test run with 33 tests in 3 suites passed after 1.309 seconds.
+􁁛  Test run with 34 tests in 1 suite passed after 0.798 seconds.
+􀢂  Test run with 325 tests in 36 suites passed after 11.090 seconds with 3 known issues.
+􁁛  Test run with 317 tests in 39 suites passed after 0.517 seconds.
+􁁛  Test run with 132 tests in 17 suites passed after 24.887 seconds.
+􁁛  Test run with 78 tests in 8 suites passed after 0.411 seconds.
+􁁛  Test run with 43 tests in 5 suites passed after 11.963 seconds.
+􁁛  Test run with 861 tests in 89 suites passed after 18.524 seconds.
+􁁛  Test run with 314 tests in 22 suites passed after 0.702 seconds.
+􁁛  Test run with 65 tests in 6 suites passed after 0.738 seconds.
+􁁛  Test run with 202 tests in 19 suites passed after 13.220 seconds.
+􁁛  Test run with 205 tests in 19 suites passed after 3.372 seconds.
+􁁛  Test run with 394 tests in 45 suites passed after 1.953 seconds.
+􁁛  Test run with 156 tests in 24 suites passed after 0.119 seconds.
+􁁛  Test run with 85 tests in 7 suites passed after 0.745 seconds.
+==> 2/7 .app の組み立てと Developer ID 署名
+==> swift build -c release --arch arm64
+==> 署名: Developer ID Application: Shinsuke Terada (ZCWP35H248)
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app を署名しました（TeamIdentifier=ZCWP35H248）
+OK: --files-only の検査に通りました
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app（版 1.0.1、ビルド 468、署名 developerid）
+==> 3/7 .app の公証と staple
+==> xcrun notarytool submit（キーチェーンプロファイル VOICEDOCK_NOTARY）
+Current status: Accepted.....Processing complete
+  status: Accepted
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app を公証・staple しました（submission 156221ea-7ddf-4742-857e-dc1d6d408a7d）
+==> 4/7 dmg の作成
+OK: 作業用のイメージを /Users/terada/Projects/voicedock_app/dist/.dmg-stage.FdFpd6/mnt にマウントしました（/dev/disk21）
+OK: /Users/terada/Projects/voicedock_app/dist/.dmg-stage.FdFpd6/mnt/.DS_Store
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.1.dmg
+==> 5/7 dmg の署名
+==> 署名: Developer ID Application: Shinsuke Terada (ZCWP35H248)
+OK: dmg を署名しました
+==> 6/7 dmg の公証と staple
+==> xcrun notarytool submit（キーチェーンプロファイル VOICEDOCK_NOTARY）
+Current status: Accepted......Processing complete
+  status: Accepted
+OK: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.1.dmg を公証・staple しました（submission 9dfabda7-952c-45b6-8bee-feabef291020）
+```
+
+`verify-bundle`（7 段）と SHA-256（全出力の `==> 7/7` から最後まで）:
+
+```text
+==> 7/7 verify-bundle
+== V-1 バンドルの中身
+  OK   38 件が一致
+  OK   ディレクトリ 28 個が一致
+== V-2 Info.plist
+  OK   plist として読める
+  OK   CFBundleIdentifier = io.github.shinsuke-terada.VoiceDock
+  OK   CFBundleName = VoiceDock
+  OK   CFBundleExecutable = VoiceDock
+  OK   CFBundlePackageType = APPL
+  OK   CFBundleShortVersionString = 1.0.1
+  OK   LSMinimumSystemVersion = 15.0
+  OK   LSUIElement = true
+  OK   NSRemovableVolumesUsageDescription が在る
+  OK   NSDocumentsFolderUsageDescription が在る
+  OK   NSDesktopFolderUsageDescription が在る
+  OK   NSDownloadsFolderUsageDescription が在る
+== V-3 アーキテクチャ
+  OK   VoiceDock = arm64
+  OK   voicedock-reaper = arm64
+  OK   whisper-cli = arm64
+  OK   llama-server = arm64
+  OK   argmax-cli = arm64
+== V-4 otool -L
+  OK   リンク先は /usr/lib と /System/Library だけ
+== V-5 codesign
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/voicedock-reaper
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/whisper-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/argmax-cli
+--prepared:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+--validated:/Users/terada/Projects/voicedock_app/dist/VoiceDock.app/Contents/Helpers/llama-server
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: valid on disk
+/Users/terada/Projects/voicedock_app/dist/VoiceDock.app: satisfies its Designated Requirement
+  OK   署名が有効
+== V-6 本体の署名の中身
+  OK   Identifier=io.github.shinsuke-terada.VoiceDock
+  OK   TeamIdentifier=ZCWP35H248
+  OK   Hardened Runtime
+  OK   Developer ID Application で署名
+== V-7 reaper の署名
+  OK   Identifier=io.github.shinsuke-terada.VoiceDock.reaper
+  OK   TeamIdentifier=ZCWP35H248
+  OK   アプリが使う要件文字列を満たす
+== V-8 エンタイトルメント
+  OK   本体 のエンタイトルメントは空の dict
+  OK   reaper のエンタイトルメントは空の dict
+== V-9 spctl と staple
+  OK   spctl: Notarized Developer ID
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock.app
+The validate action worked!
+  OK   stapler validate（app）
+== V-10 dmg
+  OK   spctl（dmg）
+Processing: /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.1.dmg
+The validate action worked!
+  OK   stapler validate（dmg）
+  OK   dmg の名前が版と一致
+OK: verify-bundle のすべての検査に通りました（版 1.0.1）
+
+版: 1.0.1
+bd7f71a8b7a39a412c0a06b9dc2eea7d32ab1a0262c35cbb3f92d964fb350177  /Users/terada/Projects/voicedock_app/dist/VoiceDock-1.0.1.dmg
+b3b80c94c8a6a22f457e11a7ff7f01d1da994d35
+exit=0
+$ shasum -a 256 "dist/VoiceDock-$version.dmg"; git rev-parse HEAD
+bd7f71a8b7a39a412c0a06b9dc2eea7d32ab1a0262c35cbb3f92d964fb350177  dist/VoiceDock-1.0.1.dmg
+b3b80c94c8a6a22f457e11a7ff7f01d1da994d35
+```
+
+**公開**（§3.5・§3.6 の 1）。利用者の確認を得て、2026-10-06 00:38 に作った。サインインせずに `curl` で落とし直した dmg の SHA-256 が上と一致し、`releases/latest` はこの版を指す。
+
+```text
+$ gh release create "v$version" "dist/VoiceDock-$version.dmg" --title "VoiceDock $version" --notes-file docs/release-notes/"$version".md --verify-tag --latest
+https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.1
+$ gh release view "v$version" | head -10
+title:	VoiceDock 1.0.1
+tag:	v1.0.1
+draft:	false
+prerelease:	false
+immutable:	false
+author:	shinsuke-terada
+created:	2026-10-05T15:01:27Z
+published:	2026-10-05T15:38:16Z
+url:	https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.1
+asset:	VoiceDock-1.0.1.dmg
+$ curl -sSL -o anon-VoiceDock-1.0.1.dmg https://github.com/shinsuke-terada/voicedock-app/releases/download/v1.0.1/VoiceDock-1.0.1.dmg; shasum -a 256 anon-VoiceDock-1.0.1.dmg
+bd7f71a8b7a39a412c0a06b9dc2eea7d32ab1a0262c35cbb3f92d964fb350177  anon-VoiceDock-1.0.1.dmg
+$ curl -sI https://github.com/shinsuke-terada/voicedock-app/releases/latest | grep -i '^location'
+location: https://github.com/shinsuke-terada/voicedock-app/releases/tag/v1.0.1
 ```
 
 ### 5.5 別アカウントでの導入
