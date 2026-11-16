@@ -1299,7 +1299,7 @@ enum PinningPolicy {
             "WHISPER_CPP_REF": "v[0-9]+\\.[0-9]+\\.[0-9]+",
             "WHISPER_CPP_SHA": "[0-9a-f]{40}",
             "LLAMA_CPP_REPO": "https://github\\.com/ggml-org/llama\\.cpp\\.git",
-            "LLAMA_CPP_REF": "b[0-9]+",
+            "LLAMA_CPP_REF": "b[0-9]+|v[0-9]+\\.[0-9]+\\.[0-9]+",
             "LLAMA_CPP_SHA": "[0-9a-f]{40}",
         ]
         var values: [String: String] = [:]

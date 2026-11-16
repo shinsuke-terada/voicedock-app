@@ -10,7 +10,7 @@ Their copyright notices and license texts are reproduced verbatim from the upstr
 | 同梱物 | 使っている場所 | 版 | ライセンス |
 |---|---|---|---|
 | whisper.cpp | `Contents/Helpers/whisper-cli` | v1.9.4（`927cfce`） | MIT |
-| llama.cpp | `Contents/Helpers/llama-server` | b11033（`8ed1a55`） | MIT |
+| llama.cpp | `Contents/Helpers/llama-server` | v1.0.0（`b1b770d`） | MIT |
 | llama.cpp が取り込んでいる部品（llamafile の sgemm など） | `Contents/Helpers/llama-server` | llama.cpp と同じ | MIT・BSD-2-Clause・パブリックドメイン（下の一覧） |
 | ggml の中の YaRN の RoPE | `Contents/Helpers/whisper-cli`・`Contents/Helpers/llama-server` | whisper.cpp・llama.cpp と同じ | MIT |
 | argmax-oss-swift | `Contents/Helpers/argmax-cli` | v1.1.0（`1e2a163`） | MIT（一部 Apache-2.0） |
@@ -53,7 +53,7 @@ SOFTWARE.
 
 ### llama.cpp
 
-https://github.com/ggml-org/llama.cpp （b11033、コミット `8ed1a55efcd7424d2c592f6cbc9f97756db1d74d`）。`llama-server` として同梱。
+https://github.com/ggml-org/llama.cpp （v1.0.0、コミット `b1b770d90d94cad9e9ea5b993bdbc383a522fb28`）。`llama-server` として同梱。
 
 ```text
 MIT License
