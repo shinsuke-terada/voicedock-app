@@ -319,7 +319,7 @@ Makefile のターゲット（CI と手元で同じコマンドを使う）:
 | 話者分離のモデル | Hugging Face `argmaxinc/speakerkit-coreml` のコミット `556fc52a13327837688f02289457cded017802e9`（CC-BY-4.0）の 20 ファイル（13 MB）。`Vendor/speaker-models.sha256` の sha256 で照合し、`Contents/Resources/SpeakerModels/` に**同梱**する（ダウンロードしない。§11.2） |
 | 整形・lint | ツールチェーン同梱の `swift format`（`swift format lint --strict --recursive Sources Tests`。**存在しないパスを渡しても 0 で終わる**ので Makefile は先に両ディレクトリの存在を確かめる） |
 | whisper.cpp | **`v1.9.4`**（voicedock と同じ。コミット `927cfce34f31707e17f2bff35c349632fb9e2c3a`。voicedock が記録した `7d75b149…` は注釈付きタグのオブジェクトの SHA）。偽 whisper の JSON 形がこの版に合わせてある |
-| llama.cpp | T-03 時点のリリースタグ 1 つ（`b<番号>`。2026-09-18 時点の最新は `b11033`、コミット `8ed1a55efcd7424d2c592f6cbc9f97756db1d74d`）。`Vendor/versions.env` に記録 |
+| llama.cpp | リリースタグ 1 つ。T-03 では `b11033`（`8ed1a55…`）、F-105 で正式版 `v1.0.0`（注釈付きタグ。コミット `b1b770d90d94cad9e9ea5b993bdbc383a522fb28`）に上げた。`Vendor/versions.env` に記録 |
 | GitHub Actions | action は**コミット SHA で固定**（タグは付け替えられる）。ランナーのラベルも固定（`latest` 禁止） |
 | モデルの URL | Hugging Face の **`resolve/<40 桁のコミット SHA>/`**（`resolve/main/` は禁止。voicedock の fetch-models は main を見ていた） |
 | golden の生成 | ホストの `uv`（`uv sync --frozen --python 3.12`。版は `Tests/Golden/GENERATED_BY.txt` に記録） |
@@ -3063,8 +3063,8 @@ Info.plist の必須キー: `CFBundleIdentifier`、`CFBundleName = VoiceDock`、
 # Vendor/versions.env（例）
 WHISPER_CPP_REF=v1.9.4
 WHISPER_CPP_SHA=927cfce34f31707e17f2bff35c349632fb9e2c3a
-LLAMA_CPP_REF=b11033
-LLAMA_CPP_SHA=8ed1a55efcd7424d2c592f6cbc9f97756db1d74d
+LLAMA_CPP_REF=v1.0.0
+LLAMA_CPP_SHA=b1b770d90d94cad9e9ea5b993bdbc383a522fb28
 
 # whisper.cpp（voicedock と同じ版）
 cmake -S src -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON \
@@ -3880,4 +3880,5 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-102 | 事 | §10.8 | （2026-10-01。利用者の依頼「保護しておいて」）公開リポジトリになって無料プランでも使えるようになった `main` のブランチ保護を設定した。必須のチェックは CI の `check`（GitHub Actions）、PR 必須（承認は 0 人。利用者が自分の PR をマージできる）、管理者にも適用（CI を飛ばしてマージしない）、force push と削除は禁止、`develop` に追いついていることは求めない。`develop` は保護しない。CLAUDE.md・`docs/RELEASE.md` §3.2・T-44・STATUS を合わせた |
 | F-103 | 曖 | §10.3 | （2026-10-01。利用者の決定。T-44 §10 の 2）`PolicyTests` の依存が、00-api-map.md §14（`TestSupport, VDContract`）と §10.3・`Package.swift`（`TestSupport` だけ）で食い違っていた。地図に揃え、`Package.swift` の `PolicyTests` に `VDContract` を足し、`ReleaseChecklistTests` が写していた版の読み取り（`ReleaseDoc.components`）をやめて `AppVersion.components` を使う（CR-06。規則の写しを持たない）。TestSupport はもともと全ライブラリに依存しているのでビルドは変わらない。PT-07 は `Sources/` だけを見るので影響しない |
 | F-104 | 事 | §6.2・§8.4・§8.10 | （2026-10-05。利用者の決定。日本語の文字起こしの代替候補を調べた結果による）Whisper の既定を `large-v3-turbo-q5_0`（574,041,195 バイト）から `large-v3-turbo-q8_0`（874,188,075 バイト。同じ固定コミット `5359861c…`）に替える。日本語特化の公開モデルに turbo を上回る独立の根拠は無く、large-v3 は前の文脈を引き継ぐ既定の whisper-cli（`-mc` を渡さない）で長い音声が崩れる報告があるので、turbo のまま量子化の劣化が少ない q8_0 にした。`AppConfig.defaults` の `whisperModelID`、カタログ（q8_0 を先頭に足す）、§6.2 の例・§8.4 と SPEC S11 の argv の例を合わせた。q5_0 はカタログに残し、`schemaVersion` は上げない（既存の `config.json` はそのまま読め、q5_0 で動き続ける。切り替えは、この変更を含むビルドで `whisperModelID` を書き換えて「設定を読み直す」→ パネルでモデルを入手。それより前のビルドのカタログには q8_0 が無く CV-44 になる。Whisper のモデルを選ぶ GUI は無い）。T-09・T-17・T-24 の該当箇所も合わせた。過去の記録（E2E・RELEASE・POC・各ログ・porting-notes）は書き換えない |
+| F-105 | 事 | §3.3・§11.2 | （2026-11-16。利用者の依頼「llama.cpp が 1.0.0 として正式にリリースされた。それに対応したい」）同梱の `llama-server` を `b11033`（`8ed1a55…`）から `v1.0.0`（注釈付きタグ。剥がしたコミット `b1b770d90d94cad9e9ea5b993bdbc383a522fb28`。別名 `v1.0.0-b12359-b1b770d`）に上げた。CMake のオプション（`LLAMA_OPENSSL=OFF`・`LLAMA_USE_PREBUILT_UI=OFF` ほか）と、アプリが渡す 10 個のフラグはそのまま通る。`--help` の変化は `--host` の説明（カンマ区切りで複数可）と `--port` の既定（8080→9931）だが、アプリは常に `127.0.0.1` とポートを明示するので影響しない。新しい `--connect`（P2P トンネル）などは明示しない限り無効。PT-13 の `LLAMA_CPP_REF` の形を `b<番号>` だけから `b<番号>` または `v<x>.<y>.<z>` に広げた（T-04 も合わせた。浮動のタグを許さないことは変わらない）。`Tests/Fixtures/llama-server-help.txt`・`THIRD_PARTY_NOTICES.md` を合わせた。過去の記録（POC・チケット・porting-notes・F-32 ほか）は書き換えない |
 | F-106 | 事 | §3.3・§10.8 | （2026-11-16。利用者の決定「xcode-version を 27.2 に上げましょう」）開発機（＝CI のセルフホストランナー）の Xcode が 27.2（27B52、Swift 6.4.2）に更新され、`check-toolchain` が `.xcode-version`（27.0）との不一致で止まるようになったので、`.xcode-version` を `27.2` にした。`.github/workflows/ci.yml` のコメントも合わせた。swift-tools-version（6.2）と言語モードは変えない。過去の記録と「Xcode 27.0 で確認」の注記は書き換えない |
