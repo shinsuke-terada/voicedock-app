@@ -310,7 +310,7 @@ Makefile のターゲット（CI と手元で同じコマンドを使う）:
 
 | 項目 | 固定の仕方 |
 |---|---|
-| Xcode / Swift | `.xcode-version` に 1 つ書く。**2026-09-18 時点: `27.0`（27A266a、Swift 6.4）**。CI も同じ版（§10.8）。CI は `sudo xcode-select -s /Applications/Xcode_<ver>.app` |
+| Xcode / Swift | `.xcode-version` に 1 つ書く。**2026-11-16 時点: `27.2`（27B52、Swift 6.4.2）**（T-01 では `27.0`。F-106）。CI も同じ版（§10.8）。CI は `sudo xcode-select -s /Applications/Xcode_<ver>.app` |
 | Package の tools-version | `// swift-tools-version: 6.2`（`treatAllWarnings` のため） |
 | 言語モード | Swift 6（`swiftLanguageModes: [.v6]`）、strict concurrency complete。警告はエラー（自分のターゲットに `.treatAllWarnings(as: .error)`。依存には掛けない） |
 | デプロイ対象 | `.macOS("15.0")`、arm64 のみ |
@@ -3003,7 +3003,7 @@ concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
 permissions: { contents: read }
 jobs:
   check:
-    runs-on: [self-hosted, macOS, ARM64]   # 開発機のセルフホストランナー（Xcode 27.0）。利用者の決定（T-02）
+    runs-on: [self-hosted, macOS, ARM64]   # 開発機のセルフホストランナー（Xcode 27.2）。利用者の決定（T-02）
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
@@ -3880,3 +3880,4 @@ Raw の `###` は実際の segment 時刻、前日・翌日リンクは実在を
 | F-102 | 事 | §10.8 | （2026-10-01。利用者の依頼「保護しておいて」）公開リポジトリになって無料プランでも使えるようになった `main` のブランチ保護を設定した。必須のチェックは CI の `check`（GitHub Actions）、PR 必須（承認は 0 人。利用者が自分の PR をマージできる）、管理者にも適用（CI を飛ばしてマージしない）、force push と削除は禁止、`develop` に追いついていることは求めない。`develop` は保護しない。CLAUDE.md・`docs/RELEASE.md` §3.2・T-44・STATUS を合わせた |
 | F-103 | 曖 | §10.3 | （2026-10-01。利用者の決定。T-44 §10 の 2）`PolicyTests` の依存が、00-api-map.md §14（`TestSupport, VDContract`）と §10.3・`Package.swift`（`TestSupport` だけ）で食い違っていた。地図に揃え、`Package.swift` の `PolicyTests` に `VDContract` を足し、`ReleaseChecklistTests` が写していた版の読み取り（`ReleaseDoc.components`）をやめて `AppVersion.components` を使う（CR-06。規則の写しを持たない）。TestSupport はもともと全ライブラリに依存しているのでビルドは変わらない。PT-07 は `Sources/` だけを見るので影響しない |
 | F-104 | 事 | §6.2・§8.4・§8.10 | （2026-10-05。利用者の決定。日本語の文字起こしの代替候補を調べた結果による）Whisper の既定を `large-v3-turbo-q5_0`（574,041,195 バイト）から `large-v3-turbo-q8_0`（874,188,075 バイト。同じ固定コミット `5359861c…`）に替える。日本語特化の公開モデルに turbo を上回る独立の根拠は無く、large-v3 は前の文脈を引き継ぐ既定の whisper-cli（`-mc` を渡さない）で長い音声が崩れる報告があるので、turbo のまま量子化の劣化が少ない q8_0 にした。`AppConfig.defaults` の `whisperModelID`、カタログ（q8_0 を先頭に足す）、§6.2 の例・§8.4 と SPEC S11 の argv の例を合わせた。q5_0 はカタログに残し、`schemaVersion` は上げない（既存の `config.json` はそのまま読め、q5_0 で動き続ける。切り替えは、この変更を含むビルドで `whisperModelID` を書き換えて「設定を読み直す」→ パネルでモデルを入手。それより前のビルドのカタログには q8_0 が無く CV-44 になる。Whisper のモデルを選ぶ GUI は無い）。T-09・T-17・T-24 の該当箇所も合わせた。過去の記録（E2E・RELEASE・POC・各ログ・porting-notes）は書き換えない |
+| F-106 | 事 | §3.3・§10.8 | （2026-11-16。利用者の決定「xcode-version を 27.2 に上げましょう」）開発機（＝CI のセルフホストランナー）の Xcode が 27.2（27B52、Swift 6.4.2）に更新され、`check-toolchain` が `.xcode-version`（27.0）との不一致で止まるようになったので、`.xcode-version` を `27.2` にした。`.github/workflows/ci.yml` のコメントも合わせた。swift-tools-version（6.2）と言語モードは変えない。過去の記録と「Xcode 27.0 で確認」の注記は書き換えない |

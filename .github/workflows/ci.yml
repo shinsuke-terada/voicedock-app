@@ -6,7 +6,7 @@ concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
 permissions: { contents: read }
 jobs:
   check:
-    runs-on: [self-hosted, macOS, ARM64]   # 開発機のセルフホストランナー（Xcode 27.0）。利用者の決定（T-02）
+    runs-on: [self-hosted, macOS, ARM64]   # 開発機のセルフホストランナー（Xcode 27.2）。利用者の決定（T-02）
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1   # v7.0.1
